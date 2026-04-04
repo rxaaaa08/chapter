@@ -78,7 +78,7 @@ const EVENTS: Event[] = [
     price: '₹24,999',
     advanceAmount: 5000,
     description: 'A slow, sun-soaked island escape across Colombo, Kandy, and the south coast. Waterfalls, tea country train rides, and a villa by the beach to reset.',
-    heroImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600&auto=format&fit=crop',
+    heroImage: 'https://images.unsplash.com/photo-P72N1EjOQOw?q=80&w=1600&auto=format&fit=crop',
     startLocation: 'Chennai Airport (MAA)',
     transportPlan: [
       { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
