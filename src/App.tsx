@@ -2134,17 +2134,17 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
               {showPolicyModal === 'about' && (
                 <>
-                  <p><strong className="text-gray-900">chapter அ</strong> is a curated travel experiences company operated by <strong className="text-gray-900">Chapter A Experiences Private Limited</strong>, registered in India.</p>
+                  <p><strong className="text-gray-900">chapter அ</strong> is a curated travel experiences company operated by <strong className="text-gray-900">CHAPTER</strong>, registered in India.</p>
                   <p>We design and run small-group trips for people who want to travel meaningfully — slow itineraries, real places, good company.</p>
                   <p>Our trips are designed for 18–35 year olds looking to explore India and beyond without the chaos of typical group tours.</p>
                 </>
               )}
               {showPolicyModal === 'contact' && (
                 <>
-                  <p><strong className="text-gray-900">Chapter A Experiences Private Limited</strong></p>
+                  <p><strong className="text-gray-900">CHAPTER</strong></p>
                   <p>Registered Address:<br />Chennai, Tamil Nadu, India</p>
-                  <p>Email: <a href="mailto:hello@chapteraexperiences.com" className="text-gray-900 underline">hello@chapteraexperiences.com</a></p>
-                  <p>WhatsApp / Phone: <a href="tel:+919739832100" className="text-gray-900 underline">+91 97398 32100</a></p>
+                  <p>Email: <a href="mailto:chapteraaa.official@gmail.com" className="text-gray-900 underline">chapteraaa.official@gmail.com</a></p>
+                  <p>WhatsApp / Phone: <a href="tel:+918838111564" className="text-gray-900 underline">+91 88381 11564</a></p>
                   <p>We typically respond within a few hours on WhatsApp.</p>
                 </>
               )}
@@ -2155,7 +2155,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <p><strong className="text-gray-900">3. Payment Data</strong><br />Payments are processed via PhonePe. We do not store any card or UPI credentials on our servers.</p>
                   <p><strong className="text-gray-900">4. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related messages on WhatsApp. You may opt out at any time by messaging us.</p>
                   <p><strong className="text-gray-900">5. Data Retention</strong><br />We retain your contact details for up to 1 year post-trip for support purposes, after which it is deleted.</p>
-                  <p><strong className="text-gray-900">6. Contact</strong><br />For privacy concerns, email us at hello@chapteraexperiences.com.</p>
+                  <p><strong className="text-gray-900">6. Contact</strong><br />For privacy concerns, email us at chapteraaa.official@gmail.com.</p>
                 </>
               )}
               {showPolicyModal === 'tc' && (
@@ -2179,7 +2179,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   </p>
                   <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If we cancel a trip for any reason, a full refund of all amounts paid will be issued within 7 business days.</p>
                   <p><strong className="text-gray-900">5. Refund Process</strong><br />Approved refunds are processed to the original payment method within 5–7 business days.</p>
-                  <p><strong className="text-gray-900">6. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 97398 32100 or email hello@chapteraexperiences.com.</p>
+                  <p><strong className="text-gray-900">6. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 88381 11564 or email chapteraaa.official@gmail.com.</p>
                 </>
               )}
             </div>
