@@ -78,7 +78,7 @@ const EVENTS: Event[] = [
     price: '₹24,999',
     advanceAmount: 5000,
     description: 'A slow, sun-soaked island escape across Colombo, Kandy, and the south coast. Waterfalls, tea country train rides, and a villa by the beach to reset.',
-    heroImage: 'https://images.unsplash.com/photo-1586968284718-c9f55df1d8ee?q=80&w=1600&auto=format&fit=crop',
+    heroImage: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?q=80&w=1600&auto=format&fit=crop',
     startLocation: 'Chennai Airport (MAA)',
     transportPlan: [
       { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
@@ -158,8 +158,8 @@ const EVENTS: Event[] = [
     accommodation: {
       name: 'Kandy Hillside Resort · South Coast Villa',
       images: [
-        'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1200&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1571896349842-33c89424de2d?q=80&w=1200&auto=format&fit=crop'
+        'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1200&auto=format&fit=crop',
+        'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=1200&auto=format&fit=crop'
       ],
       features: [
         'Infinity pool overlooking tea gardens',
@@ -170,11 +170,11 @@ const EVENTS: Event[] = [
     },
     videos: [
       {
-        thumbnail: 'https://images.unsplash.com/photo-1586968284718-c9f55df1d8ee?q=80&w=400&auto=format&fit=crop',
+        thumbnail: 'https://images.unsplash.com/photo-1559628233-100c798642d8?q=80&w=400&auto=format&fit=crop',
         caption: 'Tropical evenings on the south coast'
       },
       {
-        thumbnail: 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?q=80&w=400&auto=format&fit=crop',
+        thumbnail: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?q=80&w=400&auto=format&fit=crop',
         caption: 'Train through tea country vibes'
       }
     ],
