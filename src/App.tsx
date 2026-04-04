@@ -231,7 +231,6 @@ export default function App() {
   const [detailsForm, setDetailsForm] = useState({ name: '', phone: '' });
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
-  const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | null>(null);
   const [paymentView, setPaymentView] = useState<'idle' | 'checkout' | 'success' | 'failure'>('idle');
   const [paymentContext, setPaymentContext] = useState<{
     eventTitle: string;
@@ -754,15 +753,6 @@ export default function App() {
 
           </>
         )}
-
-        {/* Footer — always visible */}
-        <div className="bg-white border-t border-gray-100 px-4 py-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 flex-shrink-0">
-          <button onClick={() => setShowPolicyModal('about')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors py-0.5">About Us</button>
-          <button onClick={() => setShowPolicyModal('contact')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors py-0.5">Contact</button>
-          <button onClick={() => setShowPolicyModal('privacy')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors py-0.5">Privacy Policy</button>
-          <button onClick={() => setShowTcModal(true)} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors py-0.5">T&amp;C</button>
-          <button onClick={() => setShowPolicyModal('refund')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors py-0.5">Refund Policy</button>
-        </div>
 
         {/* Transition Overlay */}
         <AnimatePresence>
@@ -1406,6 +1396,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
       </div>
     </div>
   );
@@ -1530,6 +1521,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const [accImageIndex, setAccImageIndex] = useState(0);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -1700,7 +1692,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
       className="absolute inset-0 bg-white z-50 flex flex-col h-full overflow-hidden"
     >
-      <div className="flex-1 overflow-y-auto pb-8">
+      <div className="flex-1 overflow-y-auto pb-0">
         {/* Header with Hero Image */}
         <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0">
           <img src={event.heroImage} alt={event.title} className="w-full h-full object-cover object-center" />
@@ -1953,7 +1945,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* Reviews */}
         {!event.isActivity && (
-          <div className="py-8 border-b border-gray-100 bg-gray-50">
+          <div className="pt-8 pb-2 bg-gray-50">
             <div className="px-6 mb-4">
               <h3 className="text-xl font-black text-gray-900">Reviews From Fellow Lifemaxxers ✨</h3>
             </div>
@@ -1999,14 +1991,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     {/* Review Text */}
                     <p className="text-sm text-gray-700 leading-relaxed line-clamp-4">{review.text}</p>
 
-                    {/* Images */}
-                    {review.images && review.images.length > 0 && (
-                      <div className="flex gap-2 mt-auto pt-2">
-                        {review.images.map((img, j) => (
-                          <img key={j} src={img} alt="Review" className="w-16 h-16 rounded-lg object-cover border border-gray-100" />
-                        ))}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -2015,14 +1999,27 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         )}
 
         {/* Bottom Action Button (End of scroll) */}
-        <div className="p-6">
-          <button 
+        <div className="px-6 pt-4 pb-0 bg-gray-50">
+          <button
             onClick={() => setShowCalendar(true)}
             className="w-full py-4 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
           >
             <Calendar size={20} />
             Check Availability
           </button>
+        </div>
+
+        {/* Legal footer strip */}
+        <div className="mt-10 mx-0 bg-[#F5F2ED] border-t border-[#E4DDD3] px-4 py-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <button onClick={() => setShowPolicyModal('about')} className="text-[10px] text-black/60 active:text-black transition-colors">About Us</button>
+          <span className="text-black/20 text-[10px]">·</span>
+          <button onClick={() => setShowPolicyModal('contact')} className="text-[10px] text-black/60 active:text-black transition-colors">Contact</button>
+          <span className="text-black/20 text-[10px]">·</span>
+          <button onClick={() => setShowPolicyModal('privacy')} className="text-[10px] text-black/60 active:text-black transition-colors">Privacy Policy</button>
+          <span className="text-black/20 text-[10px]">·</span>
+          <button onClick={() => setShowPolicyModal('tc')} className="text-[10px] text-black/60 active:text-black transition-colors">T&amp;C</button>
+          <span className="text-black/20 text-[10px]">·</span>
+          <button onClick={() => setShowPolicyModal('refund')} className="text-[10px] text-black/60 active:text-black transition-colors">Refund Policy</button>
         </div>
       </div>
 
@@ -2101,86 +2098,102 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         )}
       </AnimatePresence>
 
-        {/* Policy Modals */}
-        <AnimatePresence>
-          {showPolicyModal && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.5 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[200] bg-black/50"
+      {/* Policy / Legal Modals */}
+      <AnimatePresence>
+        {showPolicyModal && (
+          <motion.div
+            key="policy-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[200] bg-black/50"
+            onClick={() => setShowPolicyModal(null)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showPolicyModal && (
+          <motion.div
+            key={showPolicyModal}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+            className="absolute bottom-0 left-0 right-0 z-[201] bg-white rounded-t-[2rem] flex flex-col max-h-[85%]"
+          >
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+            <div className="px-6 pt-3 pb-4 border-b border-gray-100 flex-shrink-0">
+              <h3 className="text-[17px] font-bold text-gray-900">
+                {showPolicyModal === 'about' && 'About Us'}
+                {showPolicyModal === 'contact' && 'Contact Us'}
+                {showPolicyModal === 'privacy' && 'Privacy Policy'}
+                {showPolicyModal === 'tc' && 'Terms & Conditions'}
+                {showPolicyModal === 'refund' && 'Refund & Cancellation Policy'}
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
+              {showPolicyModal === 'about' && (
+                <>
+                  <p><strong className="text-gray-900">chapter அ</strong> is a curated travel experiences company operated by <strong className="text-gray-900">Chapter A Experiences Private Limited</strong>, registered in India.</p>
+                  <p>We design and run small-group trips for people who want to travel meaningfully — slow itineraries, real places, good company.</p>
+                  <p>Our trips are designed for 18–35 year olds looking to explore India and beyond without the chaos of typical group tours.</p>
+                </>
+              )}
+              {showPolicyModal === 'contact' && (
+                <>
+                  <p><strong className="text-gray-900">Chapter A Experiences Private Limited</strong></p>
+                  <p>Registered Address:<br />Chennai, Tamil Nadu, India</p>
+                  <p>Email: <a href="mailto:hello@chapteraexperiences.com" className="text-gray-900 underline">hello@chapteraexperiences.com</a></p>
+                  <p>WhatsApp / Phone: <a href="tel:+919739832100" className="text-gray-900 underline">+91 97398 32100</a></p>
+                  <p>We typically respond within a few hours on WhatsApp.</p>
+                </>
+              )}
+              {showPolicyModal === 'privacy' && (
+                <>
+                  <p><strong className="text-gray-900">1. Information We Collect</strong><br />We collect your name and WhatsApp number when you make a booking. This is used solely to communicate trip details and payment reminders.</p>
+                  <p><strong className="text-gray-900">2. How We Use It</strong><br />Your information is used to confirm bookings, send trip updates, and process payments. We do not sell or share your data with third parties.</p>
+                  <p><strong className="text-gray-900">3. Payment Data</strong><br />Payments are processed via PhonePe. We do not store any card or UPI credentials on our servers.</p>
+                  <p><strong className="text-gray-900">4. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related messages on WhatsApp. You may opt out at any time by messaging us.</p>
+                  <p><strong className="text-gray-900">5. Data Retention</strong><br />We retain your contact details for up to 1 year post-trip for support purposes, after which it is deleted.</p>
+                  <p><strong className="text-gray-900">6. Contact</strong><br />For privacy concerns, email us at hello@chapteraexperiences.com.</p>
+                </>
+              )}
+              {showPolicyModal === 'tc' && (
+                <>
+                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable unless chapter அ cancels the trip.</p>
+                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date communicated via WhatsApp. Failure to pay may result in forfeiture of your spot.</p>
+                  <p><strong className="text-gray-900">3. Cancellations</strong><br />Cancellations made 14+ days before departure receive a 50% refund of the advance. No refunds within 14 days.</p>
+                  <p><strong className="text-gray-900">4. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
+                  <p><strong className="text-gray-900">5. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
+                  <p><strong className="text-gray-900">6. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related updates and reminders on WhatsApp.</p>
+                </>
+              )}
+              {showPolicyModal === 'refund' && (
+                <>
+                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance (30% of trip cost) is required to secure your spot. It is non-refundable unless chapter அ cancels the trip.</p>
+                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance must be paid by the date communicated via WhatsApp. Failure to pay may result in forfeiture of your spot without refund of the advance.</p>
+                  <p><strong className="text-gray-900">3. Cancellation by Traveller</strong><br />
+                    14+ days before departure: 50% of advance refunded.<br />
+                    7–13 days before departure: No refund.<br />
+                    Less than 7 days: No refund.
+                  </p>
+                  <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If we cancel a trip for any reason, a full refund of all amounts paid will be issued within 7 business days.</p>
+                  <p><strong className="text-gray-900">5. Refund Process</strong><br />Approved refunds are processed to the original payment method within 5–7 business days.</p>
+                  <p><strong className="text-gray-900">6. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 97398 32100 or email hello@chapteraexperiences.com.</p>
+                </>
+              )}
+            </div>
+            <div className="px-6 pb-8 pt-3 flex-shrink-0">
+              <button
                 onClick={() => setShowPolicyModal(null)}
-              />
-              <motion.div
-                initial={{ y: 40, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 40, opacity: 0 }}
-                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-                className="fixed bottom-0 left-0 right-0 z-[201] bg-white rounded-t-[2rem] flex flex-col max-h-[85%] max-w-md mx-auto"
+                className="w-full py-[14px] rounded-2xl bg-black text-white text-[15px] font-semibold active:opacity-80 transition-all"
               >
-                <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
-                  <h3 className="text-[17px] font-bold text-gray-900">
-                    {showPolicyModal === 'about' && 'About Us'}
-                    {showPolicyModal === 'contact' && 'Contact Us'}
-                    {showPolicyModal === 'privacy' && 'Privacy Policy'}
-                    {showPolicyModal === 'refund' && 'Refund & Cancellation Policy'}
-                  </h3>
-                </div>
-                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
-                  {showPolicyModal === 'about' && (
-                    <>
-                      <p><strong className="text-gray-900">chapter அ</strong> is a curated travel experiences company operated by <strong className="text-gray-900">Chapter A Experiences Private Limited</strong>, registered in India.</p>
-                      <p>We design and run small-group trips for people who want to travel meaningfully — slow itineraries, real places, good company.</p>
-                      <p>Our trips are designed for 18–35 year olds looking to explore India and beyond without the chaos of typical group tours.</p>
-                    </>
-                  )}
-                  {showPolicyModal === 'contact' && (
-                    <>
-                      <p><strong className="text-gray-900">Chapter A Experiences Private Limited</strong></p>
-                      <p>Registered Address:<br />Chennai, Tamil Nadu, India</p>
-                      <p>Email: <a href="mailto:hello@chapteraexperiences.com" className="text-gray-900 underline">hello@chapteraexperiences.com</a></p>
-                      <p>WhatsApp / Phone: <a href="tel:+919739832100" className="text-gray-900 underline">+91 97398 32100</a></p>
-                      <p>We typically respond within a few hours on WhatsApp.</p>
-                    </>
-                  )}
-                  {showPolicyModal === 'privacy' && (
-                    <>
-                      <p><strong className="text-gray-900">1. Information We Collect</strong><br />We collect your name and WhatsApp number when you make a booking. This is used solely to communicate trip details and payment reminders.</p>
-                      <p><strong className="text-gray-900">2. How We Use It</strong><br />Your information is used to confirm bookings, send trip updates, and process payments. We do not sell or share your data with third parties.</p>
-                      <p><strong className="text-gray-900">3. Payment Data</strong><br />Payments are processed via PhonePe. We do not store any card or UPI credentials on our servers.</p>
-                      <p><strong className="text-gray-900">4. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related messages on WhatsApp. You may opt out at any time by messaging us.</p>
-                      <p><strong className="text-gray-900">5. Data Retention</strong><br />We retain your contact details for up to 1 year post-trip for support purposes, after which it is deleted.</p>
-                      <p><strong className="text-gray-900">6. Contact</strong><br />For privacy concerns, email us at hello@chapteraexperiences.com.</p>
-                    </>
-                  )}
-                  {showPolicyModal === 'refund' && (
-                    <>
-                      <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance (30% of trip cost) is required to secure your spot. It is non-refundable unless chapter அ cancels the trip.</p>
-                      <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance must be paid by the date communicated via WhatsApp. Failure to pay may result in forfeiture of your spot without refund of the advance.</p>
-                      <p><strong className="text-gray-900">3. Cancellation by Traveller</strong><br />
-                        14+ days before departure: 50% of advance refunded.<br />
-                        7–13 days before departure: No refund.<br />
-                        Less than 7 days: No refund.
-                      </p>
-                      <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If we cancel a trip for any reason, a full refund of all amounts paid will be issued within 7 business days.</p>
-                      <p><strong className="text-gray-900">5. Refund Process</strong><br />Approved refunds are processed to the original payment method within 5–7 business days.</p>
-                      <p><strong className="text-gray-900">6. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 97398 32100 or email hello@chapteraexperiences.com.</p>
-                    </>
-                  )}
-                </div>
-                <div className="px-6 pb-8 pt-3 flex-shrink-0">
-                  <button
-                    onClick={() => setShowPolicyModal(null)}
-                    className="w-full py-[14px] rounded-2xl bg-black text-white text-[15px] font-semibold active:opacity-80 transition-all"
-                  >
-                    Close
-                  </button>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+                Close
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </motion.div>
   );
