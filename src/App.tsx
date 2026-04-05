@@ -316,10 +316,12 @@ export default function App() {
       if (diff <= 0) { setBalanceCountdown('Due now'); return; }
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      setBalanceCountdown(`${days}d ${hours}h left`);
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      setBalanceCountdown(`${days}d ${hours}h ${minutes}m ${seconds}s`);
     };
     update();
-    const interval = setInterval(update, 60000);
+    const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [paymentView, paymentContext?.balanceDueRaw]);
 
@@ -1147,57 +1149,54 @@ export default function App() {
                 >
                   <CheckCircle2 size={34} className="text-[#34C759]" strokeWidth={1.75} />
                 </motion.div>
-                <h2 className="text-[24px] font-bold text-gray-900 tracking-tight">You're in, {paymentContext.name}!</h2>
+                <h2 className="text-[24px] font-bold text-gray-900 tracking-tight">Your Spot is Reserved, {paymentContext.name}!</h2>
               </div>
 
-              {/* Receipt */}
+              {/* Combined Receipt + Offer Card */}
               <div className="mx-6 bg-[#F2F2F7] rounded-3xl overflow-hidden flex-shrink-0">
+                {/* Event title */}
                 <div className="px-5 py-3 border-b border-black/5">
-                  <p className="text-[16px] font-bold text-gray-900">
+                  <p className="text-[15px] font-bold text-gray-900">
                     {paymentContext.eventTitle} · {paymentContext.tripDateFull}
                   </p>
                 </div>
-                <div className="grid grid-cols-2 divide-x divide-black/5 border-b border-black/5">
-                  <div className="px-5 py-3">
-                    <p className="text-[11px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">Advance Paid</p>
-                    <p className="text-[14px] font-semibold text-gray-900">{formatINR(paymentContext.amount)}</p>
-                  </div>
-                  <div className="px-5 py-3">
-                    <p className="text-[11px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">Remaining</p>
-                    <p className="text-[14px] font-semibold text-gray-900">{formatINR(paymentContext.remainingBalance)}</p>
-                  </div>
-                </div>
-                <div className="px-5 py-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-[13px] text-gray-500">Balance due by </span>
-                      <span className="text-[13px] font-semibold text-gray-900">{paymentContext.balanceDue}</span>
-                    </div>
-                    {balanceCountdown ? (
-                      <span className="text-[11px] text-amber-500 font-semibold bg-amber-50 px-2 py-0.5 rounded-full">{balanceCountdown}</span>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] text-gray-500">Pickup details by</span>
-                    <span className="text-[13px] font-semibold text-gray-900">{paymentContext.pickupDetails}</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Actions */}
-              <div className="px-6 pt-5 pb-8 flex-shrink-0">
+                {/* Advance paid row */}
+                <div className="px-7 pt-3 pb-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">Advance</p>
+                    <p className="text-[20px] font-black text-gray-900 leading-none">{formatINR(paymentContext.amount)}</p>
+                  </div>
+                  <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">Paid</span>
+                </div>
+
+                {/* Remaining balance amber card — no pillbox timer */}
+                <div className="mx-3 mb-3 bg-orange-50 rounded-2xl px-4 py-3 flex items-center justify-between" style={{backgroundImage:`url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='16' ry='16' stroke='%23fed7aa' stroke-width='1.5' stroke-dasharray='10%2c6' stroke-linecap='square'/%3e%3c/svg%3e")`}}>
+                  <div>
+                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
+                    <p className="text-[20px] font-black text-gray-900 leading-none">{formatINR(paymentContext.remainingBalance)}</p>
+                  </div>
+                  {balanceCountdown && (
+                    <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">due in {balanceCountdown}</span>
+                  )}
+                </div>
+
+                {/* Helper text + CTA */}
+                <p className="px-5 pt-3 pb-3 text-[12px] text-gray-400 text-center">Settle remaining balance now to claim a secret offer. This offer disappears when you close this page.</p>
                 <a
-                  href={`https://wa.me/919739832100?text=${encodeURIComponent(`Hi! I just paid the advance for ${paymentContext.eventTitle} (${paymentContext.date}). How do I pay the remaining balance?`)}`}
-                  className="w-full flex items-center justify-center gap-2.5 bg-[#25D366] text-white font-semibold py-[17px] rounded-2xl text-[16px] active:opacity-80 transition-all"
+                  href={`https://wa.me/919739832100?text=${encodeURIComponent(`Hi! I just paid the advance for ${paymentContext.eventTitle} (${paymentContext.date}). I'd like to pay the remaining balance and claim my offer!`)}`}
+                  className="flex items-center justify-center gap-2.5 bg-[#25D366] text-white font-bold py-4 text-[15px] active:opacity-80 transition-all"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                   </svg>
-                  How to pay Remaining Balance
+                  Claim Secret Offer
                 </a>
               </div>
+
+              <div className="pb-8" />
             </motion.div>
           )}
         </AnimatePresence>

@@ -4,7 +4,8 @@
     {
       "name": "Vite Dev Server",
       "runtimeExecutable": "/usr/local/bin/node",
-      "runtimeArgs": ["node_modules/.bin/vite", "--port=3000", "--host=0.0.0.0"],
+      "runtimeArgs": ["/Users/krutesh/Downloads/Website Flow PG copy/node_modules/vite/bin/vite.js", "--port=3000", "--host=0.0.0.0"],
+      "cwd": "/Users/krutesh/Downloads/Website Flow PG copy",
       "port": 3000
     }
   ]
