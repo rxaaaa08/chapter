@@ -1984,10 +1984,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         <div className="px-6 pt-2 pb-8 bg-white">
           <button
             onClick={() => setShowCalendar(true)}
-            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
+            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-bold text-sm tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
           >
             Join Our Plan
-            <ArrowRight size={24} strokeWidth={3} />
+            <ChevronRight size={16} strokeWidth={1.5} />
           </button>
         </div>
 
