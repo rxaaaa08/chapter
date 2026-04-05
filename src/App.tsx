@@ -20,7 +20,10 @@ type FAQ = {
   answer: string;
 };
 
+type QuickInfoIcon = 'pin' | 'bus' | 'users' | 'home' | 'clock' | 'ticket' | 'map';
+
 interface Event {
+  quickInfo?: { icon: QuickInfoIcon; label: string; value: string }[];
   id: string;
   cities: string[];
   category: string;
@@ -80,6 +83,12 @@ const EVENTS: Event[] = [
     description: 'A slow, sun-soaked island escape across Colombo, Kandy, and the south coast. Waterfalls, tea country train rides, and a villa by the beach to reset.',
     heroImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600&auto=format&fit=crop',
     startLocation: 'Chennai Airport (MAA)',
+    quickInfo: [
+      { icon: 'pin', label: 'Pickup', value: 'Chennai Airport (MAA)' },
+      { icon: 'bus', label: 'Transport', value: 'Flights + Coach' },
+      { icon: 'users', label: 'Group Size', value: 'Max 18 travellers' },
+      { icon: 'home', label: 'Stay', value: 'Boutique villa & hillside resort' },
+    ],
     transportPlan: [
       { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
       { type: 'train', from: 'Colombo', to: 'Kandy', time: '2:00 PM', dateOffset: 1 },
@@ -1699,53 +1708,27 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         </div>
 
         {/* Quick Info chips */}
-        <div className="px-4 py-4 border-b border-gray-100 bg-white">
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* Pickup */}
-            {(() => {
-              const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === selectedCity.toLowerCase());
-              const pickupLabel = pickup ? `${pickup.city} · ${pickup.location}` : event.startLocation;
-              return (
-                <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
+        {event.quickInfo && event.quickInfo.length > 0 && (
+          <div className="px-4 py-4 border-b border-gray-100 bg-white">
+            <div className="grid grid-cols-2 gap-2.5">
+              {event.quickInfo.map((chip, i) => (
+                <div key={i} className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
                   <div className="flex items-center gap-1.5">
-                    <MapPin size={12} className="text-gray-400" />
-                    <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Pickup</span>
+                    {chip.icon === 'pin' && <MapPin size={12} className="text-gray-400" />}
+                    {chip.icon === 'bus' && <Bus size={12} className="text-gray-400" />}
+                    {chip.icon === 'users' && <Users size={12} className="text-gray-400" />}
+                    {chip.icon === 'home' && <Home size={12} className="text-gray-400" />}
+                    {chip.icon === 'clock' && <Timer size={12} className="text-gray-400" />}
+                    {chip.icon === 'ticket' && <Ticket size={12} className="text-gray-400" />}
+                    {chip.icon === 'map' && <MapPin size={12} className="text-gray-400" />}
+                    <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">{chip.label}</span>
                   </div>
-                  <span className="text-[12px] font-semibold text-gray-800 leading-tight">{pickupLabel}</span>
+                  <span className="text-[12px] font-semibold text-gray-800 leading-tight">{chip.value}</span>
                 </div>
-              );
-            })()}
-
-            {/* Transport */}
-            <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5">
-                <Bus size={12} className="text-gray-400" />
-                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Transport</span>
-              </div>
-              <span className="text-[12px] font-semibold text-gray-800 leading-tight">
-                {event.transportPlan ? 'Multi-leg' : event.transport}
-              </span>
-            </div>
-
-            {/* Group Size */}
-            <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5">
-                <Users size={12} className="text-gray-400" />
-                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Group Size</span>
-              </div>
-              <span className="text-[12px] font-semibold text-gray-800 leading-tight">{event.groupSize}</span>
-            </div>
-
-            {/* Stay */}
-            <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5">
-                <Home size={12} className="text-gray-400" />
-                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Stay</span>
-              </div>
-              <span className="text-[11px] font-semibold text-gray-800 leading-tight">{event.accommodationType}</span>
+              ))}
             </div>
           </div>
-        </div>
+        )}
 
         {/* What's Included */}
         <div className="p-6 border-b border-gray-100">
