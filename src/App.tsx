@@ -1716,9 +1716,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           const groupNum   = groupSize?.value.match(/\d+[-–]\d+|\d+/)?.[0] || groupSize?.value;
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
           return (
-            <div className="px-6 pt-5 pb-4 border-b border-gray-100 bg-white">
-              <h3 className="text-xl font-black mb-4">The Plan</h3>
-              <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
+            <div className="pt-5 pb-4 border-b border-gray-100 bg-white">
+              <h3 className="text-xl font-black mb-4 px-6">The Plan</h3>
+              <div className="mx-3 border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
 
                 {/* Top row — MEETING SPOT | TRANSPORT */}
                 <div className="flex border-b-2 border-dashed border-gray-200">
