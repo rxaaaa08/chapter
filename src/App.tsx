@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car } from 'lucide-react';
+import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart } from 'lucide-react';
 
 // Types
 type Message = {
@@ -20,7 +20,7 @@ type FAQ = {
   answer: string;
 };
 
-type QuickInfoIcon = 'pin' | 'bus' | 'users' | 'home' | 'clock' | 'ticket' | 'map';
+type QuickInfoIcon = 'pin' | 'bus' | 'users' | 'home' | 'clock' | 'ticket' | 'map' | 'heart';
 
 interface Event {
   quickInfo?: { icon: QuickInfoIcon; label: string; value: string }[];
@@ -84,10 +84,10 @@ const EVENTS: Event[] = [
     heroImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600&auto=format&fit=crop',
     startLocation: 'Chennai Airport (MAA)',
     quickInfo: [
-      { icon: 'pin', label: 'Pickup', value: 'Chennai Airport (MAA)' },
+      { icon: 'pin', label: 'Meeting Spot', value: 'Chennai Airport (MAA)' },
       { icon: 'bus', label: 'Transport', value: 'Flights + Coach' },
       { icon: 'users', label: 'Group Size', value: 'Max 18 travellers' },
-      { icon: 'home', label: 'Stay', value: 'Boutique villa & hillside resort' },
+      { icon: 'heart', label: 'Made For', value: 'Beach lovers & culture seekers' },
     ],
     transportPlan: [
       { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
@@ -1721,6 +1721,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     {chip.icon === 'clock' && <Timer size={12} className="text-gray-400" />}
                     {chip.icon === 'ticket' && <Ticket size={12} className="text-gray-400" />}
                     {chip.icon === 'map' && <MapPin size={12} className="text-gray-400" />}
+                    {chip.icon === 'heart' && <Heart size={12} className="text-gray-400" />}
                     <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">{chip.label}</span>
                   </div>
                   <span className="text-[12px] font-semibold text-gray-800 leading-tight">{chip.value}</span>
