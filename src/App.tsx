@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart } from 'lucide-react';
+import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 
 // Types
 type Message = {
@@ -1791,11 +1791,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         </div>
 
         {/* The Plan */}
-        <div className="p-6 border-b border-gray-100 bg-gray-50" ref={itineraryRef}>
+        <div className="p-6 border-b border-gray-100 bg-white" ref={itineraryRef}>
           <h3 className="text-xl font-black mb-4">The Plan</h3>
           <div className="space-y-3">
             {event.itinerary?.map((day, i) => (
-              <div key={i} className="rounded-xl border border-gray-200 overflow-hidden bg-white transition-colors duration-150 hover:border-gray-300">
+              <div key={i} className="rounded-xl border-2 border-gray-300 overflow-hidden bg-white">
                 <button 
                   onClick={() => setExpandedItinerary(expandedItinerary === i ? null : i)}
                   className="w-full px-4 py-3 flex items-center justify-between text-left bg-white hover:bg-gray-50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
@@ -1900,38 +1900,13 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           </div>
         )}
 
-        {/* Video Carousel */}
-        {!event.isActivity && (
-          <div className="py-6 border-b border-gray-100 bg-black text-white">
-            <div className="px-6 mb-4 flex items-center justify-between">
-              <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
-            </div>
-            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4">
-              {event.videos?.map((vid, i) => (
-                <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-800 shadow-lg">
-                  <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30">
-                      <Play size={20} className="text-white ml-1" fill="currentColor" />
-                    </div>
-                  </div>
-                  <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
-                    {vid.caption}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Reviews */}
         {!event.isActivity && (
-          <div className="pt-8 pb-2 bg-gray-50">
-            <div className="px-6 mb-4">
-              <h3 className="text-xl font-black text-gray-900">Reviews From Fellow Lifemaxxers ✨</h3>
+          <div className="pt-5 pb-2 bg-white">
+            <div className="px-6 mb-2">
+              <h3 className="text-xl font-black">Fellow Lifemaxxers Said</h3>
             </div>
-            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-6 pt-2">
+            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4 pt-1">
               {event.reviews?.map((review, i) => {
                 const colors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'];
                 const colorIndex = review.name.length % colors.length;
@@ -1980,14 +1955,39 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           </div>
         )}
 
+        {/* Video Carousel */}
+        {!event.isActivity && (
+          <div className="pt-4 pb-6 bg-white">
+            <div className="px-6 mb-3 flex items-center justify-between">
+              <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
+            </div>
+            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4">
+              {event.videos?.map((vid, i) => (
+                <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-800 shadow-lg">
+                  <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30">
+                      <Play size={20} className="text-white ml-1" fill="currentColor" />
+                    </div>
+                  </div>
+                  <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
+                    {vid.caption}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Bottom Action Button (End of scroll) */}
-        <div className="px-6 pt-4 pb-8 bg-gray-50">
+        <div className="px-6 pt-2 pb-8 bg-white">
           <button
             onClick={() => setShowCalendar(true)}
-            className="w-full py-4 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
+            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
           >
-            <Calendar size={20} />
-            Check Availability
+            Join Our Plan
+            <ArrowRight size={24} strokeWidth={3} />
           </button>
         </div>
 
@@ -1996,7 +1996,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
           {/* Branding — non-clickable sign-off */}
           <div className="px-5 pt-7 pb-5">
-            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">Organised with 💛,</span>
+            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">plans we dream,</span>
             <br />
             <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">by chapter அ</span>
           </div>
