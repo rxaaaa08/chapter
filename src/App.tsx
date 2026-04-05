@@ -2017,7 +2017,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   >
                     <div className="flex flex-col items-start gap-0.5">
                       <span className="text-[13px] font-bold text-black/70 tracking-wide">Work With Us!</span>
-                      <span className="text-[11px] text-black/40">Love meeting people & organising? Apply now</span>
+                      <span className="text-[11px] text-black/40">Join the team — apply now</span>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center flex-shrink-0">
                       <ChevronDown size={16} className="text-black/60" />
