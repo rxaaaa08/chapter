@@ -1135,9 +1135,6 @@ export default function App() {
                   <div className="px-6 pt-6 pb-4 flex items-start justify-between">
                     <div>
                       <h2 className="text-2xl font-black text-gray-900 leading-tight">Your Booking Timeline</h2>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {selectedEvent.id === 'e3' ? 'Sri Lanka Retreat waitlist flow' : 'What happens next'}
-                      </p>
                     </div>
                     {selectedEvent.id !== 'e3' && (
                       <button
@@ -1151,14 +1148,6 @@ export default function App() {
 
                   <div className="px-6 pb-6">
                     <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                      {/* Event title row */}
-                      <div className="px-5 py-3 border-b border-black/5">
-                        <p className="text-[14px] font-bold text-gray-900">
-                          {selectedEvent.title}
-                          {bookingDate ? ` · ${new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
-                        </p>
-                      </div>
-
                       {/* Advance row */}
                       <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                         <div>
@@ -1186,7 +1175,7 @@ export default function App() {
                       </div>
 
                       {/* Receive details row */}
-                      <div className="px-5 py-3 flex items-center justify-between">
+                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                         <div>
                           <p className="text-[11px] text-gray-400 font-medium mb-0.5">Receive Details</p>
                           <p className="text-[14px] font-semibold text-gray-800 leading-tight">Visa, flights & stay info</p>
@@ -1194,6 +1183,19 @@ export default function App() {
                         <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                           {bookingDate ? `By ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before trip'}
                         </span>
+                      </div>
+
+                      {/* Prize row — event title + date, yellow accented */}
+                      <div className="px-5 py-4 flex items-center justify-between bg-[#FFD700]/10">
+                        <div>
+                          <p className="text-[11px] text-[#b38200] font-semibold mb-0.5 uppercase tracking-wider">You're going to</p>
+                          <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
+                        </div>
+                        {bookingDate && (
+                          <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                            {new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
