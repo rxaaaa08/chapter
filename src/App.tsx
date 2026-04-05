@@ -1698,53 +1698,51 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           <img src={event.heroImage} alt={event.title} className="w-full h-full object-cover object-center" />
         </div>
 
-        {/* Quick Info chips (no extra card) */}
-        <div className="p-4 border-b border-gray-100 bg-gray-50">
-          <div className="space-y-1.5 text-[13px] font-semibold text-gray-800 leading-5">
+        {/* Quick Info chips */}
+        <div className="px-4 py-4 border-b border-gray-100 bg-white">
+          <div className="grid grid-cols-2 gap-2.5">
+            {/* Pickup */}
             {(() => {
-              const pickup =
-                event.pickupPoints?.find(
-                  p => p.city.toLowerCase() === selectedCity.toLowerCase()
-                );
-              const pickupLabel = pickup
-                ? `${pickup.city} · ${pickup.location}`
-                : event.startLocation;
+              const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === selectedCity.toLowerCase());
+              const pickupLabel = pickup ? `${pickup.city} · ${pickup.location}` : event.startLocation;
               return (
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-slate-500" />
-                  <span>Pickup: {pickupLabel}</span>
+                <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin size={12} className="text-gray-400" />
+                    <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Pickup</span>
+                  </div>
+                  <span className="text-[12px] font-semibold text-gray-800 leading-tight">{pickupLabel}</span>
                 </div>
               );
             })()}
 
-            {event.transportPlan ? (
-              <div className="flex items-center gap-2">
-                {Array.from(new Set(event.transportPlan.map(t => t.type))).map((type, idx, arr) => (
-                  <React.Fragment key={type}>
-                    {type === 'train' ? <Train size={14} className="text-blue-500/80" /> :
-                     type === 'bus' ? <Bus size={14} className="text-blue-500/80" /> :
-                     type === 'tempo' ? <Bus size={14} className="text-blue-500/80" /> :
-                     <Car size={14} className="text-blue-500/80" />}
-                    {idx < arr.length - 1 && <span className="text-gray-300 mx-0.5">+</span>}
-                  </React.Fragment>
-                ))}
-                <span>Transport: Multi-leg</span>
+            {/* Transport */}
+            <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <Bus size={12} className="text-gray-400" />
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Transport</span>
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Bus size={14} className="text-blue-500/80" />
-                <span>Transport: {event.transport}</span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <Users size={14} className="text-emerald-600/80" />
-              <span>Group Size: {event.groupSize}</span>
+              <span className="text-[12px] font-semibold text-gray-800 leading-tight">
+                {event.transportPlan ? 'Multi-leg' : event.transport}
+              </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Home size={14} className="text-amber-600/80" />
-              <span>Stay: {event.accommodationType}</span>
+            {/* Group Size */}
+            <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <Users size={12} className="text-gray-400" />
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Group Size</span>
+              </div>
+              <span className="text-[12px] font-semibold text-gray-800 leading-tight">{event.groupSize}</span>
+            </div>
+
+            {/* Stay */}
+            <div className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <Home size={12} className="text-gray-400" />
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Stay</span>
+              </div>
+              <span className="text-[11px] font-semibold text-gray-800 leading-tight">{event.accommodationType}</span>
             </div>
           </div>
         </div>
@@ -1999,7 +1997,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         )}
 
         {/* Bottom Action Button (End of scroll) */}
-        <div className="px-6 pt-4 pb-0 bg-gray-50">
+        <div className="px-6 pt-4 pb-8 bg-gray-50">
           <button
             onClick={() => setShowCalendar(true)}
             className="w-full py-4 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
@@ -2009,22 +2007,24 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           </button>
         </div>
 
-        {/* Work With Us accordion */}
-        <div className="mx-6 mt-8">
+        {/* Footer — Work With Us + Legal links */}
+        <div className="bg-[#F5F2ED] border-t border-[#E4DDD3]">
+
+          {/* Work With Us accordion */}
           <button
             onClick={() => setShowWorkWithUs(v => !v)}
-            className="w-full flex items-center justify-between py-3 group"
+            className="w-full flex items-center justify-between px-5 py-3"
           >
             <div className="flex flex-col items-start gap-0.5">
-              <span className="text-[13px] font-bold text-gray-700 tracking-wide">Work With Us</span>
-              <span className="text-[11px] text-gray-400">Join the chapter அ team — apply now</span>
+              <span className="text-[12px] font-bold text-black/70 tracking-wide">Work With Us</span>
+              <span className="text-[10px] text-black/40">Join the chapter அ team — apply now</span>
             </div>
             <motion.div
               animate={{ rotate: showWorkWithUs ? 180 : 0 }}
               transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0"
+              className="w-5 h-5 rounded-full bg-[#E4DDD3] flex items-center justify-center flex-shrink-0"
             >
-              <ChevronDown size={14} className="text-gray-500" />
+              <ChevronDown size={12} className="text-black/50" />
             </motion.div>
           </button>
 
@@ -2037,7 +2037,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 transition={{ type: 'spring', damping: 28, stiffness: 300 }}
                 className="overflow-hidden"
               >
-                <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden mb-4">
+                <div className="mx-4 mb-3 border-2 border-dashed border-[#D9D0C4] rounded-2xl overflow-hidden">
                   <iframe
                     src="https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1"
                     width="100%"
@@ -2049,19 +2049,22 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
 
-        {/* Legal footer strip */}
-        <div className="mt-10 mx-0 bg-[#F5F2ED] border-t border-[#E4DDD3] px-4 py-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-          <button onClick={() => setShowPolicyModal('about')} className="text-[10px] text-black/60 active:text-black transition-colors">About Us</button>
-          <span className="text-black/20 text-[10px]">·</span>
-          <button onClick={() => setShowPolicyModal('contact')} className="text-[10px] text-black/60 active:text-black transition-colors">Contact</button>
-          <span className="text-black/20 text-[10px]">·</span>
-          <button onClick={() => setShowPolicyModal('privacy')} className="text-[10px] text-black/60 active:text-black transition-colors">Privacy Policy</button>
-          <span className="text-black/20 text-[10px]">·</span>
-          <button onClick={() => setShowPolicyModal('tc')} className="text-[10px] text-black/60 active:text-black transition-colors">T&amp;C</button>
-          <span className="text-black/20 text-[10px]">·</span>
-          <button onClick={() => setShowPolicyModal('refund')} className="text-[10px] text-black/60 active:text-black transition-colors">Refund Policy</button>
+          {/* Divider */}
+          <div className="mx-4 border-t border-[#E4DDD3]" />
+
+          {/* Legal links */}
+          <div className="px-4 py-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <button onClick={() => setShowPolicyModal('about')} className="text-[10px] text-black/50 active:text-black transition-colors">About Us</button>
+            <span className="text-black/20 text-[10px]">·</span>
+            <button onClick={() => setShowPolicyModal('contact')} className="text-[10px] text-black/50 active:text-black transition-colors">Contact</button>
+            <span className="text-black/20 text-[10px]">·</span>
+            <button onClick={() => setShowPolicyModal('privacy')} className="text-[10px] text-black/50 active:text-black transition-colors">Privacy Policy</button>
+            <span className="text-black/20 text-[10px]">·</span>
+            <button onClick={() => setShowPolicyModal('tc')} className="text-[10px] text-black/50 active:text-black transition-colors">T&amp;C</button>
+            <span className="text-black/20 text-[10px]">·</span>
+            <button onClick={() => setShowPolicyModal('refund')} className="text-[10px] text-black/50 active:text-black transition-colors">Refund Policy</button>
+          </div>
         </div>
       </div>
 
