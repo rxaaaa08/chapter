@@ -1991,63 +1991,78 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           </button>
         </div>
 
-        {/* Footer — Work With Us + Legal links */}
+        {/* Footer — Branding + Work With Us + Legal links */}
         <div className="bg-[#F5F2ED] border-t border-[#E4DDD3]">
 
-          {/* Work With Us accordion */}
-          <button
-            onClick={() => setShowWorkWithUs(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-3"
-          >
-            <div className="flex flex-col items-start gap-0.5">
-              <span className="text-[12px] font-bold text-black/70 tracking-wide">Work With Us</span>
-              <span className="text-[10px] text-black/40">Join the chapter அ team — apply now</span>
-            </div>
-            <motion.div
-              animate={{ rotate: showWorkWithUs ? 180 : 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="w-5 h-5 rounded-full bg-[#E4DDD3] flex items-center justify-center flex-shrink-0"
-            >
-              <ChevronDown size={12} className="text-black/50" />
+          {/* Branding — non-clickable sign-off */}
+          <div className="px-5 pt-7 pb-5">
+            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">Organised with 💛,</span>
+            <br />
+            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">by chapter அ</span>
+          </div>
+
+          {/* Work With Us — single expanding pill */}
+          <div className="px-5 pb-4">
+            <motion.div layout className="border-2 border-dashed border-[#C8BFB4] rounded-2xl overflow-hidden">
+              <AnimatePresence mode="wait">
+                {!showWorkWithUs ? (
+                  <motion.button
+                    key="collapsed"
+                    onClick={() => setShowWorkWithUs(true)}
+                    className="w-full flex items-center justify-between px-4 py-3"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className="text-[13px] font-bold text-black/70 tracking-wide">Work With Us!</span>
+                      <span className="text-[11px] text-black/40">Love meeting people & organising? Apply now</span>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center flex-shrink-0">
+                      <ChevronDown size={16} className="text-black/60" />
+                    </div>
+                  </motion.button>
+                ) : (
+                  <motion.div
+                    key="expanded"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <div className="flex justify-end px-3 pt-2">
+                      <button
+                        onClick={() => setShowWorkWithUs(false)}
+                        className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center"
+                      >
+                        <ChevronDown size={16} className="text-black/60 rotate-180" />
+                      </button>
+                    </div>
+                    <iframe
+                      src="https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1"
+                      width="100%"
+                      height="520"
+                      style={{ border: 'none', display: 'block' }}
+                      title="Work With Us"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
-          </button>
-
-          <AnimatePresence>
-            {showWorkWithUs && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-                className="overflow-hidden"
-              >
-                <div className="mx-4 mb-3 border-2 border-dashed border-[#D9D0C4] rounded-2xl overflow-hidden">
-                  <iframe
-                    src="https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1"
-                    width="100%"
-                    height="520"
-                    style={{ border: 'none', display: 'block' }}
-                    title="Work With Us"
-                  />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Divider */}
-          <div className="mx-4 border-t border-[#E4DDD3]" />
+          </div>
 
           {/* Legal links */}
-          <div className="px-4 py-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-            <button onClick={() => setShowPolicyModal('about')} className="text-[10px] text-black/50 active:text-black transition-colors">About Us</button>
-            <span className="text-black/20 text-[10px]">·</span>
-            <button onClick={() => setShowPolicyModal('contact')} className="text-[10px] text-black/50 active:text-black transition-colors">Contact</button>
-            <span className="text-black/20 text-[10px]">·</span>
-            <button onClick={() => setShowPolicyModal('privacy')} className="text-[10px] text-black/50 active:text-black transition-colors">Privacy Policy</button>
-            <span className="text-black/20 text-[10px]">·</span>
-            <button onClick={() => setShowPolicyModal('tc')} className="text-[10px] text-black/50 active:text-black transition-colors">T&amp;C</button>
-            <span className="text-black/20 text-[10px]">·</span>
-            <button onClick={() => setShowPolicyModal('refund')} className="text-[10px] text-black/50 active:text-black transition-colors">Refund Policy</button>
+          <div className="px-4 py-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+            <button onClick={() => setShowPolicyModal('about')} className="text-[11px] text-black/40 active:text-black transition-colors">About Us</button>
+            <span className="text-black/20 text-[11px]">·</span>
+            <button onClick={() => setShowPolicyModal('contact')} className="text-[11px] text-black/40 active:text-black transition-colors">Contact</button>
+            <span className="text-black/20 text-[11px]">·</span>
+            <button onClick={() => setShowPolicyModal('privacy')} className="text-[11px] text-black/40 active:text-black transition-colors">Privacy Policy</button>
+            <span className="text-black/20 text-[11px]">·</span>
+            <button onClick={() => setShowPolicyModal('tc')} className="text-[11px] text-black/40 active:text-black transition-colors">T&amp;C</button>
+            <span className="text-black/20 text-[11px]">·</span>
+            <button onClick={() => setShowPolicyModal('refund')} className="text-[11px] text-black/40 active:text-black transition-colors">Refund Policy</button>
           </div>
         </div>
       </div>
