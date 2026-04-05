@@ -905,12 +905,20 @@ export default function App() {
       case 'ASK_DOUBTS':
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            <button onClick={() => handleDoubtsSelect(true)} className={btnClass}>
-              <span>Hold up, I have a question</span> <Send size={16} />
-            </button>
-            <button onClick={() => handleDoubtsSelect(false)} className={primaryBtnClass}>
-              <span>All clear, let's book! 🚀</span> <Send size={16} />
-            </button>
+            {[
+              { label: 'Hold up, I have a question', onClick: () => handleDoubtsSelect(true), cls: btnClass },
+              { label: "All clear, let's book! 🚀", onClick: () => handleDoubtsSelect(false), cls: primaryBtnClass },
+            ].map(({ label, onClick, cls }, i) => (
+              <button key={label} onClick={onClick} className={`${cls} relative overflow-hidden`}>
+                <motion.div
+                  className="absolute inset-0 -skew-x-12"
+                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
+                />
+                <span>{label}</span> <Send size={16} />
+              </button>
+            ))}
           </motion.div>
         );
       case 'ASK_GENDER':
@@ -940,7 +948,13 @@ export default function App() {
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {remainingFaqs.map((faq, idx) => (
-              <button key={idx} onClick={() => handleFaqSelect(faq)} className="text-right px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-medium hover:bg-[#e6c200] transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full">
+              <button key={idx} onClick={() => handleFaqSelect(faq)} className="text-right px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-medium hover:bg-[#e6c200] transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
+                <motion.div
+                  className="absolute inset-0 -skew-x-12"
+                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: idx * 1.2, ease: 'easeInOut' }}
+                />
                 <span className="truncate whitespace-normal text-left">{faq.question}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
@@ -1924,16 +1938,20 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         bgClass = "bg-[#FFE28A] text-black font-semibold border border-[#d4af37]";
       }
 
+      const isShimmerable = !!tripDate && tripDate.status !== 'sold_out' && !isSelectedStart && !isWithinTrip && !isTripEnd;
+
       days.push(
-        <button 
-          key={i} 
+        <motion.button
+          key={i}
           disabled={!tripDate || tripDate.status === 'sold_out'}
           onClick={() => setSelectedDate(dateStr)}
-          className={`h-10 ${shapeClass} flex items-center justify-center relative transition-all ${bgClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
+          animate={isShimmerable ? { scale: [1, 1.06, 1] } : {}}
+          transition={isShimmerable ? { duration: 1.2, repeat: Infinity, repeatDelay: 2, ease: 'easeInOut' } : {}}
+          className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden ${bgClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
           style={strikeStyle}
         >
           <span className="text-base">{i}</span>
-        </button>
+        </motion.button>
       );
     }
 
@@ -2446,13 +2464,19 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           <MessageCircle size={15} />
                           Contact Us
                         </button>
-                        <button 
-                          onClick={() => { 
-                            setShowCalendar(false); 
-                            onAction('book', selectedDate || undefined); 
+                        <button
+                          onClick={() => {
+                            setShowCalendar(false);
+                            onAction('book', selectedDate || undefined);
                           }}
-                          className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFD700] text-black font-black text-sm flex items-center justify-center gap-2 hover:bg-[#e6c200] transition-transform active:scale-95 shadow-md shadow-[#FFD700]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50"
+                          className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFD700] text-black font-black text-sm flex items-center justify-center gap-2 hover:bg-[#e6c200] transition-transform active:scale-95 shadow-md shadow-[#FFD700]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 relative overflow-hidden"
                         >
+                          <motion.div
+                            className="absolute inset-0 -skew-x-12"
+                            style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                            animate={{ x: ['-100%', '300%'] }}
+                            transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                          />
                           Book Now
                           <ChevronRight size={15} className="text-black" />
                         </button>
