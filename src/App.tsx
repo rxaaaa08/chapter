@@ -1717,7 +1717,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
           return (
             <div className="px-4 py-4 border-b border-gray-100 bg-white">
-              <div className="border-2 border-dashed border-[#D9CFC4] rounded-2xl overflow-hidden bg-[#F5F2ED]">
+              <div className="border-2 border-dashed border-[#D9CFC4] rounded-2xl overflow-hidden bg-white">
 
                 {/* Top row — MEETING SPOT | TRANSPORT */}
                 <div className="flex border-b-2 border-dashed border-[#D9CFC4]">
