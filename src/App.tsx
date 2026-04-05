@@ -1520,6 +1520,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showWorkWithUs, setShowWorkWithUs] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const [accImageIndex, setAccImageIndex] = useState(0);
@@ -2006,6 +2007,48 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             <Calendar size={20} />
             Check Availability
           </button>
+        </div>
+
+        {/* Work With Us accordion */}
+        <div className="mx-6 mt-8">
+          <button
+            onClick={() => setShowWorkWithUs(v => !v)}
+            className="w-full flex items-center justify-between py-3 group"
+          >
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="text-[13px] font-bold text-gray-700 tracking-wide">Work With Us</span>
+              <span className="text-[11px] text-gray-400">Join the chapter அ team — apply now</span>
+            </div>
+            <motion.div
+              animate={{ rotate: showWorkWithUs ? 180 : 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0"
+            >
+              <ChevronDown size={14} className="text-gray-500" />
+            </motion.div>
+          </button>
+
+          <AnimatePresence>
+            {showWorkWithUs && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                className="overflow-hidden"
+              >
+                <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden mb-4">
+                  <iframe
+                    src="https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1"
+                    width="100%"
+                    height="520"
+                    style={{ border: 'none', display: 'block' }}
+                    title="Work With Us"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Legal footer strip */}
