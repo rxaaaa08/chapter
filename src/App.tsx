@@ -1791,7 +1791,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         </div>
 
         {/* The Plan */}
-        <div className="p-6 border-b border-gray-100 bg-white" ref={itineraryRef}>
+        <div className="p-6 border-b border-gray-100 bg-[#F9F8F6]" ref={itineraryRef}>
           <h3 className="text-xl font-black mb-4">The Plan</h3>
           <div className="space-y-3">
             {event.itinerary?.map((day, i) => (
@@ -1847,7 +1847,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* Where We Stay */}
         {!event.isActivity && (
-          <div className="p-6 border-b border-gray-100">
+          <div className="p-6 border-b border-gray-100 bg-[#F9F8F6]">
             <h3 className="text-xl font-black mb-4">Where We Stay</h3>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="relative w-full h-48">
@@ -1981,13 +1981,13 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         )}
 
         {/* Bottom Action Button (End of scroll) */}
-        <div className="px-6 pt-2 pb-8 bg-white">
+        <div className="px-4 pt-4 pb-12 bg-white">
           <button
             onClick={() => setShowCalendar(true)}
-            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-bold text-sm tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-[#FFD700]/30 active:scale-95 transition-all"
+            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-[#FFD700]/40 active:scale-95 transition-all"
           >
             Join Our Plan
-            <ChevronRight size={16} strokeWidth={1.5} />
+            <ArrowRight size={22} strokeWidth={2.5} />
           </button>
         </div>
 
