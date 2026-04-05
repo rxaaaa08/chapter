@@ -772,7 +772,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/45 backdrop-blur-md z-40 flex flex-col items-center justify-center overflow-hidden"
+              className="absolute inset-0 bg-[#FFD700] z-40 flex flex-col items-center justify-center overflow-hidden"
             >
               <motion.div
                 animate={{
@@ -1707,29 +1707,61 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           <img src={event.heroImage} alt={event.title} className="w-full h-full object-cover object-center" />
         </div>
 
-        {/* Quick Info chips */}
-        {event.quickInfo && event.quickInfo.length > 0 && (
-          <div className="px-4 py-4 border-b border-gray-100 bg-white">
-            <div className="grid grid-cols-2 gap-2.5">
-              {event.quickInfo.map((chip, i) => (
-                <div key={i} className="bg-gray-50 rounded-2xl px-3.5 py-3 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5">
-                    {chip.icon === 'pin' && <MapPin size={12} className="text-gray-400" />}
-                    {chip.icon === 'bus' && <Bus size={12} className="text-gray-400" />}
-                    {chip.icon === 'users' && <Users size={12} className="text-gray-400" />}
-                    {chip.icon === 'home' && <Home size={12} className="text-gray-400" />}
-                    {chip.icon === 'clock' && <Timer size={12} className="text-gray-400" />}
-                    {chip.icon === 'ticket' && <Ticket size={12} className="text-gray-400" />}
-                    {chip.icon === 'map' && <MapPin size={12} className="text-gray-400" />}
-                    {chip.icon === 'heart' && <Heart size={12} className="text-gray-400" />}
-                    <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">{chip.label}</span>
+        {/* Quick Info — boarding pass card */}
+        {event.quickInfo && event.quickInfo.length > 0 && (() => {
+          const madeFor    = event.quickInfo!.find(c => c.label === 'Made For')     || event.quickInfo![3];
+          const groupSize  = event.quickInfo!.find(c => c.label === 'Group Size')   || event.quickInfo![2];
+          const meetingSpot= event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
+          const transport  = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
+          const groupNum   = groupSize?.value.match(/\d+/)?.[0] || groupSize?.value;
+          const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
+          return (
+            <div className="px-4 py-4 border-b border-gray-100 bg-white">
+              <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden">
+
+                {/* Top row — MEETING SPOT | TRANSPORT */}
+                <div className="flex border-b-2 border-dashed border-gray-200">
+                  <div className="flex-1 px-3 py-3.5 border-r-2 border-dashed border-gray-200">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <MapPin size={9} className="text-gray-400" />
+                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{meetingSpot?.label}</span>
+                    </div>
+                    <span className="text-[13px] font-black text-gray-900 leading-tight">{meetingSpot?.value}</span>
                   </div>
-                  <span className="text-[12px] font-semibold text-gray-800 leading-tight">{chip.value}</span>
+                  <div className="flex-1 px-3 py-3.5">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Bus size={9} className="text-gray-400" />
+                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transport?.label}</span>
+                    </div>
+                    <span className="text-[13px] font-black text-gray-900 leading-tight">{transport?.value}</span>
+                  </div>
                 </div>
-              ))}
+
+                {/* Bottom row — MADE FOR | 👥 18 */}
+                <div className="flex items-center">
+                  <div className="flex-1 px-3 py-4 border-r-2 border-dashed border-gray-200">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Heart size={9} className="text-gray-400" />
+                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
+                    </div>
+                    <span className="text-[14px] font-black text-gray-900 leading-snug">{madeFor?.value}</span>
+                  </div>
+                  <div className="px-4 flex flex-col items-start flex-shrink-0">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Users size={9} className="text-gray-400" />
+                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Meet</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-[20px] font-black text-gray-900 leading-none">{groupNum}</span>
+                      <span className="text-[13px] font-black text-gray-900 leading-none">people</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* What's Included */}
         <div className="p-6 border-b border-gray-100">
@@ -1893,7 +1925,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 </ul>
                 <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
                   <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Rooms are same-gender — so everyone's at ease</span>
+                  <span>Rooms are same-gender — so everyone's comfortable</span>
                 </div>
               </div>
             </div>
