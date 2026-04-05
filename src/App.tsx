@@ -1149,41 +1149,51 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto">
-                    <div className="relative border-l border-gray-200 ml-2 space-y-6">
-                      <div className="relative pl-5">
-                        <div className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-[#FFD700] border-2 border-white shadow-sm" />
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Now</p>
-                        <p className="text-base font-semibold text-gray-800">
-                          {selectedEvent.id === 'e3' ? 'Join the waitlist in under a minute' : `Pay advance ₹${selectedEvent.advanceAmount}`}
+                  <div className="px-6 pb-6">
+                    <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                      {/* Event title row */}
+                      <div className="px-5 py-3 border-b border-black/5">
+                        <p className="text-[14px] font-bold text-gray-900">
+                          {selectedEvent.title}
+                          {bookingDate ? ` · ${new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
                         </p>
                       </div>
-                      <div className="relative pl-5">
-                        <div className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-gray-200 border-2 border-white shadow-sm" />
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
-                          {selectedEvent.id === 'e3' ? 'Within 24 hrs' : bookingDate ? `By ${new Date(new Date(bookingDate).getTime() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '5 days before'}
-                        </p>
-                        <p className="text-base font-semibold text-gray-800">
-                          {selectedEvent.id === 'e3' ? 'Team confirms your spot & payment link' : `Pay remaining ₹${selectedEvent ? parseInt(selectedEvent.price.replace(/\D/g, '')) - selectedEvent.advanceAmount : 0}`}
-                        </p>
+
+                      {/* Advance row */}
+                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
+                        <div>
+                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Advance</p>
+                          <p className="text-[20px] font-black text-gray-900 leading-none">
+                            ₹{selectedEvent.advanceAmount.toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">
+                          Pay Now
+                        </span>
                       </div>
-                      <div className="relative pl-5">
-                        <div className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-gray-200 border-2 border-white shadow-sm" />
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
-                          {selectedEvent.id === 'e3' ? 'Before departure' : bookingDate ? `By ${new Date(new Date(bookingDate).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before'}
-                        </p>
-                        <p className="text-base font-semibold text-gray-800">
-                          {selectedEvent.id === 'e3' ? 'Receive visa guidance, flights & villa details' : 'Receive pick-up details via WhatsApp'}
-                        </p>
+
+                      {/* Remaining balance row */}
+                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
+                        <div>
+                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
+                          <p className="text-[20px] font-black text-gray-900 leading-none">
+                            ₹{(parseInt(selectedEvent.price.replace(/\D/g, '')) - selectedEvent.advanceAmount).toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+                          {bookingDate ? `Pay by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '5 days before trip'}
+                        </span>
                       </div>
-                      <div className="relative pl-5">
-                        <div className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-green-400 border-2 border-white shadow-sm" />
-                        <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-0.5">
-                          {selectedEvent.id === 'e3' ? 'Trip week' : bookingDate ? new Date(bookingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Trip Date'}
-                        </p>
-                        <p className="text-base font-bold text-gray-900">
-                          {selectedEvent.id === 'e3' ? 'Fly to Colombo and kickstart the retreat' : `Enjoy ${selectedEvent.title}`}
-                        </p>
+
+                      {/* Receive details row */}
+                      <div className="px-5 py-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Receive Details</p>
+                          <p className="text-[14px] font-semibold text-gray-800 leading-tight">Visa, flights & stay info</p>
+                        </div>
+                        <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                          {bookingDate ? `By ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before trip'}
+                        </span>
                       </div>
                     </div>
                   </div>
