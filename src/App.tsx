@@ -86,8 +86,8 @@ const EVENTS: Event[] = [
     quickInfo: [
       { icon: 'pin', label: 'Meeting Spot', value: 'Chennai Airport (MAA)' },
       { icon: 'bus', label: 'Transport', value: 'Flights + Coach' },
-      { icon: 'users', label: 'Group Size', value: 'Max 18 travellers' },
-      { icon: 'heart', label: 'Made For', value: 'Beach lovers & culture seekers' },
+      { icon: 'users', label: 'Group Size', value: '16-18 travellers' },
+      { icon: 'heart', label: "You'll Meet", value: 'Beach lovers & culture seekers' },
     ],
     transportPlan: [
       { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
@@ -1713,10 +1713,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           const groupSize  = event.quickInfo!.find(c => c.label === 'Group Size')   || event.quickInfo![2];
           const meetingSpot= event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
           const transport  = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
-          const groupNum   = groupSize?.value.match(/\d+/)?.[0] || groupSize?.value;
+          const groupNum   = groupSize?.value.match(/\d+[-–]\d+|\d+/)?.[0] || groupSize?.value;
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
           return (
-            <div className="px-4 py-4 border-b border-gray-100 bg-white">
+            <div className="px-6 pt-5 pb-4 border-b border-gray-100 bg-white">
+              <h3 className="text-xl font-black mb-4">The Plan</h3>
               <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
 
                 {/* Top row — MEETING SPOT | TRANSPORT */}
@@ -1749,7 +1750,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <div className="px-4 flex flex-col items-start flex-shrink-0">
                     <div className="flex items-center gap-1 mb-1.5">
                       <Users size={9} className="text-gray-400" />
-                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Meet</span>
+                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Join</span>
                     </div>
                     <div className="flex items-baseline gap-1">
                       <span className="text-[20px] font-black text-gray-900 leading-none">{groupNum}</span>
@@ -1824,7 +1825,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* The Plan */}
         <div className="p-6 border-b border-gray-100 bg-[#F9F8F6]" ref={itineraryRef}>
-          <h3 className="text-xl font-black mb-4">The Plan</h3>
+          <h3 className="text-xl font-black mb-4">The Specifics</h3>
           <div className="space-y-3">
             {event.itinerary?.map((day, i) => (
               <div key={i} className="rounded-xl border-2 border-gray-300 overflow-hidden bg-white">
