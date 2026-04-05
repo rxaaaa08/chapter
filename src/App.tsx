@@ -209,6 +209,293 @@ const EVENTS: Event[] = [
       "🍃 Slow mornings, tea country trains, and a beach villa",
       "✈️ Flights included from Chennai"
     ]
+  },
+  {
+    id: 'e4',
+    cities: ['Chennai'],
+    category: 'Parties',
+    isActivity: true,
+    title: 'Pondicherry Beach House Party',
+    timing: '2 Days 1 Night',
+    price: '₹4,999',
+    advanceAmount: 1000,
+    description: 'A curated beach house takeover in Pondicherry. Live music, bonfires, good food, and a handpicked crowd that actually vibes.',
+    heroImage: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Chennai Central (Pickup)',
+    quickInfo: [
+      { icon: 'pin', label: 'Meeting Spot', value: 'Chennai Central' },
+      { icon: 'bus', label: 'Transport', value: 'Coach from Chennai' },
+      { icon: 'users', label: 'Group Size', value: '30-35 travellers' },
+      { icon: 'heart', label: "You'll Meet", value: 'Party people & good vibes crew' },
+    ],
+    transport: 'AC Coach',
+    groupSize: 'Max 35 travellers',
+    accommodationType: 'Beach house (shared rooms)',
+    included: [
+      'Coach transport from Chennai',
+      '1 night beach house stay',
+      'Welcome drinks & bonfire night',
+      'DJ + live acoustic set',
+      'Breakfast on Day 2'
+    ],
+    notIncluded: [
+      'Lunch & dinner (Day 1)',
+      'Personal drinks beyond welcome kit',
+      'Any personal expenses'
+    ],
+    itinerary: [
+      { day: 'Day 1', title: 'Roll In & Vibe Out', description: 'Coach departs Chennai evening, arrive Pondy by night, beach bonfire and DJ sets till late.' },
+      { day: 'Day 2', title: 'Beach Morning & Head Back', description: 'Slow beach morning, group breakfast, optional dip, coach back by noon.' }
+    ],
+    accommodation: {
+      name: 'Pondicherry Beach House',
+      images: ['https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=1200&auto=format&fit=crop'],
+      features: ['Direct beach access', 'Bonfire area', 'Shared dorm & twin rooms'],
+      policy: 'Same-gender shared rooms. No outside alcohol.'
+    },
+    videos: [
+      { thumbnail: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?q=80&w=400&auto=format&fit=crop', caption: 'Beach house vibes' }
+    ],
+    reviews: [
+      { name: 'Karthik R', rating: 5, text: 'Best two days of my year. Met people I still talk to every day.', images: [] }
+    ],
+    dates: [
+      { date: '2026-04-18', status: 'selling_out', label: '3 spots left' },
+      { date: '2026-05-09', status: 'available', label: 'May batch' }
+    ],
+    faqs: [
+      { question: 'Is it only for Chennai people?', answer: 'Mostly yes — coach departs Chennai. But you can make your own way to Pondy and join.' },
+      { question: 'Is it a wild party?', answer: 'It\'s curated and safe. Good music, good people, no chaos.' }
+    ],
+    bookingUrl: '/phonepe-mock'
+  },
+  {
+    id: 'e5',
+    cities: ['Bangalore'],
+    category: 'Trips',
+    title: 'Coorg Coffee & Camping',
+    timing: '2 Nights 3 Days',
+    price: '₹9,999',
+    advanceAmount: 2000,
+    description: 'A weekend escape into the misty hills of Coorg. Coffee estate walks, waterfall hikes, campfire nights, and mornings that smell like freshly brewed filter coffee.',
+    heroImage: 'https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Bangalore (Silk Board)',
+    quickInfo: [
+      { icon: 'pin', label: 'Meeting Spot', value: 'Silk Board, Bangalore' },
+      { icon: 'bus', label: 'Transport', value: 'AC Tempo Traveller' },
+      { icon: 'users', label: 'Group Size', value: '14-16 travellers' },
+      { icon: 'heart', label: "You'll Meet", value: 'Nature lovers & slow travel folk' },
+    ],
+    transport: 'AC Tempo Traveller',
+    groupSize: 'Max 16 travellers',
+    accommodationType: 'Coffee estate & campsite',
+    included: [
+      'Transport from Bangalore & back',
+      '2 nights stay (estate + campsite)',
+      'All meals (breakfast, lunch, dinner)',
+      'Coffee estate guided walk',
+      'Campfire & group activities'
+    ],
+    notIncluded: [
+      'Personal shopping',
+      'Any optional add-ons',
+      'Travel insurance'
+    ],
+    itinerary: [
+      { day: 'Day 1', title: 'Drive Up & Settle In', description: 'Early morning depart Bangalore, arrive Coorg by afternoon. Coffee estate check-in, evening walk through the plantation.' },
+      { day: 'Day 2', title: 'Waterfall Hike & Campfire', description: 'Morning hike to Abbey Falls, afternoon free time, campfire night under the stars with music and stories.' },
+      { day: 'Day 3', title: 'Filter Coffee & Drive Back', description: 'Slow morning with estate breakfast, pick up some estate coffee, drive back to Bangalore by evening.' }
+    ],
+    accommodation: {
+      name: 'Coorg Coffee Estate & Hilltop Campsite',
+      images: ['https://images.unsplash.com/photo-1510312305653-8ed496efae75?q=80&w=1200&auto=format&fit=crop'],
+      features: ['Estate bungalow with valley views', 'Tented campsite under the stars', 'Farm-fresh meals'],
+      policy: 'Twin sharing. Same-gender rooms by default.'
+    },
+    videos: [
+      { thumbnail: 'https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=400&auto=format&fit=crop', caption: 'Misty Coorg mornings' }
+    ],
+    reviews: [
+      { name: 'Priya S', rating: 5, text: 'The campfire night was magical. Came alone, left with a group of friends.', images: [] }
+    ],
+    dates: [
+      { date: '2026-04-25', status: 'available', label: 'April batch' },
+      { date: '2026-05-16', status: 'available', label: 'May batch' }
+    ],
+    faqs: [
+      { question: 'Is this suitable for first-time campers?', answer: 'Absolutely. It\'s comfortable camping with proper tents, mattresses, and clean facilities.' },
+      { question: 'Can I join solo?', answer: 'Yes, most people do. We match roommates thoughtfully.' }
+    ],
+    bookingUrl: '/phonepe-mock'
+  },
+  {
+    id: 'e6',
+    cities: ['Bangalore'],
+    category: 'Parties',
+    isActivity: true,
+    title: 'Bangalore Rooftop Mixer',
+    timing: '1 Evening',
+    price: '₹999',
+    advanceAmount: 999,
+    description: 'A curated rooftop social for people who want to meet interesting strangers and leave with actual friends. Good music, city views, and no awkward small talk.',
+    heroImage: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Indiranagar, Bangalore',
+    quickInfo: [
+      { icon: 'pin', label: 'Meeting Spot', value: 'Indiranagar Rooftop Venue' },
+      { icon: 'bus', label: 'Transport', value: 'Make your own way' },
+      { icon: 'users', label: 'Group Size', value: '40-50 travellers' },
+      { icon: 'heart', label: "You'll Meet", value: 'Curious, social, open-minded people' },
+    ],
+    transport: 'Self',
+    groupSize: 'Max 50 guests',
+    accommodationType: 'N/A',
+    included: [
+      'Entry + welcome drink',
+      'Curated icebreaker activities',
+      'Live DJ set',
+      'Light bites & finger food'
+    ],
+    notIncluded: [
+      'Additional drinks',
+      'Transport to venue'
+    ],
+    itinerary: [
+      { day: 'Evening', title: 'Rooftop Social', description: '6 PM doors open. Icebreakers, DJ, city views, and conversations that actually go somewhere.' }
+    ],
+    accommodation: {
+      name: 'N/A',
+      images: ['https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=1200&auto=format&fit=crop'],
+      features: ['Rooftop venue', 'City skyline views', 'Curated crowd'],
+      policy: 'No plus-ones. Solo entries only — that\'s the point.'
+    },
+    videos: [
+      { thumbnail: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=400&auto=format&fit=crop', caption: 'Rooftop mixer vibes' }
+    ],
+    reviews: [
+      { name: 'Ananya M', rating: 5, text: 'Walked in knowing nobody. Left with 6 new contacts and plans for next weekend.', images: [] }
+    ],
+    dates: [
+      { date: '2026-04-19', status: 'selling_out', label: '8 spots left' }
+    ],
+    faqs: [
+      { question: 'Is it only for singles?', answer: 'No, it\'s for anyone who wants to expand their social circle. Couples welcome too.' },
+      { question: 'What\'s the vibe?', answer: 'Think: interesting people, good music, low pressure. Not a networking event.' }
+    ],
+    bookingUrl: '/phonepe-mock'
+  },
+  {
+    id: 'e7',
+    cities: ['Mumbai'],
+    category: 'Trips',
+    title: 'Goa Beach Weekend',
+    timing: '2 Nights 3 Days',
+    price: '₹12,999',
+    advanceAmount: 3000,
+    description: 'Not your average Goa trip. A curated group of 18, a rented villa in North Goa, beach days, sunrise runs, and the kind of conversations that only happen on holiday.',
+    heroImage: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Mumbai Airport (BOM)',
+    quickInfo: [
+      { icon: 'pin', label: 'Meeting Spot', value: 'Mumbai Airport (BOM)' },
+      { icon: 'bus', label: 'Transport', value: 'Flights + Villa Pickup' },
+      { icon: 'users', label: 'Group Size', value: '14-18 travellers' },
+      { icon: 'heart', label: "You'll Meet", value: 'Beach lovers & good conversation people' },
+    ],
+    transport: 'Flights + Private Villa Transfer',
+    groupSize: 'Max 18 travellers',
+    accommodationType: 'Private villa, North Goa',
+    included: [
+      'Round-trip flights from Mumbai',
+      'Villa stay (2 nights)',
+      'Airport & villa transfers',
+      'Welcome dinner + beach BBQ',
+      'Curated group activities'
+    ],
+    notIncluded: [
+      'Lunches & personal meals',
+      'Personal drinks',
+      'Travel insurance'
+    ],
+    itinerary: [
+      { day: 'Day 1', title: 'Fly In & Villa Check-In', description: 'Morning flight, villa check-in, afternoon at the pool, welcome dinner as the sun goes down.' },
+      { day: 'Day 2', title: 'Full Beach Day', description: 'Breakfast at the villa, beach day at Morjim or Ashwem, sunset cruise option, beach BBQ at night.' },
+      { day: 'Day 3', title: 'Market, Brunch & Fly Back', description: 'Anjuna flea market, leisurely brunch, fly back to Mumbai by evening.' }
+    ],
+    accommodation: {
+      name: 'North Goa Private Villa',
+      images: ['https://images.unsplash.com/photo-1582719508461-905c673771fd?q=80&w=1200&auto=format&fit=crop'],
+      features: ['Private pool', '5 min from beach', 'Chef-cooked breakfast daily'],
+      policy: 'Twin sharing. Same-gender rooms by default.'
+    },
+    videos: [
+      { thumbnail: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?q=80&w=400&auto=format&fit=crop', caption: 'Golden hour in North Goa' }
+    ],
+    reviews: [
+      { name: 'Rohan V', rating: 5, text: 'The villa was incredible. But honestly, the people made it.', images: [] }
+    ],
+    dates: [
+      { date: '2026-05-02', status: 'available', label: 'May long weekend' },
+      { date: '2026-05-23', status: 'available', label: 'Late May batch' }
+    ],
+    faqs: [
+      { question: 'Can I come alone?', answer: 'That\'s literally what this is for. Solo joiners are the majority.' },
+      { question: 'What\'s the age group?', answer: 'Typically 22–32. But we don\'t filter by age — vibe matters more.' }
+    ],
+    bookingUrl: '/phonepe-mock'
+  },
+  {
+    id: 'e8',
+    cities: ['Mumbai'],
+    category: 'Parties',
+    isActivity: true,
+    title: 'Bandra Sunset Social',
+    timing: '1 Evening',
+    price: '₹1,299',
+    advanceAmount: 1299,
+    description: 'A curated evening for Mumbai people who want to meet their people. Bandra rooftop, sunset, DJ, and a crowd that\'s actually interesting.',
+    heroImage: 'https://images.unsplash.com/photo-1529543544282-ea669407fca3?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Bandra West, Mumbai',
+    quickInfo: [
+      { icon: 'pin', label: 'Meeting Spot', value: 'Bandra West Rooftop' },
+      { icon: 'bus', label: 'Transport', value: 'Make your own way' },
+      { icon: 'users', label: 'Group Size', value: '50-60 people' },
+      { icon: 'heart', label: "You'll Meet", value: 'Creative, social Mumbai folk' },
+    ],
+    transport: 'Self',
+    groupSize: 'Max 60 guests',
+    accommodationType: 'N/A',
+    included: [
+      'Entry + welcome mocktail',
+      'Curated icebreaker games',
+      'Sunset DJ set',
+      'Snacks & small bites'
+    ],
+    notIncluded: [
+      'Additional drinks',
+      'Transport to venue'
+    ],
+    itinerary: [
+      { day: 'Evening', title: 'Sunset Social', description: '5:30 PM doors open. Catch the Bandra sunset, make real friends, stay as long as the vibe lasts.' }
+    ],
+    accommodation: {
+      name: 'N/A',
+      images: ['https://images.unsplash.com/photo-1529543544282-ea669407fca3?q=80&w=1200&auto=format&fit=crop'],
+      features: ['Rooftop with sea view', 'Sunset timing', 'No awkward networking'],
+      policy: 'Solo entries encouraged. Curated crowd.'
+    },
+    videos: [
+      { thumbnail: 'https://images.unsplash.com/photo-1529543544282-ea669407fca3?q=80&w=400&auto=format&fit=crop', caption: 'Bandra sunsets hit different' }
+    ],
+    reviews: [
+      { name: 'Shruti K', rating: 5, text: 'Didn\'t expect to have this much fun at a "social event". chapter அ really curates the crowd well.', images: [] }
+    ],
+    dates: [
+      { date: '2026-04-26', status: 'available', label: 'Saturday evening' }
+    ],
+    faqs: [
+      { question: 'Is this a dating event?', answer: 'No. It\'s a social event to meet interesting people. Connections of all kinds happen naturally.' },
+      { question: 'Is the crowd curated?', answer: 'Yes. We review applications to keep the vibe right.' }
+    ],
+    bookingUrl: '/phonepe-mock'
   }
 ];
 
@@ -571,13 +858,12 @@ export default function App() {
   const renderOptions = () => {
     if (isTyping || step === 'PROCESSING' || step === 'INIT') {
       return (
-        <div className="flex items-center gap-2 text-black p-2 w-full justify-start">
-          <div className="flex gap-1">
-            <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-2 h-2 bg-[#FFD700] rounded-full" />
-            <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-2 h-2 bg-[#FFD700] rounded-full" />
-            <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className="w-2 h-2 bg-[#FFD700] rounded-full" />
+        <div className="flex justify-start">
+          <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm flex items-center gap-1.5">
+            <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+            <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+            <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
           </div>
-          <span className="text-sm font-medium text-gray-500">chapter அ is typing...</span>
         </div>
       );
     }
@@ -590,8 +876,14 @@ export default function App() {
         const availableCities = Array.from(new Set(EVENTS.flatMap(e => e.cities)));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {availableCities.map(city => (
-              <button key={city} onClick={() => handleCitySelect(city)} className={btnClass}>
+            {availableCities.map((city, i) => (
+              <button key={city} onClick={() => handleCitySelect(city)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div
+                  className="absolute inset-0 -skew-x-12"
+                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
+                />
                 <span>{city}</span> <Send size={16} />
               </button>
             ))}
@@ -745,24 +1037,18 @@ export default function App() {
         </div>
 
         {showChat && (
-          <>
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 relative" style={{ backgroundImage: 'url(\"https://www.transparenttextures.com/patterns/cubes.png\")', backgroundBlendMode: 'multiply' }}>
-              {journeyCardData && (step === 'ASK_DOUBTS' || step === 'SHOW_FAQ') && (
-                <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} />
-              )}
-              {messages.map(msg => (
-                <ChatMessage key={msg.id} message={msg} />
-              ))}
-              <div ref={messagesEndRef} className="h-2" />
-            </div>
-
-            {/* Input / Options Area */}
-            <div className="bg-white p-4 border-t border-gray-100 min-h-[80px] flex flex-col items-end justify-end">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
+            {journeyCardData && (step === 'ASK_DOUBTS' || step === 'SHOW_FAQ') && (
+              <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} />
+            )}
+            {messages.map(msg => (
+              <ChatMessage key={msg.id} message={msg} />
+            ))}
+            <div className="pt-1">
               {renderOptions()}
             </div>
-
-          </>
+            <div ref={messagesEndRef} className="h-4" />
+          </div>
         )}
 
         {/* Transition Overlay */}
@@ -1414,7 +1700,7 @@ const ChatMessage = ({ message }: { message: Message }) => {
   const isBot = message.sender === 'bot';
   
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 10, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       className={`flex ${isBot ? 'justify-start' : 'justify-end'} mb-4`}
@@ -1422,9 +1708,9 @@ const ChatMessage = ({ message }: { message: Message }) => {
       <div className={`max-w-[90%] rounded-2xl px-4 py-3 shadow-sm relative ${isBot ? 'bg-white text-black border border-gray-200 rounded-tl-sm' : 'bg-[#FFD700] text-black rounded-tr-sm'}`}>
         {/* Tail for chat bubble */}
         <div className={`absolute top-0 w-3 h-4 ${isBot ? '-left-2 bg-white border-l border-t border-gray-200' : '-right-2 bg-[#FFD700]'} ${isBot ? 'clip-path-bot' : 'clip-path-user'}`} style={{ clipPath: isBot ? 'polygon(100% 0, 0 0, 100% 100%)' : 'polygon(0 0, 100% 0, 0 100%)' }}></div>
-        
+
         {message.text && <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{message.text}</p>}
-        
+
         <span className={`text-[10px] float-right mt-1 ml-3 select-none ${isBot ? 'text-gray-400' : 'text-black/60'}`}>
           {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>
@@ -1724,15 +2010,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 <div className="flex border-b-2 border-dashed border-gray-200">
                   <div className="flex-1 px-3 py-3.5 border-r-2 border-dashed border-gray-200">
                     <div className="flex items-center gap-1 mb-1.5">
-                      <MapPin size={9} className="text-gray-400" />
-                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{meetingSpot?.label}</span>
+                      <MapPin size={9} className="text-gray-500" />
+                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{meetingSpot?.label}</span>
                     </div>
                     <span className="text-[13px] font-black text-gray-900 leading-tight">{meetingSpot?.value}</span>
                   </div>
                   <div className="flex-1 px-3 py-3.5">
                     <div className="flex items-center gap-1 mb-1.5">
-                      <Bus size={9} className="text-gray-400" />
-                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transport?.label}</span>
+                      <Bus size={9} className="text-gray-500" />
+                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{transport?.label}</span>
                     </div>
                     <span className="text-[13px] font-black text-gray-900 leading-tight">{transport?.value}</span>
                   </div>
@@ -1742,15 +2028,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 <div className="flex items-center">
                   <div className="flex-1 px-3 py-4 border-r-2 border-dashed border-gray-200">
                     <div className="flex items-center gap-1 mb-1.5">
-                      <Heart size={9} className="text-gray-400" />
-                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
+                      <Heart size={9} className="text-gray-500" />
+                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
                     </div>
                     <span className="text-[14px] font-black text-gray-900 leading-snug">{madeFor?.value}</span>
                   </div>
-                  <div className="px-4 flex flex-col items-start flex-shrink-0">
+                  <div className="px-3 py-4 flex flex-col items-start flex-shrink-0">
                     <div className="flex items-center gap-1 mb-1.5">
-                      <Users size={9} className="text-gray-400" />
-                      <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Join</span>
+                      <Users size={9} className="text-gray-500" />
+                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">Join</span>
                     </div>
                     <div className="flex items-baseline gap-1">
                       <span className="text-[20px] font-black text-gray-900 leading-none">{groupNum}</span>
@@ -2017,8 +2303,14 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         <div className="px-4 pt-4 pb-12 bg-white">
           <button
             onClick={() => setShowCalendar(true)}
-            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
+            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
           >
+            <motion.div
+              className="absolute inset-0 -skew-x-12"
+              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+              animate={{ x: ['-100%', '300%'] }}
+              transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+            />
             Join Our Plan
             <ArrowRight size={22} strokeWidth={2.5} />
           </button>
