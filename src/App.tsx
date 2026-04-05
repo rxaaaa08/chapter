@@ -1717,11 +1717,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
           return (
             <div className="px-4 py-4 border-b border-gray-100 bg-white">
-              <div className="border-2 border-dashed border-[#D9CFC4] rounded-2xl overflow-hidden bg-white">
+              <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
 
                 {/* Top row — MEETING SPOT | TRANSPORT */}
-                <div className="flex border-b-2 border-dashed border-[#D9CFC4]">
-                  <div className="flex-1 px-3 py-3.5 border-r-2 border-dashed border-[#D9CFC4]">
+                <div className="flex border-b-2 border-dashed border-gray-200">
+                  <div className="flex-1 px-3 py-3.5 border-r-2 border-dashed border-gray-200">
                     <div className="flex items-center gap-1 mb-1.5">
                       <MapPin size={9} className="text-gray-400" />
                       <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{meetingSpot?.label}</span>
@@ -1739,7 +1739,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
                 {/* Bottom row — MADE FOR | 👥 18 */}
                 <div className="flex items-center">
-                  <div className="flex-1 px-3 py-4 border-r-2 border-dashed border-[#D9CFC4]">
+                  <div className="flex-1 px-3 py-4 border-r-2 border-dashed border-gray-200">
                     <div className="flex items-center gap-1 mb-1.5">
                       <Heart size={9} className="text-gray-400" />
                       <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
