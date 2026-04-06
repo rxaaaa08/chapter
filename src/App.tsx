@@ -806,24 +806,30 @@ export default function App() {
               className="absolute inset-0 bg-[#FFD700] z-40 flex flex-col items-center justify-center overflow-hidden"
             >
               <motion.div
-                animate={{
-                  x: [-100, 0, 0, 150],
-                  y: [100, 0, 0, -150],
-                  scale: [0.5, 1, 1, 0.5],
-                  opacity: [0, 1, 1, 0]
+                initial={{ x: -100, y: 100, scale: 0.5, opacity: 0 }}
+                animate={{ x: 0, y: 0, scale: 1, opacity: 1 }}
+                transition={{
+                  x: { type: 'spring', damping: 14, stiffness: 130 },
+                  y: { type: 'spring', damping: 14, stiffness: 130 },
+                  scale: { type: 'spring', damping: 16, stiffness: 150 },
+                  opacity: { duration: 0.25, ease: 'easeOut' },
                 }}
-                transition={{ duration: 1.8, times: [0, 0.3, 0.7, 1], ease: "easeInOut" }}
               >
-                <Send size={48} className="text-black" />
+                <motion.div
+                  animate={{ x: 150, y: -150, scale: 0.5, opacity: 0 }}
+                  transition={{ delay: 1.35, duration: 0.45, ease: 'easeIn' }}
+                >
+                  <Send size={48} className="text-black" />
+                </motion.div>
               </motion.div>
               <motion.p
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                transition={{ delay: 0.3, duration: 0.4 }}
+                transition={{ delay: 0.15, duration: 0.4 }}
                 className="mt-4 font-bold text-lg text-black tracking-wide absolute top-[55%]"
               >
-                Giving you all the details...
+                We're cooking...
               </motion.p>
             </motion.div>
           )}
@@ -1637,7 +1643,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
       const isUnavailable = !tripDate || tripDate.status === 'sold_out';
       const isColoured = !!tripDate && (tripDate.status === 'available' || tripDate.status === 'selling_out');
-      const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd;
+      const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && !selectedDate;
       const shimmerIdx = isShimmerable ? availableCellIdx++ : -1;
       const staggerDelay = (i - 1) * 0.025;
 
@@ -1715,7 +1721,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
             title="Previous month"
             aria-label="Previous month"
-            className="p-1 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
+            className="p-1 bg-gray-100 text-gray-500 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
           >
             <ChevronLeft size={14} />
           </button>
@@ -1724,7 +1730,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
             title="Next month"
             aria-label="Next month"
-            className="p-1 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
+            className="p-1 bg-gray-100 text-gray-500 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
           >
             <ChevronRight size={14} />
           </button>
@@ -2208,7 +2214,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                         <button 
                           onClick={() => { setShowCalendar(false); onAction('contact', selectedDate || undefined); }}
                           className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFF3BF] text-[#b38200] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#ffe58f] transition-colors border border-[#FFD700]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
