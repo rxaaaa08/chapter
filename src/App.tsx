@@ -1064,7 +1064,7 @@ export default function App() {
               >
                 {/* Handle + Header */}
                 <div className="px-6 pt-4 pb-4">
-                  <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                  <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
                   <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight whitespace-nowrap">Let's Lock This In! 🔐</p>
                 </div>
 
@@ -1441,7 +1441,7 @@ export default function App() {
               >
                 {/* Handle + Header */}
                 <div className="px-6 pt-4 pb-4">
-                  <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                  <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
                   <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
                 </div>
 
@@ -1493,9 +1493,15 @@ export default function App() {
                   <div className="px-6 pt-6 pb-5">
                     <button
                       type="submit"
-                      className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80"
+                      className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden"
                     >
-                      Send Message
+                      <motion.div
+                        className="absolute inset-0 -skew-x-12 pointer-events-none"
+                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                        animate={{ x: ['-100%', '300%'] }}
+                        transition={{ delay: 10, duration: 0.8, repeat: Infinity, repeatDelay: 7.0, ease: 'easeInOut' }}
+                      />
+                      <span className="relative z-10">Send Message</span>
                     </button>
                   </div>
                 </form>
