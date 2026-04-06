@@ -1019,7 +1019,7 @@ export default function App() {
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         {isPhonePeFlow ? 'Confirm' : 'Request Invitation'}
-                        <ArrowRight size={18} strokeWidth={2.5} />
+                        <ArrowRight size={18} strokeWidth={3.0} />
                       </button>
                     ) : (
                       <button
@@ -1134,13 +1134,14 @@ export default function App() {
                     type="button"
                     disabled={!isDetailsFormValid}
                     onClick={handleProceedToPhonePe}
-                    className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all ${
+                    className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 whitespace-nowrap ${
                       isDetailsFormValid
                         ? 'bg-black text-white active:opacity-80'
                         : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    Pay Advance
+                    <span>Pay Advance</span>
+                    <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
                   </button>
                 </div>
               </motion.div>
@@ -2194,7 +2195,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
             />
             Join Our Plan
-            <ArrowRight size={22} strokeWidth={2.5} />
+            <ArrowRight size={22} strokeWidth={3.0} />
           </button>
         </div>
 
@@ -2342,7 +2343,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
                           />
                           Book Now
-                          <ChevronRight size={15} className="text-black" />
+                          <ArrowRight size={16} strokeWidth={3.0} />
                         </button>
                       </div>
                       </div>
