@@ -1101,12 +1101,13 @@ export default function App() {
                   <h3 className="text-[17px] font-bold text-gray-900">Terms & Conditions</h3>
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
-                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable unless chapter அ cancels the trip.</p>
-                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date communicated via WhatsApp. Failure to pay may result in forfeiture of your spot.</p>
-                  <p><strong className="text-gray-900">3. Cancellations</strong><br />Cancellations made 14+ days before departure receive a 50% refund of the advance. No refunds within 14 days.</p>
-                  <p><strong className="text-gray-900">4. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
-                  <p><strong className="text-gray-900">5. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
-                  <p><strong className="text-gray-900">6. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related updates and reminders on WhatsApp.</p>
+                  <p className="text-[13px] text-gray-400 italic">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
+                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable under any circumstances.</p>
+                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date shown on the website after you make the advance payment. Further notices and reminders will be sent via WhatsApp. Failure to pay will result in forfeiture of your spot.</p>
+                  <p><strong className="text-gray-900">3. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
+                  <p><strong className="text-gray-900">4. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
+                  <p><strong className="text-gray-900">5. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
+                  <p><strong className="text-gray-900">6. Age Requirement</strong><br />Certain experiences are strictly 21+. Participants must meet the minimum age requirement specified for each experience. Valid ID proof may be required. Failure to meet the age requirement may result in denial of entry without refund.</p>
                 </div>
                 <div className="px-6 pb-8 pt-3 flex-shrink-0">
                   <button
@@ -1573,12 +1574,18 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     return () => clearInterval(timer);
   }, [showCalendar, selectedDate]);
 
+  // Full staggered animation only on initial calendar open
   useEffect(() => {
     if (!showCalendar) { setCalendarRevealed(false); return; }
     setCalendarRevealed(false);
     const t = setTimeout(() => setCalendarRevealed(true), 550);
     return () => clearTimeout(t);
-  }, [showCalendar, currentMonth]);
+  }, [showCalendar]);
+
+  // When navigating months, skip animation — show dates instantly
+  useEffect(() => {
+    if (showCalendar) setCalendarRevealed(true);
+  }, [currentMonth]);
 
   const formatTime = (totalSeconds: number) => {
     const d = Math.floor(totalSeconds / (3600 * 24));
@@ -1605,6 +1612,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     if (endDateObj) endDateObj.setDate(endDateObj.getDate() + tripDays - 1);
     
     const days = [];
+    let availableCellIdx = 0;
     for (let i = 0; i < firstDay; i++) {
       days.push(<div key={`empty-${i}`} className="h-10"></div>);
     }
@@ -1630,6 +1638,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       const isUnavailable = !tripDate || tripDate.status === 'sold_out';
       const isColoured = !!tripDate && (tripDate.status === 'available' || tripDate.status === 'selling_out');
       const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd;
+      const shimmerIdx = isShimmerable ? availableCellIdx++ : -1;
       const staggerDelay = (i - 1) * 0.025;
 
       // Separate text/border classes from background — bg is handled by overlay
@@ -1655,8 +1664,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           key={i}
           disabled={isUnavailable}
           onClick={() => setSelectedDate(dateStr)}
-          animate={isShimmerable ? { scale: [1, 1.06, 1] } : {}}
-          transition={isShimmerable ? { duration: 1.2, repeat: Infinity, repeatDelay: 2, ease: 'easeInOut' } : {}}
           className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden bg-white ${textBorderClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
         >
           {/* Background colour overlay — fades IN after stagger */}
@@ -1680,14 +1687,19 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               }}
             />
           )}
-          {/* Shimmer on available/filling cells */}
-          {isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && (
+          {/* Repeating staggered shimmer on available/filling fast cells */}
+          {shimmerIdx >= 0 && (
             <motion.div
               className="absolute inset-0 pointer-events-none z-[2] -skew-x-12"
-              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '60%' }}
-              initial={{ x: '-100%' }}
-              animate={{ x: calendarRevealed ? '300%' : '-100%' }}
-              transition={{ duration: 0.75, delay: staggerDelay + 0.38, ease: 'easeInOut' }}
+              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.6) 50%, transparent 100%)', width: '55%' }}
+              animate={{ x: ['-120%', '320%'] }}
+              transition={{
+                duration: 0.65,
+                delay: shimmerIdx * 0.4,
+                repeat: Infinity,
+                repeatDelay: 3,
+                ease: 'easeInOut',
+              }}
             />
           )}
           {/* Number — always on top */}
@@ -2297,6 +2309,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <p><strong className="text-gray-900">3. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
                   <p><strong className="text-gray-900">4. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
                   <p><strong className="text-gray-900">5. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
+                  <p><strong className="text-gray-900">6. Age Requirement</strong><br />Certain experiences are strictly 21+. Participants must meet the minimum age requirement specified for each experience. Valid ID proof may be required. Failure to meet the age requirement may result in denial of entry without refund.</p>
                 </>
               )}
               {showPolicyModal === 'refund' && (
