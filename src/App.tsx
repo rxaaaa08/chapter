@@ -1365,58 +1365,44 @@ export default function App() {
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
                 className="bg-white rounded-3xl p-6 w-full max-w-[320px] shadow-2xl flex flex-col items-center relative"
               >
-                <button
-                  onClick={() => setShowDoubtPopup(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 rounded-full p-1"
-                >
-                  <X size={18} />
-                </button>
-
-                <div className="w-16 h-16 bg-[#FFD700] text-black rounded-2xl flex items-center justify-center font-black text-2xl mb-4 shadow-md">
-                  <MessageCircle size={32} />
-                </div>
-
-                <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">Got a unique doubt?</h3>
-                <p className="text-sm text-gray-600 mb-6 text-center">
-                  Leave your details and we'll get back to you on WhatsApp!
-                </p>
+                <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">What's on your mind?</h3>
 
                 <form onSubmit={handleDoubtSubmit} className="w-full space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Name</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       required
                       value={doubtFormData.name}
                       onChange={e => setDoubtFormData({...doubtFormData, name: e.target.value})}
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent transition-all"
-                      placeholder="Your name"
+                      placeholder="What should we call you"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">WhatsApp Number</label>
-                    <input 
-                      type="tel" 
+                    <input
+                      type="tel"
                       required
                       value={doubtFormData.phone}
                       onChange={e => setDoubtFormData({...doubtFormData, phone: e.target.value})}
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent transition-all"
-                      placeholder="Your WhatsApp number"
+                      placeholder="We'll reach you here"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Your Doubt</label>
-                    <textarea 
+                    <textarea
                       required
                       value={doubtFormData.message}
                       onChange={e => setDoubtFormData({...doubtFormData, message: e.target.value})}
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent transition-all resize-none h-24"
-                      placeholder="What's on your mind?"
+                      placeholder="What's the doubt"
                     />
                   </div>
                   <button
                     type="submit"
-                    className="w-full bg-black text-[#FFD700] font-black py-4 rounded-2xl hover:bg-gray-900 transition-colors shadow-sm active:scale-[0.98] mt-2"
+                    className="w-full bg-[#FFD700] text-black font-black py-4 rounded-2xl hover:bg-[#e6c200] transition-colors shadow-sm active:scale-[0.98] mt-2"
                   >
                     Send Message
                   </button>
@@ -1547,6 +1533,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
   const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarRevealed, setCalendarRevealed] = useState(false);
   const [showWorkWithUs, setShowWorkWithUs] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -1586,6 +1573,13 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     return () => clearInterval(timer);
   }, [showCalendar, selectedDate]);
 
+  useEffect(() => {
+    if (!showCalendar) { setCalendarRevealed(false); return; }
+    setCalendarRevealed(false);
+    const t = setTimeout(() => setCalendarRevealed(true), 550);
+    return () => clearTimeout(t);
+  }, [showCalendar, currentMonth]);
+
   const formatTime = (totalSeconds: number) => {
     const d = Math.floor(totalSeconds / (3600 * 24));
     const h = Math.floor((totalSeconds % (3600 * 24)) / 3600);
@@ -1620,25 +1614,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
       const tripDate = event.dates?.find(d => d.date === baseDateStr);
-      
-      let bgClass = "bg-gray-50 text-gray-400";
-      if (tripDate) {
-        if (tripDate.status === 'available') bgClass = "bg-green-200/80 text-green-900 font-bold border border-green-500 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
-        else if (tripDate.status === 'selling_out') bgClass = "bg-orange-200/70 text-orange-900 font-bold border border-orange-400";
-        else if (tripDate.status === 'sold_out') bgClass = "bg-gray-50 text-gray-300 line-through";
-      }
 
       const isSelectedStart = selectedDate === dateStr;
       const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
       const isWithinTrip = selectedDateObj && endDateObj && currentDateObj > selectedDateObj && currentDateObj < endDateObj;
-      const strikeStyle = (!tripDate || tripDate.status === 'sold_out') && !isSelectedStart && !isWithinTrip && !isTripEnd
-        ? {
-            backgroundImage:
-              'linear-gradient(315deg, transparent 0%, transparent 48%, rgba(128,128,128,0.12) 49%, rgba(128,128,128,0.12) 51%, transparent 52%, transparent 100%)',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '100% 100%'
-          }
-        : undefined;
 
       const shapeClass = (() => {
         if (isSelectedStart && isTripEnd) return "rounded-full";
@@ -1648,60 +1627,104 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         return "rounded-xl";
       })();
 
-      if (isSelectedStart) {
-        bgClass = "bg-[#FFE28A] text-black font-black border border-[#d4af37] z-10";
-      } else if (isWithinTrip) {
-        bgClass = "bg-[#FFE28A] text-black font-semibold border border-[#d4af37]/80 z-0";
-      } else if (isTripEnd) {
-        bgClass = "bg-[#FFE28A] text-black font-semibold border border-[#d4af37]";
-      }
+      const isUnavailable = !tripDate || tripDate.status === 'sold_out';
+      const isColoured = !!tripDate && (tripDate.status === 'available' || tripDate.status === 'selling_out');
+      const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd;
+      const staggerDelay = (i - 1) * 0.025;
 
-      const isShimmerable = !!tripDate && tripDate.status !== 'sold_out' && !isSelectedStart && !isWithinTrip && !isTripEnd;
+      // Separate text/border classes from background — bg is handled by overlay
+      const textBorderClass = (() => {
+        if (isSelectedStart) return "text-black font-black border border-[#d4af37] z-10";
+        if (isWithinTrip)    return "text-black font-semibold border border-[#d4af37]/80 z-0";
+        if (isTripEnd)       return "text-black font-semibold border border-[#d4af37]";
+        if (tripDate?.status === 'available')    return "text-green-900 font-bold border border-green-500 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
+        if (tripDate?.status === 'selling_out')  return "text-orange-900 font-bold border border-orange-400";
+        if (tripDate?.status === 'sold_out')     return "text-gray-300";
+        return "text-gray-400";
+      })();
+
+      const bgOverlay = (() => {
+        if (isSelectedStart || isWithinTrip || isTripEnd) return "rgba(255,226,138,1)";
+        if (tripDate?.status === 'available')   return "rgba(187,247,208,0.8)";
+        if (tripDate?.status === 'selling_out') return "rgba(254,215,170,0.7)";
+        return "#f3f4f6"; // gray-100 for unavailable
+      })();
 
       days.push(
         <motion.button
           key={i}
-          disabled={!tripDate || tripDate.status === 'sold_out'}
+          disabled={isUnavailable}
           onClick={() => setSelectedDate(dateStr)}
           animate={isShimmerable ? { scale: [1, 1.06, 1] } : {}}
           transition={isShimmerable ? { duration: 1.2, repeat: Infinity, repeatDelay: 2, ease: 'easeInOut' } : {}}
-          className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden ${bgClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
-          style={strikeStyle}
+          className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden bg-white ${textBorderClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
         >
-          <span className="text-base">{i}</span>
+          {/* Background colour overlay — fades IN after stagger */}
+          <motion.div
+            className="absolute inset-0 pointer-events-none z-[1]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: calendarRevealed ? 1 : 0 }}
+            transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
+            style={{ backgroundColor: bgOverlay }}
+          />
+          {/* Slash — fades in only for unavailable, slightly after bg */}
+          {isUnavailable && !isSelectedStart && !isWithinTrip && !isTripEnd && (
+            <motion.div
+              className="absolute inset-0 pointer-events-none z-[2]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: calendarRevealed ? 1 : 0 }}
+              transition={{ duration: 0.35, delay: staggerDelay + 0.18, ease: 'easeInOut' }}
+              style={{
+                backgroundImage: 'linear-gradient(315deg, transparent 48%, rgba(128,128,128,0.18) 49%, rgba(128,128,128,0.18) 51%, transparent 52%)',
+                backgroundSize: '100% 100%'
+              }}
+            />
+          )}
+          {/* Shimmer on available/filling cells */}
+          {isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && (
+            <motion.div
+              className="absolute inset-0 pointer-events-none z-[2] -skew-x-12"
+              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '60%' }}
+              initial={{ x: '-100%' }}
+              animate={{ x: calendarRevealed ? '300%' : '-100%' }}
+              transition={{ duration: 0.75, delay: staggerDelay + 0.38, ease: 'easeInOut' }}
+            />
+          )}
+          {/* Number — always on top */}
+          <span className="text-base relative z-[3]">{i}</span>
         </motion.button>
       );
     }
 
     return (
       <div className="mb-1">
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex justify-center items-center gap-6 mb-3">
           <button
             onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
             title="Previous month"
             aria-label="Previous month"
-            className="p-1.5 bg-[#FFD700] text-black rounded-full hover:bg-[#e6c200] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
+            className="p-1 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={14} />
           </button>
-          <h4 className="font-black text-base">{currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}</h4>
+          <h4 className="font-black text-[20px] tracking-tight">{currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}</h4>
           <button
             onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
             title="Next month"
             aria-label="Next month"
-            className="p-1.5 bg-[#FFD700] text-black rounded-full hover:bg-[#e6c200] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
+            className="p-1 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
           >
-            <ChevronRight size={18} />
+            <ChevronRight size={14} />
           </button>
         </div>
         <div className="flex items-center justify-center gap-5 mt-4 mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-600">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
-            <span>Available</span>
-          </div>
-          <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-sm bg-orange-300 border border-orange-600 shadow-[0_0_0_1px_rgba(234,88,12,0.35)]"></div>
             <span>Filling fast</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
+            <span>Available</span>
           </div>
         </div>
 
@@ -2146,9 +2169,8 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-50 flex flex-col max-h-[95%] overflow-hidden shadow-2xl"
             >
               <div className="p-4 pb-0 bg-white sticky top-0 z-10">
-                <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-2" />
+                <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
               </div>
-              
               <div className="p-4 overflow-y-auto pb-safe">
                 {renderCalendar()}
                 
