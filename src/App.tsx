@@ -212,72 +212,6 @@ const EVENTS: Event[] = [
       "✈️ Flights included from Chennai"
     ]
   },
-  {
-    id: 'e5',
-    cities: ['Chennai'],
-    category: 'Activities',
-    isActivity: true,
-    title: '5-a-Side Football Tournament',
-    timing: 'One Day · 4 Hours',
-    price: '₹799',
-    advanceAmount: 799,
-    description: 'Lace up and get on the turf. We\'re running a 5-a-side football tournament at the best grass turf in Chennai — round-robin format, referees, jerseys, and post-match chai included.',
-    heroImage: 'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'SNS Turf, Anna Nagar, Chennai',
-    quickInfo: [
-      { icon: 'pin', label: 'Venue', value: 'SNS Turf, Anna Nagar' },
-      { icon: 'users', label: 'Format', value: '5-a-Side, Round Robin' },
-      { icon: 'clock', label: 'Duration', value: '4 Hours' },
-      { icon: 'heart', label: 'Vibe', value: 'Competitive but chill' },
-    ],
-    transport: 'Make your own way',
-    groupSize: 'Max 40 players',
-    accommodationType: 'N/A',
-    included: [
-      'Match jersey',
-      'Referees & scorekeeping',
-      'Post-match chai & snacks',
-      'Trophy for winning team',
-    ],
-    notIncluded: [
-      'Transport to venue',
-      'Lunch',
-    ],
-    itinerary: [
-      {
-        day: 'Day 1',
-        title: 'Tournament Day',
-        description: 'Warm up, group-stage matches, semis, and finals. Post-match chai and trophy ceremony.',
-        schedule: [
-          { time: '9:00 AM', activity: 'Check-in & warm up' },
-          { time: '9:30 AM', activity: 'Group stage matches begin' },
-          { time: '12:00 PM', activity: 'Semis & Finals' },
-          { time: '1:00 PM', activity: 'Trophy ceremony & chai' },
-        ],
-      },
-    ],
-    accommodation: {
-      name: 'N/A',
-      images: [],
-      features: [],
-      policy: 'N/A',
-    },
-    videos: [],
-    reviews: [],
-    dates: [
-      { date: '2026-04-19', status: 'available', label: 'Spots open' },
-    ],
-    faqs: [
-      { question: 'Do I need to come with a team?', answer: 'Nope! We pair solo registrations into balanced teams.' },
-      { question: 'What should I wear?', answer: 'We provide jerseys. Wear football boots or turf shoes.' },
-    ],
-    bookingUrl: '/phonepe-mock',
-    announcements: [
-      '⚽ 5-a-Side Tournament — Chennai, Apr 19',
-      '🏆 Round-robin format with trophies',
-      '👟 Jersey included',
-    ],
-  }
 ];
 
 const GENERAL_ANNOUNCEMENTS = [
@@ -304,6 +238,9 @@ export default function App() {
   const [showBookingTimeline, setShowBookingTimeline] = useState(false);
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
+  const [detailsReady, setDetailsReady] = useState(false);
+  const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [detailsForm, setDetailsForm] = useState({ name: '', phone: '' });
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
@@ -371,12 +308,35 @@ export default function App() {
     ? selectedEvent.announcements 
     : GENERAL_ANNOUNCEMENTS;
 
+  // Clear timers when unmounting or re-running
+  const clearDetailTimers = () => {
+    if (detailsReadyTimerRef.current) clearTimeout(detailsReadyTimerRef.current);
+    if (detailsSafetyTimerRef.current) clearTimeout(detailsSafetyTimerRef.current);
+  };
+
+  useEffect(() => clearDetailTimers, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setAnnouncementIndex((prev) => (prev + 1) % currentAnnouncements.length);
     }, 5000);
     return () => clearInterval(interval);
   }, [currentAnnouncements.length]);
+
+  // Once details are ready, let the overlay fade out before showing details
+  useEffect(() => {
+    if (!showTransition || !detailsReady) return;
+
+    // Reveal details immediately underneath the fading overlay
+    setShowDetails(true);
+    setStep('EVENT_SELECTED');
+
+    // Then fade the overlay out shortly after
+    const exitTimer = setTimeout(() => {
+      setShowTransition(false);
+    }, 200);
+    return () => clearTimeout(exitTimer);
+  }, [detailsReady, showTransition]);
 
   // Reset announcement index when switching contexts
   useEffect(() => {
@@ -485,15 +445,16 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(event.title);
     setSelectedEvent(event);
-    
-    setTimeout(() => {
-      setShowTransition(true);
-      setTimeout(() => {
-        setShowTransition(false);
-        setShowDetails(true);
-        setStep('EVENT_SELECTED');
-      }, 1800);
-    }, 500);
+
+    clearDetailTimers();
+    setDetailsReady(false);
+    setShowTransition(true);
+
+    // Simulate data readiness; in real fetch, setDetailsReady(true) in the success callback.
+    detailsReadyTimerRef.current = setTimeout(() => setDetailsReady(true), 1200);
+
+    // Fallback to avoid getting stuck
+    detailsSafetyTimerRef.current = setTimeout(() => setDetailsReady(true), 3000);
   };
 
   const handleDetailsAction = (action: 'book' | 'contact', date?: string) => {
@@ -501,6 +462,7 @@ export default function App() {
     setShowBookingTimeline(false);
     setShowWaitlistForm(false);
     setShowDetails(false);
+    setDetailsReady(false);
     setMessages([]); // Clear chat history for a fresh start
     setClickedFaqs([]); // Reset clicked FAQs for the new flow
     if (date) setBookingDate(date);
@@ -832,9 +794,9 @@ export default function App() {
           </div>
         </div>
 
-        {showChat && (
+        {showChat && !showDetails && !showTransition && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
-            {journeyCardData && (step === 'ASK_DOUBTS' || step === 'SHOW_FAQ') && (
+            {journeyCardData && (
               <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} />
             )}
             {messages.map(msg => (
@@ -863,7 +825,11 @@ export default function App() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{
+                opacity: { duration: 0.35, ease: 'easeOut' },
+                scale:   { type: 'spring', damping: 20, stiffness: 120 }
+              }}
               className="absolute inset-0 bg-[#FFD700] z-40 flex flex-col items-center justify-center overflow-hidden"
             >
               <motion.div
@@ -896,20 +862,18 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Event Details Overlay */}
-        <AnimatePresence>
-          {showDetails && selectedEvent && (
-            <EventDetailsOverlay 
-              event={selectedEvent} 
-              selectedCity={selectedCity}
-              onClose={() => {
-                setShowDetails(false);
-                setStep('SELECT_EVENT');
-              }}
-              onAction={handleDetailsAction} 
-            />
-          )}
-        </AnimatePresence>
+        {/* Event Details Overlay (no mount animation) */}
+        {showDetails && selectedEvent && (
+          <EventDetailsOverlay 
+            event={selectedEvent} 
+            selectedCity={selectedCity}
+            onClose={() => {
+              setShowDetails(false);
+              setStep('SELECT_EVENT');
+            }}
+            onAction={handleDetailsAction} 
+          />
+        )}
 
         {/* Booking Timeline Popup */}
         <AnimatePresence>
@@ -1269,7 +1233,7 @@ export default function App() {
               </div>
 
               {/* Card 1 — Booking Receipt */}
-              <div className="mx-6 bg-[#F2F2F7] rounded-3xl overflow-hidden flex-shrink-0">
+              <div className="mx-6 bg-[#F2F2F7] rounded-3xl overflow-hidden flex-shrink-0 mb-5">
                 {/* Event title */}
                 <div className="px-5 py-3 border-b border-black/5">
                   <p className="text-[15px] font-bold text-gray-900">
@@ -1299,7 +1263,7 @@ export default function App() {
               </div>
 
               {/* Card 2 — Secret Offer (dashed border) */}
-              <div className="mx-6 mt-3 rounded-3xl overflow-hidden flex-shrink-0 border border-gray-200">
+              <div className="mx-6 rounded-3xl overflow-hidden flex-shrink-0 border border-dashed border-gray-400/60">
                 <div className="px-5 pt-5 pb-4">
                   <p className="text-[17px] font-black leading-tight text-gray-900">Secret Offer — Claim Now or Never</p>
                 </div>
@@ -1321,14 +1285,22 @@ export default function App() {
                 <a
                   href={offerAcknowledged ? `https://wa.me/919739832100?text=${encodeURIComponent(`Hi! I just paid the advance for ${paymentContext.eventTitle} (${paymentContext.date}). I'd like to pay the remaining balance and claim my offer!`)}` : undefined}
                   onClick={!offerAcknowledged ? (e) => e.preventDefault() : undefined}
-                  className={`flex items-center justify-center gap-2.5 font-bold py-[18px] text-[16px] transition-all duration-200 ${offerAcknowledged ? 'bg-[#25D366] text-white active:opacity-80' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                  className={`relative overflow-hidden flex items-center justify-center gap-2.5 font-bold py-[18px] text-[16px] transition-all duration-200 ${offerAcknowledged ? 'bg-[#25D366] text-white active:opacity-80' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className={offerAcknowledged ? 'opacity-100' : 'opacity-40'}>
+                  {offerAcknowledged && (
+                    <motion.div
+                      className="absolute inset-0 -skew-x-12 pointer-events-none"
+                      style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '55%' }}
+                      animate={{ x: ['-130%', '320%'] }}
+                      transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 1.2, ease: 'easeInOut' }}
+                    />
+                  )}
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className={offerAcknowledged ? 'opacity-100' : 'opacity-40 relative z-10'}>
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                   </svg>
-                  Claim Secret Offer
+                  <span className="relative z-10">Claim Secret Offer</span>
                 </a>
               </div>
 
@@ -1815,7 +1787,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       initial={{ opacity: 0, scale: 0.95, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: 20 }}
-      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+      transition={{ type: 'spring', damping: 25, stiffness: 200, delay: 0.15 }}
       className="absolute inset-0 bg-white z-50 flex flex-col h-full overflow-hidden"
     >
       <div className="flex-1 overflow-y-auto pb-0">
@@ -1979,7 +1951,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           <div className="relative pl-4 border-l-2 border-gray-300 space-y-5 mt-4 ml-2 mb-2">
                             {day.schedule.map((item, idx) => (
                               <div key={idx} className="relative">
-                                <div className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#FFD700] border-2 border-white shadow-sm" />
+                                <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-[#FFD700] border-0 border-[#FAC94D] shadow-sm" />
                                 <div className="text-xs font-bold text-gray-400 mb-0.5 tracking-wide uppercase">{item.time}</div>
                                 <div className="text-sm font-medium text-gray-800">{item.activity}</div>
                               </div>
@@ -2075,7 +2047,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                         <span className="text-xs text-gray-500">Local Guide · {review.name.length * 2 + 5} reviews</span>
                       </div>
                       {/* Google G Logo SVG */}
-                      <div className="ml-auto opacity-20">
+                      <div className="ml-auto opacity-100">
                         <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                           <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                           <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
