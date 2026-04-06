@@ -211,6 +211,72 @@ const EVENTS: Event[] = [
       "🍃 Slow mornings, tea country trains, and a beach villa",
       "✈️ Flights included from Chennai"
     ]
+  },
+  {
+    id: 'e5',
+    cities: ['Chennai'],
+    category: 'Activities',
+    isActivity: true,
+    title: '5-a-Side Football Tournament',
+    timing: 'One Day · 4 Hours',
+    price: '₹799',
+    advanceAmount: 799,
+    description: 'Lace up and get on the turf. We\'re running a 5-a-side football tournament at the best grass turf in Chennai — round-robin format, referees, jerseys, and post-match chai included.',
+    heroImage: 'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'SNS Turf, Anna Nagar, Chennai',
+    quickInfo: [
+      { icon: 'pin', label: 'Venue', value: 'SNS Turf, Anna Nagar' },
+      { icon: 'users', label: 'Format', value: '5-a-Side, Round Robin' },
+      { icon: 'clock', label: 'Duration', value: '4 Hours' },
+      { icon: 'heart', label: 'Vibe', value: 'Competitive but chill' },
+    ],
+    transport: 'Make your own way',
+    groupSize: 'Max 40 players',
+    accommodationType: 'N/A',
+    included: [
+      'Match jersey',
+      'Referees & scorekeeping',
+      'Post-match chai & snacks',
+      'Trophy for winning team',
+    ],
+    notIncluded: [
+      'Transport to venue',
+      'Lunch',
+    ],
+    itinerary: [
+      {
+        day: 'Day 1',
+        title: 'Tournament Day',
+        description: 'Warm up, group-stage matches, semis, and finals. Post-match chai and trophy ceremony.',
+        schedule: [
+          { time: '9:00 AM', activity: 'Check-in & warm up' },
+          { time: '9:30 AM', activity: 'Group stage matches begin' },
+          { time: '12:00 PM', activity: 'Semis & Finals' },
+          { time: '1:00 PM', activity: 'Trophy ceremony & chai' },
+        ],
+      },
+    ],
+    accommodation: {
+      name: 'N/A',
+      images: [],
+      features: [],
+      policy: 'N/A',
+    },
+    videos: [],
+    reviews: [],
+    dates: [
+      { date: '2026-04-19', status: 'available', label: 'Spots open' },
+    ],
+    faqs: [
+      { question: 'Do I need to come with a team?', answer: 'Nope! We pair solo registrations into balanced teams.' },
+      { question: 'What should I wear?', answer: 'We provide jerseys. Wear football boots or turf shoes.' },
+    ],
+    bookingUrl: '/phonepe-mock',
+    announcements: [
+      '⚽ 5-a-Side Tournament — Chennai, Apr 19',
+      '🏆 Round-robin format with trophies',
+      '👟 Jersey included',
+    ],
   }
 ];
 
@@ -524,13 +590,15 @@ export default function App() {
 
   const handleDoubtSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const name = doubtFormData.name;
+    const phone = doubtFormData.phone;
+    const message = doubtFormData.message;
     setShowDoubtPopup(false);
+    setDoubtFormData({ name: '', phone: '', message: '' });
     setStep('PROCESSING');
-    addUserMessage("Vera Doubt Iruku");
-    
+    addUserMessage(message);
     simulateBotTyping(() => {
-      addBotMessage(`Got it, ${doubtFormData.name}! Our team will reach out to you on WhatsApp at ${doubtFormData.phone} shortly to help you with your doubt: "${doubtFormData.message}".`);
-      setDoubtFormData({ name: '', phone: '', message: '' });
+      addBotMessage(`Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`);
       setStep('DONE');
     }, 1000);
   };
@@ -720,14 +788,7 @@ export default function App() {
           </div>
         );
       case 'DONE':
-        return (
-          <div className="flex flex-col items-end gap-2 w-full">
-            <button onClick={() => window.location.reload()} className={`${btnClass} relative overflow-hidden`}>
-              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
-              <span>Start New Chat</span> <Send size={16} />
-            </button>
-          </div>
-        );
+        return null;
       default:
         return null;
     }
@@ -858,8 +919,7 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/45 backdrop-blur-md z-40"
-                onClick={() => { if (selectedEvent.id !== 'e3' && !selectedEvent.inviteOnly) setShowBookingTimeline(false); }}
+                className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
               />
               <motion.div
                 initial={{ opacity: 0, scale: 0.92 }}
@@ -938,10 +998,11 @@ export default function App() {
                     {selectedEvent.inviteOnly ? (
                       <button
                         onClick={() => { window.open(selectedEvent.waitlistUrl, '_blank'); }}
-                        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
+                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
+                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         Request Invitation
-                        <ArrowRight size={22} strokeWidth={2.5} />
+                        <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
                     ) : selectedEvent.id === 'e3' ? (
                       <button
@@ -954,10 +1015,11 @@ export default function App() {
                             setTimeout(() => setShowWaitlistForm(true), 150);
                           }
                         }}
-                        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
+                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
+                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         {isPhonePeFlow ? 'Confirm' : 'Request Invitation'}
-                        <ArrowRight size={22} strokeWidth={2.5} />
+                        <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
                     ) : (
                       <button
@@ -965,10 +1027,11 @@ export default function App() {
                           alert('Enquiry sent!');
                           setShowBookingTimeline(false);
                         }}
-                        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
+                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
+                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         Request Invitation
-                        <ArrowRight size={22} strokeWidth={2.5} />
+                        <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
                     )}
                   </div>
@@ -984,9 +1047,9 @@ export default function App() {
             <>
               <motion.div
                 initial={{ opacity: 0 }}
-                animate={{ opacity: 0.4 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[55] bg-black"
+                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
                 onClick={() => {
                   setShowDetailsForm(false);
                   setTimeout(() => setShowBookingTimeline(true), 80);
@@ -1320,7 +1383,7 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/45 backdrop-blur-md z-40"
+                className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
               />
               <motion.div
                 initial={{ y: 30, opacity: 0, scale: 0.99 }}
@@ -1357,65 +1420,86 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Doubt Popup */}
+        {/* Doubt Bottom Sheet */}
         <AnimatePresence>
           {showDoubtPopup && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/45 backdrop-blur-md z-50 flex items-center justify-center p-4"
-            >
+            <>
               <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="bg-white rounded-3xl p-6 w-full max-w-[320px] shadow-2xl flex flex-col items-center relative"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
+                onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', message: '' }); }}
+              />
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ duration: 0.32, ease: 'easeOut' }}
+                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-[60] flex flex-col"
               >
-                <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">What's on your mind?</h3>
+                {/* Handle + Header */}
+                <div className="px-6 pt-4 pb-4">
+                  <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
+                </div>
 
-                <form onSubmit={handleDoubtSubmit} className="w-full space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={doubtFormData.name}
-                      onChange={e => setDoubtFormData({...doubtFormData, name: e.target.value})}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent transition-all"
-                      placeholder="What should we call you"
-                    />
+                {/* Fields */}
+                <form onSubmit={handleDoubtSubmit}>
+                  <div className="px-6 space-y-3">
+                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={doubtFormData.name}
+                        onChange={e => setDoubtFormData({...doubtFormData, name: e.target.value})}
+                        placeholder="What should we call you"
+                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
+                        {doubtFormData.phone.length > 0 && doubtFormData.phone.length < 10 && (
+                          <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
+                        )}
+                      </div>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        required
+                        value={doubtFormData.phone}
+                        onChange={e => setDoubtFormData({...doubtFormData, phone: e.target.value.replace(/\D/g, '')})}
+                        placeholder="We'll reach you here"
+                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Your Doubt</label>
+                      <textarea
+                        required
+                        value={doubtFormData.message}
+                        onChange={e => setDoubtFormData({...doubtFormData, message: e.target.value})}
+                        placeholder="What's the doubt"
+                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none resize-none h-20"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">WhatsApp Number</label>
-                    <input
-                      type="tel"
-                      required
-                      value={doubtFormData.phone}
-                      onChange={e => setDoubtFormData({...doubtFormData, phone: e.target.value})}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent transition-all"
-                      placeholder="We'll reach you here"
-                    />
+
+                  <div className="px-6 pt-6 pb-5">
+                    <button
+                      type="submit"
+                      className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80"
+                    >
+                      Send Message
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Your Doubt</label>
-                    <textarea
-                      required
-                      value={doubtFormData.message}
-                      onChange={e => setDoubtFormData({...doubtFormData, message: e.target.value})}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] focus:border-transparent transition-all resize-none h-24"
-                      placeholder="What's the doubt"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full bg-[#FFD700] text-black font-black py-4 rounded-2xl hover:bg-[#e6c200] transition-colors shadow-sm active:scale-[0.98] mt-2"
-                  >
-                    Send Message
-                  </button>
                 </form>
               </motion.div>
-            </motion.div>
+            </>
           )}
         </AnimatePresence>
 
@@ -1446,89 +1530,110 @@ const ChatMessage = ({ message }: { message: Message }) => {
 
 const JourneyCard = ({ event, city, startDate }: { event: Event; city: string; startDate: string }) => {
   const cityLower = city.toLowerCase();
-  const baseStart = startDate;
-  const categoryIcon = () => {
-    if (event.category === 'Activities') return <Play size={12} className="text-blue-600" />;
-    if (event.category === 'Trips') return <Bus size={12} className="text-blue-600" />;
-    return <Home size={12} className="text-blue-600" />;
-  };
   const shiftDateStr = (dateStr: string, offset: number) => {
     const d = new Date(dateStr + 'T00:00:00');
     d.setDate(d.getDate() + offset);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
-  const parsePrice = (priceStr: string) => {
-    const num = parseInt(priceStr.replace(/[^0-9]/g, ''), 10);
-    return isNaN(num) ? 0 : num;
-  };
-  const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+  const fmtDate = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+  // ── MULTI-DAY TRIP with transport legs ──
   if (event.transportPlan && event.category === 'Trips') {
     const cityOffset = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(cityLower))?.dateOffset || 0;
     const legs = event.transportPlan.filter(leg => !leg.cities || leg.cities.map(c => c.toLowerCase()).includes(cityLower));
+    const legIcon = (type: string) => {
+      if (type === 'train') return <Train size={11} className="text-black" />;
+      if (type === 'flight') return <ArrowRight size={11} className="text-black" />;
+      return <Bus size={11} className="text-black" />;
+    };
     return (
-      <div className="bg-white rounded-2xl p-4 shadow-md border border-gray-100">
-        <h4 className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-2">
-          You're Booking
-        </h4>
-        <div className="flex flex-col gap-4 relative">
-          <div className="absolute left-[11px] top-3 bottom-3 w-0.5 bg-gray-200"></div>
-          {legs.map((leg, idx) => {
-            const legDate = shiftDateStr(baseStart, -cityOffset + leg.dateOffset);
-            return (
-              <div key={idx} className="flex gap-3 relative z-10">
-                <div className="bg-white border-2 border-blue-500 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
-                  {leg.type === 'train' ? <Train size={12} className="text-blue-600" /> : 
-                   leg.type === 'bus' ? <Bus size={12} className="text-blue-600" /> :
-                   leg.type === 'tempo' ? <Bus size={12} className="text-blue-600" /> :
-                   <Car size={12} className="text-blue-600" />}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">You're Booking</span>
+          <span className="text-[10px] font-bold text-black bg-[#FFD700] px-2 py-0.5 rounded-full">{event.timing}</span>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[13px] font-black text-gray-900 mb-3">{event.title}</p>
+          <div className="flex flex-col gap-3 relative">
+            <div className="absolute left-[9px] top-2 bottom-2 w-px bg-gray-200" />
+            {legs.map((leg, idx) => {
+              const legDate = shiftDateStr(startDate, -cityOffset + leg.dateOffset);
+              return (
+                <div key={idx} className="flex gap-3 relative z-10 items-start">
+                  <div className="w-[18px] h-[18px] rounded-full bg-[#FFD700] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    {legIcon(leg.type)}
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-gray-900 leading-tight">
+                      {leg.type.charAt(0).toUpperCase() + leg.type.slice(1)} · {leg.from} → {leg.to}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{fmtDate(legDate)} at {leg.time}</p>
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-gray-900 leading-tight">
-                    {leg.type.charAt(0).toUpperCase() + leg.type.slice(1)} from {leg.from} to {leg.to}
-                  </span>
-                  <span className="text-[10px] text-gray-500 mt-0.5">
-                    {new Date(legDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at {leg.time}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     );
   }
 
-  const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === cityLower);
-  return (
-    <div className="bg-white rounded-2xl p-4 shadow-md border border-gray-100">
-      <h4 className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-2">
-        You're Booking
-      </h4>
-      <div className="flex flex-col gap-2 text-sm text-gray-700">
-        <div className="flex items-start gap-2">
-          <MapPin size={12} className="text-blue-600 mt-0.5" />
-          <span className="font-semibold">
-            {pickup ? `${pickup.city} · ${pickup.location}` : event.startLocation}
-          </span>
+  // ── ACTIVITY / WORKSHOP / SPORTING EVENT ──
+  if (event.isActivity || event.category === 'Activities') {
+    const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === cityLower);
+    const firstSchedule = event.itinerary?.[0]?.schedule?.[0];
+    const rows = [
+      { icon: <MapPin size={12} className="text-gray-400" />, label: 'Venue', value: pickup ? `${pickup.location}` : event.startLocation },
+      { icon: <Calendar size={12} className="text-gray-400" />, label: 'Date', value: `${fmtDate(startDate)}${firstSchedule ? ` · ${firstSchedule.time}` : ''}` },
+      { icon: <Timer size={12} className="text-gray-400" />, label: 'Duration', value: event.timing },
+      { icon: <Users size={12} className="text-gray-400" />, label: 'Group', value: event.groupSize },
+    ];
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">You're Booking</span>
+          <span className="text-[10px] font-bold text-black bg-[#FFD700] px-2 py-0.5 rounded-full">{event.category}</span>
         </div>
-        <div className="flex items-start gap-2">
-          <Calendar size={12} className="text-blue-600 mt-0.5" />
-          <span>
-            {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}{' '}
-            {pickup?.time ? `· ${pickup.time}` : ''}
-          </span>
-        </div>
-        <div className="flex items-start gap-2">
-          {categoryIcon()}
-          <span className="font-medium capitalize">{event.category}</span>
-        </div>
-        {event.category === 'Trips' && (
-          <div className="flex items-start gap-2">
-            <Bus size={12} className="text-blue-600 mt-0.5" />
-            <span className="font-medium">{event.transport}</span>
+        <div className="px-4 py-3">
+          <p className="text-[13px] font-black text-gray-900 mb-3">{event.title}</p>
+          <div className="flex flex-col gap-2">
+            {rows.map((row, i) => (
+              <div key={i} className="flex items-center gap-2">
+                {row.icon}
+                <span className="text-[11px] text-gray-400 w-12 flex-shrink-0">{row.label}</span>
+                <span className="text-[12px] font-semibold text-gray-800">{row.value}</span>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── PARTY / ONE-OFF EVENT (fallback) ──
+  const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === cityLower);
+  const rows = [
+    { icon: <MapPin size={12} className="text-gray-400" />, label: 'Location', value: pickup ? `${pickup.city} · ${pickup.location}` : event.startLocation },
+    { icon: <Calendar size={12} className="text-gray-400" />, label: 'Date', value: `${fmtDate(startDate)}${pickup?.time ? ` · ${pickup.time}` : ''}` },
+    { icon: <Users size={12} className="text-gray-400" />, label: 'Group', value: event.groupSize },
+  ];
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">You're Booking</span>
+        <span className="text-[10px] font-bold text-black bg-[#FFD700] px-2 py-0.5 rounded-full">{event.category}</span>
+      </div>
+      <div className="px-4 py-3">
+        <p className="text-[13px] font-black text-gray-900 mb-3">{event.title}</p>
+        <div className="flex flex-col gap-2">
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              {row.icon}
+              <span className="text-[11px] text-gray-400 w-16 flex-shrink-0">{row.label}</span>
+              <span className="text-[12px] font-semibold text-gray-800">{row.value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1922,7 +2027,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           {day.description}
                         </p>
                         {day.schedule && (
-                          <div className="relative pl-4 border-l-2 border-gray-100 space-y-5 mt-4 ml-2 mb-2">
+                          <div className="relative pl-4 border-l-2 border-gray-300 space-y-5 mt-4 ml-2 mb-2">
                             {day.schedule.map((item, idx) => (
                               <div key={idx} className="relative">
                                 <div className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#FFD700] border-2 border-white shadow-sm" />
@@ -2177,7 +2282,8 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/45 backdrop-blur-md z-40"
+              className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
+              onClick={() => setShowCalendar(false)}
             />
             <motion.div
               initial={{ y: '100%' }}
@@ -2186,7 +2292,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-50 flex flex-col max-h-[95%] overflow-hidden shadow-2xl"
             >
-              <div className="p-4 pb-0 bg-white sticky top-0 z-10">
+              <div className="p-4 pb-0 bg-white sticky top-0 z-10 cursor-pointer" onClick={() => setShowCalendar(false)}>
                 <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
               </div>
               <div className="p-4 overflow-y-auto pb-safe">
