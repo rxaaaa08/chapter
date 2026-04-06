@@ -1535,113 +1535,55 @@ const ChatMessage = ({ message }: { message: Message }) => {
   );
 }
 
-const JourneyCard = ({ event, city, startDate }: { event: Event; city: string; startDate: string }) => {
-  const cityLower = city.toLowerCase();
-  const shiftDateStr = (dateStr: string, offset: number) => {
-    const d = new Date(dateStr + 'T00:00:00');
-    d.setDate(d.getDate() + offset);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-  const fmtDate = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDate: string }) => {
+  const d = new Date(startDate + 'T00:00:00');
+  const day    = d.getDate().toString();
+  const month  = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
 
-  // ── MULTI-DAY TRIP with transport legs ──
-  if (event.transportPlan && event.category === 'Trips') {
-    const cityOffset = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(cityLower))?.dateOffset || 0;
-    const legs = event.transportPlan.filter(leg => !leg.cities || leg.cities.map(c => c.toLowerCase()).includes(cityLower));
-    const legIcon = (type: string) => {
-      if (type === 'train') return <Train size={11} className="text-black" />;
-      if (type === 'flight') return <ArrowRight size={11} className="text-black" />;
-      return <Bus size={11} className="text-black" />;
-    };
-    return (
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">You're Booking</span>
-          <span className="text-[10px] font-bold text-black bg-[#FFD700] px-2 py-0.5 rounded-full">{event.timing}</span>
-        </div>
-        <div className="px-4 py-3">
-          <p className="text-[13px] font-black text-gray-900 mb-3">{event.title}</p>
-          <div className="flex flex-col gap-3 relative">
-            <div className="absolute left-[9px] top-2 bottom-2 w-px bg-gray-200" />
-            {legs.map((leg, idx) => {
-              const legDate = shiftDateStr(startDate, -cityOffset + leg.dateOffset);
-              return (
-                <div key={idx} className="flex gap-3 relative z-10 items-start">
-                  <div className="w-[18px] h-[18px] rounded-full bg-[#FFD700] flex items-center justify-center flex-shrink-0 mt-0.5">
-                    {legIcon(leg.type)}
-                  </div>
-                  <div>
-                    <p className="text-[12px] font-bold text-gray-900 leading-tight">
-                      {leg.type.charAt(0).toUpperCase() + leg.type.slice(1)} · {leg.from} → {leg.to}
-                    </p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{fmtDate(legDate)} at {leg.time}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const qi = event.quickInfo || [];
+  const spotField      = qi.find(c => c.label === 'Meeting Spot' || c.label === 'Venue')    || qi[0];
+  const transportField = qi.find(c => c.label === 'Transport'    || c.label === 'Format')   || qi[1];
 
-  // ── ACTIVITY / WORKSHOP / SPORTING EVENT ──
-  if (event.isActivity || event.category === 'Activities') {
-    const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === cityLower);
-    const firstSchedule = event.itinerary?.[0]?.schedule?.[0];
-    const rows = [
-      { icon: <MapPin size={12} className="text-gray-400" />, label: 'Venue', value: pickup ? `${pickup.location}` : event.startLocation },
-      { icon: <Calendar size={12} className="text-gray-400" />, label: 'Date', value: `${fmtDate(startDate)}${firstSchedule ? ` · ${firstSchedule.time}` : ''}` },
-      { icon: <Timer size={12} className="text-gray-400" />, label: 'Duration', value: event.timing },
-      { icon: <Users size={12} className="text-gray-400" />, label: 'Group', value: event.groupSize },
-    ];
-    return (
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">You're Booking</span>
-          <span className="text-[10px] font-bold text-black bg-[#FFD700] px-2 py-0.5 rounded-full">{event.category}</span>
-        </div>
-        <div className="px-4 py-3">
-          <p className="text-[13px] font-black text-gray-900 mb-3">{event.title}</p>
-          <div className="flex flex-col gap-2">
-            {rows.map((row, i) => (
-              <div key={i} className="flex items-center gap-2">
-                {row.icon}
-                <span className="text-[11px] text-gray-400 w-12 flex-shrink-0">{row.label}</span>
-                <span className="text-[12px] font-semibold text-gray-800">{row.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
 
-  // ── PARTY / ONE-OFF EVENT (fallback) ──
-  const pickup = event.pickupPoints?.find(p => p.city.toLowerCase() === cityLower);
-  const rows = [
-    { icon: <MapPin size={12} className="text-gray-400" />, label: 'Location', value: pickup ? `${pickup.city} · ${pickup.location}` : event.startLocation },
-    { icon: <Calendar size={12} className="text-gray-400" />, label: 'Date', value: `${fmtDate(startDate)}${pickup?.time ? ` · ${pickup.time}` : ''}` },
-    { icon: <Users size={12} className="text-gray-400" />, label: 'Group', value: event.groupSize },
-  ];
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
-        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">You're Booking</span>
-        <span className="text-[10px] font-bold text-black bg-[#FFD700] px-2 py-0.5 rounded-full">{event.category}</span>
-      </div>
-      <div className="px-4 py-3">
-        <p className="text-[13px] font-black text-gray-900 mb-3">{event.title}</p>
-        <div className="flex flex-col gap-2">
-          {rows.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
-              {row.icon}
-              <span className="text-[11px] text-gray-400 w-16 flex-shrink-0">{row.label}</span>
-              <span className="text-[12px] font-semibold text-gray-800">{row.value}</span>
+    <div>
+      <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2 px-1">You're Booking</p>
+
+    <div className="border-2 border-dashed border-gray-300 rounded-2xl overflow-hidden bg-white">
+
+      {/* Body: left info + right date (spanning full height) */}
+      <div className="flex">
+
+        {/* Left: Meeting Spot (top) + Transport (bottom) */}
+        <div className="flex-1 flex flex-col">
+          <div className="px-4 py-3 border-b-2 border-dashed border-gray-300">
+            <div className="flex items-center gap-1 mb-1">
+              <MapPin size={9} className="text-gray-400" />
+              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField?.label}</span>
             </div>
-          ))}
+            <span className="text-[13px] font-black text-gray-900 leading-tight">{spotField?.value}</span>
+          </div>
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-1 mb-1">
+              <Bus size={9} className="text-gray-400" />
+              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField?.label}</span>
+            </div>
+            <span className="text-[13px] font-black text-gray-900 leading-tight">{transportField?.value}</span>
+          </div>
         </div>
+
+        {/* Right: Date spanning full height */}
+        <div className="border-l-2 border-dashed border-gray-300 flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
+          <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
+          <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
+          {firstTime && <span className="text-[13px] font-bold text-gray-900 mt-1.5">{firstTime}</span>}
+        </div>
+
       </div>
+    </div>
     </div>
   );
 };
