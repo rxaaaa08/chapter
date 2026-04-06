@@ -1765,7 +1765,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         if (isWithinTrip)    return "text-black font-semibold border border-[#d4af37]/80 z-0";
         if (isTripEnd)       return "text-black font-semibold border border-[#d4af37]";
         if (tripDate?.status === 'available')    return "text-green-900 font-bold border border-green-500 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
-        if (tripDate?.status === 'selling_out')  return "text-orange-900 font-bold border border-orange-400";
+        if (tripDate?.status === 'selling_out')  return "text-amber-950 font-bold border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]";
         if (tripDate?.status === 'sold_out')     return "text-gray-300";
         return "text-gray-400";
       })();
@@ -1773,7 +1773,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       const bgOverlay = (() => {
         if (isSelectedStart || isWithinTrip || isTripEnd) return "rgba(255,226,138,1)";
         if (tripDate?.status === 'available')   return "rgba(187,247,208,0.8)";
-        if (tripDate?.status === 'selling_out') return "rgba(254,215,170,0.7)";
+        if (tripDate?.status === 'selling_out') return "#FFEDE5";
         return "#f3f4f6"; // gray-100 for unavailable
       })();
 
@@ -1849,7 +1849,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         </div>
         <div className="flex items-center justify-center gap-5 mt-4 mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-600">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-orange-300 border border-orange-600 shadow-[0_0_0_1px_rgba(234,88,12,0.35)]"></div>
+            <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
             <span>Filling fast</span>
           </div>
           <div className="flex items-center gap-2">
