@@ -68,6 +68,8 @@ interface Event {
   faqs: FAQ[];
   bookingUrl: string;
   announcements?: string[];
+  inviteOnly?: boolean;
+  waitlistUrl?: string;
 }
 
 // Mock Data
@@ -209,301 +211,13 @@ const EVENTS: Event[] = [
       "🍃 Slow mornings, tea country trains, and a beach villa",
       "✈️ Flights included from Chennai"
     ]
-  },
-  {
-    id: 'e4',
-    cities: ['Chennai'],
-    category: 'Parties',
-    isActivity: true,
-    title: 'Pondicherry Beach House Party',
-    timing: '2 Days 1 Night',
-    price: '₹4,999',
-    advanceAmount: 1000,
-    description: 'A curated beach house takeover in Pondicherry. Live music, bonfires, good food, and a handpicked crowd that actually vibes.',
-    heroImage: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Chennai Central (Pickup)',
-    quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Chennai Central' },
-      { icon: 'bus', label: 'Transport', value: 'Coach from Chennai' },
-      { icon: 'users', label: 'Group Size', value: '30-35 travellers' },
-      { icon: 'heart', label: "You'll Meet", value: 'Party people & good vibes crew' },
-    ],
-    transport: 'AC Coach',
-    groupSize: 'Max 35 travellers',
-    accommodationType: 'Beach house (shared rooms)',
-    included: [
-      'Coach transport from Chennai',
-      '1 night beach house stay',
-      'Welcome drinks & bonfire night',
-      'DJ + live acoustic set',
-      'Breakfast on Day 2'
-    ],
-    notIncluded: [
-      'Lunch & dinner (Day 1)',
-      'Personal drinks beyond welcome kit',
-      'Any personal expenses'
-    ],
-    itinerary: [
-      { day: 'Day 1', title: 'Roll In & Vibe Out', description: 'Coach departs Chennai evening, arrive Pondy by night, beach bonfire and DJ sets till late.' },
-      { day: 'Day 2', title: 'Beach Morning & Head Back', description: 'Slow beach morning, group breakfast, optional dip, coach back by noon.' }
-    ],
-    accommodation: {
-      name: 'Pondicherry Beach House',
-      images: ['https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=1200&auto=format&fit=crop'],
-      features: ['Direct beach access', 'Bonfire area', 'Shared dorm & twin rooms'],
-      policy: 'Same-gender shared rooms. No outside alcohol.'
-    },
-    videos: [
-      { thumbnail: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?q=80&w=400&auto=format&fit=crop', caption: 'Beach house vibes' }
-    ],
-    reviews: [
-      { name: 'Karthik R', rating: 5, text: 'Best two days of my year. Met people I still talk to every day.', images: [] }
-    ],
-    dates: [
-      { date: '2026-04-18', status: 'selling_out', label: '3 spots left' },
-      { date: '2026-05-09', status: 'available', label: 'May batch' }
-    ],
-    faqs: [
-      { question: 'Is it only for Chennai people?', answer: 'Mostly yes — coach departs Chennai. But you can make your own way to Pondy and join.' },
-      { question: 'Is it a wild party?', answer: 'It\'s curated and safe. Good music, good people, no chaos.' }
-    ],
-    bookingUrl: '/phonepe-mock'
-  },
-  {
-    id: 'e5',
-    cities: ['Bangalore'],
-    category: 'Trips',
-    title: 'Coorg Coffee & Camping',
-    timing: '2 Nights 3 Days',
-    price: '₹9,999',
-    advanceAmount: 2000,
-    description: 'A weekend escape into the misty hills of Coorg. Coffee estate walks, waterfall hikes, campfire nights, and mornings that smell like freshly brewed filter coffee.',
-    heroImage: 'https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Bangalore (Silk Board)',
-    quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Silk Board, Bangalore' },
-      { icon: 'bus', label: 'Transport', value: 'AC Tempo Traveller' },
-      { icon: 'users', label: 'Group Size', value: '14-16 travellers' },
-      { icon: 'heart', label: "You'll Meet", value: 'Nature lovers & slow travel folk' },
-    ],
-    transport: 'AC Tempo Traveller',
-    groupSize: 'Max 16 travellers',
-    accommodationType: 'Coffee estate & campsite',
-    included: [
-      'Transport from Bangalore & back',
-      '2 nights stay (estate + campsite)',
-      'All meals (breakfast, lunch, dinner)',
-      'Coffee estate guided walk',
-      'Campfire & group activities'
-    ],
-    notIncluded: [
-      'Personal shopping',
-      'Any optional add-ons',
-      'Travel insurance'
-    ],
-    itinerary: [
-      { day: 'Day 1', title: 'Drive Up & Settle In', description: 'Early morning depart Bangalore, arrive Coorg by afternoon. Coffee estate check-in, evening walk through the plantation.' },
-      { day: 'Day 2', title: 'Waterfall Hike & Campfire', description: 'Morning hike to Abbey Falls, afternoon free time, campfire night under the stars with music and stories.' },
-      { day: 'Day 3', title: 'Filter Coffee & Drive Back', description: 'Slow morning with estate breakfast, pick up some estate coffee, drive back to Bangalore by evening.' }
-    ],
-    accommodation: {
-      name: 'Coorg Coffee Estate & Hilltop Campsite',
-      images: ['https://images.unsplash.com/photo-1510312305653-8ed496efae75?q=80&w=1200&auto=format&fit=crop'],
-      features: ['Estate bungalow with valley views', 'Tented campsite under the stars', 'Farm-fresh meals'],
-      policy: 'Twin sharing. Same-gender rooms by default.'
-    },
-    videos: [
-      { thumbnail: 'https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=400&auto=format&fit=crop', caption: 'Misty Coorg mornings' }
-    ],
-    reviews: [
-      { name: 'Priya S', rating: 5, text: 'The campfire night was magical. Came alone, left with a group of friends.', images: [] }
-    ],
-    dates: [
-      { date: '2026-04-25', status: 'available', label: 'April batch' },
-      { date: '2026-05-16', status: 'available', label: 'May batch' }
-    ],
-    faqs: [
-      { question: 'Is this suitable for first-time campers?', answer: 'Absolutely. It\'s comfortable camping with proper tents, mattresses, and clean facilities.' },
-      { question: 'Can I join solo?', answer: 'Yes, most people do. We match roommates thoughtfully.' }
-    ],
-    bookingUrl: '/phonepe-mock'
-  },
-  {
-    id: 'e6',
-    cities: ['Bangalore'],
-    category: 'Parties',
-    isActivity: true,
-    title: 'Bangalore Rooftop Mixer',
-    timing: '1 Evening',
-    price: '₹999',
-    advanceAmount: 999,
-    description: 'A curated rooftop social for people who want to meet interesting strangers and leave with actual friends. Good music, city views, and no awkward small talk.',
-    heroImage: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Indiranagar, Bangalore',
-    quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Indiranagar Rooftop Venue' },
-      { icon: 'bus', label: 'Transport', value: 'Make your own way' },
-      { icon: 'users', label: 'Group Size', value: '40-50 travellers' },
-      { icon: 'heart', label: "You'll Meet", value: 'Curious, social, open-minded people' },
-    ],
-    transport: 'Self',
-    groupSize: 'Max 50 guests',
-    accommodationType: 'N/A',
-    included: [
-      'Entry + welcome drink',
-      'Curated icebreaker activities',
-      'Live DJ set',
-      'Light bites & finger food'
-    ],
-    notIncluded: [
-      'Additional drinks',
-      'Transport to venue'
-    ],
-    itinerary: [
-      { day: 'Evening', title: 'Rooftop Social', description: '6 PM doors open. Icebreakers, DJ, city views, and conversations that actually go somewhere.' }
-    ],
-    accommodation: {
-      name: 'N/A',
-      images: ['https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=1200&auto=format&fit=crop'],
-      features: ['Rooftop venue', 'City skyline views', 'Curated crowd'],
-      policy: 'No plus-ones. Solo entries only — that\'s the point.'
-    },
-    videos: [
-      { thumbnail: 'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=400&auto=format&fit=crop', caption: 'Rooftop mixer vibes' }
-    ],
-    reviews: [
-      { name: 'Ananya M', rating: 5, text: 'Walked in knowing nobody. Left with 6 new contacts and plans for next weekend.', images: [] }
-    ],
-    dates: [
-      { date: '2026-04-19', status: 'selling_out', label: '8 spots left' }
-    ],
-    faqs: [
-      { question: 'Is it only for singles?', answer: 'No, it\'s for anyone who wants to expand their social circle. Couples welcome too.' },
-      { question: 'What\'s the vibe?', answer: 'Think: interesting people, good music, low pressure. Not a networking event.' }
-    ],
-    bookingUrl: '/phonepe-mock'
-  },
-  {
-    id: 'e7',
-    cities: ['Mumbai'],
-    category: 'Trips',
-    title: 'Goa Beach Weekend',
-    timing: '2 Nights 3 Days',
-    price: '₹12,999',
-    advanceAmount: 3000,
-    description: 'Not your average Goa trip. A curated group of 18, a rented villa in North Goa, beach days, sunrise runs, and the kind of conversations that only happen on holiday.',
-    heroImage: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Mumbai Airport (BOM)',
-    quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Mumbai Airport (BOM)' },
-      { icon: 'bus', label: 'Transport', value: 'Flights + Villa Pickup' },
-      { icon: 'users', label: 'Group Size', value: '14-18 travellers' },
-      { icon: 'heart', label: "You'll Meet", value: 'Beach lovers & good conversation people' },
-    ],
-    transport: 'Flights + Private Villa Transfer',
-    groupSize: 'Max 18 travellers',
-    accommodationType: 'Private villa, North Goa',
-    included: [
-      'Round-trip flights from Mumbai',
-      'Villa stay (2 nights)',
-      'Airport & villa transfers',
-      'Welcome dinner + beach BBQ',
-      'Curated group activities'
-    ],
-    notIncluded: [
-      'Lunches & personal meals',
-      'Personal drinks',
-      'Travel insurance'
-    ],
-    itinerary: [
-      { day: 'Day 1', title: 'Fly In & Villa Check-In', description: 'Morning flight, villa check-in, afternoon at the pool, welcome dinner as the sun goes down.' },
-      { day: 'Day 2', title: 'Full Beach Day', description: 'Breakfast at the villa, beach day at Morjim or Ashwem, sunset cruise option, beach BBQ at night.' },
-      { day: 'Day 3', title: 'Market, Brunch & Fly Back', description: 'Anjuna flea market, leisurely brunch, fly back to Mumbai by evening.' }
-    ],
-    accommodation: {
-      name: 'North Goa Private Villa',
-      images: ['https://images.unsplash.com/photo-1582719508461-905c673771fd?q=80&w=1200&auto=format&fit=crop'],
-      features: ['Private pool', '5 min from beach', 'Chef-cooked breakfast daily'],
-      policy: 'Twin sharing. Same-gender rooms by default.'
-    },
-    videos: [
-      { thumbnail: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?q=80&w=400&auto=format&fit=crop', caption: 'Golden hour in North Goa' }
-    ],
-    reviews: [
-      { name: 'Rohan V', rating: 5, text: 'The villa was incredible. But honestly, the people made it.', images: [] }
-    ],
-    dates: [
-      { date: '2026-05-02', status: 'available', label: 'May long weekend' },
-      { date: '2026-05-23', status: 'available', label: 'Late May batch' }
-    ],
-    faqs: [
-      { question: 'Can I come alone?', answer: 'That\'s literally what this is for. Solo joiners are the majority.' },
-      { question: 'What\'s the age group?', answer: 'Typically 22–32. But we don\'t filter by age — vibe matters more.' }
-    ],
-    bookingUrl: '/phonepe-mock'
-  },
-  {
-    id: 'e8',
-    cities: ['Mumbai'],
-    category: 'Parties',
-    isActivity: true,
-    title: 'Bandra Sunset Social',
-    timing: '1 Evening',
-    price: '₹1,299',
-    advanceAmount: 1299,
-    description: 'A curated evening for Mumbai people who want to meet their people. Bandra rooftop, sunset, DJ, and a crowd that\'s actually interesting.',
-    heroImage: 'https://images.unsplash.com/photo-1529543544282-ea669407fca3?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Bandra West, Mumbai',
-    quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Bandra West Rooftop' },
-      { icon: 'bus', label: 'Transport', value: 'Make your own way' },
-      { icon: 'users', label: 'Group Size', value: '50-60 people' },
-      { icon: 'heart', label: "You'll Meet", value: 'Creative, social Mumbai folk' },
-    ],
-    transport: 'Self',
-    groupSize: 'Max 60 guests',
-    accommodationType: 'N/A',
-    included: [
-      'Entry + welcome mocktail',
-      'Curated icebreaker games',
-      'Sunset DJ set',
-      'Snacks & small bites'
-    ],
-    notIncluded: [
-      'Additional drinks',
-      'Transport to venue'
-    ],
-    itinerary: [
-      { day: 'Evening', title: 'Sunset Social', description: '5:30 PM doors open. Catch the Bandra sunset, make real friends, stay as long as the vibe lasts.' }
-    ],
-    accommodation: {
-      name: 'N/A',
-      images: ['https://images.unsplash.com/photo-1529543544282-ea669407fca3?q=80&w=1200&auto=format&fit=crop'],
-      features: ['Rooftop with sea view', 'Sunset timing', 'No awkward networking'],
-      policy: 'Solo entries encouraged. Curated crowd.'
-    },
-    videos: [
-      { thumbnail: 'https://images.unsplash.com/photo-1529543544282-ea669407fca3?q=80&w=400&auto=format&fit=crop', caption: 'Bandra sunsets hit different' }
-    ],
-    reviews: [
-      { name: 'Shruti K', rating: 5, text: 'Didn\'t expect to have this much fun at a "social event". chapter அ really curates the crowd well.', images: [] }
-    ],
-    dates: [
-      { date: '2026-04-26', status: 'available', label: 'Saturday evening' }
-    ],
-    faqs: [
-      { question: 'Is this a dating event?', answer: 'No. It\'s a social event to meet interesting people. Connections of all kinds happen naturally.' },
-      { question: 'Is the crowd curated?', answer: 'Yes. We review applications to keep the vibe right.' }
-    ],
-    bookingUrl: '/phonepe-mock'
   }
 ];
 
 const GENERAL_ANNOUNCEMENTS = [
   "Chennai-based social club with 4000+ members",
-  "🔥 Pondicherry Beach House Party: 3 spots left!",
-  "✨ Kolukkumalai Trip Pre-Registration Open",
-  "🌊 Surf & Stay Weekend: Early bird ends soon"
+  "🇱🇰 Sri Lanka Retreat waitlist now open",
+  "✈️ Flights included from Chennai"
 ];
 
 export default function App() {
@@ -859,7 +573,7 @@ export default function App() {
     if (isTyping || step === 'PROCESSING' || step === 'INIT') {
       return (
         <div className="flex justify-start">
-          <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm flex items-center gap-1.5">
+          <div className="bg-white rounded-r-2xl rounded-bl-2xl px-4 py-3 shadow-sm flex items-center gap-1.5">
             <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
             <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
             <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
@@ -894,8 +608,9 @@ export default function App() {
         const availableCategories = Array.from(new Set(EVENTS.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {availableCategories.map(cat => (
-              <button key={cat} onClick={() => handleCategorySelect(cat)} className={btnClass}>
+            {availableCategories.map((cat, i) => (
+              <button key={cat} onClick={() => handleCategorySelect(cat)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
                 <span>{cat}</span> <Send size={16} />
               </button>
             ))}
@@ -924,23 +639,23 @@ export default function App() {
       case 'ASK_GENDER':
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            <button onClick={() => handleGenderSelect('Male')} className={btnClass}>
-              <span>Male</span> <Send size={16} />
-            </button>
-            <button onClick={() => handleGenderSelect('Female')} className={btnClass}>
-              <span>Female</span> <Send size={16} />
-            </button>
+            {['Male', 'Female'].map((g, i) => (
+              <button key={g} onClick={() => handleGenderSelect(g)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
+                <span>{g}</span> <Send size={16} />
+              </button>
+            ))}
           </motion.div>
         );
       case 'ASK_TRANSPORT':
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            <button onClick={() => handleTransportSelect('With Transport')} className={btnClass}>
-              <span>With Transport</span> <Send size={16} />
-            </button>
-            <button onClick={() => handleTransportSelect('Without Transport')} className={btnClass}>
-              <span>Without Transport</span> <Send size={16} />
-            </button>
+            {['With Transport', 'Without Transport'].map((t, i) => (
+              <button key={t} onClick={() => handleTransportSelect(t)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
+                <span>{t}</span> <Send size={16} />
+              </button>
+            ))}
           </motion.div>
         );
       case 'SHOW_FAQ': {
@@ -958,10 +673,12 @@ export default function App() {
                 <span className="truncate whitespace-normal text-left">{faq.question}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
-            <button onClick={() => setShowDoubtPopup(true)} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full">
+            <button onClick={() => setShowDoubtPopup(true)} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
+              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
               <span className="truncate whitespace-normal text-left">Vera Doubt Iruku</span> <MessageCircle size={16} className="flex-shrink-0" />
             </button>
-            <button onClick={handleReadyToBook} className={primaryBtnClass + " mt-2"}>
+            <button onClick={handleReadyToBook} className={primaryBtnClass + " mt-2 relative overflow-hidden"}>
+              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
               <span>All clear, let's book! 🚀</span> <Send size={16} />
             </button>
           </motion.div>
@@ -976,7 +693,8 @@ export default function App() {
                 addBotMessage("Let's try again! Which city are you from?");
                 setStep('ASK_CITY');
               });
-            }} className={btnClass}>
+            }} className={`${btnClass} relative overflow-hidden`}>
+              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
               <span>Start Over</span> <Send size={16} />
             </button>
           </motion.div>
@@ -985,8 +703,9 @@ export default function App() {
         const filteredEvents = EVENTS.filter(e => e.cities.includes(selectedCity) && e.category === selectedCategory);
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {filteredEvents.map(event => (
-              <button key={event.id} onClick={() => handleEventSelect(event)} className={btnClass}>
+            {filteredEvents.map((event, i) => (
+              <button key={event.id} onClick={() => handleEventSelect(event)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
                 <span className="text-left flex-1 mr-2">{event.title}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
@@ -1002,7 +721,8 @@ export default function App() {
       case 'DONE':
         return (
           <div className="flex flex-col items-end gap-2 w-full">
-            <button onClick={() => window.location.reload()} className={btnClass}>
+            <button onClick={() => window.location.reload()} className={`${btnClass} relative overflow-hidden`}>
+              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
               <span>Start New Chat</span> <Send size={16} />
             </button>
           </div>
@@ -1021,7 +741,7 @@ export default function App() {
       <div className="w-full max-w-md bg-white sm:rounded-[2rem] shadow-2xl overflow-hidden flex flex-col h-[100dvh] sm:h-[85vh] relative border-4 border-white">
         
         {/* Header */}
-        <div className="bg-white p-4 flex items-center gap-3 border-b border-gray-100 z-10 relative shadow-sm">
+        <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center text-[#FFD700] font-black text-2xl shadow-md">
               அ
@@ -1059,7 +779,17 @@ export default function App() {
               <ChatMessage key={msg.id} message={msg} />
             ))}
             <div className="pt-1">
-              {renderOptions()}
+              {(() => {
+                const opts = renderOptions();
+                if (isTyping || step === 'PROCESSING' || step === 'INIT') return opts;
+                if (!opts || step === 'EVENT_SELECTED' || step === 'DONE') return opts;
+                return (
+                  <div className="bg-white rounded-2xl border border-gray-200 p-3">
+                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider px-1 mb-2">Choose your reply</p>
+                    {opts}
+                  </div>
+                );
+              })()}
             </div>
             <div ref={messagesEndRef} className="h-4" />
           </div>
@@ -1122,7 +852,7 @@ export default function App() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="absolute inset-0 bg-black/45 backdrop-blur-md z-40"
-                onClick={() => { if (selectedEvent.id !== 'e3') setShowBookingTimeline(false); }}
+                onClick={() => { if (selectedEvent.id !== 'e3' && !selectedEvent.inviteOnly) setShowBookingTimeline(false); }}
               />
               <motion.div
                 initial={{ opacity: 0, scale: 0.92 }}
@@ -1132,11 +862,11 @@ export default function App() {
                 className="absolute inset-0 z-50 flex items-center justify-center px-5"
               >
                 <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
-                  <div className="px-6 pt-6 pb-4 flex items-start justify-between">
-                    <div>
-                      <h2 className="text-2xl font-black text-gray-900 leading-tight">Your Booking Timeline</h2>
+                  <div className="px-6 pt-6 pb-4 flex items-center justify-between">
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
                     </div>
-                    {selectedEvent.id !== 'e3' && (
+                    {selectedEvent.id !== 'e3' && !selectedEvent.inviteOnly && (
                       <button
                         onClick={() => setShowBookingTimeline(false)}
                         className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mt-1 flex-shrink-0"
@@ -1148,16 +878,16 @@ export default function App() {
 
                   <div className="px-6 pb-6">
                     <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                      {/* Advance row */}
+                      {/* Advance / Sign Up row */}
                       <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                         <div>
-                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Advance</p>
-                          <p className="text-[20px] font-black text-gray-900 leading-none">
-                            ₹{selectedEvent.advanceAmount.toLocaleString('en-IN')}
+                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">{selectedEvent.inviteOnly ? 'Sign Up' : 'Advance'}</p>
+                          <p className="text-[15px] font-black text-gray-900 leading-none">
+                            {selectedEvent.inviteOnly ? 'Free — no payment yet' : `₹${selectedEvent.advanceAmount.toLocaleString('en-IN')}`}
                           </p>
                         </div>
                         <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">
-                          Pay Now
+                          {selectedEvent.inviteOnly ? 'Free' : 'Now'}
                         </span>
                       </div>
 
@@ -1165,32 +895,29 @@ export default function App() {
                       <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                         <div>
                           <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
-                          <p className="text-[20px] font-black text-gray-900 leading-none">
+                          <p className="text-[15px] font-black text-gray-900 leading-none">
                             ₹{(parseInt(selectedEvent.price.replace(/\D/g, '')) - selectedEvent.advanceAmount).toLocaleString('en-IN')}
                           </p>
                         </div>
                         <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
-                          {bookingDate ? `Pay by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '5 days before trip'}
+                          {bookingDate ? `by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '5 days before trip'}
                         </span>
                       </div>
 
                       {/* Receive details row */}
                       <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                         <div>
-                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Receive Details</p>
-                          <p className="text-[14px] font-semibold text-gray-800 leading-tight">Visa, flights & stay info</p>
+                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Receive</p>
+                          <p className="text-[15px] font-black text-gray-900 leading-none">Visa, flights & stay info</p>
                         </div>
                         <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                          {bookingDate ? `By ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before trip'}
+                          {bookingDate ? `by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before trip'}
                         </span>
                       </div>
 
                       {/* Prize row — event title + date, yellow accented */}
                       <div className="px-5 py-4 flex items-center justify-between bg-[#FFD700]/10">
-                        <div>
-                          <p className="text-[11px] text-[#b38200] font-semibold mb-0.5 uppercase tracking-wider">You're going to</p>
-                          <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
-                        </div>
+                        <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
                         {bookingDate && (
                           <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                             {new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -1201,7 +928,15 @@ export default function App() {
                   </div>
 
                   <div className="px-6 pb-6">
-                    {selectedEvent.id === 'e3' ? (
+                    {selectedEvent.inviteOnly ? (
+                      <button
+                        onClick={() => { window.open(selectedEvent.waitlistUrl, '_blank'); }}
+                        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
+                      >
+                        Request Invitation
+                        <ArrowRight size={22} strokeWidth={2.5} />
+                      </button>
+                    ) : selectedEvent.id === 'e3' ? (
                       <button
                         onClick={() => {
                           if (isPhonePeFlow) {
@@ -1212,9 +947,10 @@ export default function App() {
                             setTimeout(() => setShowWaitlistForm(true), 150);
                           }
                         }}
-                        className={`w-full py-4 rounded-2xl ${isPhonePeFlow ? 'bg-black text-white' : 'bg-black text-white'} font-black text-lg shadow-md active:scale-95 transition-all`}
+                        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
                       >
-                        {isPhonePeFlow ? 'Next' : 'Request Invitation'}
+                        {isPhonePeFlow ? 'Confirm' : 'Request Invitation'}
+                        <ArrowRight size={22} strokeWidth={2.5} />
                       </button>
                     ) : (
                       <button
@@ -1222,9 +958,10 @@ export default function App() {
                           alert('Enquiry sent!');
                           setShowBookingTimeline(false);
                         }}
-                        className="w-full bg-black text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-gray-900 transition-colors text-base shadow-md active:scale-95"
+                        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all"
                       >
                         Request Invitation
+                        <ArrowRight size={22} strokeWidth={2.5} />
                       </button>
                     )}
                   </div>
@@ -1731,10 +1468,7 @@ const ChatMessage = ({ message }: { message: Message }) => {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       className={`flex ${isBot ? 'justify-start' : 'justify-end'} mb-4`}
     >
-      <div className={`max-w-[90%] rounded-2xl px-4 py-3 shadow-sm relative ${isBot ? 'bg-white text-black border border-gray-200 rounded-tl-sm' : 'bg-[#FFD700] text-black rounded-tr-sm'}`}>
-        {/* Tail for chat bubble */}
-        <div className={`absolute top-0 w-3 h-4 ${isBot ? '-left-2 bg-white border-l border-t border-gray-200' : '-right-2 bg-[#FFD700]'} ${isBot ? 'clip-path-bot' : 'clip-path-user'}`} style={{ clipPath: isBot ? 'polygon(100% 0, 0 0, 100% 100%)' : 'polygon(0 0, 100% 0, 0 100%)' }}></div>
-
+      <div className={`max-w-[90%] px-4 py-3 relative ${isBot ? 'bg-white text-black rounded-r-2xl rounded-bl-2xl shadow-sm' : 'bg-[#FFD700] text-black rounded-l-2xl rounded-br-2xl'}`}>
         {message.text && <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{message.text}</p>}
 
         <span className={`text-[10px] float-right mt-1 ml-3 select-none ${isBot ? 'text-gray-400' : 'text-black/60'}`}>
@@ -2015,7 +1749,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: 20 }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="absolute inset-0 bg-white z-50 flex flex-col h-full overflow-hidden"
+      className="absolute inset-0 bg-[#F9F8F6] z-50 flex flex-col h-full overflow-hidden"
     >
       <div className="flex-1 overflow-y-auto pb-0">
         {/* Header with Hero Image */}
@@ -2032,7 +1766,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           const groupNum   = groupSize?.value.match(/\d+[-–]\d+|\d+/)?.[0] || groupSize?.value;
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
           return (
-            <div className="pt-5 pb-4 border-b border-gray-100 bg-white">
+            <div className="pt-5 pb-4 border-b border-gray-100">
               <h3 className="text-xl font-black mb-4 px-6">The Plan</h3>
               <div className="mx-3 border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
 
@@ -2083,7 +1817,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         {/* What's Included */}
         <div className="p-6 border-b border-gray-100">
           <h3 className="text-xl font-black mb-4">What's Included</h3>
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden">
             <div className="p-4 space-y-3">
               {event.included?.map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
@@ -2140,7 +1874,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         </div>
 
         {/* The Plan */}
-        <div className="p-6 border-b border-gray-100 bg-[#F9F8F6]" ref={itineraryRef}>
+        <div className="p-6 border-b border-gray-100" ref={itineraryRef}>
           <h3 className="text-xl font-black mb-4">The Specifics</h3>
           <div className="space-y-3">
             {event.itinerary?.map((day, i) => (
@@ -2196,7 +1930,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* Where We Stay */}
         {!event.isActivity && (
-          <div className="p-6 border-b border-gray-100 bg-[#F9F8F6]">
+          <div className="p-6 border-b border-gray-100">
             <h3 className="text-xl font-black mb-4">Where We Stay</h3>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="relative w-full h-48">
@@ -2251,7 +1985,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* Reviews */}
         {!event.isActivity && (
-          <div className="pt-5 pb-2 bg-white">
+          <div className="pt-5 pb-2">
             <div className="px-6 mb-2">
               <h3 className="text-xl font-black">Fellow Lifemaxxers Said</h3>
             </div>
@@ -2306,7 +2040,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* Video Carousel */}
         {!event.isActivity && (
-          <div className="pt-4 pb-6 bg-white">
+          <div className="pt-4 pb-6">
             <div className="px-6 mb-3 flex items-center justify-between">
               <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
             </div>
@@ -2330,7 +2064,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         )}
 
         {/* Bottom Action Button (End of scroll) */}
-        <div className="px-4 pt-4 pb-12 bg-white">
+        <div className="px-4 pt-4 pb-12">
           <button
             onClick={() => setShowCalendar(true)}
             className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
