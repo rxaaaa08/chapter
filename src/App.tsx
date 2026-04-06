@@ -2245,52 +2245,46 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
               {showPolicyModal === 'about' && (
                 <>
-                  <p><strong className="text-gray-900">chapter அ</strong> is a curated travel experiences company operated by <strong className="text-gray-900">CHAPTER</strong>, registered in India.</p>
-                  <p>We design and run small-group trips for people who want to travel meaningfully — slow itineraries, real places, good company.</p>
-                  <p>Our trips are designed for 18–35 year olds looking to explore India and beyond without the chaos of typical group tours.</p>
+                  <p>We are <strong className="text-gray-900">chapter அ</strong>, an experience-based social club, operated by <strong className="text-gray-900">CHAPTER</strong>, registered in Chennai, India.</p>
+                  <p>From cozy house parties to unforgettable trips, we believe that everyone deserves to feel like they belong & find people to do things that they have always wanted to.</p>
+                  <p>Join our plans, and let's lifemaxx together — one experience at a time.</p>
                 </>
               )}
               {showPolicyModal === 'contact' && (
                 <>
-                  <p><strong className="text-gray-900">CHAPTER</strong></p>
-                  <p>Registered Address:<br />Chennai, Tamil Nadu, India</p>
+                  <p><strong className="text-gray-900">chapter அ</strong><br />Chennai, Tamil Nadu, India</p>
                   <p>Email: <a href="mailto:chapteraaa.official@gmail.com" className="text-gray-900 underline">chapteraaa.official@gmail.com</a></p>
-                  <p>WhatsApp / Phone: <a href="tel:+918838111564" className="text-gray-900 underline">+91 88381 11564</a></p>
+                  <p>WhatsApp / Phone: <a href="tel:+918838111564" className="text-gray-900 underline">+91 8838111564</a></p>
                   <p>We typically respond within a few hours on WhatsApp.</p>
                 </>
               )}
               {showPolicyModal === 'privacy' && (
                 <>
-                  <p><strong className="text-gray-900">1. Information We Collect</strong><br />We collect your name and WhatsApp number when you make a booking. This is used solely to communicate trip details and payment reminders.</p>
-                  <p><strong className="text-gray-900">2. How We Use It</strong><br />Your information is used to confirm bookings, send trip updates, and process payments. We do not sell or share your data with third parties.</p>
-                  <p><strong className="text-gray-900">3. Payment Data</strong><br />Payments are processed via PhonePe. We do not store any card or UPI credentials on our servers.</p>
-                  <p><strong className="text-gray-900">4. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related messages on WhatsApp. You may opt out at any time by messaging us.</p>
-                  <p><strong className="text-gray-900">5. Data Retention</strong><br />We retain your contact details for up to 1 year post-trip for support purposes, after which it is deleted.</p>
-                  <p><strong className="text-gray-900">6. Contact</strong><br />For privacy concerns, email us at chapteraaa.official@gmail.com.</p>
+                  <p><strong className="text-gray-900">1. Information We Collect</strong><br />We collect your name and WhatsApp number when you make a booking. This is used solely to communicate further details and payment reminders.</p>
+                  <p><strong className="text-gray-900">2. How We Use It</strong><br />Your information is used to confirm bookings, send booking updates, and process payments. We do not sell or share your data with third parties.</p>
+                  <p><strong className="text-gray-900">3. Payment Data</strong><br />Payments are processed via secure and trusted Indian payment gateways. We do not store any card or UPI credentials on our servers.</p>
+                  <p><strong className="text-gray-900">4. WhatsApp Communication</strong><br />By providing your number, you consent to receiving updates and reminder messages on WhatsApp.</p>
+                  <p><strong className="text-gray-900">5. Contact</strong><br />For privacy concerns, email us at chapteraaa.official@gmail.com.</p>
                 </>
               )}
               {showPolicyModal === 'tc' && (
                 <>
-                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable unless chapter அ cancels the trip.</p>
-                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date communicated via WhatsApp. Failure to pay may result in forfeiture of your spot.</p>
-                  <p><strong className="text-gray-900">3. Cancellations</strong><br />Cancellations made 14+ days before departure receive a 50% refund of the advance. No refunds within 14 days.</p>
-                  <p><strong className="text-gray-900">4. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
-                  <p><strong className="text-gray-900">5. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
-                  <p><strong className="text-gray-900">6. WhatsApp Communication</strong><br />By providing your number, you consent to receiving trip-related updates and reminders on WhatsApp.</p>
+                  <p className="text-gray-500 text-[13px]">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
+                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable under any circumstances.</p>
+                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date shown on the website after you make the advance payment. Further notices and reminders will be sent via WhatsApp. Failure to pay will result in forfeiture of your spot.</p>
+                  <p><strong className="text-gray-900">3. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
+                  <p><strong className="text-gray-900">4. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
+                  <p><strong className="text-gray-900">5. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
                 </>
               )}
               {showPolicyModal === 'refund' && (
                 <>
-                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance (30% of trip cost) is required to secure your spot. It is non-refundable unless chapter அ cancels the trip.</p>
-                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance must be paid by the date communicated via WhatsApp. Failure to pay may result in forfeiture of your spot without refund of the advance.</p>
-                  <p><strong className="text-gray-900">3. Cancellation by Traveller</strong><br />
-                    14+ days before departure: 50% of advance refunded.<br />
-                    7–13 days before departure: No refund.<br />
-                    Less than 7 days: No refund.
-                  </p>
-                  <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If we cancel a trip for any reason, a full refund of all amounts paid will be issued within 7 business days.</p>
-                  <p><strong className="text-gray-900">5. Refund Process</strong><br />Approved refunds are processed to the original payment method within 5–7 business days.</p>
-                  <p><strong className="text-gray-900">6. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 88381 11564 or email chapteraaa.official@gmail.com.</p>
+                  <p className="text-gray-500 text-[13px]">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
+                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />A fixed advance amount is required to secure a spot on any event. This advance is non-refundable unless chapter அ cancels the event.</p>
+                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance must be paid before the event. Only those who have completed the full payment will be allowed to join the event. If the balance is not paid, the advance will not be refunded.</p>
+                  <p><strong className="text-gray-900">3. Cancellation by Customer</strong><br />If a customer cancels, no refund will be provided, as we engage third-party partners for transport, accommodation, and curated expenses in advance. These arrangements are confirmed on your behalf and are non-recoverable.</p>
+                  <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If the event is cancelled for any reason, a full refund of all amounts paid will be issued.</p>
+                  <p><strong className="text-gray-900">5. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 8838111564 or email chapteraaa.official@gmail.com.</p>
                 </>
               )}
             </div>
