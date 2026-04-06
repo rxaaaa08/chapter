@@ -1749,7 +1749,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: 20 }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="absolute inset-0 bg-[#F9F8F6] z-50 flex flex-col h-full overflow-hidden"
+      className="absolute inset-0 bg-white z-50 flex flex-col h-full overflow-hidden"
     >
       <div className="flex-1 overflow-y-auto pb-0">
         {/* Header with Hero Image */}
@@ -1817,7 +1817,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         {/* What's Included */}
         <div className="p-6 border-b border-gray-100">
           <h3 className="text-xl font-black mb-4">What's Included</h3>
-          <div className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden">
+          <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
             <div className="p-4 space-y-3">
               {event.included?.map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
@@ -1878,10 +1878,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           <h3 className="text-xl font-black mb-4">The Specifics</h3>
           <div className="space-y-3">
             {event.itinerary?.map((day, i) => (
-              <div key={i} className="rounded-xl border-2 border-gray-300 overflow-hidden bg-white">
+              <div key={i} className="rounded-xl border-2 border-gray-200 overflow-hidden bg-gray-50">
                 <button 
                   onClick={() => setExpandedItinerary(expandedItinerary === i ? null : i)}
-                  className="w-full px-4 py-3 flex items-center justify-between text-left bg-white hover:bg-gray-50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
+                  className="w-full px-4 py-3 flex items-center justify-between text-left bg-gray-50 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
                 >
                   <div>
                     <span className="text-[11px] font-semibold text-[#ffc700] uppercase tracking-[0.08em]">{day.day}</span>
@@ -1932,7 +1932,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         {!event.isActivity && (
           <div className="p-6 border-b border-gray-100">
             <h3 className="text-xl font-black mb-4">Where We Stay</h3>
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
               <div className="relative w-full h-48">
                 <img 
                   src={event.accommodation?.images[accImageIndex]} 
@@ -1997,7 +1997,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 const initial = review.name.charAt(0).toUpperCase();
                 
                 return (
-                  <div key={i} className="w-72 flex-shrink-0 snap-center bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-3">
+                  <div key={i} className="w-72 flex-shrink-0 snap-center bg-gray-50 p-4 rounded-xl border-2 border-gray-200 flex flex-col gap-3">
                     {/* Reviewer Info */}
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-lg ${avatarColor}`}>
