@@ -1184,23 +1184,8 @@ export default function App() {
               transition={{ duration: 0.3, ease: 'easeOut' }}
               className="absolute inset-0 z-[70] bg-white flex flex-col overflow-y-auto"
             >
-              {/* Close */}
-              <div className="flex justify-end px-5 pt-6 flex-shrink-0">
-                <button
-                  onClick={() => {
-                    setPaymentView('idle');
-                    setPaymentContext(null);
-                    setOfferAcknowledged(false);
-                    setShowChat(true);
-                  }}
-                  className="w-9 h-9 rounded-full bg-[#F2F2F7] flex items-center justify-center"
-                >
-                  <X size={15} className="text-gray-600" />
-                </button>
-              </div>
-
               {/* Hero */}
-              <div className="flex flex-col items-center pt-4 pb-6 px-6 flex-shrink-0">
+              <div className="flex flex-col items-center pt-12 pb-6 px-6 flex-shrink-0">
                 <motion.div
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -1244,12 +1229,12 @@ export default function App() {
 
               {/* Card 2 — Secret Offer (dashed border) */}
               <div className="mx-6 mt-3 rounded-3xl overflow-hidden flex-shrink-0 border border-gray-200">
-                <div className="px-5 pt-5 pb-3">
-                  <p className="text-[22px] font-black leading-tight text-gray-900 whitespace-nowrap">Claim This — Now or Never</p>
+                <div className="px-5 pt-5 pb-4">
+                  <p className="text-[17px] font-black leading-tight text-gray-900">Secret Offer — Claim Now or Never</p>
                 </div>
                 {/* Acknowledgement checkbox */}
                 <div
-                  className="mx-5 mb-4 flex items-start gap-3 cursor-pointer select-none"
+                  className="mx-5 mb-5 flex items-start gap-3 cursor-pointer select-none"
                   onClick={() => setOfferAcknowledged(v => !v)}
                 >
                   <div className={`mt-0.5 w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all duration-150 ${offerAcknowledged ? 'bg-[#25D366] border-[#25D366]' : 'border-gray-300 bg-white'}`}>
@@ -1259,13 +1244,13 @@ export default function App() {
                       </svg>
                     )}
                   </div>
-                  <p className="text-[13px] text-gray-600 leading-snug">I understand this secret offer disappears when I leave this page</p>
+                  <p className="text-[13px] text-gray-600 leading-snug">I'm aware that once I leave this beautiful website, this offer will be gone.</p>
                 </div>
 
                 <a
                   href={offerAcknowledged ? `https://wa.me/919739832100?text=${encodeURIComponent(`Hi! I just paid the advance for ${paymentContext.eventTitle} (${paymentContext.date}). I'd like to pay the remaining balance and claim my offer!`)}` : undefined}
                   onClick={!offerAcknowledged ? (e) => e.preventDefault() : undefined}
-                  className={`flex items-center justify-center gap-2.5 font-bold py-5 text-[16px] transition-all duration-200 ${offerAcknowledged ? 'bg-[#25D366] text-white active:opacity-80' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                  className={`flex items-center justify-center gap-2.5 font-bold py-[18px] text-[16px] transition-all duration-200 ${offerAcknowledged ? 'bg-[#25D366] text-white active:opacity-80' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
                   target="_blank"
                   rel="noreferrer"
                 >
