@@ -890,7 +890,7 @@ export default function App() {
                 transition={{ delay: 0.15, duration: 0.4 }}
                 className="mt-4 font-bold text-lg text-black tracking-wide absolute top-[55%]"
               >
-                We're cooking...
+                Sending you the details...
               </motion.p>
             </motion.div>
           )}
@@ -931,7 +931,7 @@ export default function App() {
                 <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
                   <div className="px-6 pt-6 pb-4 flex items-center justify-between">
                     <div className="flex-1">
-                      <h2 className="text-2xl font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
+                      <h2 className="text-lg font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
                     </div>
                     {selectedEvent.id !== 'e3' && !selectedEvent.inviteOnly && (
                       <button
