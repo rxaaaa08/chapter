@@ -890,7 +890,7 @@ export default function App() {
                 transition={{ delay: 0.15, duration: 0.4 }}
                 className="mt-4 font-bold text-lg text-black tracking-wide absolute top-[55%]"
               >
-                Sending you the details...
+                Sending details...
               </motion.p>
             </motion.div>
           )}
