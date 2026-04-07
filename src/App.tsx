@@ -2276,7 +2276,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             className="w-full appearance-none bg-white border-2 border-gray-200 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none focus:border-[#FFD700] transition-colors cursor-pointer"
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
-                            <option value="" disabled hidden>Where will you join us</option>
+                            <option value="" disabled hidden>Where will you join us?</option>
                             <option value="koyambedu">Koyambedu — by 7:00 AM</option>
                             <option value="anna_nagar">Anna Nagar — by 8:00 AM</option>
                             <option value="own_transport">Own Transport</option>
