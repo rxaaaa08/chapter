@@ -1577,6 +1577,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<string>('');
+  const [showMeetingPointSwitchBorder, setShowMeetingPointSwitchBorder] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarRevealed, setCalendarRevealed] = useState(false);
@@ -1585,6 +1586,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const [accImageIndex, setAccImageIndex] = useState(0);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
+  const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cityDateOffset = React.useMemo(() => {
     if (!event.transportPlan) return 0;
     const leg = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(selectedCity.toLowerCase()));
@@ -1627,6 +1629,12 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     return () => clearTimeout(t);
   }, [showCalendar]);
 
+  useEffect(() => {
+    return () => {
+      if (meetingPointSwitchBorderTimerRef.current) clearTimeout(meetingPointSwitchBorderTimerRef.current);
+    };
+  }, []);
+
   // When navigating months, skip animation — show dates instantly
   useEffect(() => {
     if (showCalendar) setCalendarRevealed(true);
@@ -1641,6 +1649,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   };
 
   const shouldPulseMeetingPoint = !!selectedDate && !selectedMeetingPoint;
+
+  const triggerMeetingPointSwitchBorder = () => {
+    if (meetingPointSwitchBorderTimerRef.current) clearTimeout(meetingPointSwitchBorderTimerRef.current);
+    setShowMeetingPointSwitchBorder(true);
+    meetingPointSwitchBorderTimerRef.current = setTimeout(() => {
+      setShowMeetingPointSwitchBorder(false);
+      meetingPointSwitchBorderTimerRef.current = null;
+    }, 1500);
+  };
 
   const renderCalendar = () => {
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
@@ -2125,9 +2142,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
                       <motion.div
                         className="absolute inset-0 -skew-x-12 pointer-events-none"
-                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '55%' }}
+                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.32) 50%, transparent 100%)', width: '45%' }}
                         animate={{ x: ['-130%', '320%'] }}
-                        transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                        transition={{ duration: 0.95, delay: i * 2.2, repeat: Infinity, repeatDelay: 6.5, ease: 'easeInOut' }}
                       />
                       <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
                     </div>
@@ -2272,12 +2289,12 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                         <motion.div
                           className="relative"
                           animate={shouldPulseMeetingPoint ? {
-                            scale: [1, 1.015, 1]
+                            scale: [1, 1.03, 1]
                           } : {
                             scale: 1
                           }}
                           transition={shouldPulseMeetingPoint ? {
-                            duration: 1.2,
+                            duration: 1,
                             repeat: Infinity,
                             ease: 'easeInOut'
                           } : {
@@ -2287,10 +2304,19 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           <select
                             value={selectedMeetingPoint}
                             onChange={e => {
-                              setSelectedMeetingPoint(e.target.value);
+                              const nextMeetingPoint = e.target.value;
+                              const isSwitchingMeetingPoint = !!selectedMeetingPoint && selectedMeetingPoint !== nextMeetingPoint;
+                              setSelectedMeetingPoint(nextMeetingPoint);
+                              if (isSwitchingMeetingPoint) {
+                                triggerMeetingPointSwitchBorder();
+                              } else if (meetingPointSwitchBorderTimerRef.current) {
+                                clearTimeout(meetingPointSwitchBorderTimerRef.current);
+                                meetingPointSwitchBorderTimerRef.current = null;
+                                setShowMeetingPointSwitchBorder(false);
+                              }
                               e.currentTarget.blur();
                             }}
-                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-[#FFD700]' : 'border-gray-200'}`}
+                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-black' : 'border-gray-200'}`}
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
@@ -2298,6 +2324,17 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                               <option key={value} value={value}>{option.dropdownLabel}</option>
                             ))}
                           </select>
+                          <AnimatePresence initial={false}>
+                            {showMeetingPointSwitchBorder && !shouldPulseMeetingPoint && (
+                              <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: [0, 1, 1, 0] }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 1.5, times: [0, 0.18, 0.72, 1], ease: 'easeInOut' }}
+                                className="absolute inset-0 rounded-xl border-2 border-[#FFD700] pointer-events-none"
+                              />
+                            )}
+                          </AnimatePresence>
                           <ChevronDown size={20} strokeWidth={3} className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-800 pointer-events-none transition-opacity duration-200 ${selectedMeetingPoint ? 'opacity-50' : 'opacity-100'}`} />
                         </motion.div>
                       </div>
