@@ -1576,6 +1576,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<string>('');
+  const [hasMeetingPointInteracted, setHasMeetingPointInteracted] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarRevealed, setCalendarRevealed] = useState(false);
@@ -1725,7 +1726,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         <motion.button
           key={i}
           disabled={isUnavailable}
-          onClick={() => { setSelectedDate(dateStr); }}
+          onClick={() => { setSelectedDate(dateStr); setSelectedMeetingPoint(''); }}
           className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden bg-white ${textBorderClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
         >
           {/* Background colour overlay — fades IN after stagger */}
@@ -2265,20 +2266,28 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     >
                       {/* Meeting Point Dropdown */}
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest px-1">Choose Meeting Point</label>
-                        <div className="relative bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider px-1">Choose Meeting Point</label>
+                        <div className="relative">
                           <select
                             value={selectedMeetingPoint}
                             onChange={e => setSelectedMeetingPoint(e.target.value)}
-                            className="w-full appearance-none bg-transparent pr-8 text-[17px] font-normal text-gray-900 focus:outline-none cursor-pointer"
-                            style={{ color: selectedMeetingPoint ? '#111827' : '#d1d5db' }}
+                            onPointerDown={() => setHasMeetingPointInteracted(true)}
+                            onFocus={() => setHasMeetingPointInteracted(true)}
+                            className="w-full appearance-none bg-white border-2 border-gray-200 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none focus:border-[#FFD700] transition-colors cursor-pointer"
+                            style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
-                            <option value="" disabled hidden>Where will you join us?</option>
+                            <option value="" disabled hidden>Where will you join us</option>
                             <option value="koyambedu">Koyambedu — by 7:00 AM</option>
                             <option value="anna_nagar">Anna Nagar — by 8:00 AM</option>
                             <option value="own_transport">Own Transport</option>
                           </select>
-                          <ChevronDown size={18} strokeWidth={2.6} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-700 pointer-events-none" />
+                          <motion.div
+                            className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                            animate={!hasMeetingPointInteracted && !selectedMeetingPoint ? { scale: [1, 1.12, 1], opacity: [1, 0.75, 1] } : { scale: 1, opacity: 1 }}
+                            transition={!hasMeetingPointInteracted && !selectedMeetingPoint ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                          >
+                            <ChevronDown size={20} strokeWidth={3} className="text-gray-800" />
+                          </motion.div>
                         </div>
                       </div>
 
