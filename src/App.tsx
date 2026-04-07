@@ -1654,6 +1654,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
       const tripDate = event.dates?.find(d => d.date === baseDateStr);
+      const isForcedSoldOut = dateStr === '2026-04-05'; // topmost Sunday, without touching agenda data
 
       const isSelectedStart = selectedDate === dateStr;
       const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
@@ -1667,7 +1668,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         return "rounded-xl";
       })();
 
-      const isUnavailable = !tripDate || tripDate.status === 'sold_out';
+      const isUnavailable = isForcedSoldOut || !tripDate || tripDate.status === 'sold_out';
       const isColoured = !!tripDate && (tripDate.status === 'available' || tripDate.status === 'selling_out');
       const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && !selectedDate;
       const shimmerIdx = isShimmerable ? availableCellIdx++ : -1;
@@ -1690,6 +1691,23 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         if (tripDate?.status === 'selling_out') return "#FFEDE5";
         return "#f3f4f6"; // gray-100 for unavailable
       })();
+
+      if (isForcedSoldOut) {
+        days.push(
+          <motion.button
+            key={i}
+            disabled
+            initial={{ opacity: 0 }}
+            animate={{ opacity: calendarRevealed ? 1 : 0 }}
+            transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
+            className={`h-10 ${shapeClass} flex flex-col items-center justify-center relative overflow-hidden bg-gray-300 text-white`}
+          >
+            <span className="text-[10px] font-black uppercase leading-tight tracking-[0.08em]">Sold</span>
+            <span className="text-[10px] font-black uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
+          </motion.button>
+        );
+        continue;
+      }
 
       days.push(
         <motion.button
