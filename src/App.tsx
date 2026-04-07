@@ -234,7 +234,7 @@ export default function App() {
   const [bookingTransport, setBookingTransport] = useState('');
   const [bookingDate, setBookingDate] = useState('');
   const [showChat, setShowChat] = useState(true);
-  const [journeyCardData, setJourneyCardData] = useState<{ event: Event; city: string; startDate: string } | null>(null);
+  const [journeyCardData, setJourneyCardData] = useState<{ event: Event; city: string; startDate: string; meetingPoint?: string } | null>(null);
   const [showBookingTimeline, setShowBookingTimeline] = useState(false);
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
@@ -457,7 +457,7 @@ export default function App() {
     detailsSafetyTimerRef.current = setTimeout(() => setDetailsReady(true), 3000);
   };
 
-  const handleDetailsAction = (action: 'book' | 'contact', date?: string) => {
+  const handleDetailsAction = (action: 'book' | 'contact', date?: string, meetingPoint?: string) => {
     setShowChat(true);
     setShowBookingTimeline(false);
     setShowWaitlistForm(false);
@@ -470,7 +470,8 @@ export default function App() {
       setJourneyCardData({
         event: selectedEvent,
         city: selectedCity,
-        startDate: date || selectedEvent.dates?.[0]?.date || ''
+        startDate: date || selectedEvent.dates?.[0]?.date || '',
+        meetingPoint: meetingPoint || ''
       });
     }
     setStep('PROCESSING');
@@ -797,7 +798,7 @@ export default function App() {
         {showChat && !showDetails && !showTransition && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
             {journeyCardData && (
-              <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} />
+              <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} meetingPoint={journeyCardData.meetingPoint} />
             )}
             {messages.map(msg => (
               <ChatMessage key={msg.id} message={msg} />
@@ -1507,7 +1508,13 @@ const ChatMessage = ({ message }: { message: Message }) => {
   );
 }
 
-const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDate: string }) => {
+const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: string }> = {
+  koyambedu:     { meetingSpot: 'Koyambedu',     transport: 'Party Bus' },
+  anna_nagar:    { meetingSpot: 'Anna Nagar',     transport: 'Party Bus' },
+  own_transport: { meetingSpot: 'Event Location', transport: 'Your Own Transport' },
+};
+
+const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
   const d = new Date(startDate + 'T00:00:00');
   const day    = d.getDate().toString();
   const month  = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
@@ -1518,6 +1525,10 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
   const transportField = qi.find(c => c.label === 'Transport'    || c.label === 'Format')   || qi[1];
 
   const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
+
+  const cfg = meetingPoint ? MEETING_POINT_CONFIG[meetingPoint] : null;
+  const resolvedMeeting   = cfg ? cfg.meetingSpot  : spotField?.value;
+  const resolvedTransport = cfg ? cfg.transport     : transportField?.value;
 
   return (
     <div>
@@ -1535,14 +1546,14 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
               <MapPin size={9} className="text-gray-400" />
               <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField?.label}</span>
             </div>
-            <span className="text-[13px] font-black text-gray-900 leading-tight">{spotField?.value}</span>
+            <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedMeeting}</span>
           </div>
           <div className="px-4 py-3">
             <div className="flex items-center gap-1 mb-1">
               <Bus size={9} className="text-gray-400" />
               <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField?.label}</span>
             </div>
-            <span className="text-[13px] font-black text-gray-900 leading-tight">{transportField?.value}</span>
+            <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedTransport}</span>
           </div>
         </div>
 
@@ -1560,10 +1571,11 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event: Event, selectedCity: string, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event: Event, selectedCity: string, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<string>('');
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarRevealed, setCalendarRevealed] = useState(false);
@@ -1713,7 +1725,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         <motion.button
           key={i}
           disabled={isUnavailable}
-          onClick={() => setSelectedDate(dateStr)}
+          onClick={() => { setSelectedDate(dateStr); }}
           className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden bg-white ${textBorderClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
         >
           {/* Background colour overlay — fades IN after stagger */}
@@ -2251,46 +2263,85 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                       exit={{ opacity: 0, y: 10 }}
                       className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-3"
                     >
-                      <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 flex flex-col gap-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
-                          <p>Lock your spot (Advance)</p>
-                          <p className="text-2xl font-black text-black leading-tight">₹{event.advanceAmount}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1 text-[11px] font-semibold text-gray-700">
-                          <p className="text-[11px] text-gray-500">Remaining balance</p>
-                          <p className="text-base font-semibold text-gray-800">
-                            {formatINR(Math.max(parsePrice(event.price) - event.advanceAmount, 0))}
-                          </p>
+                      {/* Meeting Point Dropdown */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider px-1">Choose Meeting Point</label>
+                        <div className="relative">
+                          <select
+                            value={selectedMeetingPoint}
+                            onChange={e => setSelectedMeetingPoint(e.target.value)}
+                            className="w-full appearance-none bg-white border-2 border-gray-200 rounded-xl px-4 py-3 pr-10 text-sm font-semibold text-gray-800 focus:outline-none focus:border-[#FFD700] transition-colors cursor-pointer"
+                            style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
+                          >
+                            <option value="" disabled hidden>Where will you join us</option>
+                            <option value="koyambedu">Koyambedu — by 7:00 AM</option>
+                            <option value="anna_nagar">Anna Nagar — by 8:00 AM</option>
+                            <option value="own_transport">Own Transport</option>
+                          </select>
+                          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <button 
-                          onClick={() => { setShowCalendar(false); onAction('contact', selectedDate || undefined); }}
-                          className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFF3BF] text-[#b38200] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#ffe58f] transition-colors border border-[#FFD700]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
-                        >
-                          <MessageCircle size={15} />
-                          Contact Us
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowCalendar(false);
-                            onAction('book', selectedDate || undefined);
-                          }}
-                          className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFD700] text-black font-black text-sm flex items-center justify-center gap-2 hover:bg-[#e6c200] transition-transform active:scale-95 shadow-md shadow-[#FFD700]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 relative overflow-hidden"
-                        >
+                      {/* Pricing + CTAs — only shown after meeting point is chosen */}
+                      <AnimatePresence>
+                        {selectedMeetingPoint && (
                           <motion.div
-                            className="absolute inset-0 -skew-x-12"
-                            style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                            animate={{ x: ['-100%', '300%'] }}
-                            transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
-                          />
-                          Book Now
-                          <ArrowRight size={16} strokeWidth={3.0} />
-                        </button>
-                      </div>
-                      </div>
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            transition={{ duration: 0.25 }}
+                          >
+                            <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 flex flex-col gap-3">
+                              {(() => {
+                                const isOwnTransport = selectedMeetingPoint === 'own_transport';
+                                const displayAdvance = isOwnTransport ? 0 : event.advanceAmount;
+                                const displayTotal = isOwnTransport ? 0 : parsePrice(event.price);
+                                const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
+                                return (
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
+                                  <p>Lock your spot (Advance)</p>
+                                  <p className="text-2xl font-black text-black leading-tight">{formatINR(displayAdvance)}</p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1 text-[11px] font-semibold text-gray-700">
+                                  <p className="text-[11px] text-gray-500">Remaining balance</p>
+                                  <p className="text-base font-semibold text-gray-800">
+                                    {formatINR(displayRemaining)}
+                                  </p>
+                                </div>
+                              </div>
+                                );
+                              })()}
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <button
+                                  onClick={() => { setShowCalendar(false); onAction('contact', selectedDate || undefined, selectedMeetingPoint); }}
+                                  className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFF3BF] text-[#b38200] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#ffe58f] transition-colors border border-[#FFD700]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
+                                >
+                                  <MessageCircle size={15} />
+                                  Contact Us
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowCalendar(false);
+                                    onAction('book', selectedDate || undefined, selectedMeetingPoint);
+                                  }}
+                                  className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFD700] text-black font-black text-sm flex items-center justify-center gap-2 hover:bg-[#e6c200] transition-transform active:scale-95 shadow-md shadow-[#FFD700]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 relative overflow-hidden"
+                                >
+                                  <motion.div
+                                    className="absolute inset-0 -skew-x-12"
+                                    style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                                    animate={{ x: ['-100%', '300%'] }}
+                                    transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                                  />
+                                  Book Now
+                                  <ArrowRight size={16} strokeWidth={3.0} />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   )}
                 </AnimatePresence>
