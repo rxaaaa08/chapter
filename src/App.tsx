@@ -1508,10 +1508,10 @@ const ChatMessage = ({ message }: { message: Message }) => {
   );
 }
 
-const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: string }> = {
-  koyambedu:     { meetingSpot: 'Koyambedu',     transport: 'Party Bus' },
-  anna_nagar:    { meetingSpot: 'Anna Nagar',     transport: 'Party Bus' },
-  own_transport: { meetingSpot: 'Event Location', transport: 'Your Own Transport' },
+const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: string; pickupTime?: string; dropdownLabel: string }> = {
+  koyambedu:     { meetingSpot: 'Koyambedu', transport: 'Party Bus', pickupTime: '7:00 AM', dropdownLabel: 'Koyambedu — by 7:00 AM' },
+  anna_nagar:    { meetingSpot: 'Anna Nagar', transport: 'Party Bus', pickupTime: '8:00 AM', dropdownLabel: 'Anna Nagar — by 8:00 AM' },
+  own_transport: { meetingSpot: 'Event Location', transport: 'Your Own Transport', dropdownLabel: 'Own Transport' },
 };
 
 const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
@@ -1529,6 +1529,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   const cfg = meetingPoint ? MEETING_POINT_CONFIG[meetingPoint] : null;
   const resolvedMeeting   = cfg ? cfg.meetingSpot  : spotField?.value;
   const resolvedTransport = cfg ? cfg.transport     : transportField?.value;
+  const resolvedTime      = cfg?.pickupTime || firstTime;
 
   return (
     <div>
@@ -1562,7 +1563,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
           <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
           <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
-          {firstTime && <span className="text-[13px] font-bold text-gray-900 mt-1.5">{firstTime}</span>}
+          {resolvedTime && <span className="text-[13px] font-bold text-gray-900 mt-1.5">{resolvedTime}</span>}
         </div>
 
       </div>
@@ -2277,9 +2278,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
-                            <option value="koyambedu">Koyambedu — by 7:00 AM</option>
-                            <option value="anna_nagar">Anna Nagar — by 8:00 AM</option>
-                            <option value="own_transport">Own Transport</option>
+                            {Object.entries(MEETING_POINT_CONFIG).map(([value, option]) => (
+                              <option key={value} value={value}>{option.dropdownLabel}</option>
+                            ))}
                           </select>
                           <motion.div
                             className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
