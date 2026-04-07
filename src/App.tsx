@@ -1998,7 +1998,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           {day.description}
                         </p>
                         {day.schedule && (
-                          <div className="relative pl-4 border-l border-gray-900/40 space-y-5 mt-4 ml-2 mb-2">
+                          <div className="relative pl-4 border-l border-gray-900/10 space-y-5 mt-4 ml-2 mb-2">
                             {day.schedule.map((item, idx) => (
                               <div key={idx} className="relative">
                                 <div className="absolute -left-[20px] top-1.5 w-2 h-2 rounded-full bg-[#ffd700]" />
