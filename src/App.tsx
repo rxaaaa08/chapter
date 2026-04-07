@@ -1825,11 +1825,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           return (
             <div className="pt-5 pb-4 border-b border-gray-100">
               <h3 className="text-xl font-black mb-4 px-6">The Plan</h3>
-              <div className="mx-3 border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
+              <div className="mx-3 border border-dashed border-[#595959] rounded-2xl overflow-hidden bg-gray-50">
 
                 {/* Top row — MEETING SPOT | TRANSPORT */}
-                <div className="flex border-b-2 border-dashed border-gray-200">
-                  <div className="flex-1 px-3 py-3.5 border-r-2 border-dashed border-gray-200">
+                <div className="flex border-b border-dashed border-[#bfbfbf]/50">
+                  <div className="flex-1 px-3 py-3.5 border-r border-dashed border-[#bfbfbf]/50">
                     <div className="flex items-center gap-1 mb-1.5">
                       <MapPin size={9} className="text-gray-500" />
                       <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{meetingSpot?.label}</span>
@@ -1847,7 +1847,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
                 {/* Bottom row — MADE FOR | 👥 18 */}
                 <div className="flex items-center">
-                  <div className="flex-1 px-3 py-4 border-r-2 border-dashed border-gray-200">
+                  <div className="flex-1 px-3 py-4 border-r border-dashed border-[#bfbfbf]/50">
                     <div className="flex items-center gap-1 mb-1.5">
                       <Heart size={9} className="text-gray-500" />
                       <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
@@ -2107,7 +2107,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="relative w-12 h-12 rounded-full bg-[#FFD700] text-white flex items-center justify-center overflow-hidden shadow-md border border-[#FFD700]/60">
+                    <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
                       <motion.div
                         className="absolute inset-0 -skew-x-12 pointer-events-none"
                         style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '55%' }}
