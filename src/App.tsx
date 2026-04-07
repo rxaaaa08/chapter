@@ -1700,10 +1700,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             initial={{ opacity: 0 }}
             animate={{ opacity: calendarRevealed ? 1 : 0 }}
             transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
-            className={`h-10 ${shapeClass} flex flex-col items-center justify-center relative overflow-hidden bg-gray-300 text-white`}
+            className={`h-10 ${shapeClass} flex flex-col items-center justify-center relative overflow-hidden bg-gray-300 text-white pt-1`}
           >
-            <span className="text-[10px] font-black uppercase leading-tight tracking-[0.08em]">Sold</span>
-            <span className="text-[10px] font-black uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
+            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em]">Sold</span>
+            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
           </motion.button>
         );
         continue;
