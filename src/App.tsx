@@ -2289,12 +2289,12 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                         <motion.div
                           className="relative"
                           animate={shouldPulseMeetingPoint ? {
-                            scale: [1, 1.03, 1]
+                            scale: [1, 1.015, 1]
                           } : {
                             scale: 1
                           }}
                           transition={shouldPulseMeetingPoint ? {
-                            duration: 1,
+                            duration: 1.25,
                             repeat: Infinity,
                             ease: 'easeInOut'
                           } : {
@@ -2316,7 +2316,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                               }
                               e.currentTarget.blur();
                             }}
-                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-black' : 'border-gray-200'}`}
+                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-gray-500' : 'border-gray-200'}`}
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
