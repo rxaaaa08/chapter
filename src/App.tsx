@@ -2201,7 +2201,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   >
                     <div className="flex flex-col items-start gap-0.5">
                       <span className="text-[13px] font-bold text-black/70 tracking-wide">Work With Us!</span>
-                      <span className="text-[11px] text-black/40">Join the team — apply now</span>
+                      <span className="text-[11px] text-black/40">Join the team — Apply Now & join the team</span>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center flex-shrink-0">
                       <ChevronDown size={16} className="text-black/60" />
@@ -2316,7 +2316,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                               }
                               e.currentTarget.blur();
                             }}
-                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-gray-500' : 'border-gray-200'}`}
+                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-gray-500' : showMeetingPointSwitchBorder ? 'border-transparent' : 'border-gray-200'}`}
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
@@ -2335,7 +2335,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                               />
                             )}
                           </AnimatePresence>
-                          <ChevronDown size={20} strokeWidth={3} className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-800 pointer-events-none transition-opacity duration-200 ${selectedMeetingPoint ? 'opacity-50' : 'opacity-100'}`} />
+                          <ChevronDown size={selectedMeetingPoint ? 22 : 24} strokeWidth={3} className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none transition-opacity duration-200 ${selectedMeetingPoint ? 'opacity-50' : 'opacity-100'}`} />
                         </motion.div>
                       </div>
 
@@ -2361,8 +2361,8 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                                   <p className="text-2xl font-black text-black leading-tight">{formatINR(displayAdvance)}</p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1 text-[11px] font-semibold text-gray-700">
-                                  <p className="text-[11px] text-gray-500">Remaining balance</p>
-                                  <p className="text-base font-semibold text-gray-800">
+                                  <p className="text-[11px]">Remaining balance</p>
+                                  <p className="text-base font-semibold text-black">
                                     {formatINR(displayRemaining)}
                                   </p>
                                 </div>
