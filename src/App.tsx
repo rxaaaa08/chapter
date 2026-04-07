@@ -2107,14 +2107,14 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="relative w-12 h-12 rounded-full bg-[#FFD700] text-black flex items-center justify-center overflow-hidden shadow-md border border-[#FFD700]/60">
+                    <div className="relative w-12 h-12 rounded-full bg-[#FFD700] text-white flex items-center justify-center overflow-hidden shadow-md border border-[#FFD700]/60">
                       <motion.div
                         className="absolute inset-0 -skew-x-12 pointer-events-none"
                         style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '55%' }}
                         animate={{ x: ['-130%', '320%'] }}
                         transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
                       />
-                      <Play size={20} className="text-black ml-1 relative z-10" fill="currentColor" />
+                      <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
                     </div>
                   </div>
                   <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
