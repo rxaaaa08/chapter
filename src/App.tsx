@@ -1521,16 +1521,16 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
 
   return (
     <div>
-      <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2 px-1">You're Booking</p>
+      <p className="text-[10px] font-bold text-[#2C7FFF] uppercase tracking-widest mb-2 px-1">The Essentials</p>
 
-    <div className="border-2 border-dashed border-gray-300 rounded-2xl overflow-hidden bg-white">
+    <div className="border border-dashed border-[#2C7FFF] rounded-2xl overflow-hidden bg-white">
 
       {/* Body: left info + right date (spanning full height) */}
       <div className="flex">
 
         {/* Left: Meeting Spot (top) + Transport (bottom) */}
         <div className="flex-1 flex flex-col">
-          <div className="px-4 py-3 border-b-2 border-dashed border-gray-300">
+          <div className="px-4 py-3 border-b border-dashed border-[#D4E5FF] border-opacity-30">
             <div className="flex items-center gap-1 mb-1">
               <MapPin size={9} className="text-gray-400" />
               <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField?.label}</span>
@@ -1547,7 +1547,7 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
         </div>
 
         {/* Right: Date spanning full height */}
-        <div className="border-l-2 border-dashed border-gray-300 flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
+        <div className="border-l border-dashed border-[#D4E5FF] border-opacity-10 flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
           <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
           <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
@@ -1941,14 +1941,14 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   className="w-full px-4 py-3 flex items-center justify-between text-left bg-gray-50 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
                 >
                   <div>
-                    <span className="text-[11px] font-black text-black uppercase tracking-[0.08em]">{day.day}</span>
+                    <span className="text-[11px] font-black text-gray-900 uppercase tracking-[0.08em]">{day.day}</span>
                     <h4 className="font-semibold text-gray-900 mt-0.5">{day.title}</h4>
                   </div>
                   <motion.div
                     initial={false}
                     animate={{ rotate: expandedItinerary === i ? 180 : 0, scale: expandedItinerary === i ? 1.05 : 1 }}
                     transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-                    className="p-2 rounded-full bg-[#FFD700] text-black"
+                    className="p-2 rounded-full bg-[#FFD700] text-black flex items-center justify-center"
                   >
                     {expandedItinerary === i ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                   </motion.div>
