@@ -2268,7 +2268,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     >
                       {/* Meeting Point Dropdown */}
                       <div className="flex flex-col gap-1.5">
-                        <label className={`font-bold uppercase tracking-wider px-1 transition-all duration-200 ${selectedMeetingPoint ? 'text-[10px] text-gray-500 opacity-60' : 'text-[11px] text-gray-500 opacity-100'}`}>Choose Meeting Point</label>
+                        <label className={`block w-fit origin-left font-bold uppercase tracking-wider px-1 text-[11px] text-gray-500 transition-all duration-200 ${selectedMeetingPoint ? 'opacity-60 scale-[0.75]' : 'opacity-100 scale-100'}`}>Choose Meeting Point</label>
                         <motion.div
                           className="relative"
                           animate={shouldPulseMeetingPoint ? {
