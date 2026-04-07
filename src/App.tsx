@@ -1530,7 +1530,7 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
 
         {/* Left: Meeting Spot (top) + Transport (bottom) */}
         <div className="flex-1 flex flex-col">
-          <div className="px-4 py-3 border-b border-dashed border-[#D4E5FF] border-opacity-30">
+          <div className="px-4 py-3 border-b border-dashed border-[#D4E5FF] border-opacity-60">
             <div className="flex items-center gap-1 mb-1">
               <MapPin size={9} className="text-gray-400" />
               <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField?.label}</span>
@@ -1547,7 +1547,7 @@ const JourneyCard = ({ event, startDate }: { event: Event; city: string; startDa
         </div>
 
         {/* Right: Date spanning full height */}
-        <div className="border-l border-dashed border-[#D4E5FF] border-opacity-10 flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
+        <div className="border-l border-dashed border-[#D4E5FF] border-opacity-60 flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
           <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
           <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
@@ -2107,8 +2107,14 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30">
-                      <Play size={20} className="text-white ml-1" fill="currentColor" />
+                    <div className="relative w-12 h-12 rounded-full bg-[#FFD700] text-black flex items-center justify-center overflow-hidden shadow-md border border-[#FFD700]/60">
+                      <motion.div
+                        className="absolute inset-0 -skew-x-12 pointer-events-none"
+                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '55%' }}
+                        animate={{ x: ['-130%', '320%'] }}
+                        transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                      />
+                      <Play size={20} className="text-black ml-1 relative z-10" fill="currentColor" />
                     </div>
                   </div>
                   <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
