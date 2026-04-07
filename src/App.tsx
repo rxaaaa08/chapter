@@ -1980,9 +1980,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     initial={false}
                     animate={{ rotate: expandedItinerary === i ? 180 : 0, scale: expandedItinerary === i ? 1.05 : 1 }}
                     transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-                    className="p-2 rounded-full bg-[#FFD700] text-black flex items-center justify-center"
+                    className="w-8 h-8 rounded-full bg-[#FFD700] text-black flex items-center justify-center flex-shrink-0 self-center"
                   >
-                    {expandedItinerary === i ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <ChevronDown size={16} />
                   </motion.div>
                 </button>
                 <AnimatePresence>
@@ -2001,7 +2001,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           <div className="relative pl-4 border-l-2 border-gray-300 space-y-5 mt-4 ml-2 mb-2">
                             {day.schedule.map((item, idx) => (
                               <div key={idx} className="relative">
-                                <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-[#FFD700] border-0 border-[#FAC94D] shadow-sm" />
+                                <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-[#ffd700]" />
                                 <div className="text-xs font-bold text-gray-400 mb-0.5 tracking-wide uppercase">{item.time}</div>
                                 <div className="text-sm font-medium text-gray-800">{item.activity}</div>
                               </div>
@@ -2182,7 +2182,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           <div className="px-5 pt-7 pb-5">
             <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">plans we dream,</span>
             <br />
-            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">by chapter அ</span>
+            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">by chapter <span className="text-[25px]">அ</span></span>
           </div>
 
           {/* Work With Us — single expanding pill */}
@@ -2201,7 +2201,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   >
                     <div className="flex flex-col items-start gap-0.5">
                       <span className="text-[13px] font-bold text-black/70 tracking-wide">Work With Us!</span>
-                      <span className="text-[11px] text-black/40">Join the team — Apply Now & join the team</span>
+                      <span className="text-[11px] text-black/40">Apply Now — join the team</span>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center flex-shrink-0">
                       <ChevronDown size={16} className="text-black/60" />
