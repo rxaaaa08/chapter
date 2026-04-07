@@ -1702,8 +1702,8 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
             className={`h-10 ${shapeClass} flex flex-col items-center justify-center relative overflow-hidden bg-gray-300 text-white pt-1`}
           >
-            <span className="text-[10px] font-black uppercase leading-tight tracking-[0.08em]">Sold</span>
-            <span className="text-[10px] font-black uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
+            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em]">Sold</span>
+            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
           </motion.button>
         );
         continue;
@@ -1941,7 +1941,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   className="w-full px-4 py-3 flex items-center justify-between text-left bg-gray-50 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
                 >
                   <div>
-                    <span className="text-[11px] font-semibold text-black uppercase tracking-[0.08em]">{day.day}</span>
+                    <span className="text-[11px] font-black text-black uppercase tracking-[0.08em]">{day.day}</span>
                     <h4 className="font-semibold text-gray-900 mt-0.5">{day.title}</h4>
                   </div>
                   <motion.div
