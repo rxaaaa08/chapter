@@ -768,8 +768,8 @@ export default function App() {
         {/* Header */}
         <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
-            <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center text-[#FFD700] font-black text-2xl shadow-md">
-              அ
+            <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
+              <img src="/chat-profile.jpg" alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[1px]" />
             </div>
             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
