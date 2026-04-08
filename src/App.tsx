@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
+import chatProfile from './assets/chat-profile.jpg';
 
 // Types
 type Message = {
@@ -769,7 +770,7 @@ export default function App() {
         <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
-              <img src="/chat-profile.jpg" alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[1px]" />
+              <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[1px]" />
             </div>
             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
           </div>

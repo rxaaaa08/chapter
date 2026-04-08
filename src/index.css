@@ -11,6 +11,19 @@
   --color-brand-border: #EAE9E5;
 }
 
+@layer base {
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #ffffff;
+  }
+}
+
 @layer utilities {
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
