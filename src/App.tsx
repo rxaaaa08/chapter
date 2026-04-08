@@ -762,8 +762,8 @@ export default function App() {
   const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted;
 
   return (
-    <div className="min-h-[100svh] bg-white sm:min-h-screen sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
-      <div className="w-full bg-white overflow-hidden flex flex-col min-h-[100svh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         
         {/* Header */}
         <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
