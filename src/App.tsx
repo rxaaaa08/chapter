@@ -510,24 +510,13 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
 
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [showHomepage, setShowHomepage] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return new URLSearchParams(window.location.search).get('view') !== 'chat';
-  });
+  const [showHomepage, setShowHomepage] = useState(true);
 
-  const navigateToView = (view: 'home' | 'chat') => {
+  const enterApp = () => {
     if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (view === 'chat') {
-        url.searchParams.set('view', 'chat');
-      } else {
-        url.searchParams.delete('view');
-      }
-      url.hash = '';
-      window.location.assign(url.toString());
-      return;
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     }
-    setShowHomepage(view !== 'chat');
+    setShowHomepage(false);
   };
 
   useEffect(() => {
@@ -540,6 +529,16 @@ export default function App() {
     };
   }, [showHomepage]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('view')) {
+      url.searchParams.delete('view');
+      url.hash = '';
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
   if (showHomepage) {
     return (
       <AnimatePresence>
@@ -549,7 +548,7 @@ export default function App() {
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.4 }}
         >
-          <HomePage onEnterApp={() => navigateToView('chat')} />
+          <HomePage onEnterApp={enterApp} />
         </motion.div>
       </AnimatePresence>
     );
