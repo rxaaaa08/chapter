@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
+import AppFlow from './AppFlow';
 
 // Types
 type Message = {
@@ -221,2286 +221,339 @@ const GENERAL_ANNOUNCEMENTS = [
   "✈️ Flights included from Chennai"
 ];
 
-export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [step, setStep] = useState('INIT');
-  const [selectedCity, setSelectedCity] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [showDetails, setShowDetails] = useState(false);
-  const [showTransition, setShowTransition] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
-  const [announcementIndex, setAnnouncementIndex] = useState(0);
-  const [bookingGender, setBookingGender] = useState('');
-  const [bookingTransport, setBookingTransport] = useState('');
-  const [bookingDate, setBookingDate] = useState('');
-  const [showChat, setShowChat] = useState(true);
-  const [journeyCardData, setJourneyCardData] = useState<{ event: Event; city: string; startDate: string; meetingPoint?: string } | null>(null);
-  const [showBookingTimeline, setShowBookingTimeline] = useState(false);
-  const [showWaitlistForm, setShowWaitlistForm] = useState(false);
-  const [showDetailsForm, setShowDetailsForm] = useState(false);
-  const [detailsReady, setDetailsReady] = useState(false);
-  const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [detailsForm, setDetailsForm] = useState({ name: '', phone: '' });
-  const [tcAccepted, setTcAccepted] = useState(false);
-  const [showTcModal, setShowTcModal] = useState(false);
-  const [paymentView, setPaymentView] = useState<'idle' | 'checkout' | 'success' | 'failure'>('idle');
-  const [paymentContext, setPaymentContext] = useState<{
-    eventTitle: string;
-    amount: number;
-    remainingBalance: number;
-    date: string;
-    balanceDue: string;
-    balanceDueRaw: string;
-    pickupDetails: string;
-    tripDate: string;
-    tripDateFull: string;
-    phonepeUrl: string;
-    shareUrl: string;
-    name: string;
-    phone: string;
-  } | null>(null);
-  const [balanceCountdown, setBalanceCountdown] = useState('');
-  const [offerAcknowledged, setOfferAcknowledged] = useState(false);
-  const [kynTimer, setKynTimer] = useState(15 * 60); // 15 minutes for KYN flow
-  const [showDoubtPopup, setShowDoubtPopup] = useState(false);
-  const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
-  const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
-  const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+// ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────
+function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0e0e0e', lineHeight: 1.6, WebkitFontSmoothing: 'antialiased', overflowX: 'hidden', minHeight: '100vh' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root { --yellow: #f5c518; --black: #0e0e0e; --white: #ffffff; --gray-50: #f8f8f6; --gray-100: #f0f0ec; --gray-400: #999; --gray-600: #555; --gray-800: #222; --radius-sm: 10px; --radius-md: 16px; --radius-lg: 24px; }
+        html { scroll-behavior: smooth; }
+        .hp-nav { position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,0.92); backdrop-filter: blur(12px); border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 2.5rem; }
+        .hp-nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; cursor: pointer; }
+        .hp-logo-mark { width: 38px; height: 38px; background: #0e0e0e; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .hp-logo-image { width: 100%; height: 100%; object-fit: contain; }
+        .hp-logo-name { font-size: 15px; font-weight: 700; color: #0e0e0e; letter-spacing: -0.3px; }
+        .hp-nav-links { display: flex; gap: 2rem; list-style: none; }
+        .hp-nav-links a { font-size: 13px; font-weight: 500; color: #555; text-decoration: none; transition: color 0.2s; }
+        .hp-nav-links a:hover { color: #0e0e0e; }
+        .hp-hero { padding: 6rem 2.5rem 5rem; text-align: center; background: #fff; position: relative; overflow: hidden; }
+        .hp-hero::before { content: ''; position: absolute; top: -80px; left: 50%; transform: translateX(-50%); width: 600px; height: 600px; background: radial-gradient(circle, rgba(245,197,24,0.12) 0%, transparent 70%); pointer-events: none; }
+        .hp-hero h1 { font-family: 'Instrument Serif', serif; font-size: clamp(38px, 6vw, 60px); font-weight: 400; color: #0e0e0e; line-height: 1.12; letter-spacing: -1.5px; margin-bottom: 1.25rem; max-width: 760px; margin-left: auto; margin-right: auto; }
+        .hp-hero h1 em { font-style: italic; color: #555; }
+        .hp-hero p { font-size: 16px; color: #555; max-width: 620px; margin: 0 auto 2.25rem; line-height: 1.75; }
+        .hp-btn-primary { display: inline-block; background: #0e0e0e; color: #fff; font-size: 14px; font-weight: 600; padding: 0.8rem 2rem; border-radius: 50px; text-decoration: none; border: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; letter-spacing: -0.2px; }
+        .hp-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+        .hp-about { padding: 5rem 2.5rem; background: #0e0e0e; color: #fff; }
+        .hp-about-inner { max-width: 720px; margin: 0 auto; }
+        .hp-section-label { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px; display: block; }
+        .hp-about .hp-section-label { color: #f5c518; }
+        .hp-about h2 { font-family: 'Instrument Serif', serif; font-size: 36px; font-weight: 400; letter-spacing: -1px; margin-bottom: 1.25rem; line-height: 1.2; }
+        .hp-about p { font-size: 14px; color: rgba(255,255,255,0.72); line-height: 1.85; margin-bottom: 0.85rem; }
+        section.hp-section h2 { font-family: 'Instrument Serif', serif; font-size: 32px; font-weight: 400; color: #0e0e0e; letter-spacing: -0.8px; margin-bottom: 1.75rem; line-height: 1.2; }
+        .hp-container { max-width: 720px; margin: 0 auto; }
+        .hp-offerings { padding: 5rem 2.5rem; background: #f8f8f6; }
+        .hp-offerings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+        .hp-offering-card { background: #fff; border-radius: 16px; padding: 1.5rem; border: 1px solid #eee; transition: transform 0.2s, box-shadow 0.2s; }
+        .hp-offering-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,0.07); }
+        .hp-offering-icon { width: 42px; height: 42px; background: #f5c518; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+        .hp-offering-card h3 { font-size: 14px; font-weight: 700; color: #0e0e0e; margin-bottom: 5px; }
+        .hp-offering-card p { font-size: 13px; color: #999; line-height: 1.6; }
+        .hp-booking { padding: 5rem 2.5rem; background: #fff; }
+        .hp-booking-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+        .hp-booking-card { background: #f8f8f6; border-radius: 16px; padding: 1.5rem; border: 1px solid #eee; }
+        .hp-booking-step { width: 32px; height: 32px; background: #f5c518; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #0e0e0e; margin-bottom: 0.75rem; }
+        .hp-booking-card h3 { font-size: 14px; font-weight: 700; color: #0e0e0e; margin-bottom: 5px; }
+        .hp-booking-card p { font-size: 13px; color: #555; line-height: 1.65; }
+        .hp-policy { padding: 5rem 2.5rem; background: #fff; }
+        .hp-policy-grid { display: flex; flex-direction: column; gap: 10px; }
+        .hp-policy-card { background: #f8f8f6; border-radius: 10px; padding: 1.1rem 1.4rem; display: flex; align-items: flex-start; gap: 1rem; }
+        .hp-policy-dot { width: 8px; height: 8px; border-radius: 50%; background: #f5c518; margin-top: 6px; flex-shrink: 0; }
+        .hp-policy-card h3 { font-size: 14px; font-weight: 700; color: #0e0e0e; margin-bottom: 3px; }
+        .hp-policy-card p { font-size: 13px; color: #555; line-height: 1.65; }
+        .hp-terms { padding: 5rem 2.5rem; background: #f8f8f6; }
+        .hp-terms-list { display: flex; flex-direction: column; gap: 0; border: 1px solid #e8e8e8; border-radius: 16px; overflow: hidden; background: #fff; }
+        .hp-terms-item { padding: 1.1rem 1.4rem; border-bottom: 1px solid #f0f0f0; display: flex; gap: 1rem; align-items: flex-start; }
+        .hp-terms-item:last-child { border-bottom: none; }
+        .hp-terms-bar { width: 3px; min-height: 40px; background: #f5c518; border-radius: 3px; flex-shrink: 0; }
+        .hp-terms-item h3 { font-size: 14px; font-weight: 700; color: #0e0e0e; margin-bottom: 3px; }
+        .hp-terms-item p { font-size: 13px; color: #555; line-height: 1.65; }
+        .hp-privacy { padding: 5rem 2.5rem; background: #fff; }
+        .hp-privacy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .hp-privacy-card { background: #f8f8f6; border-radius: 16px; padding: 1.25rem; border: 1px solid #eee; }
+        .hp-privacy-card h3 { font-size: 13px; font-weight: 700; color: #0e0e0e; margin-bottom: 6px; }
+        .hp-privacy-card p { font-size: 13px; color: #555; line-height: 1.65; }
+        .hp-contact { padding: 5rem 2.5rem; background: #0e0e0e; }
+        .hp-contact .hp-section-label { color: #f5c518; }
+        .hp-contact h2 { font-family: 'Instrument Serif', serif; font-size: 32px; font-weight: 400; color: #fff; letter-spacing: -0.8px; margin-bottom: 1.75rem; line-height: 1.2; }
+        .hp-contact-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1rem; }
+        .hp-contact-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 1rem 1.25rem; }
+        .hp-contact-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
+        .hp-contact-card p { font-size: 14px; color: #fff; }
+        .hp-contact-card a { color: #f5c518; text-decoration: none; }
+        .hp-contact-note { font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 0.75rem; }
+        .hp-footer { background: #0e0e0e; border-top: 1px solid rgba(255,255,255,0.07); padding: 1.25rem 2.5rem; display: flex; justify-content: space-between; align-items: center; }
+        .hp-footer-logo { display: flex; align-items: center; gap: 8px; }
+        .hp-footer-logo-mark { width: 28px; height: 28px; background: #f5c518; border-radius: 7px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .hp-footer-name { color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 600; }
+        .hp-footer p { font-size: 12px; color: rgba(255,255,255,0.3); }
+        @media (max-width: 640px) {
+          .hp-nav { padding: 0.8rem 1.25rem; }
+          .hp-nav-links { display: none; }
+          .hp-hero { padding: 4rem 1.25rem 3.5rem; }
+          .hp-offerings, .hp-policy, .hp-terms, .hp-privacy, .hp-contact { padding: 3.5rem 1.25rem; }
+          .hp-offerings-grid, .hp-booking-grid, .hp-privacy-grid, .hp-contact-grid { grid-template-columns: 1fr; }
+          .hp-about { padding: 4rem 1.25rem; }
+          .hp-footer { flex-direction: column; gap: 8px; text-align: center; padding: 1.25rem; }
+        }
+      `}</style>
 
-  const parseAmount = (price: string) => {
-    const num = parseInt(price.replace(/[^0-9]/g, ''), 10);
-    return isNaN(num) ? 0 : num;
-  };
+      {/* Nav */}
+      <nav className="hp-nav">
+        <div className="hp-nav-logo">
+          <div className="hp-logo-mark">
+            <img src={chatProfile} alt="chapter a logo" className="hp-logo-image" />
+          </div>
+          <span className="hp-logo-name">chapter அ</span>
+        </div>
+        <ul className="hp-nav-links">
+          <li><a href="#about">About</a></li>
+          <li><a href="#experiences">Experiences</a></li>
+          <li><a href="#booking">Booking</a></li>
+          <li><a href="#policies">Policies</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </nav>
 
-  const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+      {/* Hero */}
+      <section className="hp-hero">
+        <h1>Curated experiences <br /><em>for people who want to step out and connect</em></h1>
+        <p>chapter அ is a Chennai-based social experiences brand that curates group trips, social gatherings, activities and community-led events. Participants can browse upcoming experiences, view event details and make bookings online.</p>
+        <button type="button" className="hp-btn-primary" onClick={onEnterApp}>View Experiences</button>
+      </section>
 
-  const formatDisplayDate = (dateStr?: string) => {
-    if (!dateStr) return 'TBD';
-    const d = new Date(`${dateStr}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return 'TBD';
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
+      {/* About */}
+      <section className="hp-about" id="about">
+        <div className="hp-about-inner">
+          <span className="hp-section-label">About Us</span>
+          <h2>Who we are</h2>
+          <p>chapter அ is a curated social experiences brand operated by <strong>CHAPTER</strong>, a registered business entity based in Chennai, Tamil Nadu, India.</p>
+          <p>We organise and facilitate social experiences, community events, activities and group trips for young adults. Our experiences are designed to help individuals and groups discover new places, meet new people and participate in well-managed experiences in a comfortable setting.</p>
+          <p>Each experience is published with relevant information such as date, inclusions, exclusions, pricing, advance payment terms, fulfilment details and support information so customers can review the details before booking.</p>
+          <p>Customers can reserve spots through our website by paying an advance amount online. Where applicable, the remaining balance is collected before the experience date, and confirmed participants receive updates, reminders and logistical details through WhatsApp or email.</p>
+          <p>Legal Entity Name: <strong>CHAPTER</strong><br />MSME Registration: <strong>UDYAM-TN-02-0414270</strong><br />Registered Business Address: <strong>16/45, Dharmaraja Koil Street, Kilpauk Garden Colony, Chennai - 600010</strong></p>
+        </div>
+      </section>
 
-  const formatFullDate = (dateStr?: string) => {
-    if (!dateStr) return 'TBD';
-    const d = new Date(`${dateStr}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return 'TBD';
-    const day = d.getDate();
-    const nth = day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th';
-    const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
-    const month = d.toLocaleDateString('en-US', { month: 'short' });
-    return `${weekday}, ${month} ${day}${nth}`;
-  };
-
-  const shiftDateString = (dateStr: string, offset: number) => {
-    const d = new Date(`${dateStr}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return null;
-    d.setDate(d.getDate() + offset);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-
-  // Determine which announcements to show
-  const isAfterTripInfo = step === 'ASK_DOUBTS' || step === 'SHOW_FAQ' || step === 'DONE';
-  const currentAnnouncements = (isAfterTripInfo && selectedEvent?.announcements) 
-    ? selectedEvent.announcements 
-    : GENERAL_ANNOUNCEMENTS;
-
-  // Clear timers when unmounting or re-running
-  const clearDetailTimers = () => {
-    if (detailsReadyTimerRef.current) clearTimeout(detailsReadyTimerRef.current);
-    if (detailsSafetyTimerRef.current) clearTimeout(detailsSafetyTimerRef.current);
-  };
-
-  useEffect(() => clearDetailTimers, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAnnouncementIndex((prev) => (prev + 1) % currentAnnouncements.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [currentAnnouncements.length]);
-
-  // Once details are ready, let the overlay fade out before showing details
-  useEffect(() => {
-    if (!showTransition || !detailsReady) return;
-
-    // Reveal details immediately underneath the fading overlay
-    setShowDetails(true);
-    setStep('EVENT_SELECTED');
-
-    // Then fade the overlay out shortly after
-    const exitTimer = setTimeout(() => {
-      setShowTransition(false);
-    }, 200);
-    return () => clearTimeout(exitTimer);
-  }, [detailsReady, showTransition]);
-
-  // Reset announcement index when switching contexts
-  useEffect(() => {
-    setAnnouncementIndex(0);
-  }, [isAfterTripInfo, selectedEvent]);
-
-  // Balance due countdown timer
-  useEffect(() => {
-    if (paymentView !== 'success' || !paymentContext?.balanceDueRaw) return;
-    const update = () => {
-      const now = new Date();
-      const due = new Date(`${paymentContext.balanceDueRaw}T23:59:59`);
-      const diff = due.getTime() - now.getTime();
-      if (diff <= 0) { setBalanceCountdown('Due now'); return; }
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      setBalanceCountdown(`${days}d ${hours}h ${minutes}m ${seconds}s`);
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [paymentView, paymentContext?.balanceDueRaw]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  // KYN timer (separate from chat)
-  useEffect(() => {
-    const t = setInterval(() => {
-      setKynTimer(prev => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const formatKynTime = (secs: number) => {
-    const d = Math.floor(secs / (24 * 3600));
-    const h = Math.floor((secs % (24 * 3600)) / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    return `${String(d).padStart(2, '0')}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isTyping]);
-
-  useEffect(() => {
-    simulateBotTyping(() => {
-      setMessages([{
-        id: Date.now().toString(),
-        sender: 'bot',
-        text: 'Welcome to chapter அ! 👋\nWhich city are you from buddy?'
-      }]);
-      setStep('ASK_CITY');
-    }, 1000);
-  }, []);
-
-  const simulateBotTyping = (callback: () => void, delay: number = 800) => {
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-      callback();
-    }, delay);
-  };
-
-  const addUserMessage = (text: string) => {
-    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'user', text }]);
-  };
-
-  const addBotMessage = (text: string) => {
-    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text }]);
-  };
-
-  const handleCitySelect = (city: string) => {
-    setStep('PROCESSING');
-    addUserMessage(city);
-    setSelectedCity(city);
-    
-    simulateBotTyping(() => {
-      addBotMessage(`Awesome! What would you like to attend in ${city}?`);
-      setStep('ASK_CATEGORY');
-    });
-  };
-
-  const handleCategorySelect = (category: string) => {
-    setStep('PROCESSING');
-    addUserMessage(category);
-    setSelectedCategory(category);
-    
-    simulateBotTyping(() => {
-      const filteredEvents = EVENTS.filter(e => e.cities.includes(selectedCity) && e.category === category);
-      if (filteredEvents.length > 0) {
-        addBotMessage(`Here are the upcoming ${category} in ${selectedCity}. Which one are you interested in?`);
-        setStep('SELECT_EVENT');
-      } else {
-        addBotMessage(`Oops, looks like we don't have any ${category} scheduled in ${selectedCity} right now. Check back later!`);
-        setStep('NO_EVENTS');
-      }
-    }, 1000);
-  };
-
-  const handleEventSelect = (event: Event) => {
-    setStep('PROCESSING');
-    addUserMessage(event.title);
-    setSelectedEvent(event);
-
-    clearDetailTimers();
-    setDetailsReady(false);
-    setShowTransition(true);
-
-    // Simulate data readiness; in real fetch, setDetailsReady(true) in the success callback.
-    detailsReadyTimerRef.current = setTimeout(() => setDetailsReady(true), 1200);
-
-    // Fallback to avoid getting stuck
-    detailsSafetyTimerRef.current = setTimeout(() => setDetailsReady(true), 3000);
-  };
-
-  const handleDetailsAction = (action: 'book' | 'contact', date?: string, meetingPoint?: string) => {
-    setShowChat(true);
-    setShowBookingTimeline(false);
-    setShowWaitlistForm(false);
-    setShowDetails(false);
-    setDetailsReady(false);
-    setMessages([]); // Clear chat history for a fresh start
-    setClickedFaqs([]); // Reset clicked FAQs for the new flow
-    if (date) setBookingDate(date);
-    if (selectedEvent) {
-      setJourneyCardData({
-        event: selectedEvent,
-        city: selectedCity,
-        startDate: date || selectedEvent.dates?.[0]?.date || '',
-        meetingPoint: meetingPoint || ''
-      });
-    }
-    setStep('PROCESSING');
-    
-    simulateBotTyping(() => {
-      if (action === 'book') {
-        addBotMessage(`Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`);
-        setStep('ASK_DOUBTS');
-      } else {
-        addBotMessage(`Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`);
-        setStep('SHOW_FAQ');
-      }
-    });
-  };
-
-  const handleDoubtsSelect = (hasDoubts: boolean) => {
-    setStep('PROCESSING');
-    if (hasDoubts) {
-      addUserMessage("Hold up, I have a question.");
-      simulateBotTyping(() => {
-        addBotMessage("No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book.");
-        setStep('SHOW_FAQ');
-      });
-    } else {
-      addUserMessage("All clear, let's book it! 🚀");
-      // Skip extra questions and jump straight to booking timeline
-      setShowChat(false);
-      setTimeout(() => setShowBookingTimeline(true), 150);
-      setShowWaitlistForm(false);
-      setStep('DONE');
-    }
-  };
-
-  const handleFaqSelect = (faq: FAQ) => {
-    setStep('PROCESSING');
-    addUserMessage(faq.question);
-    setClickedFaqs(prev => [...prev, faq.question]);
-    
-    simulateBotTyping(() => {
-      addBotMessage(faq.answer);
-      simulateBotTyping(() => {
-        addBotMessage("Hope that clears it up! Got anything else, or are we locking this in?");
-        setStep('SHOW_FAQ');
-      }, 1000);
-    }, 800);
-  };
-
-  const handleReadyToBook = () => {
-    addUserMessage("All clear, let's book it! 🚀");
-    setShowChat(false);
-    setTimeout(() => setShowBookingTimeline(true), 150);
-    setShowWaitlistForm(false);
-    setStep('DONE');
-  };
-
-  const handleGenderSelect = (gender: string) => {
-    setStep('PROCESSING');
-    setBookingGender(gender);
-    addUserMessage(gender);
-    
-    simulateBotTyping(() => {
-      addBotMessage("Got it. And do you need transport from Chennai, or will you arrange your own transport?");
-      setStep('ASK_TRANSPORT');
-    });
-  };
-
-  const handleTransportSelect = (transport: string) => {
-    setStep('PROCESSING');
-    setBookingTransport(transport);
-    addUserMessage(transport);
-    
-    simulateBotTyping(() => {
-      addBotMessage(`Perfect! I'll show you exactly what to select on KYN.`);
-      setStep('DONE');
-      setShowKynPopup(true);
-      setShowWaitlistForm(false);
-    });
-  };
-
-  const handleDoubtSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = doubtFormData.name;
-    const phone = doubtFormData.phone;
-    const message = doubtFormData.message;
-    setShowDoubtPopup(false);
-    setDoubtFormData({ name: '', phone: '', message: '' });
-    setStep('PROCESSING');
-    addUserMessage(message);
-    simulateBotTyping(() => {
-      addBotMessage(`Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`);
-      setStep('DONE');
-    }, 1000);
-  };
-
-  const handleProceedToPhonePe = () => {
-    if (!selectedEvent) return;
-    const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
-    const balanceDueRaw = shiftDateString(dateStr, -5) || '';
-    const balanceDue = balanceDueRaw ? formatDisplayDate(balanceDueRaw) : 'TBD';
-    const pickupDetails = dateStr ? formatDisplayDate(shiftDateString(dateStr, -3) || undefined) : 'TBD';
-    const tripDate = formatDisplayDate(dateStr);
-    const totalAmount = parseAmount(selectedEvent.price);
-    const advanceAmount = Math.round(totalAmount * 0.3);
-    const ctx = {
-      eventTitle: selectedEvent.title,
-      amount: advanceAmount,
-      remainingBalance: totalAmount - advanceAmount,
-      date: formatDisplayDate(dateStr),
-      balanceDue,
-      balanceDueRaw,
-      pickupDetails,
-      tripDate,
-      tripDateFull: formatFullDate(dateStr),
-      phonepeUrl: selectedEvent.bookingUrl,
-      shareUrl: typeof window !== 'undefined' ? window.location.origin : '/',
-      name: detailsForm.name.trim(),
-      phone: detailsForm.phone
-    };
-    try {
-      localStorage.setItem('bookingName', ctx.name);
-      localStorage.setItem('bookingPhone', ctx.phone);
-    } catch (err) {
-      // ignore storage errors in restricted environments
-    }
-    setPaymentContext(ctx);
-    setShowDetailsForm(false);
-    setPaymentView('checkout');
-  };
-
-  const renderOptions = () => {
-    if (isTyping || step === 'PROCESSING' || step === 'INIT') {
-      return (
-        <div className="flex justify-start">
-          <div className="bg-white rounded-r-2xl rounded-bl-2xl px-4 py-3 shadow-sm flex items-center gap-1.5">
-            <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
-            <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
-            <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+      {/* Experiences / Offerings */}
+      <section className="hp-offerings hp-section" id="experiences">
+        <div className="hp-container">
+          <span className="hp-section-label">How It Works</span>
+          <h2>What we offer</h2>
+          <div className="hp-offerings-grid">
+            <div className="hp-offering-card">
+              <div className="hp-offering-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </div>
+              <h3>Social Events</h3>
+              <p>Curated gatherings, themed meet-ups and community experiences designed for comfortable social participation.</p>
+            </div>
+            <div className="hp-offering-card">
+              <div className="hp-offering-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              </div>
+              <h3>Group Trips</h3>
+              <p>Short trips and travel experiences with pre-shared logistics, inclusions and payment structure.</p>
+            </div>
+            <div className="hp-offering-card">
+              <div className="hp-offering-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </div>
+              <h3>Managed Experience Flow</h3>
+              <p>Clear pre-booking information, customer communication and post-booking coordination for each experience.</p>
+            </div>
           </div>
         </div>
-      );
-    }
+      </section>
 
-    const btnClass = "px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-semibold hover:bg-[#e6c200] transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px]";
-    const primaryBtnClass = "px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-bold hover:bg-[#e6c200] transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px]";
+      {/* Booking Process */}
+      <section className="hp-booking hp-section" id="booking">
+        <div className="hp-container">
+          <span className="hp-section-label">Booking Process</span>
+          <h2>How booking works</h2>
+          <div className="hp-booking-grid">
+            <div className="hp-booking-card">
+              <div className="hp-booking-step">1</div>
+              <h3>Browse an experience</h3>
+              <p>Customers can review the published experience page to see the date, location, inclusions, exclusions, pricing, eligibility and other relevant details before making a booking decision.</p>
+            </div>
+            <div className="hp-booking-card">
+              <div className="hp-booking-step">2</div>
+              <h3>Pay the advance online</h3>
+              <p>An advance amount is collected through the website to reserve a spot. The applicable advance amount and the balance payment structure are displayed as part of the booking flow.</p>
+            </div>
+            <div className="hp-booking-card">
+              <div className="hp-booking-step">3</div>
+              <h3>Receive confirmation and reminders</h3>
+              <p>After booking, customers receive confirmation and further communication through WhatsApp or email, including reminders about any pending balance payment and pre-event instructions.</p>
+            </div>
+            <div className="hp-booking-card">
+              <div className="hp-booking-step">4</div>
+              <h3>Complete payment and join</h3>
+              <p>Where applicable, the remaining balance must be paid before the experience date. Once payment formalities are completed, customers receive the final logistical details required to participate.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    switch (step) {
-      case 'ASK_CITY': {
-        const availableCities = Array.from(new Set(EVENTS.flatMap(e => e.cities)));
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {availableCities.map((city, i) => (
-              <button key={city} onClick={() => handleCitySelect(city)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div
-                  className="absolute inset-0 -skew-x-12"
-                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                  animate={{ x: ['-100%', '300%'] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
-                />
-                <span>{city}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      }
-      case 'ASK_CATEGORY': {
-        const availableCategories = Array.from(new Set(EVENTS.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {availableCategories.map((cat, i) => (
-              <button key={cat} onClick={() => handleCategorySelect(cat)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span>{cat}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      }
-      case 'ASK_DOUBTS':
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
+      {/* Refund Policy */}
+      <section className="hp-policy hp-section" id="policies">
+        <div className="hp-container">
+          <span className="hp-section-label">Refund & Cancellation Policy</span>
+          <h2>Our refund policy</h2>
+          <p style={{ fontSize: 12, color: '#999', marginBottom: '1.25rem', fontStyle: 'italic' }}>Note: The term "experience" includes trips, activities, workshops, events and community gatherings published by chapter அ.</p>
+          <div className="hp-policy-grid">
             {[
-              { label: 'Hold up, I have a question', onClick: () => handleDoubtsSelect(true), cls: btnClass },
-              { label: "All clear, let's book! 🚀", onClick: () => handleDoubtsSelect(false), cls: primaryBtnClass },
-            ].map(({ label, onClick, cls }, i) => (
-              <button key={label} onClick={onClick} className={`${cls} relative overflow-hidden`}>
-                <motion.div
-                  className="absolute inset-0 -skew-x-12"
-                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                  animate={{ x: ['-100%', '300%'] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
-                />
-                <span>{label}</span> <Send size={16} />
-              </button>
+              ['1. Advance Payment', 'An advance amount may be required to reserve a spot for an experience. The applicable advance amount is shown on the booking page. The booking is confirmed only after successful payment.'],
+              ['2. Balance Payment', 'For experiences with partial payment options, the remaining balance must be paid by the communicated due date before participation. Reminder messages may be sent through WhatsApp or email.'],
+              ['3. Cancellation by Customer', 'Unless otherwise stated on the specific booking page, advance payments are non-refundable because reservations and third-party arrangements may be made in advance on behalf of the customer.'],
+              ['4. Cancellation by chapter அ', 'If chapter அ cancels an experience, the customer will receive a refund of the amount paid for that booking, unless an alternative date or replacement experience is accepted by the customer.'],
+              ['5. Refund Support', 'For cancellation or refund-related queries, customers can contact us on WhatsApp at +91 8838111564 or by email at chapteraaa.official@gmail.com.'],
+            ].map(([title, body]) => (
+              <div className="hp-policy-card" key={title}>
+                <div className="hp-policy-dot" />
+                <div><h3>{title}</h3><p>{body}</p></div>
+              </div>
             ))}
-          </motion.div>
-        );
-      case 'ASK_GENDER':
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {['Male', 'Female'].map((g, i) => (
-              <button key={g} onClick={() => handleGenderSelect(g)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span>{g}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      case 'ASK_TRANSPORT':
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {['With Transport', 'Without Transport'].map((t, i) => (
-              <button key={t} onClick={() => handleTransportSelect(t)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span>{t}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      case 'SHOW_FAQ': {
-        const remainingFaqs = selectedEvent?.faqs.filter(faq => !clickedFaqs.includes(faq.question)) || [];
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {remainingFaqs.map((faq, idx) => (
-              <button key={idx} onClick={() => handleFaqSelect(faq)} className="text-right px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-medium hover:bg-[#e6c200] transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
-                <motion.div
-                  className="absolute inset-0 -skew-x-12"
-                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                  animate={{ x: ['-100%', '300%'] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: idx * 1.2, ease: 'easeInOut' }}
-                />
-                <span className="truncate whitespace-normal text-left">{faq.question}</span> <Send size={16} className="flex-shrink-0" />
-              </button>
-            ))}
-            <button onClick={() => setShowDoubtPopup(true)} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
-              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
-              <span className="truncate whitespace-normal text-left">Vera Doubt Iruku</span> <MessageCircle size={16} className="flex-shrink-0" />
-            </button>
-            <button onClick={handleReadyToBook} className={primaryBtnClass + " mt-2 relative overflow-hidden"}>
-              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
-              <span>All clear, let's book! 🚀</span> <Send size={16} />
-            </button>
-          </motion.div>
-        );
-      }
-      case 'NO_EVENTS':
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            <button onClick={() => {
-              setStep('PROCESSING');
-              simulateBotTyping(() => {
-                addBotMessage("Let's try again! Which city are you from?");
-                setStep('ASK_CITY');
-              });
-            }} className={`${btnClass} relative overflow-hidden`}>
-              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
-              <span>Start Over</span> <Send size={16} />
-            </button>
-          </motion.div>
-        );
-      case 'SELECT_EVENT': {
-        const filteredEvents = EVENTS.filter(e => e.cities.includes(selectedCity) && e.category === selectedCategory);
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {filteredEvents.map((event, i) => (
-              <button key={event.id} onClick={() => handleEventSelect(event)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span className="text-left flex-1 mr-2">{event.title}</span> <Send size={16} className="flex-shrink-0" />
-              </button>
-            ))}
-          </motion.div>
-        );
-      }
-      case 'EVENT_SELECTED':
-        return (
-          <div className="text-right text-sm text-gray-500 py-2 w-full">
-            Viewing event details...
-          </div>
-        );
-      case 'DONE':
-        return null;
-      default:
-        return null;
-    }
-  };
-
-  const isNameValid = detailsForm.name.trim().length >= 1;
-  const isPhoneValid = /^\d{10,}$/.test(detailsForm.phone);
-  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted;
-
-  return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
-        
-        {/* Header */}
-        <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
-              <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[1px]" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-1.5">
-              <h1 className="font-black text-lg tracking-tight text-black">chapter அ</h1>
-              <CheckCircle2 size={16} className="text-blue-500 fill-blue-50" />
-            </div>
-            <div className="h-[14px] overflow-hidden relative mt-0.5">
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={announcementIndex + (isAfterTripInfo ? '-event' : '-general')}
-                  initial={{ y: 15, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: -15, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="text-[11px] text-gray-500 font-medium leading-tight absolute inset-0 whitespace-nowrap"
-                >
-                  {currentAnnouncements[announcementIndex]}
-                </motion.p>
-              </AnimatePresence>
-            </div>
           </div>
         </div>
+      </section>
 
-        {showChat && !showDetails && !showTransition && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
-            {journeyCardData && (
-              <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} meetingPoint={journeyCardData.meetingPoint} />
-            )}
-            {messages.map(msg => (
-              <ChatMessage key={msg.id} message={msg} />
+      {/* Terms */}
+      <section className="hp-terms hp-section">
+        <div className="hp-container">
+          <span className="hp-section-label">Terms & Conditions</span>
+          <h2>Terms of use</h2>
+          <p style={{ fontSize: 12, color: '#555', marginBottom: '1.25rem', fontStyle: 'italic' }}>These terms apply to bookings made through chapter அ for experiences, activities, group trips and social events.</p>
+          <div className="hp-terms-list">
+            {[
+              ['1. Booking Confirmation', 'A booking is considered confirmed only after successful payment and receipt of confirmation from chapter அ.'],
+              ['2. Payment Schedule', 'Where a booking is split into advance and balance payment, the balance due date will be communicated on the website or through direct customer communication. Failure to complete payment may result in cancellation of the reservation.'],
+              ['3. Experience Changes', 'chapter அ may make reasonable changes to schedules, venues, transport plans or itinerary elements due to weather, vendor availability, safety considerations or other operational reasons.'],
+              ['4. Third-Party Services', 'Some experiences may involve third-party vendors such as transport operators, accommodation partners, activity organisers or venue partners. chapter அ coordinates the experience but may rely on these service providers for fulfilment.'],
+              ['5. Customer Communication', 'By submitting contact details during booking, the customer agrees to receive booking confirmation, reminders, logistical updates and customer support communication through WhatsApp, phone call or email.'],
+              ['6. Eligibility', 'Certain experiences may have age limits or participation requirements. These conditions will be specified on the relevant booking page. Customers may be asked to provide valid identification where necessary.'],
+            ].map(([title, body]) => (
+              <div className="hp-terms-item" key={title}>
+                <div className="hp-terms-bar" />
+                <div><h3>{title}</h3><p>{body}</p></div>
+              </div>
             ))}
-            <div className="pt-1">
-              {(() => {
-                const opts = renderOptions();
-                if (isTyping || step === 'PROCESSING' || step === 'INIT') return opts;
-                if (!opts || step === 'EVENT_SELECTED' || step === 'DONE') return opts;
-                return (
-                  <div className="bg-white rounded-2xl border border-gray-200 p-3">
-                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider px-1 mb-2">Choose your reply</p>
-                    {opts}
-                  </div>
-                );
-              })()}
-            </div>
-            <div ref={messagesEndRef} className="h-4" />
           </div>
-        )}
+        </div>
+      </section>
 
-        {/* Transition Overlay */}
-        <AnimatePresence>
-          {showTransition && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{
-                opacity: { duration: 0.35, ease: 'easeOut' },
-                scale:   { type: 'spring', damping: 20, stiffness: 120 }
-              }}
-              className="absolute inset-0 bg-[#FFD700] z-40 flex flex-col items-center justify-center overflow-hidden"
-            >
-              <motion.div
-                initial={{ x: -100, y: 100, scale: 0.5, opacity: 0 }}
-                animate={{ x: 0, y: 0, scale: 1, opacity: 1 }}
-                transition={{
-                  x: { type: 'spring', damping: 14, stiffness: 130 },
-                  y: { type: 'spring', damping: 14, stiffness: 130 },
-                  scale: { type: 'spring', damping: 16, stiffness: 150 },
-                  opacity: { duration: 0.25, ease: 'easeOut' },
-                }}
-              >
-                <motion.div
-                  animate={{ x: 150, y: -150, scale: 0.5, opacity: 0 }}
-                  transition={{ delay: 1.35, duration: 0.45, ease: 'easeIn' }}
-                >
-                  <Send size={48} className="text-black" />
-                </motion.div>
-              </motion.div>
-              <motion.p
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ delay: 0.15, duration: 0.4 }}
-                className="mt-4 font-bold text-lg text-black tracking-wide absolute top-[55%]"
-              >
-                Sending details...
-              </motion.p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Event Details Overlay (no mount animation) */}
-        {showDetails && selectedEvent && (
-          <EventDetailsOverlay 
-            event={selectedEvent} 
-            selectedCity={selectedCity}
-            onClose={() => {
-              setShowDetails(false);
-              setStep('SELECT_EVENT');
-            }}
-            onAction={handleDetailsAction} 
-          />
-        )}
-
-        {/* Booking Timeline Popup */}
-        <AnimatePresence>
-          {showBookingTimeline && selectedEvent && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
-              />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.92 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="absolute inset-0 z-50 flex items-center justify-center px-5"
-              >
-                <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
-                  <div className="px-6 pt-6 pb-4 flex items-center justify-between">
-                    <div className="flex-1">
-                      <h2 className="text-lg font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
-                    </div>
-                    {selectedEvent.id !== 'e3' && !selectedEvent.inviteOnly && (
-                      <button
-                        onClick={() => setShowBookingTimeline(false)}
-                        className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mt-1 flex-shrink-0"
-                      >
-                        <X size={16} className="text-gray-600" />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="px-6 pb-6">
-                    <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                      {/* Advance / Sign Up row */}
-                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
-                        <div>
-                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">{selectedEvent.inviteOnly ? 'Sign Up' : 'Advance'}</p>
-                          <p className="text-[15px] font-black text-gray-900 leading-none">
-                            {selectedEvent.inviteOnly ? 'Free — no payment yet' : `₹${selectedEvent.advanceAmount.toLocaleString('en-IN')}`}
-                          </p>
-                        </div>
-                        <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">
-                          {selectedEvent.inviteOnly ? 'Free' : 'Now'}
-                        </span>
-                      </div>
-
-                      {/* Remaining balance row */}
-                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
-                        <div>
-                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
-                          <p className="text-[15px] font-black text-gray-900 leading-none">
-                            ₹{(parseInt(selectedEvent.price.replace(/\D/g, '')) - selectedEvent.advanceAmount).toLocaleString('en-IN')}
-                          </p>
-                        </div>
-                        <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
-                          {bookingDate ? `by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '5 days before trip'}
-                        </span>
-                      </div>
-
-                      {/* Receive details row */}
-                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
-                        <div>
-                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">Receive</p>
-                          <p className="text-[15px] font-black text-gray-900 leading-none">Visa, flights & stay info</p>
-                        </div>
-                        <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                          {bookingDate ? `by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before trip'}
-                        </span>
-                      </div>
-
-                      {/* Prize row — event title + date, yellow accented */}
-                      <div className="px-5 py-4 flex items-center justify-between bg-[#FFD700]/10">
-                        <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
-                        {bookingDate && (
-                          <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                            {new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="px-6 pb-6">
-                    {selectedEvent.inviteOnly ? (
-                      <button
-                        onClick={() => { window.open(selectedEvent.waitlistUrl, '_blank'); }}
-                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
-                      >
-                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        Request Invitation
-                        <ArrowRight size={18} strokeWidth={2.5} />
-                      </button>
-                    ) : selectedEvent.id === 'e3' ? (
-                      <button
-                        onClick={() => {
-                          if (isPhonePeFlow) {
-                            setShowBookingTimeline(false);
-                            setShowDetailsForm(true);
-                          } else {
-                            setShowBookingTimeline(false);
-                            setTimeout(() => setShowWaitlistForm(true), 150);
-                          }
-                        }}
-                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
-                      >
-                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        {isPhonePeFlow ? 'Confirm' : 'Request Invitation'}
-                        <ArrowRight size={18} strokeWidth={3.0} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          alert('Enquiry sent!');
-                          setShowBookingTimeline(false);
-                        }}
-                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
-                      >
-                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        Request Invitation
-                        <ArrowRight size={18} strokeWidth={2.5} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* Details Form — bottom sheet */}
-        <AnimatePresence>
-          {showDetailsForm && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
-                onClick={() => {
-                  setShowDetailsForm(false);
-                  setTimeout(() => setShowBookingTimeline(true), 80);
-                }}
-              />
-              <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem] flex flex-col" style={{ minHeight: 'auto' }}
-              >
-                {/* Handle + Header */}
-                <div className="px-6 pt-4 pb-4">
-                  <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
-                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight whitespace-nowrap">Let's Lock This In! 🔐</p>
-                </div>
-
-                {/* Fields */}
-                <div className="px-6 space-y-3">
-                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
-                    <input
-                      type="text"
-                      value={detailsForm.name}
-                      onChange={e => setDetailsForm({ ...detailsForm, name: e.target.value })}
-                      placeholder="What do we call you?"
-                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
-                      {detailsForm.phone.length > 0 && !isPhoneValid && (
-                        <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
-                      )}
-                    </div>
-                    <input
-                      type="tel"
-                      value={detailsForm.phone}
-                      onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') })}
-                      placeholder="Updates & reminders are sent here"
-                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                      inputMode="tel"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3 select-none pt-1">
-                    <div
-                      onClick={() => setTcAccepted(!tcAccepted)}
-                      className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${
-                        tcAccepted ? 'bg-black border-black' : 'bg-white border-gray-300'
-                      }`}
-                    >
-                      {tcAccepted && (
-                        <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                          <path d="M1 4L4 7L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </div>
-                    <span className="text-[13px] text-gray-500 leading-snug">
-                      I agree to the{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowTcModal(true)}
-                        className="text-gray-900 underline font-medium"
-                      >
-                        Terms & Conditions
-                      </button>
-                    </span>
-                  </div>
-                </div>
-
-                {/* CTA */}
-                <div className="px-6 pt-7 pb-5 space-y-3">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
-                    <span className="text-[12px] text-gray-400">Secure Payments via PhonePe</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!isDetailsFormValid}
-                    onClick={handleProceedToPhonePe}
-                    className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 whitespace-nowrap ${
-                      isDetailsFormValid
-                        ? 'bg-black text-white active:opacity-80'
-                        : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    <span>Pay Advance</span>
-                    <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
-                  </button>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* T&C Modal */}
-        <AnimatePresence>
-          {showTcModal && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.5 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[75] bg-black"
-                onClick={() => setShowTcModal(false)}
-              />
-              <motion.div
-                initial={{ y: 40, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 40, opacity: 0 }}
-                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[80] bg-white rounded-t-[2rem] flex flex-col max-h-[80%]"
-              >
-                <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
-                  <h3 className="text-[17px] font-bold text-gray-900">Terms & Conditions</h3>
-                </div>
-                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
-                  <p className="text-[13px] text-gray-400 italic">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
-                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable under any circumstances.</p>
-                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date shown on the website after you make the advance payment. Further notices and reminders will be sent via WhatsApp. Failure to pay will result in forfeiture of your spot.</p>
-                  <p><strong className="text-gray-900">3. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
-                  <p><strong className="text-gray-900">4. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
-                  <p><strong className="text-gray-900">5. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
-                  <p><strong className="text-gray-900">6. Age Requirement</strong><br />Certain experiences are strictly 21+. Participants must meet the minimum age requirement specified for each experience. Valid ID proof may be required. Failure to meet the age requirement may result in denial of entry without refund.</p>
-                </div>
-                <div className="px-6 pb-8 pt-3 flex-shrink-0">
-                  <button
-                    onClick={() => { setTcAccepted(true); setShowTcModal(false); }}
-                    className="w-full py-[15px] rounded-2xl bg-black text-white text-[16px] font-semibold active:opacity-80 transition-all"
-                  >
-                    I Agree
-                  </button>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* PhonePe Mock Checkout */}
-        <AnimatePresence>
-          {paymentView === 'checkout' && paymentContext && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[70] bg-gradient-to-br from-[#111827] via-black to-[#0f172a] text-white flex flex-col"
-            >
-              <div className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400 font-semibold">Mock PhonePe</p>
-                  <h2 className="text-2xl font-black mt-1">Redirecting to PhonePe</h2>
-                  <p className="text-sm text-gray-400 mt-1">Amount: {formatINR(paymentContext.amount)}</p>
-                </div>
-                <ShieldCheck className="text-emerald-400" size={28} />
+      {/* Privacy */}
+      <section className="hp-privacy hp-section">
+        <div className="hp-container">
+          <span className="hp-section-label">Privacy Policy</span>
+          <h2>Your data, our responsibility</h2>
+          <div className="hp-privacy-grid">
+            {[
+              ['1. Information We Collect', 'We may collect customer information such as name, phone number, email address and booking details when a customer fills out a form or makes a booking.'],
+              ['2. How We Use It', 'This information is used to confirm bookings, provide customer support, share logistical details, send payment reminders where applicable and manage the booked experience.'],
+              ['3. Payment Data', 'Payments are processed through secure third-party payment gateways. chapter அ does not store customer card details, UPI PINs or other sensitive payment credentials.'],
+              ['4. Limited Sharing', 'Customer information may be shared only where reasonably required to fulfil an experience, such as with transport, accommodation or activity partners, and only to the extent necessary.'],
+              ['5. Contact', 'For privacy-related questions or customer support, email us at chapteraaa.official@gmail.com.'],
+            ].map(([title, body]) => (
+              <div className="hp-privacy-card" key={title}>
+                <h3>{title}</h3><p>{body}</p>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-              <div className="flex-1 px-6">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <p className="text-sm text-gray-300">Paying for</p>
-                      <p className="font-bold text-lg">{paymentContext.eventTitle}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-300">Trip Date</p>
-                      <p className="font-semibold">{paymentContext.date}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setPaymentView('success')}
-                      className="w-full py-4 rounded-xl bg-emerald-500 text-black font-black text-base shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
-                    >
-                      Payment complete
-                    </button>
-                    <button
-                      onClick={() => setPaymentView('failure')}
-                      className="w-full py-4 rounded-xl bg-white/10 text-white font-semibold text-base border border-white/20 hover:bg-white/15 active:scale-95 transition-all"
-                    >
-                      Payment not complete
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-3">
-                    Use these buttons to mock PhonePe response. You'll be redirected back to the site accordingly.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Contact */}
+      <section className="hp-contact" id="contact">
+        <div className="hp-container">
+          <span className="hp-section-label">Contact</span>
+          <h2>Get in touch</h2>
+          <div className="hp-contact-grid">
+            <div className="hp-contact-card"><div className="hp-contact-label">Location</div><p>Chennai, Tamil Nadu, India</p></div>
+            <div className="hp-contact-card"><div className="hp-contact-label">Email</div><p><a href="mailto:chapteraaa.official@gmail.com">chapteraaa.official@gmail.com</a></p></div>
+            <div className="hp-contact-card"><div className="hp-contact-label">WhatsApp / Phone</div><p><a href="https://wa.me/918838111564">+91 8838111564</a></p></div>
+          </div>
+          <p className="hp-contact-note">Customer support and booking assistance are available through WhatsApp and email.</p>
+        </div>
+      </section>
 
-        {/* Payment Success Screen */}
-        <AnimatePresence>
-          {paymentView === 'success' && paymentContext && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              className="absolute inset-0 z-[70] bg-white flex flex-col overflow-y-auto"
-            >
-              {/* Hero */}
-              <div className="flex flex-col items-center pt-12 pb-6 px-6 flex-shrink-0">
-                <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', damping: 18, stiffness: 260, delay: 0.1 }}
-                  className="w-[68px] h-[68px] rounded-full bg-[#34C759]/12 flex items-center justify-center mb-4"
-                >
-                  <CheckCircle2 size={34} className="text-[#34C759]" strokeWidth={1.75} />
-                </motion.div>
-                <h2 className="text-[24px] font-bold text-gray-900 tracking-tight">Your Spot is Reserved, {paymentContext.name}!</h2>
-              </div>
-
-              {/* Card 1 — Booking Receipt */}
-              <div className="mx-6 bg-[#F2F2F7] rounded-3xl overflow-hidden flex-shrink-0 mb-5">
-                {/* Event title */}
-                <div className="px-5 py-3 border-b border-black/5">
-                  <p className="text-[15px] font-bold text-gray-900">
-                    {paymentContext.eventTitle} · {paymentContext.tripDateFull}
-                  </p>
-                </div>
-
-                {/* Advance paid row */}
-                <div className="px-7 pt-3 pb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">Advance</p>
-                    <p className="text-[20px] font-black text-gray-900 leading-none">{formatINR(paymentContext.amount)}</p>
-                  </div>
-                  <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">Paid</span>
-                </div>
-
-                {/* Remaining balance row */}
-                <div className="px-7 pb-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
-                    <p className="text-[20px] font-black text-gray-900 leading-none">{formatINR(paymentContext.remainingBalance)}</p>
-                  </div>
-                  {balanceCountdown && (
-                    <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">due in {balanceCountdown}</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Card 2 — Secret Offer (dashed border) */}
-              <div className="mx-6 rounded-3xl overflow-hidden flex-shrink-0 border border-dashed border-gray-400/60">
-                <div className="px-5 pt-5 pb-4">
-                  <p className="text-[17px] font-black leading-tight text-gray-900">Secret Offer — Claim Now or Never</p>
-                </div>
-                {/* Acknowledgement checkbox */}
-                <div
-                  className="mx-5 mb-5 flex items-start gap-3 cursor-pointer select-none"
-                  onClick={() => setOfferAcknowledged(v => !v)}
-                >
-                  <div className={`mt-0.5 w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all duration-150 ${offerAcknowledged ? 'bg-[#25D366] border-[#25D366]' : 'border-gray-300 bg-white'}`}>
-                    {offerAcknowledged && (
-                      <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
-                        <path d="M1 4L4 7.5L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )}
-                  </div>
-                  <p className="text-[13px] text-gray-600 leading-snug">I'm aware that once I leave this beautiful website, this offer will be gone.</p>
-                </div>
-
-                <a
-                  href={offerAcknowledged ? `https://wa.me/919739832100?text=${encodeURIComponent(`Hi! I just paid the advance for ${paymentContext.eventTitle} (${paymentContext.date}). I'd like to pay the remaining balance and claim my offer!`)}` : undefined}
-                  onClick={!offerAcknowledged ? (e) => e.preventDefault() : undefined}
-                  className={`relative overflow-hidden flex items-center justify-center gap-2.5 font-bold py-[18px] text-[16px] transition-all duration-200 ${offerAcknowledged ? 'bg-[#25D366] text-white active:opacity-80' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {offerAcknowledged && (
-                    <motion.div
-                      className="absolute inset-0 -skew-x-12 pointer-events-none"
-                      style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '55%' }}
-                      animate={{ x: ['-130%', '320%'] }}
-                      transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 1.2, ease: 'easeInOut' }}
-                    />
-                  )}
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className={offerAcknowledged ? 'opacity-100' : 'opacity-40 relative z-10'}>
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                  </svg>
-                  <span className="relative z-10">Claim Secret Offer</span>
-                </a>
-              </div>
-
-              <div className="pb-8" />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Payment Failure Screen */}
-        <AnimatePresence>
-          {paymentView === 'failure' && paymentContext && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              className="absolute inset-0 z-[70] bg-white flex flex-col overflow-y-auto"
-            >
-              {/* Hero */}
-              <div className="flex flex-col items-center pt-16 pb-5 px-6 flex-shrink-0">
-                <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', damping: 18, stiffness: 260, delay: 0.1 }}
-                  className="w-[68px] h-[68px] rounded-full bg-[#FF3B30]/10 flex items-center justify-center mb-4"
-                >
-                  <XCircle size={34} className="text-[#FF3B30]" strokeWidth={1.75} />
-                </motion.div>
-                <h2 className="text-[24px] font-bold text-gray-900 tracking-tight">Didn't go through</h2>
-                <p className="text-[15px] text-gray-500 mt-1 text-center leading-snug">
-                  No stress — you're closer than you think
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="px-6 pt-4 pb-8 flex-shrink-0">
-                <button
-                  onClick={() => setPaymentView('checkout')}
-                  className="w-full bg-black text-white font-semibold py-[17px] rounded-2xl text-[16px] active:opacity-80 transition-all"
-                >
-                  Try Again
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Waitlist Modal */}
-        <AnimatePresence>
-          {showWaitlistForm && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
-              />
-              <motion.div
-                initial={{ y: 30, opacity: 0, scale: 0.99 }}
-                animate={{ y: 0, opacity: 1, scale: 1 }}
-                exit={{ y: 30, opacity: 0, scale: 0.99 }}
-                transition={{ duration: 0.28, ease: 'easeOut' }}
-                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-50 flex flex-col shadow-2xl"
-                style={{ height: '88%' }}
-              >
-                {/* Everything scrolls together */}
-                <div className="flex-1 overflow-y-auto px-6 sm:px-7 pb-8 pt-10">
-                  {/* Header */}
-                  <div className="relative mb-4">
-                    <div className="text-center px-4">
-                      <p className="text-xs font-medium text-gray-600 leading-tight whitespace-nowrap">
-                        Not everyone gets in — but the right people always do.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Iframe */}
-                  <div className="mt-6 rounded-2xl border-2 border-dashed border-gray-200 p-2">
-                    <iframe
-                      src="https://tally.so/embed/WOYKOR?alignLeft=1&hideTitle=1&transparentBackground=1"
-                      width="100%"
-                      height="480"
-                      style={{ border: 'none', display: 'block' }}
-                      title="Sri Lanka Waitlist"
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* Doubt Bottom Sheet */}
-        <AnimatePresence>
-          {showDoubtPopup && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
-                onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', message: '' }); }}
-              />
-              <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ duration: 0.32, ease: 'easeOut' }}
-                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-[60] flex flex-col"
-              >
-                {/* Handle + Header */}
-                <div className="px-6 pt-4 pb-4">
-                  <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
-                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
-                </div>
-
-                {/* Fields */}
-                <form onSubmit={handleDoubtSubmit}>
-                  <div className="px-6 space-y-3">
-                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={doubtFormData.name}
-                        onChange={e => setDoubtFormData({...doubtFormData, name: e.target.value})}
-                        placeholder="What should we call you"
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
-                        {doubtFormData.phone.length > 0 && doubtFormData.phone.length < 10 && (
-                          <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
-                        )}
-                      </div>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        required
-                        value={doubtFormData.phone}
-                        onChange={e => setDoubtFormData({...doubtFormData, phone: e.target.value.replace(/\D/g, '')})}
-                        placeholder="We'll reach you here"
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Your Doubt</label>
-                      <textarea
-                        required
-                        value={doubtFormData.message}
-                        onChange={e => setDoubtFormData({...doubtFormData, message: e.target.value})}
-                        placeholder="What's the doubt"
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none resize-none h-20"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="px-6 pt-6 pb-5">
-                    <button
-                      type="submit"
-                      className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden"
-                    >
-                      <motion.div
-                        className="absolute inset-0 -skew-x-12 pointer-events-none"
-                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                        animate={{ x: ['-100%', '300%'] }}
-                        transition={{ delay: 10, duration: 0.8, repeat: Infinity, repeatDelay: 7.0, ease: 'easeInOut' }}
-                      />
-                      <span className="relative z-10">Send Message</span>
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-      </div>
+      {/* Footer */}
+      <footer className="hp-footer">
+        <div className="hp-footer-logo">
+          <div className="hp-footer-logo-mark">
+            <img src={chatProfile} alt="chapter a logo" className="hp-logo-image" />
+          </div>
+          <span className="hp-footer-name">chapter அ</span>
+        </div>
+        <div style={{ marginTop: 10, textAlign: 'right' }}>
+          <p style={{ color: 'rgba(255,255,255,0.6)' }}>Operated by <strong>CHAPTER</strong></p>
+          <p style={{ color: 'rgba(255,255,255,0.4)' }}>Registered Address: 16/45, Dharmaraja Koil Street, Kilpauk Garden Colony, Chennai - 600010</p>
+          <p style={{ color: 'rgba(255,255,255,0.4)' }}>MSME Registration: UDYAM-TN-02-0414270</p>
+          <p style={{ marginTop: 4 }}>© 2025 chapter அ. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   );
 }
 
-const ChatMessage = ({ message }: { message: Message }) => {
-  const isBot = message.sender === 'bot';
-  
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      className={`flex ${isBot ? 'justify-start' : 'justify-end'} mb-4`}
-    >
-      <div className={`max-w-[90%] px-4 py-3 relative ${isBot ? 'bg-white text-black rounded-r-2xl rounded-bl-2xl shadow-sm' : 'bg-[#FFD700] text-black rounded-l-2xl rounded-br-2xl'}`}>
-        {message.text && <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{message.text}</p>}
+// ─── APP WRAPPER ───────────────────────────────────────────────────────────────
+export default function App() {
+  const [showHomepage, setShowHomepage] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return new URLSearchParams(window.location.search).get('view') !== 'chat';
+  });
 
-        <span className={`text-[10px] float-right mt-1 ml-3 select-none ${isBot ? 'text-gray-400' : 'text-black/60'}`}>
-          {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </span>
-      </div>
-    </motion.div>
-  );
-}
-
-const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: string; pickupTime?: string; dropdownLabel: string }> = {
-  koyambedu:     { meetingSpot: 'Koyambedu', transport: 'Party Bus', pickupTime: '7:00 AM', dropdownLabel: 'Koyambedu — by 7:00 AM' },
-  anna_nagar:    { meetingSpot: 'Anna Nagar', transport: 'Party Bus', pickupTime: '8:00 AM', dropdownLabel: 'Anna Nagar — by 8:00 AM' },
-  own_transport: { meetingSpot: 'Event Location', transport: 'Your Own Transport', dropdownLabel: 'Own Transport' },
-};
-
-const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
-  const d = new Date(startDate + 'T00:00:00');
-  const day    = d.getDate().toString();
-  const month  = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-
-  const qi = event.quickInfo || [];
-  const spotField      = qi.find(c => c.label === 'Meeting Spot' || c.label === 'Venue')    || qi[0];
-  const transportField = qi.find(c => c.label === 'Transport'    || c.label === 'Format')   || qi[1];
-
-  const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
-
-  const cfg = meetingPoint ? MEETING_POINT_CONFIG[meetingPoint] : null;
-  const resolvedMeeting   = cfg ? cfg.meetingSpot  : spotField?.value;
-  const resolvedTransport = cfg ? cfg.transport     : transportField?.value;
-  const resolvedTime      = cfg?.pickupTime || firstTime;
-
-  return (
-    <div>
-      <p className="text-[10px] font-bold text-[#2C7FFF] uppercase tracking-widest mb-2 px-1">The Essentials</p>
-
-    <div className="border border-dashed border-[#2C7FFF] rounded-2xl overflow-hidden bg-white">
-
-      {/* Body: left info + right date (spanning full height) */}
-      <div className="flex">
-
-        {/* Left: Meeting Spot (top) + Transport (bottom) */}
-        <div className="flex-1 flex flex-col">
-          <div className="px-4 py-3 border-b border-dashed border-[#D4E5FF] border-opacity-60">
-            <div className="flex items-center gap-1 mb-1">
-              <MapPin size={9} className="text-gray-400" />
-              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField?.label}</span>
-            </div>
-            <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedMeeting}</span>
-          </div>
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-1 mb-1">
-              <Bus size={9} className="text-gray-400" />
-              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField?.label}</span>
-            </div>
-            <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedTransport}</span>
-          </div>
-        </div>
-
-        {/* Right: Date spanning full height */}
-        <div className="border-l border-dashed border-[#D4E5FF] border-opacity-60 flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
-          <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
-          <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
-          {resolvedTime && <span className="text-[13px] font-bold text-gray-900 mt-1.5">{resolvedTime}</span>}
-        </div>
-
-      </div>
-    </div>
-    </div>
-  );
-};
-
-const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event: Event, selectedCity: string, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
-  const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
-  const [showNotIncluded, setShowNotIncluded] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<string>('');
-  const [showMeetingPointSwitchBorder, setShowMeetingPointSwitchBorder] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [calendarRevealed, setCalendarRevealed] = useState(false);
-  const [showWorkWithUs, setShowWorkWithUs] = useState(false);
-  const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
-  const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
-  const [accImageIndex, setAccImageIndex] = useState(0);
-  const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
-  const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const cityDateOffset = React.useMemo(() => {
-    if (!event.transportPlan) return 0;
-    const leg = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(selectedCity.toLowerCase()));
-    return leg ? leg.dateOffset : 0;
-  }, [event.transportPlan, selectedCity]);
-  const parsePrice = (priceStr: string) => {
-    const num = parseInt(priceStr.replace(/[^0-9]/g, ''), 10);
-    return isNaN(num) ? 0 : num;
-  };
-  const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
-
-  const shiftDateStr = (dateStr: string, offset: number) => {
-    const d = new Date(dateStr + 'T00:00:00');
-    d.setDate(d.getDate() + offset);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-
-  const itineraryRef = useRef<HTMLDivElement>(null);
-
-  // Auto-open first itinerary item (no auto-scroll)
-  useEffect(() => {
-    if (event?.itinerary?.length) {
-      setExpandedItinerary(0);
+  const navigateToView = (view: 'home' | 'chat') => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (view === 'chat') {
+        url.searchParams.set('view', 'chat');
+      } else {
+        url.searchParams.delete('view');
+      }
+      url.hash = '';
+      window.location.assign(url.toString());
+      return;
     }
-  }, [event]);
+    setShowHomepage(view !== 'chat');
+  };
 
   useEffect(() => {
-    if (!showCalendar || !selectedDate) return;
-    const timer = setInterval(() => {
-      setTimeLeft(prev => prev > 0 ? prev - 1 : 0);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [showCalendar, selectedDate]);
-
-  // Full staggered animation only on initial calendar open
-  useEffect(() => {
-    if (!showCalendar) { setCalendarRevealed(false); return; }
-    setCalendarRevealed(false);
-    const t = setTimeout(() => setCalendarRevealed(true), 550);
-    return () => clearTimeout(t);
-  }, [showCalendar]);
-
-  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.style.overflow = showHomepage ? 'auto' : 'hidden';
+    document.documentElement.style.overflow = showHomepage ? 'auto' : 'hidden';
     return () => {
-      if (meetingPointSwitchBorderTimerRef.current) clearTimeout(meetingPointSwitchBorderTimerRef.current);
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
     };
-  }, []);
+  }, [showHomepage]);
 
-  // When navigating months, skip animation — show dates instantly
-  useEffect(() => {
-    if (showCalendar) setCalendarRevealed(true);
-  }, [currentMonth]);
-
-  const formatTime = (totalSeconds: number) => {
-    const d = Math.floor(totalSeconds / (3600 * 24));
-    const h = Math.floor((totalSeconds % (3600 * 24)) / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    return `${String(d).padStart(2, '0')}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-  };
-
-  const shouldPulseMeetingPoint = !!selectedDate && !selectedMeetingPoint;
-
-  const triggerMeetingPointSwitchBorder = () => {
-    if (meetingPointSwitchBorderTimerRef.current) clearTimeout(meetingPointSwitchBorderTimerRef.current);
-    setShowMeetingPointSwitchBorder(true);
-    meetingPointSwitchBorderTimerRef.current = setTimeout(() => {
-      setShowMeetingPointSwitchBorder(false);
-      meetingPointSwitchBorderTimerRef.current = null;
-    }, 1500);
-  };
-
-  const renderCalendar = () => {
-    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    // Shift so Monday = 0, Sunday = 6 (common in India)
-    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
-    
-    // Calculate trip duration
-    const durationMatch = event.timing.match(/(\d+)\s*Days?/i);
-    const tripDays = durationMatch ? parseInt(durationMatch[1], 10) : event.itinerary.length;
-    
-    const selectedDateObj = selectedDate ? new Date(`${selectedDate}T00:00:00`) : null;
-    // Base trip start is always the original city-agnostic start
-    const baseStartStr = selectedDate ? shiftDateStr(selectedDate, -cityDateOffset) : null;
-    const baseStartObj = baseStartStr ? new Date(`${baseStartStr}T00:00:00`) : null;
-    const endDateObj = baseStartObj ? new Date(baseStartObj) : null;
-    if (endDateObj) endDateObj.setDate(endDateObj.getDate() + tripDays - 1);
-    
-    const days = [];
-    let availableCellIdx = 0;
-    for (let i = 0; i < firstDay; i++) {
-      days.push(<div key={`empty-${i}`} className="h-10"></div>);
-    }
-    
-    for (let i = 1; i <= daysInMonth; i++) {
-      const currentDateObj = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i);
-      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
-      const tripDate = event.dates?.find(d => d.date === baseDateStr);
-      const isForcedSoldOut = dateStr === '2026-04-05'; // topmost Sunday, without touching agenda data
-
-      const isSelectedStart = selectedDate === dateStr;
-      const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
-      const isWithinTrip = selectedDateObj && endDateObj && currentDateObj > selectedDateObj && currentDateObj < endDateObj;
-
-      const shapeClass = (() => {
-        if (isSelectedStart && isTripEnd) return "rounded-full";
-        if (isSelectedStart) return "rounded-l-full";
-        if (isTripEnd) return "rounded-r-full";
-        if (isWithinTrip) return "rounded-none";
-        return "rounded-xl";
-      })();
-
-      const isUnavailable = isForcedSoldOut || !tripDate || tripDate.status === 'sold_out';
-      const isColoured = !!tripDate && (tripDate.status === 'available' || tripDate.status === 'selling_out');
-      const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && !selectedDate;
-      const shimmerIdx = isShimmerable ? availableCellIdx++ : -1;
-      const staggerDelay = (i - 1) * 0.025;
-
-      // Separate text/border classes from background — bg is handled by overlay
-      const textBorderClass = (() => {
-        if (isSelectedStart) return "text-black font-black border border-[#d4af37] z-10";
-        if (isWithinTrip)    return "text-black font-semibold border border-[#d4af37]/80 z-0";
-        if (isTripEnd)       return "text-black font-semibold border border-[#d4af37]";
-        if (tripDate?.status === 'available')    return "text-green-900 font-bold border border-green-500 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
-        if (tripDate?.status === 'selling_out')  return "text-amber-950 font-bold border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]";
-        if (tripDate?.status === 'sold_out')     return "text-gray-300";
-        return "text-gray-400";
-      })();
-
-      const bgOverlay = (() => {
-        if (isSelectedStart || isWithinTrip || isTripEnd) return "rgba(255,226,138,1)";
-        if (tripDate?.status === 'available')   return "rgba(187,247,208,0.8)";
-        if (tripDate?.status === 'selling_out') return "#FFEDE5";
-        return "#f3f4f6"; // gray-100 for unavailable
-      })();
-
-      if (isForcedSoldOut) {
-        days.push(
-          <motion.button
-            key={i}
-            disabled
-            initial={{ opacity: 0 }}
-            animate={{ opacity: calendarRevealed ? 1 : 0 }}
-            transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
-            className={`h-10 ${shapeClass} flex flex-col items-center justify-center relative overflow-hidden bg-gray-300 text-white pt-1`}
-          >
-            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em]">Sold</span>
-            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
-          </motion.button>
-        );
-        continue;
-      }
-
-      days.push(
-        <motion.button
-          key={i}
-          disabled={isUnavailable}
-          onClick={() => { setSelectedDate(dateStr); }}
-          className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden bg-white ${textBorderClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
-        >
-          {/* Background colour overlay — fades IN after stagger */}
-          <motion.div
-            className="absolute inset-0 pointer-events-none z-[1]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: calendarRevealed ? 1 : 0 }}
-            transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
-            style={{ backgroundColor: bgOverlay }}
-          />
-          {/* Slash — fades in only for unavailable, slightly after bg */}
-          {isUnavailable && !isSelectedStart && !isWithinTrip && !isTripEnd && (
-            <motion.div
-              className="absolute inset-0 pointer-events-none z-[2]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: calendarRevealed ? 1 : 0 }}
-              transition={{ duration: 0.35, delay: staggerDelay + 0.18, ease: 'easeInOut' }}
-              style={{
-                backgroundImage: 'linear-gradient(315deg, transparent 48%, rgba(128,128,128,0.18) 49%, rgba(128,128,128,0.18) 51%, transparent 52%)',
-                backgroundSize: '100% 100%'
-              }}
-            />
-          )}
-          {/* Repeating staggered shimmer on available/filling fast cells */}
-          {shimmerIdx >= 0 && (
-            <motion.div
-              className="absolute inset-0 pointer-events-none z-[2] -skew-x-12"
-              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.6) 50%, transparent 100%)', width: '55%' }}
-              animate={{ x: ['-120%', '320%'] }}
-              transition={{
-                duration: 0.65,
-                delay: shimmerIdx * 0.4,
-                repeat: Infinity,
-                repeatDelay: 3,
-                ease: 'easeInOut',
-              }}
-            />
-          )}
-          {/* Number — always on top */}
-          <span className="text-base relative z-[3]">{i}</span>
-        </motion.button>
-      );
-    }
-
+  if (showHomepage) {
     return (
-      <div className="mb-1">
-        <div className="flex justify-center items-center gap-6 mb-3">
-          <button
-            onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
-            title="Previous month"
-            aria-label="Previous month"
-            className="p-1 bg-gray-100 text-gray-500 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <h4 className="font-black text-[20px] tracking-tight">{currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}</h4>
-          <button
-            onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
-            title="Next month"
-            aria-label="Next month"
-            className="p-1 bg-gray-100 text-gray-500 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6b200]"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-        <div className="flex items-center justify-center gap-5 mt-4 mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
-            <span>Filling fast</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
-            <span>Available</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-7 gap-1 mb-2 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-          {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => <div key={d}>{d}</div>)}
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {days}
-        </div>
-      </div>
+      <AnimatePresence>
+        <motion.div
+          key="homepage"
+          initial={{ opacity: 1 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.4 }}
+        >
+          <HomePage onEnterApp={() => navigateToView('chat')} />
+        </motion.div>
+      </AnimatePresence>
     );
-  };
+  }
 
-  return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.95, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: 20 }}
-      transition={{ type: 'spring', damping: 25, stiffness: 200, delay: 0.15 }}
-      className="absolute inset-0 bg-white z-50 flex flex-col h-full overflow-hidden"
-    >
-      <div className="flex-1 overflow-y-auto pb-0">
-        {/* Header with Hero Image */}
-        <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0">
-          <img src={event.heroImage} alt={event.title} className="w-full h-full object-cover object-center" />
-        </div>
-
-        {/* Quick Info — boarding pass card */}
-        {event.quickInfo && event.quickInfo.length > 0 && (() => {
-          const madeFor    = event.quickInfo!.find(c => c.label === 'Made For')     || event.quickInfo![3];
-          const groupSize  = event.quickInfo!.find(c => c.label === 'Group Size')   || event.quickInfo![2];
-          const meetingSpot= event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
-          const transport  = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
-          const groupNum   = groupSize?.value.match(/\d+[-–]\d+|\d+/)?.[0] || groupSize?.value;
-          const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
-          return (
-            <div className="pt-5 pb-4 border-b border-gray-100">
-              <h3 className="text-xl font-black mb-4 px-6">The Plan</h3>
-              <div className="mx-3 border border-dashed border-[#595959] rounded-2xl overflow-hidden bg-gray-50">
-
-                {/* Top row — MEETING SPOT | TRANSPORT */}
-                <div className="flex border-b border-dashed border-[#bfbfbf]/50">
-                  <div className="flex-1 px-3 py-3.5 border-r border-dashed border-[#bfbfbf]/50">
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <MapPin size={9} className="text-gray-500" />
-                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{meetingSpot?.label}</span>
-                    </div>
-                    <span className="text-[13px] font-black text-gray-900 leading-tight">{meetingSpot?.value}</span>
-                  </div>
-                  <div className="flex-1 px-3 py-3.5">
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <Bus size={9} className="text-gray-500" />
-                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{transport?.label}</span>
-                    </div>
-                    <span className="text-[13px] font-black text-gray-900 leading-tight">{transport?.value}</span>
-                  </div>
-                </div>
-
-                {/* Bottom row — MADE FOR | 👥 18 */}
-                <div className="flex items-center">
-                  <div className="flex-1 px-3 py-4 border-r border-dashed border-[#bfbfbf]/50">
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <Heart size={9} className="text-gray-500" />
-                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
-                    </div>
-                    <span className="text-[14px] font-black text-gray-900 leading-snug">{madeFor?.value}</span>
-                  </div>
-                  <div className="px-3 py-4 flex flex-col items-start flex-shrink-0">
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <Users size={9} className="text-gray-500" />
-                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">Gang Size</span>
-                    </div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-[20px] font-black text-gray-900 leading-none">{groupNum}</span>
-                      <span className="text-[13px] font-black text-gray-900 leading-none">ppl</span>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* What's Included */}
-        <div className="p-6 border-b border-gray-100">
-          <h3 className="text-xl font-black mb-4">What's Included</h3>
-          <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
-            <div className="p-4 space-y-3">
-              {event.included?.map((item, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <CheckCircle2 size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm font-medium text-gray-800">{item}</span>
-                </div>
-              ))}
-            </div>
-            {event.optionalActivities && event.optionalActivities.length > 0 && (
-              <div className="px-4 pb-2 space-y-2">
-                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                  <Plus size={20} className="text-gray-500" />
-                  <span>Optional activities</span>
-                </div>
-                <div className="space-y-2">
-                  {event.optionalActivities.map((act, idx) => (
-                    <div key={idx} className="flex items-start gap-3 text-sm text-gray-800 font-medium">
-                      <CheckCircle2 size={18} className="text-[#D4AF37] flex-shrink-0 mt-0.5" />
-                      <span>{act}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="mt-1">
-              <button 
-                onClick={() => setShowNotIncluded(!showNotIncluded)}
-                className="w-full px-4 py-3 flex items-center gap-2 text-[11px] font-semibold text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <span className="uppercase tracking-wide">What's not included</span>
-                {showNotIncluded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
-              </button>
-              <AnimatePresence>
-                {showNotIncluded && (
-                  <motion.div 
-                    initial={{ height: 0 }} 
-                    animate={{ height: 'auto' }} 
-                    exit={{ height: 0 }}
-                    className="overflow-hidden bg-gray-50"
-                  >
-                    <div className="p-4 pt-0 space-y-2 pl-8">
-                      {event.notIncluded?.map((item, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <span className="text-[10px] text-gray-400 mt-1">•</span>
-                          <span className="text-[11px] text-gray-600/80">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
-
-        {/* The Plan */}
-        <div className="p-6 border-b border-gray-100" ref={itineraryRef}>
-          <h3 className="text-xl font-black mb-4">You'll Experience</h3>
-          <div className="space-y-3">
-            {event.itinerary?.map((day, i) => (
-              <div key={i} className="rounded-xl border-2 border-gray-200 overflow-hidden bg-gray-50">
-                <button 
-                  onClick={() => setExpandedItinerary(expandedItinerary === i ? null : i)}
-                  className="w-full px-4 py-3 flex items-center justify-between text-left bg-gray-50 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
-                >
-                  <div>
-                    <span className="text-[11px] font-black text-gray-900 uppercase tracking-[0.08em]">{day.day}</span>
-                    <h4 className="font-semibold text-gray-900 mt-0.5">{day.title}</h4>
-                  </div>
-                  <motion.div
-                    initial={false}
-                    animate={{ rotate: expandedItinerary === i ? 180 : 0, scale: expandedItinerary === i ? 1.05 : 1 }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-                    className="w-8 h-8 rounded-full bg-[#FFD700] text-black flex items-center justify-center flex-shrink-0 self-center"
-                  >
-                    <ChevronDown size={16} />
-                  </motion.div>
-                </button>
-                <AnimatePresence>
-                  {expandedItinerary === i && (
-                    <motion.div 
-                      initial={{ height: 0 }} 
-                      animate={{ height: 'auto' }} 
-                      exit={{ height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="p-4 pt-0 border-t border-gray-100">
-                        <p className="text-sm text-gray-600 leading-relaxed mb-4 mt-3">
-                          {day.description}
-                        </p>
-                        {day.schedule && (
-                          <div className="relative pl-4 border-l border-gray-900/10 space-y-5 mt-4 ml-2 mb-2">
-                            {day.schedule.map((item, idx) => (
-                              <div key={idx} className="relative">
-                                <div className="absolute -left-[20px] top-1.5 w-2 h-2 rounded-full bg-[#ffd700]" />
-                                <div className="text-xs font-bold text-gray-400 mb-0.5 tracking-wide uppercase">{item.time}</div>
-                                <div className="text-sm font-medium text-gray-800">{item.activity}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Where We Stay */}
-        {!event.isActivity && (
-          <div className="p-6 border-b border-gray-100">
-            <h3 className="text-xl font-black mb-4">Where We Stay</h3>
-            <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
-              <div className="relative w-full h-48">
-                <img 
-                  src={event.accommodation?.images[accImageIndex]} 
-                  alt="Accommodation" 
-                  className="w-full h-full object-cover" 
-                />
-                {event.accommodation?.images && event.accommodation.images.length > 1 && (
-                  <>
-                  <button 
-                    onClick={() => setAccImageIndex(prev => (prev - 1 + event.accommodation!.images.length) % event.accommodation!.images.length)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
-                  >
-                    <ChevronLeft size={20} className="text-gray-800 pr-0.5" />
-                  </button>
-                  <button 
-                    onClick={() => setAccImageIndex(prev => (prev + 1) % event.accommodation!.images.length)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
-                  >
-                    <ChevronRight size={20} className="text-gray-800 pl-0.5" />
-                  </button>
-                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
-                      {event.accommodation.images.map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`w-1.5 h-1.5 rounded-full transition-colors ${i === accImageIndex ? 'bg-white' : 'bg-white/50'}`}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-              <div className="p-4">
-                <h4 className="font-bold text-lg mb-3">{event.accommodation?.name}</h4>
-                <ul className="space-y-2 mb-4">
-                  {event.accommodation?.features.map((feat, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#FFD700]" />
-                      {feat}
-                    </li>
-                  ))}
-                </ul>
-                <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
-                  <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Rooms are same-gender — so everyone's comfortable</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Reviews */}
-        {!event.isActivity && (
-          <div className="pt-5 pb-2">
-            <div className="px-6 mb-2">
-              <h3 className="text-xl font-black">Fellow Lifemaxxers Said</h3>
-            </div>
-            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4 pt-1">
-              {event.reviews?.map((review, i) => {
-                const colors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'];
-                const colorIndex = review.name.length % colors.length;
-                const avatarColor = colors[colorIndex];
-                const initial = review.name.charAt(0).toUpperCase();
-                
-                return (
-                  <div key={i} className="w-72 flex-shrink-0 snap-center bg-gray-50 p-4 rounded-xl border-2 border-gray-200 flex flex-col gap-3">
-                    {/* Reviewer Info */}
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-lg ${avatarColor}`}>
-                        {initial}
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-sm text-gray-900">{review.name}</span>
-                        <span className="text-xs text-gray-500">Local Guide · {review.name.length * 2 + 5} reviews</span>
-                      </div>
-                      {/* Google G Logo SVG */}
-                      <div className="ml-auto opacity-70">
-                        <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                        </svg>
-                      </div>
-                    </div>
-
-                    {/* Rating & Time */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex text-[#fbbc04]">
-                        {[...Array(5)].map((_, j) => (
-                          <Star key={j} size={14} fill={j < review.rating ? "currentColor" : "none"} className={j < review.rating ? "" : "text-gray-300"} />
-                        ))}
-                      </div>
-                      <span className="text-xs text-gray-500">{(i * 2) + 1} months ago</span>
-                    </div>
-
-                    {/* Review Text */}
-                    <p className="text-sm text-gray-700 leading-relaxed line-clamp-4">{review.text}</p>
-
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Video Carousel */}
-        {!event.isActivity && (
-          <div className="pt-4 pb-6">
-            <div className="px-6 mb-3 flex items-center justify-between">
-              <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
-            </div>
-            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4">
-              {event.videos?.map((vid, i) => (
-                <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-800 shadow-lg">
-                  <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
-                      <motion.div
-                        className="absolute inset-0 -skew-x-12 pointer-events-none"
-                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.32) 50%, transparent 100%)', width: '45%' }}
-                        animate={{ x: ['-130%', '320%'] }}
-                        transition={{ duration: 0.95, delay: i * 2.2, repeat: Infinity, repeatDelay: 6.5, ease: 'easeInOut' }}
-                      />
-                      <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
-                    </div>
-                  </div>
-                  <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
-                    {vid.caption}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Bottom Action Button (End of scroll) */}
-        <div className="px-4 pt-4 pb-12">
-          <button
-            onClick={() => setShowCalendar(true)}
-            className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
-          >
-            <motion.div
-              className="absolute inset-0 -skew-x-12"
-              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-              animate={{ x: ['-100%', '300%'] }}
-              transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
-            />
-            Join Our Plan
-            <ArrowRight size={22} strokeWidth={3.0} />
-          </button>
-        </div>
-
-        {/* Footer — Branding + Work With Us + Legal links */}
-        <div className="bg-[#F5F2ED] border-t border-[#E4DDD3]">
-
-          {/* Branding — non-clickable sign-off */}
-          <div className="px-5 pt-7 pb-5">
-            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">plans we dream,</span>
-            <br />
-            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">by chapter <span className="text-[18px]">அ</span></span>
-          </div>
-
-          {/* Work With Us — single expanding pill */}
-          <div className="px-5 pb-4">
-            <motion.div layout className="border-2 border-dashed border-[#C8BFB4] rounded-2xl overflow-hidden">
-              <AnimatePresence mode="wait">
-                {!showWorkWithUs ? (
-                  <motion.button
-                    key="collapsed"
-                    onClick={() => setShowWorkWithUs(true)}
-                    className="w-full flex items-center justify-between px-4 py-3"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <div className="flex flex-col items-start gap-0.5">
-                      <span className="text-[13px] font-bold text-black/70 tracking-wide">Work With Us!</span>
-                      <span className="text-[11px] text-black/40">Apply now — join the team</span>
-                    </div>
-                    <div className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center flex-shrink-0">
-                      <ChevronDown size={16} className="text-black/60" />
-                    </div>
-                  </motion.button>
-                ) : (
-                  <motion.div
-                    key="expanded"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <div className="flex justify-end px-3 pt-2">
-                      <button
-                        onClick={() => setShowWorkWithUs(false)}
-                        className="w-9 h-9 rounded-full bg-[#D9D0C4] flex items-center justify-center"
-                      >
-                        <ChevronDown size={16} className="text-black/60 rotate-180" />
-                      </button>
-                    </div>
-                    <iframe
-                      src="https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1"
-                      width="100%"
-                      height="520"
-                      style={{ border: 'none', display: 'block' }}
-                      title="Work With Us"
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </div>
-
-          {/* Legal links */}
-          <div className="px-4 py-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
-            <button onClick={() => setShowPolicyModal('about')} className="text-[11px] text-black/40 active:text-black transition-colors">About Us</button>
-            <span className="text-black/20 text-[11px]">·</span>
-            <button onClick={() => setShowPolicyModal('contact')} className="text-[11px] text-black/40 active:text-black transition-colors">Contact</button>
-            <span className="text-black/20 text-[11px]">·</span>
-            <button onClick={() => setShowPolicyModal('privacy')} className="text-[11px] text-black/40 active:text-black transition-colors">Privacy Policy</button>
-            <span className="text-black/20 text-[11px]">·</span>
-            <button onClick={() => setShowPolicyModal('tc')} className="text-[11px] text-black/40 active:text-black transition-colors">T&amp;C</button>
-            <span className="text-black/20 text-[11px]">·</span>
-            <button onClick={() => setShowPolicyModal('refund')} className="text-[11px] text-black/40 active:text-black transition-colors">Refund Policy</button>
-          </div>
-        </div>
-      </div>
-
-      {/* Calendar Modal */}
-      <AnimatePresence>
-        {showCalendar && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
-              onClick={() => setShowCalendar(false)}
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-50 flex flex-col max-h-[95%] overflow-hidden shadow-2xl"
-            >
-              <div className="p-4 pb-0 bg-white sticky top-0 z-10 cursor-pointer" onClick={() => setShowCalendar(false)}>
-                <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
-              </div>
-              <div className="p-4 overflow-y-auto pb-safe">
-                {renderCalendar()}
-                
-                <AnimatePresence>
-                  {selectedDate && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-3"
-                    >
-                      {/* Meeting Point Dropdown */}
-                      <div className="flex flex-col gap-1.5">
-                        <label className={`block w-fit origin-left font-bold uppercase tracking-wider px-1 text-[11px] text-gray-500 transition-all duration-200 ${selectedMeetingPoint ? 'opacity-60 scale-[0.75]' : 'opacity-100 scale-100'}`}>Choose Meeting Point</label>
-                        <motion.div
-                          className="relative"
-                          animate={shouldPulseMeetingPoint ? {
-                            scale: [1, 1.015, 1]
-                          } : {
-                            scale: 1
-                          }}
-                          transition={shouldPulseMeetingPoint ? {
-                            duration: 1.25,
-                            repeat: Infinity,
-                            ease: 'easeInOut'
-                          } : {
-                            duration: 0.2
-                          }}
-                        >
-                          <select
-                            value={selectedMeetingPoint}
-                            onChange={e => {
-                              const nextMeetingPoint = e.target.value;
-                              const isSwitchingMeetingPoint = !!selectedMeetingPoint && selectedMeetingPoint !== nextMeetingPoint;
-                              setSelectedMeetingPoint(nextMeetingPoint);
-                              if (isSwitchingMeetingPoint) {
-                                triggerMeetingPointSwitchBorder();
-                              } else if (meetingPointSwitchBorderTimerRef.current) {
-                                clearTimeout(meetingPointSwitchBorderTimerRef.current);
-                                meetingPointSwitchBorderTimerRef.current = null;
-                                setShowMeetingPointSwitchBorder(false);
-                              }
-                              e.currentTarget.blur();
-                            }}
-                            className={`w-full appearance-none bg-white border-2 rounded-xl px-4 py-4 pr-10 text-sm font-semibold text-gray-800 focus:outline-none transition-colors cursor-pointer ${shouldPulseMeetingPoint ? 'border-gray-500' : showMeetingPointSwitchBorder ? 'border-transparent' : 'border-gray-200'}`}
-                            style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
-                          >
-                            <option value="" disabled hidden>Where will you join us?</option>
-                            {Object.entries(MEETING_POINT_CONFIG).map(([value, option]) => (
-                              <option key={value} value={value}>{option.dropdownLabel}</option>
-                            ))}
-                          </select>
-                          <AnimatePresence initial={false}>
-                            {showMeetingPointSwitchBorder && !shouldPulseMeetingPoint && (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: [0, 1, 1, 0] }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 1.5, times: [0, 0.18, 0.72, 1], ease: 'easeInOut' }}
-                                className="absolute inset-0 rounded-xl border-2 border-[#FFD700] pointer-events-none"
-                              />
-                            )}
-                          </AnimatePresence>
-                          <ChevronDown size={selectedMeetingPoint ? 22 : 24} strokeWidth={3} className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none transition-opacity duration-200 ${selectedMeetingPoint ? 'opacity-50' : 'opacity-100'}`} />
-                        </motion.div>
-                      </div>
-
-                      {/* Pricing + CTAs — only shown after meeting point is chosen */}
-                      <AnimatePresence>
-                        {selectedMeetingPoint && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 8 }}
-                            transition={{ duration: 0.25 }}
-                          >
-                            <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 flex flex-col gap-3">
-                              {(() => {
-                                const isOwnTransport = selectedMeetingPoint === 'own_transport';
-                                const displayAdvance = isOwnTransport ? 0 : event.advanceAmount;
-                                const displayTotal = isOwnTransport ? 0 : parsePrice(event.price);
-                                const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
-                                return (
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
-                                  <p>Lock your spot (Advance)</p>
-                                  <p className="text-2xl font-black text-black leading-tight">{formatINR(displayAdvance)}</p>
-                                </div>
-                                <div className="flex flex-col items-end gap-1 text-[11px] font-semibold text-gray-700">
-                                  <p className="text-[11px]">Remaining balance</p>
-                                  <p className="text-base font-semibold text-black">
-                                    {formatINR(displayRemaining)}
-                                  </p>
-                                </div>
-                              </div>
-                                );
-                              })()}
-
-                              <div className="grid grid-cols-2 gap-3">
-                                <button
-                                  onClick={() => { setShowCalendar(false); onAction('contact', selectedDate || undefined, selectedMeetingPoint); }}
-                                  className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFF3BF] text-[#b38200] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#ffe58f] transition-colors border border-[#FFD700]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
-                                >
-                                  <MessageCircle size={15} />
-                                  Contact Us
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setShowCalendar(false);
-                                    onAction('book', selectedDate || undefined, selectedMeetingPoint);
-                                  }}
-                                  className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFD700] text-black font-black text-sm flex items-center justify-center gap-2 hover:bg-[#e6c200] transition-transform active:scale-95 shadow-md shadow-[#FFD700]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 relative overflow-hidden"
-                                >
-                                  <motion.div
-                                    className="absolute inset-0 -skew-x-12"
-                                    style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                                    animate={{ x: ['-100%', '300%'] }}
-                                    transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
-                                  />
-                                  Book Now
-                                  <ArrowRight size={16} strokeWidth={3.0} />
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Policy / Legal Modals */}
-      <AnimatePresence>
-        {showPolicyModal && (
-          <motion.div
-            key="policy-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] bg-black/50"
-            onClick={() => setShowPolicyModal(null)}
-          />
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {showPolicyModal && (
-          <motion.div
-            key={showPolicyModal}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="absolute bottom-0 left-0 right-0 z-[201] bg-white rounded-t-[2rem] flex flex-col max-h-[85%]"
-          >
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
-            <div className="px-6 pt-3 pb-4 border-b border-gray-100 flex-shrink-0">
-              <h3 className="text-[17px] font-bold text-gray-900">
-                {showPolicyModal === 'about' && 'About Us'}
-                {showPolicyModal === 'contact' && 'Contact Us'}
-                {showPolicyModal === 'privacy' && 'Privacy Policy'}
-                {showPolicyModal === 'tc' && 'Terms & Conditions'}
-                {showPolicyModal === 'refund' && 'Refund & Cancellation Policy'}
-              </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
-              {showPolicyModal === 'about' && (
-                <>
-                  <p>We are <strong className="text-gray-900">chapter அ</strong>, an experience-based social club, operated by <strong className="text-gray-900">CHAPTER</strong>, registered in Chennai, India.</p>
-                  <p>From cozy house parties to unforgettable trips, we believe that everyone deserves to feel like they belong & find people to do things that they have always wanted to.</p>
-                  <p>Join our plans, and let's lifemaxx together — one experience at a time.</p>
-                </>
-              )}
-              {showPolicyModal === 'contact' && (
-                <>
-                  <p><strong className="text-gray-900">chapter அ</strong><br />Chennai, Tamil Nadu, India</p>
-                  <p>Email: <a href="mailto:chapteraaa.official@gmail.com" className="text-gray-900 underline">chapteraaa.official@gmail.com</a></p>
-                  <p>WhatsApp / Phone: <a href="tel:+918838111564" className="text-gray-900 underline">+91 8838111564</a></p>
-                  <p>We typically respond within a few hours on WhatsApp.</p>
-                </>
-              )}
-              {showPolicyModal === 'privacy' && (
-                <>
-                  <p><strong className="text-gray-900">1. Information We Collect</strong><br />We collect your name and WhatsApp number when you make a booking. This is used solely to communicate further details and payment reminders.</p>
-                  <p><strong className="text-gray-900">2. How We Use It</strong><br />Your information is used to confirm bookings, send booking updates, and process payments. We do not sell or share your data with third parties.</p>
-                  <p><strong className="text-gray-900">3. Payment Data</strong><br />Payments are processed via secure and trusted Indian payment gateways. We do not store any card or UPI credentials on our servers.</p>
-                  <p><strong className="text-gray-900">4. WhatsApp Communication</strong><br />By providing your number, you consent to receiving updates and reminder messages on WhatsApp.</p>
-                  <p><strong className="text-gray-900">5. Contact</strong><br />For privacy concerns, email us at chapteraaa.official@gmail.com.</p>
-                </>
-              )}
-              {showPolicyModal === 'tc' && (
-                <>
-                  <p className="text-gray-500 text-[13px]">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
-                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable under any circumstances.</p>
-                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date shown on the website after you make the advance payment. Further notices and reminders will be sent via WhatsApp. Failure to pay will result in forfeiture of your spot.</p>
-                  <p><strong className="text-gray-900">3. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
-                  <p><strong className="text-gray-900">4. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
-                  <p><strong className="text-gray-900">5. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
-                  <p><strong className="text-gray-900">6. Age Requirement</strong><br />Certain experiences are strictly 21+. Participants must meet the minimum age requirement specified for each experience. Valid ID proof may be required. Failure to meet the age requirement may result in denial of entry without refund.</p>
-                </>
-              )}
-              {showPolicyModal === 'refund' && (
-                <>
-                  <p className="text-gray-500 text-[13px]">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
-                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />A fixed advance amount is required to secure a spot on any event. This advance is non-refundable unless chapter அ cancels the event.</p>
-                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance must be paid before the event. Only those who have completed the full payment will be allowed to join the event. If the balance is not paid, the advance will not be refunded.</p>
-                  <p><strong className="text-gray-900">3. Cancellation by Customer</strong><br />If a customer cancels, no refund will be provided, as we engage third-party partners for transport, accommodation, and curated expenses in advance. These arrangements are confirmed on your behalf and are non-recoverable.</p>
-                  <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If the event is cancelled for any reason, a full refund of all amounts paid will be issued.</p>
-                  <p><strong className="text-gray-900">5. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 8838111564 or email chapteraaa.official@gmail.com.</p>
-                </>
-              )}
-            </div>
-            <div className="px-6 pb-8 pt-3 flex-shrink-0">
-              <button
-                onClick={() => setShowPolicyModal(null)}
-                className="w-full py-[14px] rounded-2xl bg-black text-white text-[15px] font-semibold active:opacity-80 transition-all"
-              >
-                Close
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-    </motion.div>
-  );
+  return <AppFlow />;
 }
