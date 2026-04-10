@@ -76,149 +76,241 @@ interface Event {
 // Mock Data
 const EVENTS: Event[] = [
   {
-    id: 'e3',
+    id: 'e1',
     cities: ['Chennai'],
     category: 'Trips',
-    title: 'Sri Lanka Retreat',
-    timing: '4 Nights 5 Days',
-    price: '₹24,999',
-    advanceAmount: 5000,
-    description: 'A slow, sun-soaked island escape across Colombo, Kandy, and the south coast. Waterfalls, tea country train rides, and a villa by the beach to reset.',
-    heroImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Chennai Airport (MAA)',
+    title: 'Pondicherry Weekend Escape',
+    timing: '1 Night 2 Days',
+    price: '₹7,999',
+    advanceAmount: 2400,
+    description: 'A breezy coastal reset with White Town walks, cafe hopping, sea-facing sunsets, and one easy weekend away with a like-minded group.',
+    heroImage: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Chennai Pickups',
     quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Chennai Airport (MAA)' },
-      { icon: 'bus', label: 'Transport', value: 'Flights + Coach' },
-      { icon: 'users', label: 'Group Size', value: '16-18 travellers' },
-      { icon: 'heart', label: "You'll Meet", value: 'Beach lovers & culture seekers' },
+      { icon: 'pin', label: 'Meeting Spot', value: 'Koyambedu / Anna Nagar / Own Transport' },
+      { icon: 'bus', label: 'Transport', value: 'AC Tempo Traveller' },
+      { icon: 'users', label: 'Group Size', value: '18 travellers max' },
+      { icon: 'heart', label: 'Made For', value: 'Beach lovers, cafe people, and easy weekends' },
     ],
     transportPlan: [
-      { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
-      { type: 'train', from: 'Colombo', to: 'Kandy', time: '2:00 PM', dateOffset: 1 },
-      { type: 'tempo', from: 'Kandy', to: 'South Coast Villa', time: '8:00 AM', dateOffset: 2 },
-      { type: 'flight', from: 'Colombo', to: 'Chennai', time: '6:00 PM', dateOffset: 4 }
+      { type: 'bus', from: 'Chennai', to: 'Pondicherry', time: '6:00 AM', dateOffset: 0, cities: ['Chennai'] },
+      { type: 'bus', from: 'Pondicherry', to: 'Chennai', time: '5:30 PM', dateOffset: 1 }
     ],
-    transport: 'Flights + Private Coach',
+    transport: 'AC Tempo Traveller',
     groupSize: 'Max 18 travellers',
-    accommodationType: 'Boutique villa & hillside resort',
+    accommodationType: 'Boutique stay in White Town',
     included: [
-      'Round-trip flights from Chennai',
-      'All on-ground transport in Sri Lanka',
-      '4 nights stay (double occupancy)',
-      'Daily breakfast + 2 curated dinners',
-      'Train ride through tea country',
-      'Local experience hosts & trip manager'
+      'Round-trip transport from Chennai',
+      '1 night boutique stay on twin sharing basis',
+      'Day 1 breakfast and dinner',
+      'Beach sunset walk and White Town trail',
+      'Experience host and on-ground coordination'
     ],
     notIncluded: [
-      'Lunches and personal shopping',
-      'Visa fees (approx ₹1,500)',
-      'Travel insurance',
-      'Any extras outside the itinerary'
+      'Lunches, cafe orders, and personal shopping',
+      'Water sports or cycle rentals',
+      'Any entry tickets not listed in inclusions',
+      'Anything outside the planned route'
     ],
     optionalActivities: [
-      'Galle old town sunset walk',
-      'Surf lesson in Weligama',
-      'Sigiriya sunrise hike'
+      'Promenade cycle ride at sunrise',
+      'Auroville bakery run',
+      'Kayaking or surfing session'
     ],
     itinerary: [
       {
         day: 'Day 1',
-        title: 'Fly In & Colombo Night',
-        description: 'Morning flight from Chennai, drop bags at the hotel, explore cafes and a sunset by Galle Face Green.',
+        title: 'Chennai To White Town',
+        description: 'Early start from Chennai, brunch by the sea, check in, then spend the afternoon between heritage streets, cafes, and the promenade.',
         schedule: [
-          { time: '7:00 AM', activity: 'Flight Chennai → Colombo' },
-          { time: '5:00 PM', activity: 'Sunset at Galle Face Green' }
+          { time: '6:00 AM', activity: 'Depart Chennai' },
+          { time: '10:30 AM', activity: 'Brunch and White Town stroll' },
+          { time: '5:30 PM', activity: 'Rock Beach sunset and dinner' }
         ]
       },
       {
         day: 'Day 2',
-        title: 'Tea Country Rails',
-        description: 'Scenic train ride to Kandy, temple visit, and evening cultural show.',
+        title: 'Slow Morning And Return',
+        description: 'Wake up slow, grab breakfast, choose between beach time and cafes, then drive back to Chennai by evening.',
         schedule: [
-          { time: '2:00 PM', activity: 'Train to Kandy' },
-          { time: '7:00 PM', activity: 'Cultural show & dinner' }
-        ]
-      },
-      {
-        day: 'Day 3',
-        title: 'Waterfalls & Drive South',
-        description: 'Road-trip through waterfalls and spice gardens en route to the south coast villa.',
-        schedule: [
-          { time: '9:00 AM', activity: 'Stop at Ramboda Falls' },
-          { time: '4:00 PM', activity: 'Check-in at beach villa' }
-        ]
-      },
-      {
-        day: 'Day 4',
-        title: 'Beach Day & Surf',
-        description: 'Slow morning by the pool, optional surf lesson, golden-hour dinner by the sea.',
-        schedule: [
-          { time: '11:00 AM', activity: 'Beach + pool time' },
-          { time: '5:30 PM', activity: 'Sunset dinner spread' }
-        ]
-      },
-      {
-        day: 'Day 5',
-        title: 'Fly Back',
-        description: 'Head back to Colombo after breakfast and fly to Chennai in the evening.',
-        schedule: [
-          { time: '12:00 PM', activity: 'Colombo cafe crawl' },
-          { time: '6:00 PM', activity: 'Flight to Chennai' }
+          { time: '8:30 AM', activity: 'Breakfast and free time' },
+          { time: '12:00 PM', activity: 'Lunch and checkout' },
+          { time: '5:30 PM', activity: 'Reach Chennai' }
         ]
       }
     ],
     accommodation: {
-      name: 'Kandy Hillside Resort · South Coast Villa',
+      name: 'White Town Courtyard Stay',
       images: [
-        'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=1200&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1501117716987-c8e1ecb210af?q=80&w=1200&auto=format&fit=crop'
+        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?q=80&w=1200&auto=format&fit=crop',
+        'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=1200&auto=format&fit=crop'
       ],
       features: [
-        'Infinity pool overlooking tea gardens',
-        'Private beach access at the villa',
-        'Daily housekeeping and local breakfast'
+        'Walkable to White Town cafes and promenade',
+        'Twin-sharing rooms with attached baths',
+        'Breakfast included the next morning'
       ],
-      policy: 'Twin sharing by default; upgrade to solo room on request'
+      policy: 'Twin sharing by default; limited solo upgrade on request'
     },
     videos: [
       {
-        thumbnail: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=400&auto=format&fit=crop',
-        caption: 'Tropical evenings on the south coast'
+        thumbnail: 'https://images.unsplash.com/photo-1483683804023-6ccdb62f86ef?q=80&w=400&auto=format&fit=crop',
+        caption: 'Golden-hour walks by the promenade'
       },
       {
-        thumbnail: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?q=80&w=400&auto=format&fit=crop',
-        caption: 'Train through tea country vibes'
+        thumbnail: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98?q=80&w=400&auto=format&fit=crop',
+        caption: 'White Town corners and slow cafe stops'
       }
     ],
     reviews: [
       {
-        name: 'Aishwarya N',
+        name: 'Nivedha R',
         rating: 5,
-        text: 'The slow-paced itinerary was perfect. Loved the villa and the curated meals.',
-        images: ['https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=200&auto=format&fit=crop']
+        text: 'Super easy weekend plan. Enough structure to feel taken care of, but still lots of time to chill and explore.',
+        images: ['https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=200&auto=format&fit=crop']
       }
     ],
     dates: [
-      { date: '2026-04-12', status: 'selling_out', label: 'Waitlist moving' },
-      { date: '2026-04-26', status: 'available', label: 'Summer batch' }
+      { date: '2026-04-18', status: 'available', label: 'Beach weekend' },
+      { date: '2026-05-02', status: 'selling_out', label: 'Almost full' }
     ],
     faqs: [
-      { question: 'Is visa included?', answer: 'Visa fee is not included. We will guide you through the easy online process.' },
-      { question: 'Can I join solo?', answer: 'Absolutely, most travellers join solo. We pair roomies thoughtfully.' }
+      { question: 'Can I join solo?', answer: 'Yes. Most people join solo and we room-share thoughtfully unless you ask for a solo upgrade.' },
+      { question: 'Is this beginner-friendly?', answer: 'Absolutely. It is designed as a relaxed coastal getaway with very light activity.' }
     ],
     bookingUrl: '/phonepe-mock',
     announcements: [
-      "🇱🇰 Sri Lanka Retreat waitlist now open",
-      "🍃 Slow mornings, tea country trains, and a beach villa",
-      "✈️ Flights included from Chennai"
+      'Pondicherry Weekend Escape is now open',
+      'Beach sunsets, cafes, and a boutique stay',
+      'Round-trip transport from Chennai included'
+    ]
+  },
+  {
+    id: 'e2',
+    cities: ['Chennai'],
+    category: 'Trips',
+    title: 'Kolukkumalai Sunrise Trail',
+    timing: '2 Nights 3 Days',
+    price: '₹11,999',
+    advanceAmount: 3600,
+    description: 'A high-energy mountain escape with an overnight road trip, a pre-dawn jeep climb, sunrise above the clouds, and tea-estate weather that feels like a reset.',
+    heroImage: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?q=80&w=1600&auto=format&fit=crop',
+    startLocation: 'Chennai Pickups',
+    quickInfo: [
+      { icon: 'pin', label: 'Meeting Spot', value: 'Koyambedu / Anna Nagar / Own Transport' },
+      { icon: 'bus', label: 'Transport', value: 'Overnight coach + jeep transfer' },
+      { icon: 'users', label: 'Group Size', value: '16 travellers max' },
+      { icon: 'heart', label: 'Made For', value: 'Sunrise chasers and mountain people' },
+    ],
+    transportPlan: [
+      { type: 'bus', from: 'Chennai', to: 'Munnar Basecamp', time: '9:30 PM', dateOffset: 0, cities: ['Chennai'] },
+      { type: 'jeep', from: 'Suryanelli', to: 'Kolukkumalai', time: '4:30 AM', dateOffset: 1 },
+      { type: 'bus', from: 'Munnar', to: 'Chennai', time: '6:00 PM', dateOffset: 2 }
+    ],
+    transport: 'Sleeper coach + jeep',
+    groupSize: 'Max 16 travellers',
+    accommodationType: 'Cozy Munnar stay',
+    included: [
+      'Round-trip overnight transport from Chennai',
+      'Jeep ride to Kolukkumalai viewpoint',
+      '2 nights stay on twin or triple sharing basis',
+      '2 breakfasts and 1 camp-style dinner',
+      'Experience host and trip coordination'
+    ],
+    notIncluded: [
+      'Lunches, snacks, and tea shop spends',
+      'Any personal shopping or extra activities',
+      'Travel insurance',
+      'Anything outside the listed inclusions'
+    ],
+    optionalActivities: [
+      'Campfire games at the stay',
+      'Tea factory stop',
+      'Short waterfall detour on the return'
+    ],
+    itinerary: [
+      {
+        day: 'Day 1',
+        title: 'Overnight Departure',
+        description: 'Board from Chennai at night and settle into the road-trip mood as we drive toward the hills.',
+        schedule: [
+          { time: '9:30 PM', activity: 'Depart Chennai' },
+          { time: '11:45 PM', activity: 'Highway snack stop' }
+        ]
+      },
+      {
+        day: 'Day 2',
+        title: 'Kolukkumalai Sunrise',
+        description: 'Reach the foothills before dawn, take the jeep up to Kolukkumalai, catch sunrise, then head to the stay for a slower afternoon.',
+        schedule: [
+          { time: '4:30 AM', activity: 'Jeep climb from Suryanelli' },
+          { time: '6:00 AM', activity: 'Sunrise at Kolukkumalai' },
+          { time: '2:00 PM', activity: 'Check in and rest at Munnar stay' }
+        ]
+      },
+      {
+        day: 'Day 3',
+        title: 'Tea Views And Return',
+        description: 'A scenic morning through tea estates before beginning the return journey to Chennai by evening.',
+        schedule: [
+          { time: '8:30 AM', activity: 'Breakfast and tea-estate walk' },
+          { time: '12:30 PM', activity: 'Checkout and lunch stop' },
+          { time: '6:00 PM', activity: 'Depart toward Chennai' }
+        ]
+      }
+    ],
+    accommodation: {
+      name: 'Munnar Hillside Retreat',
+      images: [
+        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?q=80&w=1200&auto=format&fit=crop',
+        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?q=80&w=1200&auto=format&fit=crop'
+      ],
+      features: [
+        'Hillside stay close to the Munnar route',
+        'Warm common lounge for the group',
+        'Twin or triple sharing rooms depending on batch'
+      ],
+      policy: 'Rooming is assigned thoughtfully based on group mix and availability'
+    },
+    videos: [
+      {
+        thumbnail: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=400&auto=format&fit=crop',
+        caption: 'Sunrise layers over the tea hills'
+      },
+      {
+        thumbnail: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=400&auto=format&fit=crop',
+        caption: 'Clouds, winding roads, and cold mornings'
+      }
+    ],
+    reviews: [
+      {
+        name: 'Harish K',
+        rating: 5,
+        text: 'The sunrise was unreal. The overnight travel felt smooth because the whole thing was coordinated really well.',
+        images: ['https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?q=80&w=200&auto=format&fit=crop']
+      }
+    ],
+    dates: [
+      { date: '2026-04-24', status: 'selling_out', label: 'Few spots left' },
+      { date: '2026-05-08', status: 'available', label: 'Mountain batch' }
+    ],
+    faqs: [
+      { question: 'Is the jeep ride included?', answer: 'Yes. The Kolukkumalai jeep transfer is part of the trip cost.' },
+      { question: 'How difficult is the trip?', answer: 'It is beginner-friendly overall, but the overnight travel and early sunrise start make it best for people comfortable with a packed schedule.' }
+    ],
+    bookingUrl: '/phonepe-mock',
+    announcements: [
+      'Kolukkumalai Sunrise Trail is now open',
+      'Overnight road trip, jeep climb, and sunrise views',
+      'Munnar weather and tea-estate mornings included'
     ]
   },
 ];
 
 const GENERAL_ANNOUNCEMENTS = [
   "Chennai-based social club with 4000+ members",
-  "🇱🇰 Sri Lanka Retreat waitlist now open",
-  "✈️ Flights included from Chennai"
+  "Pondicherry Weekend Escape bookings are live",
+  "Kolukkumalai Sunrise Trail now taking bookings"
 ];
 
 export default function App() {
@@ -575,7 +667,7 @@ export default function App() {
     const pickupDetails = dateStr ? formatDisplayDate(shiftDateString(dateStr, -3) || undefined) : 'TBD';
     const tripDate = formatDisplayDate(dateStr);
     const totalAmount = parseAmount(selectedEvent.price);
-    const advanceAmount = Math.round(totalAmount * 0.3);
+    const advanceAmount = selectedEvent.advanceAmount;
     const ctx = {
       eventTitle: selectedEvent.title,
       amount: advanceAmount,
@@ -899,7 +991,7 @@ export default function App() {
                     <div className="flex-1">
                       <h2 className="text-lg font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
                     </div>
-                    {selectedEvent.id !== 'e3' && !selectedEvent.inviteOnly && (
+                    {!selectedEvent.inviteOnly && (
                       <button
                         onClick={() => setShowBookingTimeline(false)}
                         className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mt-1 flex-shrink-0"
@@ -941,7 +1033,7 @@ export default function App() {
                       <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                         <div>
                           <p className="text-[11px] text-gray-400 font-medium mb-0.5">Receive</p>
-                          <p className="text-[15px] font-black text-gray-900 leading-none">Visa, flights & stay info</p>
+                          <p className="text-[15px] font-black text-gray-900 leading-none">Pickup, stay & trip details</p>
                         </div>
                         <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                           {bookingDate ? `by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '3 days before trip'}
@@ -970,7 +1062,7 @@ export default function App() {
                         Request Invitation
                         <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
-                    ) : selectedEvent.id === 'e3' ? (
+                    ) : isPhonePeFlow ? (
                       <button
                         onClick={() => {
                           if (isPhonePeFlow) {
@@ -1386,7 +1478,7 @@ export default function App() {
                       width="100%"
                       height="480"
                       style={{ border: 'none', display: 'block' }}
-                      title="Sri Lanka Waitlist"
+                      title="Trip Waitlist"
                     />
                   </div>
                 </div>
