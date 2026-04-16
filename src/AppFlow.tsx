@@ -2069,11 +2069,12 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
           const groupSize  = event.quickInfo!.find(c => c.label === 'Group Size')   || event.quickInfo![2];
           const meetingSpot= event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
           const transport  = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
+          const planTitle  = event.quickInfo!.find(c => c.label === 'Plan Title')?.value || 'The Plan';
           const groupNum   = groupSize?.value.match(/\d+[-–]\d+|\d+/)?.[0] || groupSize?.value;
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
           return (
             <div className="pt-5 pb-4 border-b border-gray-100">
-              <h3 className="text-xl font-black mb-4 px-6">The Plan</h3>
+              <h3 className="text-xl font-black mb-4 px-6">{planTitle}</h3>
               <div className="mx-3 border border-dashed border-[#595959] rounded-2xl overflow-hidden bg-gray-50">
 
                 {/* Top row — MEETING SPOT | TRANSPORT */}

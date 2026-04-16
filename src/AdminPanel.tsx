@@ -33,6 +33,7 @@ type Trip = {
   hero_image: string;
   cities: string[];
   category: string;
+  quick_info?: Array<{ icon?: string; label: string; value: string }>;
   included: string[];
   optional_activities: string[];
   not_included: string[];
@@ -284,7 +285,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -561,6 +562,17 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
   const dates = trip.event_dates ?? [];
   const pickups = trip.pickup_points ?? [];
+  const quickInfo = trip.quick_info ?? [];
+  const planTitle = quickInfo.find(item => item.label === 'Plan Title')?.value ?? 'The Plan';
+  const setPlanTitle = (value: string) => {
+    const remaining = quickInfo.filter(item => item.label !== 'Plan Title');
+    onChange({
+      ...trip,
+      quick_info: value.trim()
+        ? [...remaining, { icon: 'map', label: 'Plan Title', value }]
+        : remaining,
+    });
+  };
   const acc = trip.accommodation ?? {};
   const legacyStay: AccommodationStay = {
     name: acc.name ?? '',
@@ -746,7 +758,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`}>
+      <CollapsibleSection title="The Plan" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`}>
+        <div style={{ marginBottom: 10 }}>
+          <label style={s.label}>Section Title</label>
+          <input
+            style={s.input}
+            placeholder="The Plan"
+            value={planTitle}
+            onChange={e => setPlanTitle(e.target.value)}
+          />
+        </div>
         {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No transport pickup points added.</div>}
         {regularPickups.map((p) => (
           <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
