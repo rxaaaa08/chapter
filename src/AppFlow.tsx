@@ -1682,7 +1682,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [accImageIndex, setAccImageIndex] = useState(0);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const videoModalIframeRef = useRef<HTMLIFrameElement | null>(null);
   const cityDateOffset = React.useMemo(() => {
     if (!event.transportPlan) return 0;
     const leg = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(selectedCity.toLowerCase()));
@@ -1734,28 +1733,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   useEffect(() => {
     if (!activeVideo) return;
 
-    const parsePayload = (data: unknown) => {
-      if (typeof data !== 'string') return data as any;
-      try {
-        return JSON.parse(data);
-      } catch {
-        return null;
-      }
-    };
-
-    const subscribeToEnded = () => {
-      videoModalIframeRef.current?.contentWindow?.postMessage(
-        JSON.stringify({ method: 'addEventListener', value: 'ended' }),
-        'https://player.vimeo.com'
-      );
-    };
-
     const onMessage = (event: MessageEvent) => {
-      if (!event.origin.includes('player.vimeo.com')) return;
-      const payload = parsePayload(event.data);
-      if (!payload) return;
-      if (payload.event === 'ready') subscribeToEnded();
-      if (payload.event === 'ended') setActiveVideo(null);
+      if (!event.origin.includes('vimeo.com')) return;
+      const payload = typeof event.data === 'string' ? (() => { try { return JSON.parse(event.data); } catch { return null; } })() : event.data;
+      if (payload?.event === 'ended') setActiveVideo(null);
     };
 
     window.addEventListener('message', onMessage);
@@ -2577,17 +2558,13 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 <div className="relative w-full h-full overflow-hidden rounded-[28px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
                   <iframe
                     id="video-modal-player"
-                    ref={videoModalIframeRef}
                     src={activeVideo.embedUrl}
                     title={activeVideo.caption}
                     className="absolute max-w-none"
                     style={{ inset: '-2px', width: 'calc(100% + 4px)', height: 'calc(100% + 4px)' }}
                     allow="autoplay; fullscreen; picture-in-picture"
                     onLoad={(e) => {
-                      e.currentTarget.contentWindow?.postMessage(
-                        JSON.stringify({ method: 'addEventListener', value: 'ready' }),
-                        'https://player.vimeo.com'
-                      );
+                      e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
                     }}
                     allowFullScreen
                   />
