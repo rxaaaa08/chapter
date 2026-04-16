@@ -50,6 +50,7 @@ export function mapDbEventToEvent(row: any): any {
     itinerary: row.itinerary ?? [],
     showAccommodation: row.show_accommodation ?? false,
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },
+    bookingSteps: Array.isArray(row.booking_steps) && row.booking_steps.length > 0 ? row.booking_steps : undefined,
     dates: (row.event_dates ?? []).map((d: any) => ({
       date: d.start_date,
       status: d.status,

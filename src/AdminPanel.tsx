@@ -46,6 +46,7 @@ type Trip = {
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
   accommodation?: { name: string; images: string[]; features: string[]; policy: string };
+  booking_steps?: Array<{ label: string; value: string; daysBefore: number }>;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 
@@ -283,7 +284,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, booking_steps: [], event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -298,9 +299,6 @@ export default function AdminPanel() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
                       <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
-                      <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(trip.event_dates ?? []).map((d, i) => <Badge key={i} status={d.status} />)}
-                      </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
                       <button onClick={() => toggleActive(trip)} title={trip.is_active ? 'Hide trip' : 'Show trip'}
@@ -567,6 +565,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const setAccImage = (i: number, val: string) => { const imgs = [...accImages]; imgs[i] = val; setAcc({ images: imgs.filter(Boolean) }); };
   const setAccFeature = (i: number, val: string) => { const feats = [...accFeatures]; feats[i] = val; setAcc({ features: feats }); };
 
+  // ── Booking Steps ──
+  const bookingSteps = trip.booking_steps?.length ? trip.booking_steps : [
+    { label: 'Remaining Balance', value: '', daysBefore: 5 },
+    { label: 'Receive', value: 'Pickup, stay & trip details', daysBefore: 3 },
+  ];
+  const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; daysBefore: number }>) =>
+    onChange({ ...trip, booking_steps: bookingSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
+  const addBookingStep = () => onChange({ ...trip, booking_steps: [...bookingSteps, { label: '', value: '', daysBefore: 1 }] });
+  const removeBookingStep = (i: number) => onChange({ ...trip, booking_steps: bookingSteps.filter((_, idx) => idx !== i) });
+
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
     onChange({ ...trip, pickup_points: updated });
@@ -654,6 +662,32 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
           <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Booking Timeline">
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+          These are the middle steps shown in the "Your Booking Timeline" popup. The <strong>Advance</strong> row (Now) and the final event date row are fixed — only the steps below are editable.
+        </div>
+        {bookingSteps.map((step, i) => (
+          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px auto', gap: 8, alignItems: 'end' }}>
+              <div>
+                <label style={s.label}>Label (small text)</label>
+                <input style={s.input} placeholder="e.g. Remaining Balance" value={step.label} onChange={e => setBookingStep(i, { label: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Value (big text)</label>
+                <input style={s.input} placeholder={step.label === 'Remaining Balance' ? 'Auto (remaining price)' : 'e.g. Pickup, stay & trip details'} value={step.value} onChange={e => setBookingStep(i, { value: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Days Before</label>
+                <input type="number" min={1} style={s.input} value={step.daysBefore} onChange={e => setBookingStep(i, { daysBefore: Number(e.target.value) })} />
+              </div>
+              <button onClick={() => removeBookingStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', marginBottom: 2 }}>×</button>
+            </div>
+          </div>
+        ))}
+        <button type="button" onClick={addBookingStep} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Step</button>
       </CollapsibleSection>
 
       {/* ── LOGISTICS ── */}
