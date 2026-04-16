@@ -71,7 +71,7 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'qna' | 'other' | 'messages'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'other' | 'messages'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
@@ -87,6 +87,9 @@ export default function AdminPanel() {
   const [addingTrip, setAddingTrip] = useState(false);
   const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
   const [mediaCityFilter, setMediaCityFilter] = useState<'all' | string>('all');
+  const [timelinesCityFilter, setTimelinesCityFilter] = useState<'all' | string>('all');
+  const [timelineEdits, setTimelineEdits] = useState<Record<string, Array<{ label: string; value: string; date: string }>>>({});
+  const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
@@ -240,6 +243,15 @@ export default function AdminPanel() {
     setEditingTrip(null);
     setAddingTrip(false);
     showToast('Saved!');
+  };
+
+  const saveTimeline = async (trip: Trip, steps: Array<{ label: string; value: string; date: string }>) => {
+    setSavingTimeline(trip.id!);
+    await supabase.from('events').update({ booking_steps: steps }).eq('id', trip.id!);
+    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, booking_steps: steps } : t));
+    setTimelineEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
+    setSavingTimeline(null);
+    showToast('Timeline saved!');
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -480,6 +492,7 @@ export default function AdminPanel() {
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
+        <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
         <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
@@ -853,6 +866,118 @@ export default function AdminPanel() {
                   </div>
                 ) : null
               ));
+            })()}
+          </>
+        )}
+
+        {/* ── TIMELINES TAB ─────────────────────────────────────────────────── */}
+        {!loading && tab === 'timelines' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Timelines</div>
+              <div style={{ position: 'relative', minWidth: 190 }}>
+                <select
+                  value={timelinesCityFilter}
+                  onChange={e => setTimelinesCityFilter(e.target.value)}
+                  style={{ ...s.input, padding: '9px 34px 9px 12px', fontSize: 13, fontWeight: 600, borderRadius: 999, border: '1.5px solid #d7d7d7', background: '#fff', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', cursor: 'pointer' }}
+                >
+                  <option value="all">All Cities</option>
+                  {orderedCities.map(city => <option key={city} value={city}>{city}</option>)}
+                </select>
+                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+              </div>
+            </div>
+            {(() => {
+              const getNearestDateTs = (trip: Trip) => {
+                const dates = (trip.event_dates ?? []).map(d => new Date(`${d.start_date}T00:00:00`).getTime()).filter(ts => !Number.isNaN(ts));
+                return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
+              };
+              const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
+                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
+                return dateDiff !== 0 ? dateDiff : a.title.localeCompare(b.title);
+              });
+              const filtered = timelinesCityFilter === 'all' ? trips : trips.filter(t => (t.cities ?? []).includes(timelinesCityFilter));
+              const grouped = new Map<string, Trip[]>();
+              filtered.forEach(plan => {
+                const key = (plan.category || '').trim().toLowerCase() || 'uncategorized';
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(plan);
+              });
+              const orderedKeys = [
+                ...['events', 'trips'].filter(k => grouped.has(k)),
+                ...[...grouped.keys()].filter(k => !['events', 'trips'].includes(k)).sort(),
+              ];
+              return orderedKeys.map(key => {
+                const items = sortPlans(grouped.get(key) ?? []);
+                const displayTitle = items[0]?.category?.trim() || key;
+                return items.length > 0 ? (
+                  <div key={key}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{displayTitle}</div>
+                    {items.map(trip => {
+                      const currentSteps: Array<{ label: string; value: string; date: string }> =
+                        timelineEdits[trip.id!] ?? trip.booking_steps ?? [
+                          { label: 'Advance', value: '{advance}', date: '' },
+                          { label: 'Remaining Balance', value: '{balance}', date: '' },
+                          { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                        ];
+                      const setStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) => {
+                        const next = currentSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s);
+                        setTimelineEdits(prev => ({ ...prev, [trip.id!]: next }));
+                      };
+                      const addStep = () => setTimelineEdits(prev => ({ ...prev, [trip.id!]: [...currentSteps, { label: '', value: '', date: '' }] }));
+                      const removeStep = (i: number) => setTimelineEdits(prev => ({ ...prev, [trip.id!]: currentSteps.filter((_, idx) => idx !== i) }));
+                      const isDirty = !!timelineEdits[trip.id!];
+                      const nearestDate = (trip.event_dates ?? []).map(d => d.start_date).filter(Boolean).sort()[0];
+                      return (
+                        <div key={trip.id} style={{ ...s.card, marginBottom: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                            {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 48, height: 38, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
+                              {nearestDate && <div style={{ fontSize: 12, color: '#aaa', marginTop: 1 }}>{new Date(`${nearestDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>}
+                            </div>
+                            {isDirty && (
+                              <button
+                                style={{ ...s.btn(savingTimeline === trip.id ? '#aaa' : '#111'), fontSize: 12, padding: '6px 14px' }}
+                                disabled={savingTimeline === trip.id}
+                                onClick={() => saveTimeline(trip, currentSteps)}
+                              >
+                                {savingTimeline === trip.id ? 'Saving…' : 'Save'}
+                              </button>
+                            )}
+                          </div>
+
+                          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
+                            Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code> or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code> in Value to auto-fill prices.
+                          </div>
+
+                          {currentSteps.map((step, i) => {
+                            const isNowRow = i === 0;
+                            return (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: isNowRow ? '24px 1fr 1fr auto' : '24px 1fr 1fr 150px auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                                <div style={{ textAlign: 'center' }}>
+                                  {isNowRow
+                                    ? <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '2px 6px', whiteSpace: 'nowrap' }}>NOW</span>
+                                    : <span style={{ fontSize: 10, color: '#bbb', fontWeight: 600 }}>{i + 1}</span>
+                                  }
+                                </div>
+                                <input style={{ ...s.input, fontSize: 13 }} placeholder={isNowRow ? 'e.g. Advance' : 'Label'} value={step.label} onChange={e => setStep(i, { label: e.target.value })} />
+                                <input style={{ ...s.input, fontSize: 13 }} placeholder={isNowRow ? '{advance}' : i === 1 ? '{balance}' : 'Value or text'} value={step.value} onChange={e => setStep(i, { value: e.target.value })} />
+                                {!isNowRow && (
+                                  <input type="date" style={{ ...s.input, fontSize: 13 }} value={step.date} onChange={e => setStep(i, { date: e.target.value })} />
+                                )}
+                                <button type="button" onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 16, padding: '0 2px' }}>×</button>
+                              </div>
+                            );
+                          })}
+                          <button type="button" onClick={addStep} style={{ marginTop: 4, padding: '5px 14px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>+ Add Step</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null;
+              });
             })()}
           </>
         )}
@@ -1389,47 +1514,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('CTA Text (e.g. Book Now)', 'cta_label')}
           <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
         </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Booking Timeline">
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
-          All steps are editable. The first step always shows a <strong style={{ color: '#16a34a' }}>Now</strong> tag. Steps after it get a deadline date. The final event date row is always fixed.
-        </div>
-        <div style={{ fontSize: 12, color: '#666', background: '#f0f0ea', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
-          Use <code style={{ background: '#e4e4de', borderRadius: 4, padding: '1px 5px' }}>{'{advance}'}</code> to auto-fill the advance amount, <code style={{ background: '#e4e4de', borderRadius: 4, padding: '1px 5px' }}>{'{balance}'}</code> for the remaining balance.
-        </div>
-        {bookingSteps.map((step, i) => {
-          const isNowRow = i === 0;
-          return (
-            <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                {isNowRow ? (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '2px 10px' }}>NOW</span>
-                ) : (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#888', background: '#f0f0ea', border: '1px solid #e0e0da', borderRadius: 99, padding: '2px 10px' }}>Step {i + 1}</span>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isNowRow ? '1fr 1fr auto' : '1fr 1fr 160px auto', gap: 8, alignItems: 'end' }}>
-                <div>
-                  <label style={s.label}>Label (small text)</label>
-                  <input style={s.input} placeholder={isNowRow ? 'e.g. Advance' : 'e.g. Remaining Balance'} value={step.label} onChange={e => setBookingStep(i, { label: e.target.value })} />
-                </div>
-                <div>
-                  <label style={s.label}>Value (big text)</label>
-                  <input style={s.input} placeholder="e.g. {advance} or {balance} or Pickup details" value={step.value} onChange={e => setBookingStep(i, { value: e.target.value })} />
-                </div>
-                {!isNowRow && (
-                  <div>
-                    <label style={s.label}>Deadline Date</label>
-                    <input type="date" style={s.input} value={step.date} onChange={e => setBookingStep(i, { date: e.target.value })} />
-                  </div>
-                )}
-                <button type="button" onClick={() => removeBookingStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', marginBottom: 2 }}>×</button>
-              </div>
-            </div>
-          );
-        })}
-        <button type="button" onClick={addBookingStep} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Step</button>
       </CollapsibleSection>
 
       {/* ── LOGISTICS ── */}
