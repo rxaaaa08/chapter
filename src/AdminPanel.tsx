@@ -285,8 +285,7 @@ export default function AdminPanel() {
         {!loading && tab === 'trips' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
                 {(() => {
                   const allCities = Array.from(new Set(trips.flatMap(t => t.cities ?? []).filter(Boolean)));
                   const middleCities = allCities
