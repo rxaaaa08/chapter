@@ -1683,6 +1683,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [calendarRevealed, setCalendarRevealed] = useState(false);
   const [showWorkWithUs, setShowWorkWithUs] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
+  const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const [accImageIndex, setAccImageIndex] = useState(0);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2239,7 +2240,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=1&muted=0&badge=0&byline=0&title=0&portrait=0` : null;
                 return (
                   <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
-                    onClick={() => embedUrl && window.open(`https://vimeo.com/${vimeoId}`, '_blank')}
+                    onClick={() => embedUrl && setActiveVideo({ embedUrl, caption: vid.caption || 'Trip video' })}
                     style={{ cursor: embedUrl ? 'pointer' : 'default' }}
                   >
                     {vid.thumbnail
@@ -2522,6 +2523,51 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       </AnimatePresence>
 
       {/* Policy / Legal Modals */}
+      <AnimatePresence>
+        {activeVideo && (
+          <>
+            <motion.div
+              key="video-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[210] bg-black/70"
+              onClick={() => setActiveVideo(null)}
+            />
+            <motion.div
+              key="video-modal"
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="absolute inset-0 z-[211] flex items-center justify-center p-4"
+            >
+              <div className="w-full max-w-md rounded-2xl overflow-hidden bg-black shadow-2xl">
+                <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-white/10">
+                  <p className="text-xs font-semibold text-white/80 truncate pr-2">{activeVideo.caption}</p>
+                  <button
+                    onClick={() => setActiveVideo(null)}
+                    className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
+                    aria-label="Close video"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="relative w-full" style={{ paddingTop: '177.78%' }}>
+                  <iframe
+                    src={activeVideo.embedUrl}
+                    title={activeVideo.caption}
+                    className="absolute inset-0 w-full h-full"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showPolicyModal && (
           <motion.div
