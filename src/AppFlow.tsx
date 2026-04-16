@@ -2238,15 +2238,24 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               {event.videos?.map((vid, i) => {
                 const vimeoId = vid.url?.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1];
                 const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0` : null;
+                const previewUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?background=1&autoplay=1&muted=1&loop=1&title=0&byline=0&portrait=0` : null;
                 return (
                   <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
                     onClick={() => embedUrl && setActiveVideo({ embedUrl, caption: vid.caption || 'Trip video' })}
                     style={{ cursor: embedUrl ? 'pointer' : 'default' }}
                   >
-                    {vid.thumbnail
-                      ? <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
-                      : <div className="w-full h-full bg-gray-800" />
-                    }
+                    {previewUrl ? (
+                      <iframe
+                        src={previewUrl}
+                        title={`Video preview ${i + 1}`}
+                        className="w-full h-full pointer-events-none"
+                        allow="autoplay; fullscreen; picture-in-picture"
+                      />
+                    ) : vid.thumbnail ? (
+                      <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
+                    ) : (
+                      <div className="w-full h-full bg-gray-800" />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
@@ -2542,7 +2551,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
             >
-              <div className="relative w-[88%] max-w-[320px] rounded-[28px] overflow-hidden border border-white/20 bg-transparent shadow-2xl">
+              <div className="relative w-[88%] max-w-[320px] rounded-[28px] overflow-hidden border border-white/10 bg-black shadow-2xl">
                 <div className="absolute top-2 right-2 z-10">
                   <button
                     onClick={() => setActiveVideo(null)}
