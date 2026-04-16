@@ -702,7 +702,7 @@ export default function AdminPanel() {
         {/* ── OTHER TAB ─────────────────────────────────────────────────────── */}
         {!loading && tab === 'other' && (
           <>
-            <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Other City Feed</div>
+            <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Plans for Other Cities</div>
             {trips.filter(t => (t.cities ?? []).includes('Other')).length === 0 && (
               <div style={{ ...s.card, color: '#777' }}>
                 No trips are enabled for Other city users yet. Turn ON <strong>Show In "Other" City Feed</strong> in any trip to see it here.
