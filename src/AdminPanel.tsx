@@ -961,8 +961,7 @@ export default function AdminPanel() {
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
               Use <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code> as placeholders.
             </div>
-            <div style={{ ...s.card, marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Global: Before Trip/Event Selection</div>
+            <CollapsibleSection title="Global: Before Trip/Event Selection">
               <label style={s.label}>Top Header Announcements (Before Event Selection)</label>
               <textarea
                 style={s.textarea}
@@ -978,10 +977,9 @@ export default function AdminPanel() {
                   {savingGeneralAnnouncements ? 'Saving…' : 'Save Global Announcements'}
                 </button>
               </div>
-            </div>
+            </CollapsibleSection>
 
-            <div style={{ ...s.card, marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Global Conversation Messages (Pre-selection)</div>
+            <CollapsibleSection title="Global Conversation Messages (Pre-selection)">
               {globalPreSelectionKeys.map((stepKey) => (
                 <div key={stepKey} style={{ marginBottom: 12 }}>
                   <label style={s.label}>{labelForStepKey(stepKey)}</label>
@@ -1002,7 +1000,7 @@ export default function AdminPanel() {
                   </div>
                 </div>
               ))}
-            </div>
+            </CollapsibleSection>
 
             <div style={s.card}>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Per Trip/Event: Post-selection Messages + Doubts (FAQ)</div>
