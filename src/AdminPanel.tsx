@@ -91,7 +91,6 @@ export default function AdminPanel() {
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [otherActionById, setOtherActionById] = useState<Record<string, string>>({});
   const [messagesTripId, setMessagesTripId] = useState<string>('');
-  const [tripMessageDrafts, setTripMessageDrafts] = useState<Record<string, string>>({});
   const [tripFaqDrafts, setTripFaqDrafts] = useState<FAQ[]>([]);
   const [savingTripBotConfig, setSavingTripBotConfig] = useState(false);
   const [toast, setToast] = useState('');
@@ -99,9 +98,6 @@ export default function AdminPanel() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
   const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
   const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact'] as const;
-  const perTripPostSelectionKeys = ['ask_doubts_book', 'show_faq', 'faq_followup', 'contact_success'] as const;
-  const labelForStepKey = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
-  const buildTripStepKey = (tripRef: string, baseKey: string) => `trip_message:${tripRef}:${baseKey}`;
 
   const allCities = [
     ...new Set(
@@ -435,56 +431,16 @@ export default function AdminPanel() {
     setMessagesTripId(tripId);
     const trip = trips.find(t => t.id === tripId);
     if (!trip) {
-      setTripMessageDrafts({});
       setTripFaqDrafts([]);
       return;
     }
-    const tripRef = (trip.slug || trip.id || '').trim();
-    const nextDrafts: Record<string, string> = {};
-    perTripPostSelectionKeys.forEach((key) => {
-      const stepKey = buildTripStepKey(tripRef, key);
-      nextDrafts[key] = msgs.find(m => m.step_key === stepKey)?.bot_message ?? '';
-    });
-    setTripMessageDrafts(nextDrafts);
     setTripFaqDrafts((trip.faqs ?? []).map(f => ({ question: f.question ?? '', answer: f.answer ?? '' })));
   };
 
   const savePerTripBotConfig = async () => {
     const selectedTrip = trips.find(t => t.id === messagesTripId);
     if (!selectedTrip?.id) return;
-    const tripRef = (selectedTrip.slug || selectedTrip.id || '').trim();
     setSavingTripBotConfig(true);
-
-    for (const key of perTripPostSelectionKeys) {
-      const stepKey = buildTripStepKey(tripRef, key);
-      const text = (tripMessageDrafts[key] ?? '').trim();
-      const existing = msgs.find(m => m.step_key === stepKey);
-
-      if (existing?.id) {
-        if (!text) {
-          await supabase.from('chat_messages').delete().eq('id', existing.id);
-          setMsgs(prev => prev.filter(m => m.id !== existing.id));
-        } else {
-          await supabase.from('chat_messages').update({ bot_message: text }).eq('id', existing.id);
-          setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: text } : m));
-        }
-      } else if (text) {
-        const maxSortOrder = msgs.length > 0
-          ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
-          : 0;
-        const { data } = await supabase
-          .from('chat_messages')
-          .insert({
-            step_key: stepKey,
-            bot_message: text,
-            flow: `trip:${tripRef}`,
-            sort_order: maxSortOrder + 1,
-          })
-          .select('*')
-          .single();
-        if (data) setMsgs(prev => [...prev, data as ChatMsg]);
-      }
-    }
 
     const updatedTrip: Trip = {
       ...selectedTrip,
@@ -492,7 +448,7 @@ export default function AdminPanel() {
     };
     await saveTrip(updatedTrip);
     setSavingTripBotConfig(false);
-    showToast('Per-trip bot messages and FAQs saved!');
+    showToast('Per-trip FAQs saved!');
   };
 
   // ─── LOGIN SCREEN ────────────────────────────────────────────────────────────
@@ -1121,7 +1077,7 @@ export default function AdminPanel() {
             </CollapsibleSection>
 
             <div style={s.card}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Per Trip/Event: Post-selection Messages + Doubts (FAQ)</div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Per Trip/Event: Possible Doubts (FAQ)</div>
               <div style={{ marginBottom: 12 }}>
                 <label style={s.label}>Choose Plan</label>
                 <div style={{ position: 'relative', maxWidth: 360 }}>
@@ -1152,26 +1108,6 @@ export default function AdminPanel() {
 
               {messagesTripId && (
                 <>
-                  {perTripPostSelectionKeys.map((stepKey) => (
-                    <div key={stepKey} style={{ marginBottom: 12 }}>
-                      <label style={s.label}>{labelForStepKey(stepKey)}</label>
-                      <textarea
-                        style={s.textarea}
-                        value={tripMessageDrafts[stepKey] ?? ''}
-                        onChange={e => setTripMessageDrafts(prev => ({ ...prev, [stepKey]: e.target.value }))}
-                        placeholder={
-                          stepKey === 'ask_doubts_book'
-                            ? "You're about to lock your spot for {title}. All clear or any last-minute doubts?"
-                            : stepKey === 'show_faq'
-                              ? "No sweat - here are common doubts. Tap one, or ask your own question."
-                              : stepKey === 'faq_followup'
-                                ? "Hope that helps. Want to ask another doubt or proceed to booking?"
-                                : "Got it, {name}! Our team will contact you shortly on {phone}."
-                        }
-                      />
-                    </div>
-                  ))}
-
                   <div style={{ marginTop: 14 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <label style={{ ...s.label, marginBottom: 0 }}>Possible Doubts (FAQ)</label>
@@ -1217,7 +1153,7 @@ export default function AdminPanel() {
                       disabled={savingTripBotConfig}
                       onClick={savePerTripBotConfig}
                     >
-                      {savingTripBotConfig ? 'Saving…' : 'Save Per-Trip Bot Setup'}
+                      {savingTripBotConfig ? 'Saving…' : 'Save FAQs'}
                     </button>
                   </div>
                 </>
