@@ -658,15 +658,20 @@ export default function App() {
 
   const handleFaqSelect = (faq: FAQ) => {
     setStep('PROCESSING');
+    const isFirstFaqAnswer = clickedFaqs.length === 0;
     addUserMessage(faq.question);
     setClickedFaqs(prev => [...prev, faq.question]);
     
     simulateBotTyping(() => {
       addBotMessage(faq.answer);
-      simulateBotTyping(() => {
-        addBotMessage(fillMsgForSelectedEvent('faq_followup', {}, "Hope that clears it up! Got anything else, or are we locking this in?"));
+      if (isFirstFaqAnswer) {
+        simulateBotTyping(() => {
+          addBotMessage(fillMsgForSelectedEvent('faq_followup', {}, "Hope that clears it up! Got anything else, or are we locking this in?"));
+          setStep('SHOW_FAQ');
+        }, 1000);
+      } else {
         setStep('SHOW_FAQ');
-      }, 1000);
+      }
     }, 800);
   };
 
