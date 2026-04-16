@@ -691,6 +691,55 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       {/* ── LOGISTICS ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 14 }}>Logistics</div>
 
+      <CollapsibleSection title="The Plan">
+        <div style={{ marginBottom: 10 }}>
+          <label style={s.label}>Section Title</label>
+          <input
+            style={s.input}
+            placeholder="The Plan"
+            value={planTitle}
+            onChange={e => setPlanTitle(e.target.value)}
+          />
+        </div>
+        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No transport pickup points added.</div>}
+        {regularPickups.map((p) => (
+          <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={s.label}>Dropdown Label</label>
+                <input style={s.input} placeholder="e.g. Koyambedu — 7:00 AM" value={p.label} onChange={e => setPickup(p._idx, 'label', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Meeting Spot</label>
+                <input style={s.input} placeholder="e.g. Koyambedu Bus Stand" value={p.meetingSpot} onChange={e => setPickup(p._idx, 'meetingSpot', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Pickup Time</label>
+                <input style={s.input} placeholder="e.g. 7:00 AM" value={p.time} onChange={e => setPickup(p._idx, 'time', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Transport</label>
+                <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(p._idx, 'transport', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Date Offset (days)</label>
+                <input type="number" style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Price (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={s.label}>Other City Advance (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
+              </div>
+            </div>
+            <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
+          </div>
+        ))}
+        <button type="button" onClick={addPickup} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Pickup Point</button>
+      </CollapsibleSection>
+
       <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`}>
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
@@ -756,55 +805,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </button>
           </>
         )}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="The Plan" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`}>
-        <div style={{ marginBottom: 10 }}>
-          <label style={s.label}>Section Title</label>
-          <input
-            style={s.input}
-            placeholder="The Plan"
-            value={planTitle}
-            onChange={e => setPlanTitle(e.target.value)}
-          />
-        </div>
-        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No transport pickup points added.</div>}
-        {regularPickups.map((p) => (
-          <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <div>
-                <label style={s.label}>Dropdown Label</label>
-                <input style={s.input} placeholder="e.g. Koyambedu — 7:00 AM" value={p.label} onChange={e => setPickup(p._idx, 'label', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Meeting Spot</label>
-                <input style={s.input} placeholder="e.g. Koyambedu Bus Stand" value={p.meetingSpot} onChange={e => setPickup(p._idx, 'meetingSpot', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Pickup Time</label>
-                <input style={s.input} placeholder="e.g. 7:00 AM" value={p.time} onChange={e => setPickup(p._idx, 'time', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Transport</label>
-                <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(p._idx, 'transport', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Date Offset (days)</label>
-                <input type="number" style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
-              </div>
-              <div>
-                <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
-              </div>
-              <div style={{ gridColumn: '1/-1' }}>
-                <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
-              </div>
-            </div>
-            <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
-          </div>
-        ))}
-        <button type="button" onClick={addPickup} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Pickup Point</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="Own Transport Option" badge={ownTransport ? 'ON' : 'OFF'} badgeColor={ownTransport ? '#16a34a' : undefined}>
