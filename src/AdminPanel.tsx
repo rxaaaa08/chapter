@@ -16,6 +16,7 @@ type PickupPoint = {
   ownOnly?: boolean;
   availableForOther?: boolean;
   otherPrice?: number;
+  otherAdvance?: number;
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
 type EventReview = { id?: string; name: string; rating: number; review_text: string; images?: string[] };
@@ -671,6 +672,10 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <label style={s.label}>Other City Price (₹)</label>
                 <input type="number" min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
+              <div>
+                <label style={s.label}>Other City Advance (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <label style={{ ...s.label, marginBottom: 0 }}>Own Transport As Only Option</label>
@@ -753,6 +758,17 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   placeholder="Leave blank = base event price"
                   value={p.otherPrice ?? ''}
                   onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label style={s.label}>Other City Advance (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  style={s.input}
+                  placeholder="Leave blank = event advance amount"
+                  value={p.otherAdvance ?? ''}
+                  onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))}
                 />
               </div>
             </div>
@@ -942,6 +958,10 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
                 <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={point.otherPrice ?? ''} onChange={e => setPickup(index, { otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Advance (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={point.otherAdvance ?? ''} onChange={e => setPickup(index, { otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
               {point.id === 'own_transport' && (
                 <div>

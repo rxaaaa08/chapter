@@ -48,6 +48,7 @@ interface Event {
     ownOnly?: boolean;
     availableForOther?: boolean;
     otherPrice?: number;
+    otherAdvance?: number;
   }[];
   transport: string;
   groupSize: string;
@@ -1636,8 +1637,16 @@ const getMeetingPointPricing = (event: Event, meetingPointId?: string, city?: st
     return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
   }
   const selectedPoint = event.pickupPoints?.find(p => p.id === meetingPointId);
-  if (city === 'Other' && selectedPoint?.otherPrice && selectedPoint.otherPrice > 0) {
-    return { total: selectedPoint.otherPrice, advance: Math.min(baseAdvance, selectedPoint.otherPrice) };
+  if (city === 'Other') {
+    const total = selectedPoint?.otherPrice && selectedPoint.otherPrice > 0
+      ? selectedPoint.otherPrice
+      : (meetingPointId === 'own_transport'
+        ? (event.pickupPoints?.find(p => p.id === 'own_transport')?.ownTransportPrice ?? baseTotal)
+        : baseTotal);
+    const desiredAdvance = selectedPoint?.otherAdvance && selectedPoint.otherAdvance > 0
+      ? selectedPoint.otherAdvance
+      : baseAdvance;
+    return { total, advance: Math.min(desiredAdvance, total) };
   }
   if (meetingPointId !== 'own_transport') {
     return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
