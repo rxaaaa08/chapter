@@ -824,7 +824,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('Full Price (₹)', 'price_full', 'number')}
           {field('Advance Amount (₹)', 'price_advance', 'number')}
           {field('Booking URL', 'booking_url')}
-          {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
+          {field('CTA Text (e.g. Book Now)', 'cta_label')}
           <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
         </div>
       </CollapsibleSection>
