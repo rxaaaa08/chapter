@@ -297,10 +297,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {field('Booking URL', 'booking_url')}
         {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
         {field('Hero Image URL', 'hero_image')}
-        <div style={{ gridColumn: '1/-1' }}>
-          <label style={s.label}>Description</label>
-          <textarea style={s.textarea} value={trip.description} onChange={e => set('description', e.target.value)} />
-        </div>
       </div>
 
       {/* Dates */}
@@ -310,14 +306,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           <button style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addDate}>+ Add Date</button>
         </div>
         {dates.map((d, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
             <select style={s.input} value={d.status} onChange={e => setDate(i, 'status', e.target.value as TripDate['status'])}>
               <option value="available">Available</option>
               <option value="selling_out">Selling Out</option>
               <option value="sold_out">Sold Out</option>
             </select>
-            <input style={s.input} placeholder="Label (e.g. Beach weekend)" value={d.label} onChange={e => setDate(i, 'label', e.target.value)} />
             <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
