@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
+import AdminPanel from './AdminPanel';
 
 // Types
 type Message = {
@@ -511,6 +512,8 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+
+  if (path === '/admin') return <AdminPanel />;
   const isAboutPage = path === '/aboutus';
   const [showHomepage, setShowHomepage] = useState(isAboutPage);
 
