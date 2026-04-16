@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchEvents } from './supabase';
+import { fetchEvents, fetchChatMessages, fillMsg } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -316,11 +316,11 @@ const GENERAL_ANNOUNCEMENTS = [
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
+  const [msgs, setMsgs] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    fetchEvents().then((data) => {
-      if (data.length > 0) setEvents(data);
-    });
+    fetchEvents().then((data) => { if (data.length > 0) setEvents(data); });
+    fetchChatMessages().then((data) => { if (Object.keys(data).length > 0) setMsgs(data); });
   }, []);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -493,7 +493,7 @@ export default function App() {
       setMessages([{
         id: Date.now().toString(),
         sender: 'bot',
-        text: 'Welcome to chapter அ! 👋\nWhich city are you from buddy?'
+        text: fillMsg(msgs, 'welcome', {}, 'Welcome to chapter அ! 👋\nWhich city are you from buddy?')
       }]);
       setStep('ASK_CITY');
     }, 1000);
@@ -521,7 +521,7 @@ export default function App() {
     setSelectedCity(city);
     
     simulateBotTyping(() => {
-      addBotMessage(`Awesome! What would you like to attend in ${city}?`);
+      addBotMessage(fillMsg(msgs, 'ask_category', { city }, `Awesome! What would you like to attend in ${city}?`));
       setStep('ASK_CATEGORY');
     });
   };
@@ -534,10 +534,10 @@ export default function App() {
     simulateBotTyping(() => {
       const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === category);
       if (filteredEvents.length > 0) {
-        addBotMessage(`Here are the upcoming ${category} in ${selectedCity}. Which one are you interested in?`);
+        addBotMessage(fillMsg(msgs, 'select_event', { city: selectedCity, category }, `Here are the upcoming ${category} in ${selectedCity}. Which one are you interested in?`));
         setStep('SELECT_EVENT');
       } else {
-        addBotMessage(`Oops, looks like we don't have any ${category} scheduled in ${selectedCity} right now. Check back later!`);
+        addBotMessage(fillMsg(msgs, 'no_events', { city: selectedCity, category }, `Oops, looks like we don't have any ${category} scheduled in ${selectedCity} right now. Check back later!`));
         setStep('NO_EVENTS');
       }
     }, 1000);
@@ -580,10 +580,10 @@ export default function App() {
     
     simulateBotTyping(() => {
       if (action === 'book') {
-        addBotMessage(`Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`);
+        addBotMessage(fillMsg(msgs, 'ask_doubts_book', { title: selectedEvent?.title ?? '' }, `Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`));
         setStep('ASK_DOUBTS');
       } else {
-        addBotMessage(`Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`);
+        addBotMessage(fillMsg(msgs, 'ask_doubts_contact', { title: selectedEvent?.title ?? '' }, `Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`));
         setStep('SHOW_FAQ');
       }
     });
@@ -594,7 +594,7 @@ export default function App() {
     if (hasDoubts) {
       addUserMessage("Hold up, I have a question.");
       simulateBotTyping(() => {
-        addBotMessage("No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book.");
+        addBotMessage(fillMsg(msgs, 'show_faq', {}, "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book."));
         setStep('SHOW_FAQ');
       });
     } else {
@@ -615,7 +615,7 @@ export default function App() {
     simulateBotTyping(() => {
       addBotMessage(faq.answer);
       simulateBotTyping(() => {
-        addBotMessage("Hope that clears it up! Got anything else, or are we locking this in?");
+        addBotMessage(fillMsg(msgs, 'faq_followup', {}, "Hope that clears it up! Got anything else, or are we locking this in?"));
         setStep('SHOW_FAQ');
       }, 1000);
     }, 800);
@@ -635,7 +635,7 @@ export default function App() {
     addUserMessage(gender);
     
     simulateBotTyping(() => {
-      addBotMessage("Got it. And do you need transport from Chennai, or will you arrange your own transport?");
+      addBotMessage(fillMsg(msgs, 'ask_transport', {}, "Got it. And do you need transport from Chennai, or will you arrange your own transport?"));
       setStep('ASK_TRANSPORT');
     });
   };
@@ -646,7 +646,7 @@ export default function App() {
     addUserMessage(transport);
     
     simulateBotTyping(() => {
-      addBotMessage(`Perfect! I'll show you exactly what to select on KYN.`);
+      addBotMessage(fillMsg(msgs, 'kyn_ready', {}, "Perfect! I'll show you exactly what to select on KYN."));
       setStep('DONE');
       setShowKynPopup(true);
       setShowWaitlistForm(false);
@@ -663,7 +663,7 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(message);
     simulateBotTyping(() => {
-      addBotMessage(`Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`);
+      addBotMessage(fillMsg(msgs, 'contact_success', { name, phone }, `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
       setStep('DONE');
     }, 1000);
   };
@@ -824,7 +824,7 @@ export default function App() {
             <button onClick={() => {
               setStep('PROCESSING');
               simulateBotTyping(() => {
-                addBotMessage("Let's try again! Which city are you from?");
+                addBotMessage(fillMsg(msgs, 'retry_city', {}, "Let's try again! Which city are you from?"));
                 setStep('ASK_CITY');
               });
             }} className={`${btnClass} relative overflow-hidden`}>

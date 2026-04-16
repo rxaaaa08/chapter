@@ -57,6 +57,33 @@ export function mapDbEventToEvent(row: any): any {
   };
 }
 
+// Fetches all bot messages as a key→template map
+// Template vars: {city}, {category}, {title}, {name}, {phone}
+export async function fetchChatMessages(): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('step_key, bot_message')
+    .order('sort_order', { ascending: true });
+
+  if (error) {
+    console.error('Supabase fetchChatMessages error:', error);
+    return {};
+  }
+
+  return Object.fromEntries((data ?? []).map((r: any) => [r.step_key, r.bot_message]));
+}
+
+// Fills {variable} placeholders in a message template
+export function fillMsg(
+  msgs: Record<string, string>,
+  key: string,
+  vars: Record<string, string> = {},
+  fallback = ''
+): string {
+  const template = msgs[key] ?? fallback;
+  return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
+}
+
 export async function fetchEvents(): Promise<any[]> {
   const { data, error } = await supabase
     .from('events')
