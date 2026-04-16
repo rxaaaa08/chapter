@@ -78,6 +78,7 @@ export default function AdminPanel() {
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [addingTrip, setAddingTrip] = useState(false);
   const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
+  const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -180,9 +181,30 @@ export default function AdminPanel() {
     showToast('Deleted.');
   };
 
-  const toggleActive = async (trip: Trip) => {
-    await supabase.from('events').update({ is_active: !trip.is_active }).eq('id', trip.id!);
-    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, is_active: !t.is_active } : t));
+  const setLiveState = async (trip: Trip, live: boolean) => {
+    await supabase.from('events').update({ is_active: live }).eq('id', trip.id!);
+    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, is_active: live } : t));
+  };
+  const handlePlanAction = async (trip: Trip, action: string) => {
+    if (!trip.id) return;
+    if (action === 'live') {
+      if (!trip.is_active) await setLiveState(trip, true);
+      showToast('Plan is live.');
+      return;
+    }
+    if (action === 'hide') {
+      if (trip.is_active) await setLiveState(trip, false);
+      showToast('Plan hidden.');
+      return;
+    }
+    if (action === 'preview') {
+      const previewUrl = trip.booking_url?.trim() || 'https://chaptera.in';
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (action === 'delete') {
+      await deleteTrip(trip.id, trip.title);
+    }
   };
   const updateTripInList = (tripId: string, updater: (t: Trip) => Trip) => {
     setTrips(prev => prev.map(t => (t.id === tripId ? updater(t) : t)));
@@ -385,12 +407,38 @@ export default function AdminPanel() {
                               <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                              <button onClick={() => toggleActive(trip)} title={trip.is_active ? 'Hide trip' : 'Show trip'}
-                                style={{ ...s.outlineBtn, color: trip.is_active ? '#16a34a' : '#aaa' }}>
-                                {trip.is_active ? 'Live' : 'Hidden'}
-                              </button>
                               <button style={s.outlineBtn} onClick={() => setEditingTrip({ ...trip })}>Edit</button>
-                              <button style={s.btn('#dc2626')} onClick={() => deleteTrip(trip.id!, trip.title)}>Delete</button>
+                              <div style={{ position: 'relative', minWidth: 118 }}>
+                                <select
+                                  value={planActionById[trip.id!] ?? ''}
+                                  onChange={async (e) => {
+                                    const action = e.target.value;
+                                    setPlanActionById(prev => ({ ...prev, [trip.id!]: action }));
+                                    await handlePlanAction(trip, action);
+                                    setPlanActionById(prev => ({ ...prev, [trip.id!]: '' }));
+                                  }}
+                                  style={{
+                                    ...s.input,
+                                    width: '100%',
+                                    padding: '8px 30px 8px 10px',
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    borderRadius: 8,
+                                    color: trip.is_active ? '#16a34a' : '#777',
+                                    appearance: 'none',
+                                    WebkitAppearance: 'none',
+                                    MozAppearance: 'none',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <option value="" disabled>{trip.is_active ? 'Live' : 'Hidden'}</option>
+                                  <option value="live">Live</option>
+                                  <option value="hide">Hide</option>
+                                  <option value="preview">Preview</option>
+                                  <option value="delete">Delete</option>
+                                </select>
+                                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
+                              </div>
                             </div>
                           </div>
                         )}
