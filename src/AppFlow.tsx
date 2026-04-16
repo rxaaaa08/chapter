@@ -57,6 +57,7 @@ interface Event {
     description: string;
     schedule?: { time: string; activity: string }[];
   }[];
+  showAccommodation?: boolean;
   accommodation: {
     name: string;
     images: string[];
@@ -2117,7 +2118,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         </div>
 
         {/* Where We Stay */}
-        {!event.isActivity && (
+        {event.showAccommodation && (
           <div className="p-6 border-b border-gray-100">
             <h3 className="text-xl font-black mb-4">Where We Stay</h3>
             <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">

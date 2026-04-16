@@ -24,6 +24,8 @@ type Trip = {
   pickup_points?: PickupPoint[];
   event_media?: EventMedia[];
   event_dates?: TripDate[];
+  show_accommodation: boolean;
+  accommodation?: { name: string; images: string[]; features: string[]; policy: string };
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 
@@ -198,7 +200,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, event_dates: [], event_media: [{url:'',caption:''},{url:'',caption:''},{url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',caption:''},{url:'',caption:''},{url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -275,6 +277,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
   const dates = trip.event_dates ?? [];
   const pickups = trip.pickup_points ?? [];
+  const acc = trip.accommodation ?? { name: '', images: ['','',''], features: ['','',''], policy: '' };
+  const accImages: string[] = [0,1,2].map(i => acc.images?.[i] ?? '');
+  const accFeatures: string[] = [0,1,2].map(i => acc.features?.[i] ?? '');
+  const setAcc = (patch: Partial<typeof acc>) => onChange({ ...trip, accommodation: { ...acc, ...patch } });
+  const setAccImage = (i: number, val: string) => { const imgs = [...accImages]; imgs[i] = val; setAcc({ images: imgs.filter(Boolean) }); };
+  const setAccFeature = (i: number, val: string) => { const feats = [...accFeatures]; feats[i] = val; setAcc({ features: feats }); };
+
   // Always show exactly 3 video slots
   const rawMedia = trip.event_media ?? [];
   const videos: EventMedia[] = [0,1,2].map(i => rawMedia[i] ?? { url: '', caption: '' });
@@ -366,6 +375,43 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <button onClick={() => removePickup(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
+      </div>
+
+      {/* Where We Stay */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Where We Stay Section</label>
+          <button
+            onClick={() => set('show_accommodation', !trip.show_accommodation)}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: trip.show_accommodation ? '#16a34a' : '#ddd', color: trip.show_accommodation ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          >
+            {trip.show_accommodation ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        {trip.show_accommodation && (
+          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px' }}>
+            <div style={{ marginBottom: 10 }}>
+              <label style={s.label}>Stay Name</label>
+              <input style={s.input} placeholder="e.g. White Town Courtyard Stay" value={acc.name} onChange={e => setAcc({ name: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={s.label}>Images (up to 3 URLs)</label>
+              {[0,1,2].map(i => (
+                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Image URL ${i+1}`} value={accImages[i]} onChange={e => setAccImage(i, e.target.value)} />
+              ))}
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={s.label}>Bullet Points (3)</label>
+              {[0,1,2].map(i => (
+                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Feature ${i+1}`} value={accFeatures[i]} onChange={e => setAccFeature(i, e.target.value)} />
+              ))}
+            </div>
+            <div>
+              <label style={s.label}>Rooming Policy</label>
+              <input style={s.input} placeholder="e.g. Rooms are same-gender" value={acc.policy} onChange={e => setAcc({ policy: e.target.value })} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Videos */}

@@ -43,6 +43,7 @@ export function mapDbEventToEvent(row: any): any {
       : [],
     transportPlan: row.transport_plan ?? [],
     itinerary: row.itinerary ?? [],
+    showAccommodation: row.show_accommodation ?? false,
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },
     dates: (row.event_dates ?? []).map((d: any) => ({
       date: d.start_date,
