@@ -7,6 +7,7 @@ const ADMIN_PASSWORD = 'chaptera2025';
 type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string };
 type PickupPoint = { id: string; label: string; meetingSpot: string; time: string; transport: string };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
+type EventReview = { id?: string; name: string; rating: number; review_text: string; images?: string[] };
 type ItineraryScheduleItem = { time: string; activity: string };
 type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
 type Trip = {
@@ -28,6 +29,7 @@ type Trip = {
   is_active: boolean;
   pickup_points?: PickupPoint[];
   event_media?: EventMedia[];
+  event_reviews?: EventReview[];
   event_dates?: TripDate[];
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
@@ -74,7 +76,7 @@ export default function AdminPanel() {
     if (!authed) return;
     setLoading(true);
     Promise.all([
-      supabase.from('events').select('*, event_dates(*), event_media(*)').order('created_at', { ascending: true }),
+      supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
     ]).then(([evRes, msgRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
@@ -86,7 +88,7 @@ export default function AdminPanel() {
   // ─── SAVE TRIP ──────────────────────────────────────────────────────────────
   const saveTrip = async (trip: Trip) => {
     setSaving(trip.id ?? 'new');
-    const { event_dates, event_media, id, ...fields } = trip;
+    const { event_dates, event_media, event_reviews, id, ...fields } = trip;
 
     let eventId = id;
     if (id) {
@@ -122,8 +124,25 @@ export default function AdminPanel() {
       }
     }
 
+    if (eventId && event_reviews) {
+      await supabase.from('event_reviews').delete().eq('event_id', eventId);
+      const validReviews = event_reviews.filter(r => r.name.trim() && r.review_text.trim());
+      if (validReviews.length > 0) {
+        await supabase.from('event_reviews').insert(
+          validReviews.map((r, i) => ({
+            event_id: eventId,
+            name: r.name.trim(),
+            rating: Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5))),
+            review_text: r.review_text.trim(),
+            images: Array.isArray(r.images) ? r.images : [],
+            sort_order: i
+          }))
+        );
+      }
+    }
+
     // Refresh
-    const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*)').order('created_at', { ascending: true });
+    const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*)').order('created_at', { ascending: true });
     if (data) setTrips(data as Trip[]);
     setSaving(null);
     setEditingTrip(null);
@@ -213,7 +232,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -362,6 +381,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     const schedule = day.schedule ?? [];
     updateItineraryDay(dayIndex, { schedule: schedule.filter((_, i) => i !== itemIndex) });
   };
+  const reviews = trip.event_reviews ?? [];
+  const addReview = () => onChange({ ...trip, event_reviews: [...reviews, { name: '', rating: 5, review_text: '', images: [] }] });
+  const updateReview = (index: number, patch: Partial<EventReview>) => {
+    const updated = reviews.map((r, i) => i === index ? { ...r, ...patch } : r);
+    onChange({ ...trip, event_reviews: updated });
+  };
+  const removeReview = (index: number) => onChange({ ...trip, event_reviews: reviews.filter((_, i) => i !== index) });
 
   const field = (label: string, key: keyof Trip, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
@@ -576,6 +602,48 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <input style={s.input} placeholder={`Vimeo URL ${i + 1} (e.g. https://vimeo.com/123456789)`} value={v.url} onChange={e => setVideo(i, 'url', e.target.value)} />
             <input style={s.input} placeholder="Thumbnail Image URL" value={v.thumbnail_url ?? ''} onChange={e => setVideo(i, 'thumbnail_url', e.target.value)} />
             <input style={s.input} placeholder="Caption" value={v.caption} onChange={e => setVideo(i, 'caption', e.target.value)} />
+          </div>
+        ))}
+      </div>
+
+      {/* Reviews */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Google Reviews Cards</label>
+          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addReview}>
+            + Add Review
+          </button>
+        </div>
+        {reviews.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
+        {reviews.map((review, i) => (
+          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <input
+                style={s.input}
+                placeholder="Reviewer name"
+                value={review.name}
+                onChange={e => updateReview(i, { name: e.target.value })}
+              />
+              <input
+                type="number"
+                min={1}
+                max={5}
+                step={1}
+                style={s.input}
+                placeholder="Rating (1-5)"
+                value={review.rating ?? 5}
+                onChange={e => updateReview(i, { rating: Number(e.target.value) })}
+              />
+              <button type="button" onClick={() => removeReview(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
+                ×
+              </button>
+            </div>
+            <textarea
+              style={s.textarea}
+              placeholder="Review text"
+              value={review.review_text}
+              onChange={e => updateReview(i, { review_text: e.target.value })}
+            />
           </div>
         ))}
       </div>
