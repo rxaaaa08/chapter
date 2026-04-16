@@ -660,7 +660,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 14 }}>Logistics</div>
 
       <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`}>
-        {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>No dates added yet.</div>}
+        {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
@@ -672,6 +672,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
+        <button type="button" onClick={addDate} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Date</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="Where We Stay" badge={trip.show_accommodation ? 'ON' : 'OFF'} badgeColor={trip.show_accommodation ? '#16a34a' : undefined}>
@@ -705,7 +706,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       </CollapsibleSection>
 
       <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`}>
-        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No transport pickup points added.</div>}
+        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No transport pickup points added.</div>}
         {regularPickups.map((p) => (
           <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -741,6 +742,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
+        <button type="button" onClick={addPickup} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Pickup Point</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="Own Transport Option" badge={ownTransport ? 'ON' : 'OFF'} badgeColor={ownTransport ? '#16a34a' : undefined}>
@@ -804,7 +806,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 10 }}>Content</div>
 
       <CollapsibleSection title="Header Announcements">
-        {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No announcements yet.</div>}
+        {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No announcements yet.</div>}
         {(trip.announcements ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input style={s.input} placeholder="e.g. Weekend Escape bookings are live" value={item}
@@ -813,10 +815,11 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
+        <button type="button" onClick={() => onChange({ ...trip, announcements: [...(trip.announcements ?? []), ''] })} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="You'll Experience (Itinerary)">
-        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
+        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No itinerary days yet.</div>}
         {itinerary.map((day, dayIndex) => (
           <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -841,36 +844,40 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
           </div>
         ))}
+        <button type="button" onClick={addItineraryDay} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Day</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="What's Included">
-        {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>}
         {(trip.included ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input style={s.input} placeholder="e.g. Round-trip transport" value={item} onChange={e => updateStringListItem('included', i, e.target.value)} />
             <button type="button" onClick={() => removeStringListItem('included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
+        <button type="button" onClick={() => addStringListItem('included')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="Optional Activities">
-        {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>}
         {(trip.optional_activities ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input style={s.input} placeholder="e.g. Sunrise walk" value={item} onChange={e => updateStringListItem('optional_activities', i, e.target.value)} />
             <button type="button" onClick={() => removeStringListItem('optional_activities', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
+        <button type="button" onClick={() => addStringListItem('optional_activities')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
       </CollapsibleSection>
 
       <CollapsibleSection title="What's Not Included">
-        {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>}
         {(trip.not_included ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input style={s.input} placeholder="e.g. Lunch" value={item} onChange={e => updateStringListItem('not_included', i, e.target.value)} />
             <button type="button" onClick={() => removeStringListItem('not_included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
+        <button type="button" onClick={() => addStringListItem('not_included')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
       </CollapsibleSection>
 
       <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
