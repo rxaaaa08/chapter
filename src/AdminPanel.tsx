@@ -555,13 +555,12 @@ export default function AdminPanel() {
                       return (
                         <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                            {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 8 }} />}
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                              <div style={{ color: '#777', fontSize: 12 }}>{trip.category} · {trip.timing}</div>
+                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
                             <button
-                              style={s.btn(saving === trip.id ? '#aaa' : '#111')}
+                              style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
                               disabled={saving === trip.id}
                               onClick={async () => {
                                 if (!trip.id) return;
