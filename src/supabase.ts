@@ -65,6 +65,7 @@ export function mapDbEventToEvent(row: any): any {
       rating: r.rating,
       text: r.review_text,
       dateLabel: r.date_label ?? '',
+      reviewCount: Number(r.review_count ?? 0) || undefined,
       images: Array.isArray(r.images) ? r.images : (r.images ?? []),
     })),
     faqs: (row.faqs ?? []).map((f: any) => ({

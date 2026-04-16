@@ -18,7 +18,7 @@ type PickupPoint = {
   otherAdvance?: number;
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
-type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; images?: string[] };
+type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; review_count?: number; images?: string[] };
 type ItineraryScheduleItem = { time: string; activity: string };
 type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
 type Trip = {
@@ -66,7 +66,7 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'other' | 'messages'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'other' | 'messages'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
@@ -154,6 +154,7 @@ export default function AdminPanel() {
             rating: Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5))),
             review_text: r.review_text.trim(),
             date_label: r.date_label?.trim() ?? '',
+            review_count: Number(r.review_count ?? 0) || null,
             images: Array.isArray(r.images) ? r.images : [],
           }))
         );
@@ -179,6 +180,9 @@ export default function AdminPanel() {
   const toggleActive = async (trip: Trip) => {
     await supabase.from('events').update({ is_active: !trip.is_active }).eq('id', trip.id!);
     setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, is_active: !t.is_active } : t));
+  };
+  const updateTripInList = (tripId: string, updater: (t: Trip) => Trip) => {
+    setTrips(prev => prev.map(t => (t.id === tripId ? updater(t) : t)));
   };
 
   // ─── SAVE MESSAGE ────────────────────────────────────────────────────────────
@@ -266,6 +270,7 @@ export default function AdminPanel() {
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Trips</button>
+        <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media & Reviews</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other City</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Bot Messages</button>
       </div>
@@ -316,6 +321,144 @@ export default function AdminPanel() {
                 <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => { setAddingTrip(false); setEditingTrip(null); }} saving={saving === 'new'} s={s} />
               </div>
             )}
+          </>
+        )}
+
+        {/* ── MEDIA TAB ─────────────────────────────────────────────────────── */}
+        {!loading && tab === 'media' && (
+          <>
+            <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Media & Google Reviews</div>
+            <div style={{ color: '#888', fontSize: 14, marginBottom: 18 }}>
+              Fast-edit video carousel (video URL + thumbnail) and review cards for multiple trips/events.
+            </div>
+            {trips.map(trip => {
+              const media = trip.event_media ?? [];
+              const videos: EventMedia[] = [0, 1, 2].map(i => media[i] ?? { url: '', thumbnail_url: '', caption: '' });
+              const reviews = trip.event_reviews ?? [];
+              return (
+                <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                    {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 8 }} />}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
+                      <div style={{ color: '#777', fontSize: 12 }}>{trip.category} · {trip.timing}</div>
+                    </div>
+                    <button style={s.btn(saving === trip.id ? '#aaa' : '#111')} disabled={saving === trip.id} onClick={() => saveTrip(trip)}>
+                      {saving === trip.id ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Videos (Carousel)</label>
+                    {videos.map((v, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                        <input
+                          style={s.input}
+                          placeholder={`Vimeo URL ${i + 1}`}
+                          value={v.url}
+                          onChange={e => {
+                            const updated = videos.map((x, idx) => idx === i ? { ...x, url: e.target.value } : x);
+                            updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
+                          }}
+                        />
+                        <input
+                          style={s.input}
+                          placeholder="Thumbnail URL"
+                          value={v.thumbnail_url ?? ''}
+                          onChange={e => {
+                            const updated = videos.map((x, idx) => idx === i ? { ...x, thumbnail_url: e.target.value } : x);
+                            updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <label style={{ ...s.label, marginBottom: 0 }}>Google Reviews</label>
+                      <button
+                        type="button"
+                        style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                        onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), { name: '', rating: 5, review_text: '', review_count: 0, date_label: '' }] }))}
+                      >
+                        + Add Review
+                      </button>
+                    </div>
+                    {(reviews ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
+                    {reviews.map((review, i) => (
+                      <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                          <input
+                            style={s.input}
+                            placeholder="Reviewer name"
+                            value={review.name}
+                            onChange={e => updateTripInList(trip.id!, t => {
+                              const next = [...(t.event_reviews ?? [])];
+                              next[i] = { ...next[i], name: e.target.value };
+                              return { ...t, event_reviews: next };
+                            })}
+                          />
+                          <select
+                            style={s.input}
+                            value={review.rating ?? 5}
+                            onChange={e => updateTripInList(trip.id!, t => {
+                              const next = [...(t.event_reviews ?? [])];
+                              next[i] = { ...next[i], rating: Number(e.target.value) };
+                              return { ...t, event_reviews: next };
+                            })}
+                          >
+                            {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
+                          </select>
+                          <input
+                            type="number"
+                            min={0}
+                            style={s.input}
+                            placeholder="13"
+                            value={review.review_count ?? 0}
+                            onChange={e => updateTripInList(trip.id!, t => {
+                              const next = [...(t.event_reviews ?? [])];
+                              next[i] = { ...next[i], review_count: Number(e.target.value) || 0 };
+                              return { ...t, event_reviews: next };
+                            })}
+                          />
+                          <input
+                            style={s.input}
+                            placeholder="e.g. 1 week ago"
+                            value={review.date_label ?? ''}
+                            onChange={e => updateTripInList(trip.id!, t => {
+                              const next = [...(t.event_reviews ?? [])];
+                              next[i] = { ...next[i], date_label: e.target.value };
+                              return { ...t, event_reviews: next };
+                            })}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateTripInList(trip.id!, t => {
+                              const next = [...(t.event_reviews ?? [])].filter((_, idx) => idx !== i);
+                              return { ...t, event_reviews: next };
+                            })}
+                            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <textarea
+                          style={s.textarea}
+                          placeholder="Review text"
+                          value={review.review_text}
+                          onChange={e => updateTripInList(trip.id!, t => {
+                            const next = [...(t.event_reviews ?? [])];
+                            next[i] = { ...next[i], review_text: e.target.value };
+                            return { ...t, event_reviews: next };
+                          })}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </>
         )}
 
@@ -884,7 +1027,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {reviews.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
         {reviews.map((review, i) => (
           <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
               <input
                 style={s.input}
                 placeholder="Reviewer name"
@@ -898,6 +1041,14 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               >
                 {[5,4,3,2,1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
               </select>
+              <input
+                type="number"
+                min={0}
+                style={s.input}
+                placeholder="13"
+                value={review.review_count ?? 0}
+                onChange={e => updateReview(i, { review_count: Number(e.target.value) || 0 })}
+              />
               <input
                 style={s.input}
                 placeholder="e.g. 2 months ago"

@@ -77,7 +77,7 @@ interface Event {
   };
   optionalActivities?: string[];
   videos: { thumbnail: string; url?: string; caption: string }[];
-  reviews: { name: string; rating: number; text: string; dateLabel?: string; images: string[] }[];
+  reviews: { name: string; rating: number; text: string; dateLabel?: string; reviewCount?: number; images: string[] }[];
   dates: TripDate[];
   faqs: FAQ[];
   bookingUrl: string;
@@ -2292,7 +2292,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                       </div>
                       <div className="flex flex-col">
                         <span className="font-semibold text-sm text-gray-900">{review.name}</span>
-                        <span className="text-xs text-gray-500">Local Guide · {review.name.length * 2 + 5} reviews</span>
+                        <span className="text-xs text-gray-500">Local Guide · {review.reviewCount ?? (review.name.length * 2 + 5)} reviews</span>
                       </div>
                       {/* Google G Logo SVG */}
                       <div className="ml-auto opacity-70">
