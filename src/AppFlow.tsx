@@ -721,7 +721,9 @@ export default function App() {
       message,
       eventId: selectedEvent?.id ?? '',
       eventTitle: selectedEvent?.title ?? '',
+      eventCategory: selectedEvent?.category ?? selectedCategory ?? '',
       city: selectedCity ?? '',
+      selectedDate: bookingDate || journeyCardData?.startDate || selectedEvent?.dates?.[0]?.date || '',
       submittedAt: new Date().toISOString(),
       source: 'chaptera_doubt_form',
     };
