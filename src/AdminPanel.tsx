@@ -53,22 +53,6 @@ export default function AdminPanel() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-  // Override global height/overflow constraints from index.css
-  useEffect(() => {
-    const root = document.getElementById('root');
-    document.body.style.overflow = 'auto';
-    document.body.style.height = 'auto';
-    document.documentElement.style.overflow = 'auto';
-    document.documentElement.style.height = 'auto';
-    if (root) { root.style.height = 'auto'; root.style.overflow = 'visible'; }
-    return () => {
-      document.body.style.overflow = '';
-      document.body.style.height = '';
-      document.documentElement.style.overflow = '';
-      document.documentElement.style.height = '';
-      if (root) { root.style.height = ''; root.style.overflow = ''; }
-    };
-  }, []);
 
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }

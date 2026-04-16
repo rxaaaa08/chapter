@@ -525,9 +525,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (typeof document === 'undefined' || isAdmin) return;
-    document.body.style.overflow = showHomepage ? 'auto' : 'hidden';
-    document.documentElement.style.overflow = showHomepage ? 'auto' : 'hidden';
+    if (typeof document === 'undefined' || isAdmin || showHomepage) return;
+    // AppFlow is a fixed-height mobile UI — lock body scroll so only internal containers scroll
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
