@@ -1000,18 +1000,10 @@ export default function App() {
                 className="absolute inset-0 z-50 flex items-center justify-center px-5"
               >
                 <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
-                  <div className="px-6 pt-6 pb-4 flex items-center justify-between">
-                    <div className="flex-1">
+                  <div className="px-6 pt-6 pb-4 flex items-center justify-center">
+                    <div className="flex-1 text-center">
                       <h2 className="text-lg font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
                     </div>
-                    {!selectedEvent.inviteOnly && (
-                      <button
-                        onClick={() => setShowBookingTimeline(false)}
-                        className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center mt-1 flex-shrink-0"
-                      >
-                        <X size={16} className="text-gray-600" />
-                      </button>
-                    )}
                   </div>
 
                   <div className="px-6 pb-6">
