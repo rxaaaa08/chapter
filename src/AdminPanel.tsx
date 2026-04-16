@@ -1005,66 +1005,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         )}
       </div>
 
-      {/* Videos */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Vimeo Videos (up to 3)</label>
-        {videos.map((v, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-            <input style={s.input} placeholder={`Vimeo URL ${i + 1} (e.g. https://vimeo.com/123456789)`} value={v.url} onChange={e => setVideo(i, 'url', e.target.value)} />
-            <input style={s.input} placeholder="Thumbnail Image URL" value={v.thumbnail_url ?? ''} onChange={e => setVideo(i, 'thumbnail_url', e.target.value)} />
-          </div>
-        ))}
-      </div>
-
-      {/* Reviews */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Google Reviews Cards</label>
-          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addReview}>
-            + Add Review
-          </button>
-        </div>
-        {reviews.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
-        {reviews.map((review, i) => (
-          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <input
-                style={s.input}
-                placeholder="Reviewer name"
-                value={review.name}
-                onChange={e => updateReview(i, { name: e.target.value })}
-              />
-              <select
-                style={s.input}
-                value={review.rating ?? 5}
-                onChange={e => updateReview(i, { rating: Number(e.target.value) })}
-              >
-                {[5,4,3,2,1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
-              </select>
-              <input
-                type="number"
-                min={0}
-                style={s.input}
-                placeholder="13"
-                value={review.review_count ?? 0}
-                onChange={e => updateReview(i, { review_count: Number(e.target.value) || 0 })}
-              />
-              <input
-                style={s.input}
-                placeholder="e.g. 2 months ago"
-                value={review.date_label ?? ''}
-                onChange={e => updateReview(i, { date_label: e.target.value })}
-              />
-              <button type="button" onClick={() => removeReview(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-            </div>
-            <textarea
-              style={s.textarea}
-              placeholder="Review text"
-              value={review.review_text}
-              onChange={e => updateReview(i, { review_text: e.target.value })}
-            />
-          </div>
-        ))}
+      <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
+        💡 Videos and Google Reviews are managed in the <strong>Media & Reviews</strong> tab above.
       </div>
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
