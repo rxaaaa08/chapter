@@ -77,6 +77,7 @@ export default function AdminPanel() {
   const [saving, setSaving] = useState<string | null>(null);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [addingTrip, setAddingTrip] = useState(false);
+  const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -284,7 +285,31 @@ export default function AdminPanel() {
         {!loading && tab === 'trips' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
+                {(() => {
+                  const allCities = Array.from(new Set(trips.flatMap(t => t.cities ?? []).filter(Boolean)));
+                  const middleCities = allCities
+                    .filter(c => {
+                      const lc = c.toLowerCase();
+                      return lc !== 'chennai' && lc !== 'other';
+                    })
+                    .sort((a, b) => a.localeCompare(b));
+                  const orderedCities = ['Chennai', ...middleCities, 'Other'].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
+                  return (
+                    <select
+                      value={plansCityFilter}
+                      onChange={e => setPlansCityFilter(e.target.value)}
+                      style={{ ...s.input, width: 180, padding: '8px 10px', fontSize: 13 }}
+                    >
+                      <option value="all">All Cities</option>
+                      {orderedCities.map(city => (
+                        <option key={city} value={city}>{city === 'Other' ? 'Other City' : city}</option>
+                      ))}
+                    </select>
+                  );
+                })()}
+              </div>
               <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
@@ -303,8 +328,11 @@ export default function AdminPanel() {
                 if (dateDiff !== 0) return dateDiff;
                 return a.title.localeCompare(b.title);
               });
+              const filteredTrips = plansCityFilter === 'all'
+                ? trips
+                : trips.filter(plan => (plan.cities ?? []).includes(plansCityFilter));
               const grouped = new Map<string, Trip[]>();
-              trips.forEach((plan) => {
+              filteredTrips.forEach((plan) => {
                 const rawCategory = (plan.category || '').trim();
                 const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
                 if (!grouped.has(key)) grouped.set(key, []);
