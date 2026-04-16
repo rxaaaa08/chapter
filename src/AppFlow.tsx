@@ -2616,7 +2616,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                                     animate={{ x: ['-100%', '300%'] }}
                                     transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
                                   />
-                                  Book Now
+                                  {event.ctaLabel || 'Book Now'}
                                   <ArrowRight size={16} strokeWidth={3.0} />
                                 </button>
                               </div>
