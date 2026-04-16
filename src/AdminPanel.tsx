@@ -78,10 +78,26 @@ export default function AdminPanel() {
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [addingTrip, setAddingTrip] = useState(false);
   const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
+  const [mediaCityFilter, setMediaCityFilter] = useState<'all' | string>('all');
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const allCities = [
+    ...new Set(
+      trips.flatMap((t): string[] =>
+        (t.cities ?? []).filter((city): city is string => typeof city === 'string' && city.trim().length > 0)
+      )
+    )
+  ] as string[];
+  const middleCities = allCities
+    .filter(c => {
+      const lc = c.toLowerCase();
+      return lc !== 'chennai' && lc !== 'other';
+    })
+    .sort((a, b) => a.localeCompare(b));
+  const orderedCities = ['Chennai', ...middleCities].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
 
 
   const login = () => {
@@ -317,45 +333,33 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                {(() => {
-                  const allCities = Array.from(new Set(trips.flatMap(t => t.cities ?? []).filter(Boolean)));
-                  const middleCities = allCities
-                    .filter(c => {
-                      const lc = c.toLowerCase();
-                      return lc !== 'chennai' && lc !== 'other';
-                    })
-                    .sort((a, b) => a.localeCompare(b));
-                  const orderedCities = ['Chennai', ...middleCities].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
-                  return (
-                    <div style={{ position: 'relative', minWidth: 190 }}>
-                      <select
-                        value={plansCityFilter}
-                        onChange={e => setPlansCityFilter(e.target.value)}
-                        style={{
-                          ...s.input,
-                          width: '100%',
-                          padding: '9px 34px 9px 12px',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          borderRadius: 999,
-                          border: '1.5px solid #d7d7d7',
-                          background: '#fff',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                          appearance: 'none',
-                          WebkitAppearance: 'none',
-                          MozAppearance: 'none',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <option value="all">All Cities</option>
-                        {orderedCities.map(city => (
-                          <option key={city} value={city}>{city === 'Other' ? 'Other City' : city}</option>
-                        ))}
-                      </select>
-                      <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
-                    </div>
-                  );
-                })()}
+                <div style={{ position: 'relative', minWidth: 190 }}>
+                  <select
+                    value={plansCityFilter}
+                    onChange={e => setPlansCityFilter(e.target.value)}
+                    style={{
+                      ...s.input,
+                      width: '100%',
+                      padding: '9px 34px 9px 12px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      borderRadius: 999,
+                      border: '1.5px solid #d7d7d7',
+                      background: '#fff',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="all">All Cities</option>
+                    {orderedCities.map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+                </div>
               </div>
               <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
@@ -470,138 +474,214 @@ export default function AdminPanel() {
         {/* ── MEDIA TAB ─────────────────────────────────────────────────────── */}
         {!loading && tab === 'media' && (
           <>
-            <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Media & Google Reviews</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontWeight: 700, fontSize: 20 }}>Media & Google Reviews</div>
+              <div style={{ position: 'relative', minWidth: 190 }}>
+                <select
+                  value={mediaCityFilter}
+                  onChange={e => setMediaCityFilter(e.target.value)}
+                  style={{
+                    ...s.input,
+                    width: '100%',
+                    padding: '9px 34px 9px 12px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 999,
+                    border: '1.5px solid #d7d7d7',
+                    background: '#fff',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="all">All Cities</option>
+                  {orderedCities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+              </div>
+            </div>
             <div style={{ color: '#888', fontSize: 14, marginBottom: 18 }}>
               Fast-edit video carousel (video URL + thumbnail) and review cards for multiple trips/events.
             </div>
-            {trips.map(trip => {
-              const media = trip.event_media ?? [];
-              const videos: EventMedia[] = [0, 1, 2].map(i => media[i] ?? { url: '', thumbnail_url: '', caption: '' });
-              const reviews = trip.event_reviews ?? [];
-              return (
-                <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                    {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 8 }} />}
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                      <div style={{ color: '#777', fontSize: 12 }}>{trip.category} · {trip.timing}</div>
-                    </div>
-                    <button style={s.btn(saving === trip.id ? '#aaa' : '#111')} disabled={saving === trip.id} onClick={() => saveTrip(trip)}>
-                      {saving === trip.id ? 'Saving…' : 'Save'}
-                    </button>
-                  </div>
+            {(() => {
+              const getNearestDateTs = (trip: Trip) => {
+                const dates = (trip.event_dates ?? [])
+                  .map(d => new Date(`${d.start_date}T00:00:00`).getTime())
+                  .filter(ts => !Number.isNaN(ts));
+                return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
+              };
+              const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
+                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
+                if (dateDiff !== 0) return dateDiff;
+                return a.title.localeCompare(b.title);
+              });
+              const filteredTrips = mediaCityFilter === 'all'
+                ? trips
+                : trips.filter(plan => (plan.cities ?? []).includes(mediaCityFilter));
+              const grouped = new Map<string, Trip[]>();
+              filteredTrips.forEach((plan) => {
+                const rawCategory = (plan.category || '').trim();
+                const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(plan);
+              });
 
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Videos (Carousel)</label>
-                    {videos.map((v, i) => (
-                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                        <input
-                          style={s.input}
-                          placeholder={`Vimeo URL ${i + 1}`}
-                          value={v.url}
-                          onChange={e => {
-                            const updated = videos.map((x, idx) => idx === i ? { ...x, url: e.target.value } : x);
-                            updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
-                          }}
-                        />
-                        <input
-                          style={s.input}
-                          placeholder="Thumbnail URL"
-                          value={v.thumbnail_url ?? ''}
-                          onChange={e => {
-                            const updated = videos.map((x, idx) => idx === i ? { ...x, thumbnail_url: e.target.value } : x);
-                            updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
+              const preferredOrder = ['events', 'trips'];
+              const categoryKeys = Array.from(grouped.keys());
+              const orderedKeys = [
+                ...preferredOrder.filter(k => categoryKeys.includes(k)),
+                ...categoryKeys
+                  .filter(k => !preferredOrder.includes(k))
+                  .sort((a, b) => a.localeCompare(b)),
+              ];
 
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <label style={{ ...s.label, marginBottom: 0 }}>Google Reviews</label>
-                      <button
-                        type="button"
-                        style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
-                        onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), { name: '', rating: 5, review_text: '', review_count: 0, date_label: '' }] }))}
-                      >
-                        + Add Review
-                      </button>
-                    </div>
-                    {(reviews ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
-                    {reviews.map((review, i) => (
-                      <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                          <input
-                            style={s.input}
-                            placeholder="Reviewer name"
-                            value={review.name}
-                            onChange={e => updateTripInList(trip.id!, t => {
-                              const next = [...(t.event_reviews ?? [])];
-                              next[i] = { ...next[i], name: e.target.value };
-                              return { ...t, event_reviews: next };
-                            })}
-                          />
-                          <select
-                            style={s.input}
-                            value={review.rating ?? 5}
-                            onChange={e => updateTripInList(trip.id!, t => {
-                              const next = [...(t.event_reviews ?? [])];
-                              next[i] = { ...next[i], rating: Number(e.target.value) };
-                              return { ...t, event_reviews: next };
-                            })}
-                          >
-                            {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
-                          </select>
-                          <input
-                            type="number"
-                            min={0}
-                            style={s.input}
-                            placeholder="13"
-                            value={review.review_count ?? 0}
-                            onChange={e => updateTripInList(trip.id!, t => {
-                              const next = [...(t.event_reviews ?? [])];
-                              next[i] = { ...next[i], review_count: Number(e.target.value) || 0 };
-                              return { ...t, event_reviews: next };
-                            })}
-                          />
-                          <input
-                            style={s.input}
-                            placeholder="e.g. 1 week ago"
-                            value={review.date_label ?? ''}
-                            onChange={e => updateTripInList(trip.id!, t => {
-                              const next = [...(t.event_reviews ?? [])];
-                              next[i] = { ...next[i], date_label: e.target.value };
-                              return { ...t, event_reviews: next };
-                            })}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateTripInList(trip.id!, t => {
-                              const next = [...(t.event_reviews ?? [])].filter((_, idx) => idx !== i);
-                              return { ...t, event_reviews: next };
-                            })}
-                            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
-                          >
-                            ×
-                          </button>
+              const sections = orderedKeys.map((key) => {
+                const items = sortPlans(grouped.get(key) ?? []);
+                const displayTitle = items[0]?.category?.trim() || (key === 'uncategorized' ? 'Uncategorized' : key);
+                return { title: displayTitle, items };
+              });
+
+              return sections.map(section => (
+                section.items.length > 0 ? (
+                  <div key={section.title}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{section.title}</div>
+                    {section.items.map(trip => {
+                      const media = trip.event_media ?? [];
+                      const videos: EventMedia[] = [0, 1, 2].map(i => media[i] ?? { url: '', thumbnail_url: '', caption: '' });
+                      const reviews = trip.event_reviews ?? [];
+                      return (
+                        <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                            {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 8 }} />}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
+                              <div style={{ color: '#777', fontSize: 12 }}>{trip.category} · {trip.timing}</div>
+                            </div>
+                            <button style={s.btn(saving === trip.id ? '#aaa' : '#111')} disabled={saving === trip.id} onClick={() => saveTrip(trip)}>
+                              {saving === trip.id ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+
+                          <div style={{ marginBottom: 12 }}>
+                            <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Videos (Carousel)</label>
+                            {videos.map((v, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                                <input
+                                  style={s.input}
+                                  placeholder={`Vimeo URL ${i + 1}`}
+                                  value={v.url}
+                                  onChange={e => {
+                                    const updated = videos.map((x, idx) => idx === i ? { ...x, url: e.target.value } : x);
+                                    updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
+                                  }}
+                                />
+                                <input
+                                  style={s.input}
+                                  placeholder="Thumbnail URL"
+                                  value={v.thumbnail_url ?? ''}
+                                  onChange={e => {
+                                    const updated = videos.map((x, idx) => idx === i ? { ...x, thumbnail_url: e.target.value } : x);
+                                    updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                              <label style={{ ...s.label, marginBottom: 0 }}>Google Reviews</label>
+                              <button
+                                type="button"
+                                style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), { name: '', rating: 5, review_text: '', review_count: 0, date_label: '' }] }))}
+                              >
+                                + Add Review
+                              </button>
+                            </div>
+                            {(reviews ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
+                            {reviews.map((review, i) => (
+                              <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                                  <input
+                                    style={s.input}
+                                    placeholder="Reviewer name"
+                                    value={review.name}
+                                    onChange={e => updateTripInList(trip.id!, t => {
+                                      const next = [...(t.event_reviews ?? [])];
+                                      next[i] = { ...next[i], name: e.target.value };
+                                      return { ...t, event_reviews: next };
+                                    })}
+                                  />
+                                  <select
+                                    style={s.input}
+                                    value={review.rating ?? 5}
+                                    onChange={e => updateTripInList(trip.id!, t => {
+                                      const next = [...(t.event_reviews ?? [])];
+                                      next[i] = { ...next[i], rating: Number(e.target.value) };
+                                      return { ...t, event_reviews: next };
+                                    })}
+                                  >
+                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    style={s.input}
+                                    placeholder="13"
+                                    value={review.review_count ?? 0}
+                                    onChange={e => updateTripInList(trip.id!, t => {
+                                      const next = [...(t.event_reviews ?? [])];
+                                      next[i] = { ...next[i], review_count: Number(e.target.value) || 0 };
+                                      return { ...t, event_reviews: next };
+                                    })}
+                                  />
+                                  <input
+                                    style={s.input}
+                                    placeholder="e.g. 1 week ago"
+                                    value={review.date_label ?? ''}
+                                    onChange={e => updateTripInList(trip.id!, t => {
+                                      const next = [...(t.event_reviews ?? [])];
+                                      next[i] = { ...next[i], date_label: e.target.value };
+                                      return { ...t, event_reviews: next };
+                                    })}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => updateTripInList(trip.id!, t => {
+                                      const next = [...(t.event_reviews ?? [])].filter((_, idx) => idx !== i);
+                                      return { ...t, event_reviews: next };
+                                    })}
+                                    style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <textarea
+                                  style={s.textarea}
+                                  placeholder="Review text"
+                                  value={review.review_text}
+                                  onChange={e => updateTripInList(trip.id!, t => {
+                                    const next = [...(t.event_reviews ?? [])];
+                                    next[i] = { ...next[i], review_text: e.target.value };
+                                    return { ...t, event_reviews: next };
+                                  })}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <textarea
-                          style={s.textarea}
-                          placeholder="Review text"
-                          value={review.review_text}
-                          onChange={e => updateTripInList(trip.id!, t => {
-                            const next = [...(t.event_reviews ?? [])];
-                            next[i] = { ...next[i], review_text: e.target.value };
-                            return { ...t, event_reviews: next };
-                          })}
-                        />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                </div>
-              );
-            })}
+                ) : null
+              ));
+            })()}
           </>
         )}
 
