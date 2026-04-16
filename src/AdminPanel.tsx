@@ -647,30 +647,24 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
   return (
     <div>
-      {/* ── Core fields — always visible ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 6 }}>
-        <div style={{ gridColumn: '1/-1' }}>{field('Title', 'title')}</div>
-        {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
-        {field('Category', 'category')}
-        {field('Full Price (₹)', 'price_full', 'number')}
-        {field('Advance Amount (₹)', 'price_advance', 'number')}
-        {field('Booking URL', 'booking_url')}
-        {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
-        <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
-      </div>
+      {/* ── ESSENTIALS ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Essentials</div>
 
-      {/* ── LOGISTICS ── */}
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 4 }}>Logistics</div>
-
-      <CollapsibleSection title="Show In Other City Feed" badge={showInOther ? 'ON' : 'OFF'} badgeColor={showInOther ? '#16a34a' : undefined}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#555' }}>When ON, users selecting "Other" city can see this event.</span>
-          <button type="button" onClick={toggleShowInOther}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>
-            {showInOther ? 'ON' : 'OFF'}
-          </button>
+      <CollapsibleSection title="Basic Info" defaultOpen={true}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ gridColumn: '1/-1' }}>{field('Title', 'title')}</div>
+          {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
+          {field('Category', 'category')}
+          {field('Full Price (₹)', 'price_full', 'number')}
+          {field('Advance Amount (₹)', 'price_advance', 'number')}
+          {field('Booking URL', 'booking_url')}
+          {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
+          <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
         </div>
       </CollapsibleSection>
+
+      {/* ── LOGISTICS ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 14 }}>Logistics</div>
 
       <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`} action={addBtn(addDate)}>
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>No dates added yet.</div>}
@@ -683,6 +677,75 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <option value="sold_out">Sold Out</option>
             </select>
             <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Where We Stay" badge={trip.show_accommodation ? 'ON' : 'OFF'} badgeColor={trip.show_accommodation ? '#16a34a' : undefined}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: trip.show_accommodation ? 12 : 0 }}>
+          <span style={{ fontSize: 13, color: '#555' }}>Show "Where We Stay" section on the event page</span>
+          <button type="button" onClick={() => set('show_accommodation', !trip.show_accommodation)}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: trip.show_accommodation ? '#16a34a' : '#ddd', color: trip.show_accommodation ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            {trip.show_accommodation ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        {trip.show_accommodation && (
+          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px' }}>
+            <div style={{ marginBottom: 10 }}>
+              <label style={s.label}>Stay Name</label>
+              <input style={s.input} placeholder="e.g. White Town Courtyard Stay" value={acc.name} onChange={e => setAcc({ name: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={s.label}>Images (up to 3 URLs)</label>
+              {[0,1,2].map(i => (
+                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Image URL ${i+1}`} value={accImages[i]} onChange={e => setAccImage(i, e.target.value)} />
+              ))}
+            </div>
+            <div>
+              <label style={s.label}>Bullet Points (3)</label>
+              {[0,1,2].map(i => (
+                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Feature ${i+1}`} value={accFeatures[i]} onChange={e => setAccFeature(i, e.target.value)} />
+              ))}
+            </div>
+          </div>
+        )}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`} action={addBtn(addPickup)}>
+        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No transport pickup points added.</div>}
+        {regularPickups.map((p) => (
+          <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={s.label}>Dropdown Label</label>
+                <input style={s.input} placeholder="e.g. Koyambedu — 7:00 AM" value={p.label} onChange={e => setPickup(p._idx, 'label', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Meeting Spot</label>
+                <input style={s.input} placeholder="e.g. Koyambedu Bus Stand" value={p.meetingSpot} onChange={e => setPickup(p._idx, 'meetingSpot', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Pickup Time</label>
+                <input style={s.input} placeholder="e.g. 7:00 AM" value={p.time} onChange={e => setPickup(p._idx, 'time', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Transport</label>
+                <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(p._idx, 'transport', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Date Offset (days)</label>
+                <input type="number" style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Price (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={s.label}>Other City Advance (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
+              </div>
+            </div>
+            <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
       </CollapsibleSection>
@@ -734,73 +797,14 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`} action={addBtn(addPickup)}>
-        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No transport pickup points added.</div>}
-        {regularPickups.map((p) => (
-          <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <div>
-                <label style={s.label}>Dropdown Label</label>
-                <input style={s.input} placeholder="e.g. Koyambedu — 7:00 AM" value={p.label} onChange={e => setPickup(p._idx, 'label', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Meeting Spot</label>
-                <input style={s.input} placeholder="e.g. Koyambedu Bus Stand" value={p.meetingSpot} onChange={e => setPickup(p._idx, 'meetingSpot', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Pickup Time</label>
-                <input style={s.input} placeholder="e.g. 7:00 AM" value={p.time} onChange={e => setPickup(p._idx, 'time', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Transport</label>
-                <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(p._idx, 'transport', e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Date Offset (days)</label>
-                <input type="number" style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
-              </div>
-              <div>
-                <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
-              </div>
-              <div style={{ gridColumn: '1/-1' }}>
-                <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
-              </div>
-            </div>
-            <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
-          </div>
-        ))}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Where We Stay" badge={trip.show_accommodation ? 'ON' : 'OFF'} badgeColor={trip.show_accommodation ? '#16a34a' : undefined}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: trip.show_accommodation ? 12 : 0 }}>
-          <span style={{ fontSize: 13, color: '#555' }}>Show "Where We Stay" section on the event page</span>
-          <button type="button" onClick={() => set('show_accommodation', !trip.show_accommodation)}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: trip.show_accommodation ? '#16a34a' : '#ddd', color: trip.show_accommodation ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-            {trip.show_accommodation ? 'ON' : 'OFF'}
+      <CollapsibleSection title="Show In Other City Feed" badge={showInOther ? 'ON' : 'OFF'} badgeColor={showInOther ? '#16a34a' : undefined}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, color: '#555' }}>When ON, users selecting "Other" city can see this event.</span>
+          <button type="button" onClick={toggleShowInOther}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>
+            {showInOther ? 'ON' : 'OFF'}
           </button>
         </div>
-        {trip.show_accommodation && (
-          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px' }}>
-            <div style={{ marginBottom: 10 }}>
-              <label style={s.label}>Stay Name</label>
-              <input style={s.input} placeholder="e.g. White Town Courtyard Stay" value={acc.name} onChange={e => setAcc({ name: e.target.value })} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={s.label}>Images (up to 3 URLs)</label>
-              {[0,1,2].map(i => (
-                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Image URL ${i+1}`} value={accImages[i]} onChange={e => setAccImage(i, e.target.value)} />
-              ))}
-            </div>
-            <div>
-              <label style={s.label}>Bullet Points (3)</label>
-              {[0,1,2].map(i => (
-                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Feature ${i+1}`} value={accFeatures[i]} onChange={e => setAccFeature(i, e.target.value)} />
-              ))}
-            </div>
-          </div>
-        )}
       </CollapsibleSection>
 
       {/* ── CONTENT ── */}
