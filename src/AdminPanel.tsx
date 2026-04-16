@@ -80,6 +80,7 @@ export default function AdminPanel() {
   const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
   const [mediaCityFilter, setMediaCityFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
+  const [otherEditingId, setOtherEditingId] = useState<string | null>(null);
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [toast, setToast] = useState('');
 
@@ -702,9 +703,6 @@ export default function AdminPanel() {
         {!loading && tab === 'other' && (
           <>
             <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Other City Feed</div>
-            <div style={{ color: '#888', fontSize: 14, marginBottom: 18 }}>
-              Manage trips/events visible for users who choose <strong>Other</strong>, and configure which pickup points they can join from.
-            </div>
             {trips.filter(t => (t.cities ?? []).includes('Other')).length === 0 && (
               <div style={{ ...s.card, color: '#777' }}>
                 No trips are enabled for Other city users yet. Turn ON <strong>Show In "Other" City Feed</strong> in any trip to see it here.
@@ -712,34 +710,46 @@ export default function AdminPanel() {
             )}
             {trips
               .filter(t => (t.cities ?? []).includes('Other'))
-              .map(trip => (
-                <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
-                  {editingTrip?.id === trip.id ? (
-                    <OtherCityForm
-                      trip={editingTrip}
-                      onChange={setEditingTrip}
-                      onSave={() => saveTrip(editingTrip!)}
-                      onCancel={() => setEditingTrip(null)}
-                      saving={saving === trip.id}
-                      s={s}
-                    />
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                      {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 72, height: 56, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />}
+              .map(trip => {
+                const isExpanded = otherEditingId === trip.id;
+                return (
+                  <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: isExpanded ? 10 : 0 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                        <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>{trip.category} · ₹{trip.price_full?.toLocaleString('en-IN')}</div>
-                        <div style={{ color: '#666', fontSize: 12, marginTop: 6 }}>
-                          Pickup points: {(trip.pickup_points ?? []).length}
-                        </div>
+                        <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
                       </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                        <button style={s.outlineBtn} onClick={() => setEditingTrip({ ...trip })}>Edit Other Setup</button>
-                      </div>
+                      <button
+                        style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
+                        disabled={saving === trip.id}
+                        onClick={async () => {
+                          if (!trip.id) return;
+                          if (!isExpanded) {
+                            setOtherEditingId(trip.id);
+                            return;
+                          }
+                          await saveTrip(trip);
+                          setOtherEditingId(null);
+                        }}
+                      >
+                        {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {isExpanded && (
+                      <OtherCityForm
+                        trip={trip}
+                        onChange={(next) => updateTripInList(trip.id!, () => next)}
+                        onSave={() => saveTrip(trip)}
+                        onCancel={() => setOtherEditingId(null)}
+                        saving={saving === trip.id}
+                        s={s}
+                        hideFooterActions={true}
+                      />
+                    )}
+                  </div>
+                );
+              })}
           </>
         )}
 
@@ -1190,8 +1200,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   );
 }
 
-function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
-  trip: Trip; onChange: (t: Trip) => void; onSave: () => void; onCancel: () => void; saving: boolean; s: any;
+function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooterActions = false }: {
+  trip: Trip; onChange: (t: Trip) => void; onSave: () => void; onCancel: () => void; saving: boolean; s: any; hideFooterActions?: boolean;
 }) {
   const pickups = trip.pickup_points ?? [];
   const setTrip = (patch: Partial<Trip>) => onChange({ ...trip, ...patch });
@@ -1371,12 +1381,14 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-        <button style={s.outlineBtn} onClick={onCancel}>Cancel</button>
-        <button style={s.btn(saving ? '#aaa' : '#111')} disabled={saving} onClick={onSave}>
-          {saving ? 'Saving…' : 'Save Other Setup'}
-        </button>
-      </div>
+      {!hideFooterActions && (
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button style={s.outlineBtn} onClick={onCancel}>Cancel</button>
+          <button style={s.btn(saving ? '#aaa' : '#111')} disabled={saving} onClick={onSave}>
+            {saving ? 'Saving…' : 'Save Other Setup'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
