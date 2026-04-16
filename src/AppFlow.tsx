@@ -1742,12 +1742,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     return () => clearInterval(timer);
   }, [showCalendar, selectedDate]);
 
-  // For "Other" city users, default to Own Transport after date is selected.
-  useEffect(() => {
-    if (!selectedDate || selectedCity !== 'Other') return;
-    setSelectedMeetingPoint('own_transport');
-  }, [selectedDate, selectedCity, event.pickupPoints]);
-
   // Full staggered animation only on initial calendar open
   useEffect(() => {
     if (!showCalendar) { setCalendarRevealed(false); return; }
