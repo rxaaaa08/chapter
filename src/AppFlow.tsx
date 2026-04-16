@@ -2243,9 +2243,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     features: [0, 1, 2].map(i => accommodation.features?.[i] ?? '').filter(Boolean),
                   }];
               return (
-                <div className="space-y-4">
+                <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
                   {stays.map((stay, stayIndex) => (
-                    <div key={stayIndex} className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
+                    <div key={stayIndex} className={stayIndex > 0 ? 'border-t border-gray-200' : ''}>
                       <div className="relative w-full h-48">
                         {stay.image ? (
                           <img src={stay.image} alt={stay.name || `Stay ${stayIndex + 1}`} className="w-full h-full object-cover" />
@@ -2255,7 +2255,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                       </div>
                       <div className="p-4">
                         <h4 className="font-bold text-lg mb-3">{stay.name || `Stay ${stayIndex + 1}`}</h4>
-                        <ul className="space-y-2 mb-4">
+                        <ul className="space-y-2">
                           {(stay.features ?? []).filter(Boolean).map((feat, i) => (
                             <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
                               <div className="w-1.5 h-1.5 rounded-full bg-[#FFD700]" />
@@ -2263,13 +2263,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             </li>
                           ))}
                         </ul>
-                        <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
-                          <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                          <span>Rooms are same-gender — so everyone's comfortable</span>
-                        </div>
                       </div>
                     </div>
                   ))}
+                  <div className="p-4 pt-0">
+                    <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
+                      <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <span>Rooms are same-gender — so everyone's comfortable</span>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
