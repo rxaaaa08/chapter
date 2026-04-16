@@ -14,7 +14,6 @@ type PickupPoint = {
   dateOffset?: number;
   ownTransportPrice?: number;
   ownOnly?: boolean;
-  availableForOther?: boolean;
   otherPrice?: number;
   otherAdvance?: number;
 };
@@ -318,7 +317,7 @@ export default function AdminPanel() {
                         <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
                         <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>{trip.category} · ₹{trip.price_full?.toLocaleString('en-IN')}</div>
                         <div style={{ color: '#666', fontSize: 12, marginTop: 6 }}>
-                          Other-enabled pickup points: {(trip.pickup_points ?? []).filter(p => p.availableForOther).length}
+                          Pickup points: {(trip.pickup_points ?? []).length}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
@@ -406,7 +405,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             transport: 'Your Own Transport',
             ownTransportPrice: trip.price_full || 0,
             ownOnly: false,
-            availableForOther: true,
           }
         ]
       });
@@ -687,16 +685,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 {ownTransport.ownOnly ? 'YES' : 'NO'}
               </button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-              <label style={{ ...s.label, marginBottom: 0 }}>Available For "Other" City</label>
-              <button
-                type="button"
-                onClick={() => setOwnTransport({ availableForOther: !ownTransport.availableForOther })}
-                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.availableForOther ? '#111' : '#ddd', color: ownTransport.availableForOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-              >
-                {ownTransport.availableForOther ? 'YES' : 'NO'}
-              </button>
-            </div>
           </div>
         )}
       </div>
@@ -739,16 +727,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <div>
-                <label style={s.label}>Available For "Other" City</label>
-                <button
-                  type="button"
-                  onClick={() => setPickup(p._idx, 'availableForOther', !p.availableForOther)}
-                  style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: p.availableForOther ? '#111' : '#ddd', color: p.availableForOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-                >
-                  {p.availableForOther ? 'YES' : 'NO'}
-                </button>
-              </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
                 <input
@@ -883,14 +861,14 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const pickups = trip.pickup_points ?? [];
   const setTrip = (patch: Partial<Trip>) => onChange({ ...trip, ...patch });
   const setPickup = (index: number, patch: Partial<PickupPoint>) => {
-    const next = pickups.map((p, i) => i === index ? { ...p, ...patch } : p);
+      const next = pickups.map((p, i) => i === index ? { ...p, ...patch } : p);
     setTrip({ pickup_points: next });
   };
   const addPickup = () => {
     setTrip({
       pickup_points: [
         ...pickups,
-        { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '', availableForOther: true }
+        { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '' }
       ]
     });
   };
@@ -922,7 +900,7 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Pickup Points For "Other" Users</label>
+          <label style={{ ...s.label, marginBottom: 0 }}>Pickup Points For "Other" Feed</label>
           <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addPickup}>+ Add Point</button>
         </div>
         {pickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No pickup points configured yet.</div>}
@@ -969,16 +947,6 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   <input type="number" min={0} style={s.input} placeholder="Used when own transport is selected" value={point.ownTransportPrice ?? ''} onChange={e => setPickup(index, { ownTransportPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
                 </div>
               )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <label style={{ ...s.label, marginBottom: 0 }}>Available For Other Users</label>
-              <button
-                type="button"
-                onClick={() => setPickup(index, { availableForOther: !point.availableForOther })}
-                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: point.availableForOther ? '#111' : '#ddd', color: point.availableForOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-              >
-                {point.availableForOther ? 'YES' : 'NO'}
-              </button>
             </div>
             <button type="button" onClick={() => removePickup(index)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>

@@ -46,7 +46,6 @@ interface Event {
     dateOffset?: number;
     ownTransportPrice?: number;
     ownOnly?: boolean;
-    availableForOther?: boolean;
     otherPrice?: number;
     otherAdvance?: number;
   }[];
@@ -1660,7 +1659,7 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
   const dbPoints = event.pickupPoints ?? [];
   if (dbPoints.length === 0) {
     if (selectedCity === 'Other') {
-      return [{ id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport', availableForOther: true }];
+      return [{ id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport' }];
     }
     return Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({
       id: k,
@@ -1674,10 +1673,7 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
 
   const ownPoint = dbPoints.find(p => p.id === 'own_transport');
   if (selectedCity === 'Other') {
-    const otherEnabled = dbPoints.filter(p => p.availableForOther);
-    if (otherEnabled.length > 0) return otherEnabled;
-    if (ownPoint) return [ownPoint];
-    return [{ id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport', availableForOther: true }];
+    return dbPoints;
   }
 
   if (ownPoint?.ownOnly) {

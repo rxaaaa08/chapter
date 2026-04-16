@@ -42,7 +42,6 @@ export function mapDbEventToEvent(row: any): any {
           dateOffset: Number(p.dateOffset ?? p.date_offset ?? 0) || 0,
           ownTransportPrice: Number(p.ownTransportPrice ?? p.own_transport_price ?? 0) || undefined,
           ownOnly: Boolean(p.ownOnly ?? p.own_only ?? false),
-          availableForOther: Boolean(p.availableForOther ?? p.available_for_other ?? false),
           otherPrice: Number(p.otherPrice ?? p.other_price ?? 0) || undefined,
           otherAdvance: Number(p.otherAdvance ?? p.other_advance ?? 0) || undefined,
         }))
