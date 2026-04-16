@@ -591,8 +591,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <input style={s.input} placeholder="e.g. Villa near Auroville" value={ownTransport.meetingSpot} onChange={e => setOwnTransport({ meetingSpot: e.target.value })} />
               </div>
               <div>
-                <label style={s.label}>Day / Date / Time</label>
-                <input style={s.input} placeholder="e.g. Sat, Apr 26 · 6:00 PM" value={ownTransport.time} onChange={e => setOwnTransport({ time: e.target.value })} />
+                <label style={s.label}>Reporting Time</label>
+                <input style={s.input} placeholder="e.g. 6:00 PM" value={ownTransport.time} onChange={e => setOwnTransport({ time: e.target.value })} />
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
