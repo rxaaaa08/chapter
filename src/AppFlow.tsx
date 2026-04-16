@@ -2238,20 +2238,12 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               {event.videos?.map((vid, i) => {
                 const vimeoId = vid.url?.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1];
                 const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0` : null;
-                const previewUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?background=1&autoplay=1&muted=1&loop=1&title=0&byline=0&portrait=0` : null;
                 return (
                   <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
                     onClick={() => embedUrl && setActiveVideo({ embedUrl, caption: vid.caption || 'Trip video' })}
                     style={{ cursor: embedUrl ? 'pointer' : 'default' }}
                   >
-                    {previewUrl ? (
-                      <iframe
-                        src={previewUrl}
-                        title={`Video preview ${i + 1}`}
-                        className="w-full h-full pointer-events-none"
-                        allow="autoplay; fullscreen; picture-in-picture"
-                      />
-                    ) : vid.thumbnail ? (
+                    {vid.thumbnail ? (
                       <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
                     ) : (
                       <div className="w-full h-full bg-gray-800" />

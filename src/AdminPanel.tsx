@@ -6,7 +6,7 @@ const ADMIN_PASSWORD = 'chaptera2025';
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string };
 type PickupPoint = { id: string; label: string; meetingSpot: string; time: string; transport: string };
-type EventMedia = { id?: string; url: string; caption: string };
+type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
 type Trip = {
   id?: string;
   slug: string;
@@ -104,7 +104,14 @@ export default function AdminPanel() {
       const validMedia = event_media.filter(m => m.url.trim());
       if (validMedia.length > 0) {
         await supabase.from('event_media').insert(
-          validMedia.map((m, i) => ({ event_id: eventId, url: m.url, thumbnail_url: m.url, caption: m.caption, type: 'vimeo', sort_order: i }))
+          validMedia.map((m, i) => ({
+            event_id: eventId,
+            url: m.url,
+            thumbnail_url: m.thumbnail_url?.trim() || m.url,
+            caption: m.caption,
+            type: 'vimeo',
+            sort_order: i
+          }))
         );
       }
     }
@@ -200,7 +207,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',caption:''},{url:'',caption:''},{url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -286,7 +293,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
   // Always show exactly 3 video slots
   const rawMedia = trip.event_media ?? [];
-  const videos: EventMedia[] = [0,1,2].map(i => rawMedia[i] ?? { url: '', caption: '' });
+  const videos: EventMedia[] = [0,1,2].map(i => rawMedia[i] ?? { url: '', thumbnail_url: '', caption: '' });
   const setVideo = (i: number, key: keyof EventMedia, val: string) => {
     const updated = videos.map((v, idx) => idx === i ? { ...v, [key]: val } : v);
     onChange({ ...trip, event_media: updated });
@@ -418,8 +425,9 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ marginBottom: 14 }}>
         <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Vimeo Videos (up to 3)</label>
         {videos.map((v, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: 8, marginBottom: 8 }}>
             <input style={s.input} placeholder={`Vimeo URL ${i + 1} (e.g. https://vimeo.com/123456789)`} value={v.url} onChange={e => setVideo(i, 'url', e.target.value)} />
+            <input style={s.input} placeholder="Thumbnail Image URL" value={v.thumbnail_url ?? ''} onChange={e => setVideo(i, 'thumbnail_url', e.target.value)} />
             <input style={s.input} placeholder="Caption" value={v.caption} onChange={e => setVideo(i, 'caption', e.target.value)} />
           </div>
         ))}
