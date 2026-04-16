@@ -35,6 +35,7 @@ type Trip = {
   included: string[];
   optional_activities: string[];
   not_included: string[];
+  announcements?: string[];
   booking_url: string;
   cta_label: string;
   is_active: boolean;
@@ -68,6 +69,8 @@ export default function AdminPanel() {
   const [tab, setTab] = useState<'trips' | 'other' | 'messages'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
+  const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -91,7 +94,12 @@ export default function AdminPanel() {
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
     ]).then(([evRes, msgRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
-      if (msgRes.data) setMsgs(msgRes.data as ChatMsg[]);
+      if (msgRes.data) {
+        const allMsgs = msgRes.data as ChatMsg[];
+        setMsgs(allMsgs);
+        const generalAnnouncementsMsg = allMsgs.find(m => m.step_key === 'general_announcements');
+        if (generalAnnouncementsMsg) setGeneralAnnouncementsText(generalAnnouncementsMsg.bot_message || '');
+      }
       setLoading(false);
     });
   }, [authed]);
@@ -181,6 +189,32 @@ export default function AdminPanel() {
     showToast('Message saved!');
   };
 
+  const saveGeneralAnnouncements = async () => {
+    setSavingGeneralAnnouncements(true);
+    const existing = msgs.find(m => m.step_key === 'general_announcements');
+    if (existing?.id) {
+      await supabase.from('chat_messages').update({ bot_message: generalAnnouncementsText }).eq('id', existing.id);
+      setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: generalAnnouncementsText } : m));
+    } else {
+      const maxSortOrder = msgs.length > 0
+        ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
+        : 0;
+      const { data } = await supabase
+        .from('chat_messages')
+        .insert({
+          step_key: 'general_announcements',
+          bot_message: generalAnnouncementsText,
+          flow: 'global',
+          sort_order: maxSortOrder + 1,
+        })
+        .select('*')
+        .single();
+      if (data) setMsgs(prev => [...prev, data as ChatMsg]);
+    }
+    setSavingGeneralAnnouncements(false);
+    showToast('Global announcements saved!');
+  };
+
   // ─── LOGIN SCREEN ────────────────────────────────────────────────────────────
   if (!authed) {
     return (
@@ -244,7 +278,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -337,7 +371,24 @@ export default function AdminPanel() {
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
               Use <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code> as placeholders.
             </div>
-            {msgs.map(msg => (
+            <div style={{ ...s.card, marginBottom: 16 }}>
+              <label style={s.label}>Top Header Announcements (Before Event Selection)</label>
+              <textarea
+                style={s.textarea}
+                value={generalAnnouncementsText}
+                onChange={e => setGeneralAnnouncementsText(e.target.value)}
+                placeholder={'One announcement per line\nExample:\nChennai-based social club with 4000+ members'}
+              />
+              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+                These lines rotate in the top header before a user selects a specific trip/event.
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <button style={s.btn(savingGeneralAnnouncements ? '#aaa' : '#111')} disabled={savingGeneralAnnouncements} onClick={saveGeneralAnnouncements}>
+                  {savingGeneralAnnouncements ? 'Saving…' : 'Save Global Announcements'}
+                </button>
+              </div>
+            </div>
+            {msgs.filter(msg => msg.step_key !== 'general_announcements').map(msg => (
               <div key={msg.id} style={s.card}>
                 <label style={s.label}>{msg.step_key}</label>
                 <textarea
@@ -546,6 +597,25 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         onAdd={() => addStringListItem('not_included')}
         onChange={(i, v) => updateStringListItem('not_included', i, v)}
         onRemove={(i) => removeStringListItem('not_included', i)}
+      />
+      <StringListEditor
+        title="Header Announcements (This Event)"
+        values={trip.announcements ?? []}
+        placeholder="e.g. Weekend Escape bookings are live"
+        s={s}
+        onAdd={() => {
+          const current = [...(trip.announcements ?? [])];
+          onChange({ ...trip, announcements: [...current, ''] });
+        }}
+        onChange={(i, v) => {
+          const current = [...(trip.announcements ?? [])];
+          current[i] = v;
+          onChange({ ...trip, announcements: current });
+        }}
+        onRemove={(i) => {
+          const current = [...(trip.announcements ?? [])];
+          onChange({ ...trip, announcements: current.filter((_, idx) => idx !== i) });
+        }}
       />
 
       {/* You'll Experience */}

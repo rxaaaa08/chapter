@@ -412,11 +412,19 @@ export default function App() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
+  const parsedGeneralAnnouncements = (msgs.general_announcements || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  const globalAnnouncements = parsedGeneralAnnouncements.length > 0
+    ? parsedGeneralAnnouncements
+    : GENERAL_ANNOUNCEMENTS;
+
   // Determine which announcements to show
   const isAfterTripInfo = step === 'ASK_DOUBTS' || step === 'SHOW_FAQ' || step === 'DONE';
-  const currentAnnouncements = (isAfterTripInfo && selectedEvent?.announcements) 
-    ? selectedEvent.announcements 
-    : GENERAL_ANNOUNCEMENTS;
+  const currentAnnouncements = (isAfterTripInfo && (selectedEvent?.announcements?.length ?? 0) > 0)
+    ? (selectedEvent?.announcements ?? [])
+    : globalAnnouncements;
 
   // Clear timers when unmounting or re-running
   const clearDetailTimers = () => {
@@ -427,6 +435,7 @@ export default function App() {
   useEffect(() => clearDetailTimers, []);
 
   useEffect(() => {
+    if (currentAnnouncements.length === 0) return;
     const interval = setInterval(() => {
       setAnnouncementIndex((prev) => (prev + 1) % currentAnnouncements.length);
     }, 5000);
