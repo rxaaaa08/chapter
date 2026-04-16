@@ -70,7 +70,7 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'other' | 'messages'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'qna' | 'other' | 'messages'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
@@ -86,13 +86,12 @@ export default function AdminPanel() {
   const [addingTrip, setAddingTrip] = useState(false);
   const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
   const [mediaCityFilter, setMediaCityFilter] = useState<'all' | string>('all');
+  const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
+  const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
   const [otherEditingId, setOtherEditingId] = useState<string | null>(null);
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [otherActionById, setOtherActionById] = useState<Record<string, string>>({});
-  const [messagesTripId, setMessagesTripId] = useState<string>('');
-  const [tripFaqDrafts, setTripFaqDrafts] = useState<FAQ[]>([]);
-  const [savingTripBotConfig, setSavingTripBotConfig] = useState(false);
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -427,30 +426,6 @@ export default function AdminPanel() {
     showToast('Doubt form settings saved!');
   };
 
-  const handleMessagesTripChange = (tripId: string) => {
-    setMessagesTripId(tripId);
-    const trip = trips.find(t => t.id === tripId);
-    if (!trip) {
-      setTripFaqDrafts([]);
-      return;
-    }
-    setTripFaqDrafts((trip.faqs ?? []).map(f => ({ question: f.question ?? '', answer: f.answer ?? '' })));
-  };
-
-  const savePerTripBotConfig = async () => {
-    const selectedTrip = trips.find(t => t.id === messagesTripId);
-    if (!selectedTrip?.id) return;
-    setSavingTripBotConfig(true);
-
-    const updatedTrip: Trip = {
-      ...selectedTrip,
-      faqs: tripFaqDrafts.filter(f => f.question.trim() || f.answer.trim()),
-    };
-    await saveTrip(updatedTrip);
-    setSavingTripBotConfig(false);
-    showToast('Per-trip FAQs saved!');
-  };
-
   // ─── LOGIN SCREEN ────────────────────────────────────────────────────────────
   if (!authed) {
     return (
@@ -503,6 +478,7 @@ export default function AdminPanel() {
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media & Reviews</button>
+        <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Per Trip Q&A</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other City</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Bot Messages</button>
       </div>
@@ -879,6 +855,163 @@ export default function AdminPanel() {
           </>
         )}
 
+        {/* ── Q&A TAB ───────────────────────────────────────────────────────── */}
+        {!loading && tab === 'qna' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+              <div style={{ position: 'relative', minWidth: 190 }}>
+                <select
+                  value={qnaCityFilter}
+                  onChange={e => setQnaCityFilter(e.target.value)}
+                  style={{
+                    ...s.input,
+                    width: '100%',
+                    padding: '9px 34px 9px 12px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 999,
+                    border: '1.5px solid #d7d7d7',
+                    background: '#fff',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="all">All Cities</option>
+                  {orderedCities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+              </div>
+            </div>
+
+            {(() => {
+              const getNearestDateTs = (trip: Trip) => {
+                const dates = (trip.event_dates ?? [])
+                  .map(d => new Date(`${d.start_date}T00:00:00`).getTime())
+                  .filter(ts => !Number.isNaN(ts));
+                return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
+              };
+              const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
+                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
+                if (dateDiff !== 0) return dateDiff;
+                return a.title.localeCompare(b.title);
+              });
+              const filteredTrips = qnaCityFilter === 'all'
+                ? trips
+                : trips.filter(plan => (plan.cities ?? []).includes(qnaCityFilter));
+              const grouped = new Map<string, Trip[]>();
+              filteredTrips.forEach((plan) => {
+                const rawCategory = (plan.category || '').trim();
+                const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(plan);
+              });
+              const preferredOrder = ['events', 'trips'];
+              const categoryKeys = Array.from(grouped.keys());
+              const orderedKeys = [
+                ...preferredOrder.filter(k => categoryKeys.includes(k)),
+                ...categoryKeys.filter(k => !preferredOrder.includes(k)).sort((a, b) => a.localeCompare(b)),
+              ];
+              const sections = orderedKeys.map((key) => {
+                const items = sortPlans(grouped.get(key) ?? []);
+                const displayTitle = items[0]?.category?.trim() || (key === 'uncategorized' ? 'Uncategorized' : key);
+                return { title: displayTitle, items };
+              });
+
+              return sections.map(section => (
+                section.items.length > 0 ? (
+                  <div key={section.title}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{section.title}</div>
+                    {section.items.map(trip => {
+                      const isExpanded = qnaEditingId === trip.id;
+                      const faqs = trip.faqs ?? [];
+                      return (
+                        <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
+                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
+                            </div>
+                            <button
+                              style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
+                              disabled={saving === trip.id}
+                              onClick={async () => {
+                                if (!trip.id) return;
+                                if (!isExpanded) {
+                                  setQnaEditingId(trip.id);
+                                  return;
+                                }
+                                await saveTrip(trip);
+                                setQnaEditingId(null);
+                              }}
+                            >
+                              {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
+                            </button>
+                          </div>
+
+                          {isExpanded && (
+                            <div style={{ marginTop: 6 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <label style={{ ...s.label, marginBottom: 0 }}>Possible Doubts (FAQ)</label>
+                                <button
+                                  type="button"
+                                  style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                  onClick={() => updateTripInList(trip.id!, t => ({ ...t, faqs: [...(t.faqs ?? []), { question: '', answer: '' }] }))}
+                                >
+                                  + Add Q&A
+                                </button>
+                              </div>
+                              {faqs.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No FAQs added yet.</div>}
+                              {faqs.map((faq, i) => (
+                                <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                                    <input
+                                      style={s.input}
+                                      placeholder="Example: Can I join solo?"
+                                      value={faq.question}
+                                      onChange={e => updateTripInList(trip.id!, t => {
+                                        const next = [...(t.faqs ?? [])];
+                                        next[i] = { ...next[i], question: e.target.value };
+                                        return { ...t, faqs: next };
+                                      })}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => updateTripInList(trip.id!, t => ({ ...t, faqs: [...(t.faqs ?? [])].filter((_, idx) => idx !== i) }))}
+                                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                  <textarea
+                                    style={s.textarea}
+                                    placeholder="Example: Yes. Most members join solo and we make sure the group vibe is welcoming."
+                                    value={faq.answer}
+                                    onChange={e => updateTripInList(trip.id!, t => {
+                                      const next = [...(t.faqs ?? [])];
+                                      next[i] = { ...next[i], answer: e.target.value };
+                                      return { ...t, faqs: next };
+                                    })}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null
+              ));
+            })()}
+          </>
+        )}
+
         {/* ── OTHER TAB ─────────────────────────────────────────────────────── */}
         {!loading && tab === 'other' && (
           <>
@@ -1078,88 +1211,6 @@ export default function AdminPanel() {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Per Trip Q&A">
-              <div style={{ marginBottom: 12 }}>
-                <label style={s.label}>Choose Plan</label>
-                <div style={{ position: 'relative', maxWidth: 360 }}>
-                  <select
-                    value={messagesTripId}
-                    onChange={e => handleMessagesTripChange(e.target.value)}
-                    style={{
-                      ...s.input,
-                      width: '100%',
-                      padding: '9px 34px 9px 12px',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      borderRadius: 10,
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      MozAppearance: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <option value="">Select a trip/event</option>
-                    {trips.map(t => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
-                    ))}
-                  </select>
-                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
-                </div>
-              </div>
-
-              {messagesTripId && (
-                <>
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <label style={{ ...s.label, marginBottom: 0 }}>Possible Doubts (FAQ)</label>
-                      <button
-                        type="button"
-                        style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
-                        onClick={() => setTripFaqDrafts(prev => [...prev, { question: '', answer: '' }])}
-                      >
-                        + Add Q&A
-                      </button>
-                    </div>
-                    {tripFaqDrafts.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No FAQs added yet.</div>}
-                    {tripFaqDrafts.map((faq, i) => (
-                      <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                          <input
-                            style={s.input}
-                            placeholder="Example: Can I join solo?"
-                            value={faq.question}
-                            onChange={e => setTripFaqDrafts(prev => prev.map((x, idx) => idx === i ? { ...x, question: e.target.value } : x))}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setTripFaqDrafts(prev => prev.filter((_, idx) => idx !== i))}
-                            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <textarea
-                          style={s.textarea}
-                          placeholder="Example: Yes. Most members join solo and we make sure the group vibe is welcoming."
-                          value={faq.answer}
-                          onChange={e => setTripFaqDrafts(prev => prev.map((x, idx) => idx === i ? { ...x, answer: e.target.value } : x))}
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                    <button
-                      style={s.btn(savingTripBotConfig ? '#aaa' : '#111')}
-                      disabled={savingTripBotConfig}
-                      onClick={savePerTripBotConfig}
-                    >
-                      {savingTripBotConfig ? 'Saving…' : 'Save FAQs'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </CollapsibleSection>
           </>
         )}
       </div>
