@@ -5,6 +5,7 @@ const ADMIN_PASSWORD = 'chaptera2025';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string };
+type PickupPoint = { id: string; label: string; meetingSpot: string; time: string; transport: string };
 type Trip = {
   id?: string;
   slug: string;
@@ -17,7 +18,9 @@ type Trip = {
   cities: string[];
   category: string;
   booking_url: string;
+  cta_label: string;
   is_active: boolean;
+  pickup_points?: PickupPoint[];
   event_dates?: TripDate[];
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
@@ -49,6 +52,16 @@ export default function AdminPanel() {
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  // Override global `body { overflow: hidden }` from index.css
+  useEffect(() => {
+    document.body.style.overflow = 'auto';
+    document.documentElement.style.overflow = 'auto';
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, []);
 
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }
@@ -183,7 +196,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '/phonepe-mock', is_active: true, event_dates: [] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, event_dates: [] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -259,6 +272,14 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 }) {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
   const dates = trip.event_dates ?? [];
+  const pickups = trip.pickup_points ?? [];
+
+  const setPickup = (i: number, key: keyof PickupPoint, val: string) => {
+    const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
+    onChange({ ...trip, pickup_points: updated });
+  };
+  const addPickup = () => onChange({ ...trip, pickup_points: [...pickups, { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '' }] });
+  const removePickup = (i: number) => onChange({ ...trip, pickup_points: pickups.filter((_, idx) => idx !== i) });
 
   const setDate = (i: number, key: keyof TripDate, val: string) => {
     const updated = dates.map((d, idx) => idx === i ? { ...d, [key]: val } : d);
@@ -283,6 +304,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {field('Full Price (₹)', 'price_full', 'number')}
         {field('Advance Amount (₹)', 'price_advance', 'number')}
         {field('Booking URL', 'booking_url')}
+        {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
         {field('Hero Image URL', 'hero_image')}
         <div style={{ gridColumn: '1/-1' }}>
           <label style={s.label}>Description</label>
@@ -306,6 +328,38 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </select>
             <input style={s.input} placeholder="Label (e.g. Beach weekend)" value={d.label} onChange={e => setDate(i, 'label', e.target.value)} />
             <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Pickup Points */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Meeting Point Options</label>
+          <button style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addPickup}>+ Add Point</button>
+        </div>
+        {pickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No pickup points — uses default config.</div>}
+        {pickups.map((p, i) => (
+          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={s.label}>Dropdown Label</label>
+                <input style={s.input} placeholder="e.g. Koyambedu — 7:00 AM" value={p.label} onChange={e => setPickup(i, 'label', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Meeting Spot</label>
+                <input style={s.input} placeholder="e.g. Koyambedu Bus Stand" value={p.meetingSpot} onChange={e => setPickup(i, 'meetingSpot', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Pickup Time</label>
+                <input style={s.input} placeholder="e.g. 7:00 AM" value={p.time} onChange={e => setPickup(i, 'time', e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Transport</label>
+                <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(i, 'transport', e.target.value)} />
+              </div>
+            </div>
+            <button onClick={() => removePickup(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
       </div>

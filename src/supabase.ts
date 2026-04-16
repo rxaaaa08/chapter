@@ -28,10 +28,19 @@ export function mapDbEventToEvent(row: any): any {
     optionalActivities: Array.isArray(row.optional_activities) ? row.optional_activities : (row.optional_activities ?? []),
     announcements: Array.isArray(row.announcements) ? row.announcements : (row.announcements ?? []),
     bookingUrl: row.booking_url,
+    ctaLabel: row.cta_label ?? '',
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,
     quickInfo: row.quick_info ?? [],
-    pickupPoints: row.pickup_points ?? [],
+    pickupPoints: Array.isArray(row.pickup_points)
+      ? row.pickup_points.map((p: any, i: number) => ({
+          id: p.id ?? String(i),
+          label: p.label ?? p.location ?? '',
+          meetingSpot: p.meetingSpot ?? p.meeting_spot ?? p.location ?? '',
+          time: p.time ?? '',
+          transport: p.transport ?? '',
+        }))
+      : [],
     transportPlan: row.transport_plan ?? [],
     itinerary: row.itinerary ?? [],
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },

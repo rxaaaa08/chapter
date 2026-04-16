@@ -37,7 +37,7 @@ interface Event {
   description: string;
   heroImage: string;
   startLocation: string;
-  pickupPoints?: { city: string; location: string; time: string }[];
+  pickupPoints?: { id: string; label: string; meetingSpot: string; time: string; transport: string }[];
   transport: string;
   groupSize: string;
   accommodationType: string;
@@ -69,6 +69,7 @@ interface Event {
   dates: TripDate[];
   faqs: FAQ[];
   bookingUrl: string;
+  ctaLabel?: string;
   announcements?: string[];
   inviteOnly?: boolean;
   waitlistUrl?: string;
@@ -1068,36 +1069,31 @@ export default function App() {
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        Request Invitation
+                        {selectedEvent.ctaLabel || 'Request Invitation'}
                         <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
                     ) : isPhonePeFlow ? (
                       <button
                         onClick={() => {
-                          if (isPhonePeFlow) {
-                            setShowBookingTimeline(false);
-                            setShowDetailsForm(true);
-                          } else {
-                            setShowBookingTimeline(false);
-                            setTimeout(() => setShowWaitlistForm(true), 150);
-                          }
+                          setShowBookingTimeline(false);
+                          setShowDetailsForm(true);
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        {isPhonePeFlow ? 'Confirm' : 'Request Invitation'}
+                        {selectedEvent.ctaLabel || 'Confirm'}
                         <ArrowRight size={18} strokeWidth={3.0} />
                       </button>
                     ) : (
                       <button
                         onClick={() => {
-                          alert('Enquiry sent!');
                           setShowBookingTimeline(false);
+                          if (selectedEvent.bookingUrl) window.open(selectedEvent.bookingUrl, '_blank');
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        Request Invitation
+                        {selectedEvent.ctaLabel || 'Book Now'}
                         <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
                     )}
@@ -1628,10 +1624,11 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
 
   const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
 
-  const cfg = meetingPoint ? MEETING_POINT_CONFIG[meetingPoint] : null;
-  const resolvedMeeting   = cfg ? cfg.meetingSpot  : spotField?.value;
-  const resolvedTransport = cfg ? cfg.transport     : transportField?.value;
-  const resolvedTime      = cfg?.pickupTime || firstTime;
+  const dbPoint = meetingPoint ? event.pickupPoints?.find(p => p.id === meetingPoint) : null;
+  const cfg = (!dbPoint && meetingPoint) ? MEETING_POINT_CONFIG[meetingPoint] : null;
+  const resolvedMeeting   = dbPoint ? dbPoint.meetingSpot : cfg ? cfg.meetingSpot  : spotField?.value;
+  const resolvedTransport = dbPoint ? dbPoint.transport   : cfg ? cfg.transport     : transportField?.value;
+  const resolvedTime      = dbPoint ? dbPoint.time        : cfg?.pickupTime || firstTime;
 
   return (
     <div>
@@ -2422,8 +2419,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
-                            {Object.entries(MEETING_POINT_CONFIG).map(([value, option]) => (
-                              <option key={value} value={value}>{option.dropdownLabel}</option>
+                            {(event.pickupPoints && event.pickupPoints.length > 0
+                              ? event.pickupPoints.map(p => ({ value: p.id, label: p.label || p.meetingSpot }))
+                              : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel }))
+                            ).map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}
                           </select>
                           <AnimatePresence initial={false}>
