@@ -50,7 +50,7 @@ type Trip = {
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
   accommodation?: { name?: string; images?: string[]; features?: string[]; policy?: string; stays?: AccommodationStay[] };
-  booking_steps?: Array<{ label: string; value: string; daysBefore: number }>;
+  booking_steps?: Array<{ label: string; value: string; date: string }>;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 
@@ -1291,12 +1291,12 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
   // ── Booking Steps ──
   const bookingSteps = trip.booking_steps?.length ? trip.booking_steps : [
-    { label: 'Remaining Balance', value: '', daysBefore: 5 },
-    { label: 'Receive', value: 'Pickup, stay & trip details', daysBefore: 3 },
+    { label: 'Remaining Balance', value: '', date: '' },
+    { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
   ];
-  const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; daysBefore: number }>) =>
+  const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) =>
     onChange({ ...trip, booking_steps: bookingSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
-  const addBookingStep = () => onChange({ ...trip, booking_steps: [...bookingSteps, { label: '', value: '', daysBefore: 1 }] });
+  const addBookingStep = () => onChange({ ...trip, booking_steps: [...bookingSteps, { label: '', value: '', date: '' }] });
   const removeBookingStep = (i: number) => onChange({ ...trip, booking_steps: bookingSteps.filter((_, idx) => idx !== i) });
 
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
@@ -1394,7 +1394,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         </div>
         {bookingSteps.map((step, i) => (
           <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px auto', gap: 8, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 160px auto', gap: 8, alignItems: 'end' }}>
               <div>
                 <label style={s.label}>Label (small text)</label>
                 <input style={s.input} placeholder="e.g. Remaining Balance" value={step.label} onChange={e => setBookingStep(i, { label: e.target.value })} />
@@ -1404,8 +1404,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <input style={s.input} placeholder={step.label === 'Remaining Balance' ? 'Auto (remaining price)' : 'e.g. Pickup, stay & trip details'} value={step.value} onChange={e => setBookingStep(i, { value: e.target.value })} />
               </div>
               <div>
-                <label style={s.label}>Days Before</label>
-                <input type="number" min={1} style={s.input} value={step.daysBefore} onChange={e => setBookingStep(i, { daysBefore: Number(e.target.value) })} />
+                <label style={s.label}>Deadline Date</label>
+                <input type="date" style={s.input} value={step.date} onChange={e => setBookingStep(i, { date: e.target.value })} />
               </div>
               <button type="button" onClick={() => removeBookingStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', marginBottom: 2 }}>×</button>
             </div>

@@ -86,7 +86,7 @@ interface Event {
   announcements?: string[];
   inviteOnly?: boolean;
   waitlistUrl?: string;
-  bookingSteps?: Array<{ label: string; value: string; daysBefore: number }>;
+  bookingSteps?: Array<{ label: string; value: string; date: string }>;
 }
 
 // Fallback data used only if Supabase is unavailable
@@ -1160,23 +1160,28 @@ export default function App() {
 
                       {/* Middle steps — editable per-plan via admin Booking Timeline */}
                       {(selectedEvent.bookingSteps ?? [
-                        { label: 'Remaining Balance', value: '', daysBefore: 5 },
-                        { label: 'Receive', value: 'Pickup, stay & trip details', daysBefore: 3 },
+                        { label: 'Remaining Balance', value: '', date: '' },
+                        { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                       ]).map((step, si) => {
                         const stepValue = step.value || (() => {
                           const meetingPoint = journeyCardData?.meetingPoint || '';
                           const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
                           return `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
                         })();
+                        const dateLabel = step.date
+                          ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                          : null;
                         return (
                           <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                             <div>
                               <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
                               <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
                             </div>
-                            <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                              {bookingDate ? `by ${new Date(new Date(`${bookingDate}T00:00:00`).getTime() - step.daysBefore * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : `${step.daysBefore}d before trip`}
-                            </span>
+                            {dateLabel && (
+                              <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                {dateLabel}
+                              </span>
+                            )}
                           </div>
                         );
                       })}
