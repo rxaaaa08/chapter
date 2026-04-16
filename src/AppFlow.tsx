@@ -37,7 +37,15 @@ interface Event {
   description: string;
   heroImage: string;
   startLocation: string;
-  pickupPoints?: { id: string; label: string; meetingSpot: string; time: string; transport: string }[];
+  pickupPoints?: {
+    id: string;
+    label: string;
+    meetingSpot: string;
+    time: string;
+    transport: string;
+    ownTransportPrice?: number;
+    ownOnly?: boolean;
+  }[];
   transport: string;
   groupSize: string;
   accommodationType: string;
@@ -374,11 +382,6 @@ export default function App() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const parseAmount = (price: string) => {
-    const num = parseInt(price.replace(/[^0-9]/g, ''), 10);
-    return isNaN(num) ? 0 : num;
-  };
-
   const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 
   const formatDisplayDate = (dateStr?: string) => {
@@ -673,12 +676,14 @@ export default function App() {
   const handleProceedToPhonePe = () => {
     if (!selectedEvent) return;
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
+    const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
+    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint);
     const balanceDueRaw = shiftDateString(dateStr, -5) || '';
     const balanceDue = balanceDueRaw ? formatDisplayDate(balanceDueRaw) : 'TBD';
     const pickupDetails = dateStr ? formatDisplayDate(shiftDateString(dateStr, -3) || undefined) : 'TBD';
     const tripDate = formatDisplayDate(dateStr);
-    const totalAmount = parseAmount(selectedEvent.price);
-    const advanceAmount = selectedEvent.advanceAmount;
+    const totalAmount = pricing.total;
+    const advanceAmount = pricing.advance;
     const ctx = {
       eventTitle: selectedEvent.title,
       amount: advanceAmount,
@@ -1013,7 +1018,11 @@ export default function App() {
                         <div>
                           <p className="text-[11px] text-gray-400 font-medium mb-0.5">{selectedEvent.inviteOnly ? 'Sign Up' : 'Advance'}</p>
                           <p className="text-[15px] font-black text-gray-900 leading-none">
-                            {selectedEvent.inviteOnly ? 'Free — no payment yet' : `₹${selectedEvent.advanceAmount.toLocaleString('en-IN')}`}
+                            {selectedEvent.inviteOnly ? 'Free — no payment yet' : (() => {
+                              const meetingPoint = journeyCardData?.meetingPoint || '';
+                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint);
+                              return `₹${pricing.advance.toLocaleString('en-IN')}`;
+                            })()}
                           </p>
                         </div>
                         <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">
@@ -1026,7 +1035,11 @@ export default function App() {
                         <div>
                           <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
                           <p className="text-[15px] font-black text-gray-900 leading-none">
-                            ₹{(parseInt(selectedEvent.price.replace(/\D/g, '')) - selectedEvent.advanceAmount).toLocaleString('en-IN')}
+                            {(() => {
+                              const meetingPoint = journeyCardData?.meetingPoint || '';
+                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint);
+                              return `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
+                            })()}
                           </p>
                         </div>
                         <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
@@ -1604,7 +1617,17 @@ const ChatMessage = ({ message }: { message: Message }) => {
 const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: string; pickupTime?: string; dropdownLabel: string }> = {
   koyambedu:     { meetingSpot: 'Koyambedu', transport: 'Party Bus', pickupTime: '7:00 AM', dropdownLabel: 'Koyambedu — by 7:00 AM' },
   anna_nagar:    { meetingSpot: 'Anna Nagar', transport: 'Party Bus', pickupTime: '8:00 AM', dropdownLabel: 'Anna Nagar — by 8:00 AM' },
-  own_transport: { meetingSpot: 'Event Location', transport: 'Your Own Transport', dropdownLabel: 'Own Transport' },
+};
+
+const getMeetingPointPricing = (event: Event, meetingPointId?: string) => {
+  const baseTotal = parseInt(event.price.replace(/[^0-9]/g, ''), 10) || 0;
+  const baseAdvance = event.advanceAmount || 0;
+  if (meetingPointId !== 'own_transport') {
+    return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
+  }
+  const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
+  const ownTotal = ownPoint?.ownTransportPrice ?? baseTotal;
+  return { total: ownTotal, advance: Math.min(baseAdvance, ownTotal) };
 };
 
 const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
@@ -1687,10 +1710,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     const leg = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(selectedCity.toLowerCase()));
     return leg ? leg.dateOffset : 0;
   }, [event.transportPlan, selectedCity]);
-  const parsePrice = (priceStr: string) => {
-    const num = parseInt(priceStr.replace(/[^0-9]/g, ''), 10);
-    return isNaN(num) ? 0 : num;
-  };
   const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 
   const shiftDateStr = (dateStr: string, offset: number) => {
@@ -2435,12 +2454,20 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             style={{ color: selectedMeetingPoint ? undefined : '#9ca3af' }}
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
-                            {(event.pickupPoints && event.pickupPoints.length > 0
-                              ? event.pickupPoints.map(p => ({ value: p.id, label: p.label || p.meetingSpot }))
-                              : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel }))
-                            ).map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
+                            {(() => {
+                              const pickupOptions = event.pickupPoints && event.pickupPoints.length > 0
+                                ? (() => {
+                                    const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
+                                    const points = ownPoint?.ownOnly
+                                      ? (ownPoint ? [ownPoint] : [])
+                                      : (event.pickupPoints ?? []);
+                                    return points.map(p => ({ value: p.id, label: p.label || p.meetingSpot }));
+                                  })()
+                                : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel }));
+                              return pickupOptions.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ));
+                            })()}
                           </select>
                           <AnimatePresence initial={false}>
                             {showMeetingPointSwitchBorder && !shouldPulseMeetingPoint && (
@@ -2468,9 +2495,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           >
                             <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 flex flex-col gap-3">
                               {(() => {
-                                const isOwnTransport = selectedMeetingPoint === 'own_transport';
-                                const displayAdvance = isOwnTransport ? 0 : event.advanceAmount;
-                                const displayTotal = isOwnTransport ? 0 : parsePrice(event.price);
+                                const pricing = getMeetingPointPricing(event, selectedMeetingPoint);
+                                const displayAdvance = pricing.advance;
+                                const displayTotal = pricing.total;
                                 const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
                                 return (
                               <div className="flex items-start justify-between gap-3">
