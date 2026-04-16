@@ -605,7 +605,8 @@ export default function App() {
     setSelectedCity(city);
     
     simulateBotTyping(() => {
-      addBotMessage(fillMsg(msgs, 'ask_category', { city: cityLabel }, `Awesome! What would you like to attend in ${cityLabel}?`));
+      const categoryKey = city === 'Other' ? 'other_ask_category' : 'ask_category';
+      addBotMessage(fillMsg(msgs, categoryKey, { city: cityLabel }, `Awesome! What would you like to attend in ${cityLabel}?`));
       setStep('ASK_CATEGORY');
     });
   };
@@ -619,7 +620,8 @@ export default function App() {
       const cityLabel = formatCityLabel(selectedCity);
       const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === category);
       if (filteredEvents.length > 0) {
-        addBotMessage(fillMsg(msgs, 'select_event', { city: cityLabel, category }, `Here are the upcoming ${category} in ${cityLabel}. Which one are you interested in?`));
+        const selectPlanKey = selectedCity === 'Other' ? 'other_select_event' : 'select_event';
+        addBotMessage(fillMsg(msgs, selectPlanKey, { city: cityLabel, category }, `Here are the upcoming ${category} in ${cityLabel}. Which one are you interested in?`));
         setStep('SELECT_EVENT');
       } else {
         addBotMessage(fillMsg(msgs, 'no_events', { city: cityLabel, category }, `Oops, looks like we don't have any ${category} scheduled in ${cityLabel} right now. Check back later!`));

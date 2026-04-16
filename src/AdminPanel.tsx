@@ -96,6 +96,7 @@ export default function AdminPanel() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
   const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
+  const otherCityPreSelectionKeys = ['other_ask_category', 'other_select_event'] as const;
   const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact'] as const;
 
   const allCities = [
@@ -150,7 +151,7 @@ export default function AdminPanel() {
   useEffect(() => {
     setGlobalMessageDrafts(prev => {
       const next = { ...prev };
-      [...globalPreSelectionKeys, ...globalPostSelectionKeys].forEach((key) => {
+      [...globalPreSelectionKeys, ...otherCityPreSelectionKeys, ...globalPostSelectionKeys].forEach((key) => {
         if (next[key] === undefined) {
           next[key] = msgs.find(m => m.step_key === key)?.bot_message ?? '';
         }
@@ -1135,6 +1136,32 @@ export default function AdminPanel() {
                 { key: 'welcome', label: 'Select City', placeholder: "Welcome to chapter அ! 👋 Which city are you from buddy?" },
                 { key: 'ask_category', label: 'Select Category', placeholder: "Awesome, {city}! What are you looking for today - events or trips?" },
                 { key: 'select_event', label: 'Select Plan', placeholder: "Here are the upcoming {category} in {city}. Which one should I open for you?" },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <label style={s.label}>{label}</label>
+                  <textarea
+                    style={s.textarea}
+                    value={globalMessageDrafts[key] ?? ''}
+                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
+                      disabled={saving === `global:${key}`}
+                      onClick={() => saveGlobalStepTemplate(key)}
+                    >
+                      {saving === `global:${key}` ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Other City Pre Selection Messages">
+              {[
+                { key: 'other_ask_category', label: 'Select Category (Other City)', placeholder: "Awesome! Which type of plan are you looking for from Other Cities - events or trips?" },
+                { key: 'other_select_event', label: 'Select Plan (Other City)', placeholder: "Here are plans available for Other Cities in {category}. Which one should I open for you?" },
               ].map(({ key, label, placeholder }) => (
                 <div key={key} style={{ marginBottom: 12 }}>
                   <label style={s.label}>{label}</label>
