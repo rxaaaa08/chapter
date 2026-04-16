@@ -70,10 +70,11 @@ interface Event {
   }[];
   showAccommodation?: boolean;
   accommodation: {
-    name: string;
-    images: string[];
-    features: string[];
-    policy: string;
+    name?: string;
+    images?: string[];
+    features?: string[];
+    policy?: string;
+    stays?: { name: string; image: string; features: string[] }[];
   };
   optionalActivities?: string[];
   videos: { thumbnail: string; url?: string; caption: string }[];
@@ -1782,7 +1783,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
-  const [accImageIndex, setAccImageIndex] = useState(0);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cityDateOffset = React.useMemo(() => {
@@ -2233,54 +2233,46 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         {event.showAccommodation && (
           <div className="p-6 border-b border-gray-100">
             <h3 className="text-xl font-black mb-4">Where We Stay</h3>
-            <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
-              <div className="relative w-full h-48">
-                <img 
-                  src={event.accommodation?.images[accImageIndex]} 
-                  alt="Accommodation" 
-                  className="w-full h-full object-cover" 
-                />
-                {event.accommodation?.images && event.accommodation.images.length > 1 && (
-                  <>
-                  <button 
-                    onClick={() => setAccImageIndex(prev => (prev - 1 + event.accommodation!.images.length) % event.accommodation!.images.length)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
-                  >
-                    <ChevronLeft size={20} className="text-gray-800 pr-0.5" />
-                  </button>
-                  <button 
-                    onClick={() => setAccImageIndex(prev => (prev + 1) % event.accommodation!.images.length)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
-                  >
-                    <ChevronRight size={20} className="text-gray-800 pl-0.5" />
-                  </button>
-                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
-                      {event.accommodation.images.map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`w-1.5 h-1.5 rounded-full transition-colors ${i === accImageIndex ? 'bg-white' : 'bg-white/50'}`}
-                        />
-                      ))}
+            {(() => {
+              const accommodation = event.accommodation ?? {};
+              const stays = (accommodation.stays && accommodation.stays.length > 0)
+                ? accommodation.stays
+                : [{
+                    name: accommodation.name ?? 'Stay',
+                    image: accommodation.images?.[0] ?? '',
+                    features: [0, 1, 2].map(i => accommodation.features?.[i] ?? '').filter(Boolean),
+                  }];
+              return (
+                <div className="space-y-4">
+                  {stays.map((stay, stayIndex) => (
+                    <div key={stayIndex} className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
+                      <div className="relative w-full h-48">
+                        {stay.image ? (
+                          <img src={stay.image} alt={stay.name || `Stay ${stayIndex + 1}`} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200" />
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <h4 className="font-bold text-lg mb-3">{stay.name || `Stay ${stayIndex + 1}`}</h4>
+                        <ul className="space-y-2 mb-4">
+                          {(stay.features ?? []).filter(Boolean).map((feat, i) => (
+                            <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
+                              <div className="w-1.5 h-1.5 rounded-full bg-[#FFD700]" />
+                              {feat}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
+                          <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                          <span>Rooms are same-gender — so everyone's comfortable</span>
+                        </div>
+                      </div>
                     </div>
-                  </>
-                )}
-              </div>
-              <div className="p-4">
-                <h4 className="font-bold text-lg mb-3">{event.accommodation?.name}</h4>
-                <ul className="space-y-2 mb-4">
-                  {event.accommodation?.features.map((feat, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#FFD700]" />
-                      {feat}
-                    </li>
                   ))}
-                </ul>
-                <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
-                  <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Rooms are same-gender — so everyone's comfortable</span>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         )}
 

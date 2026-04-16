@@ -21,6 +21,7 @@ type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: s
 type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; review_count?: number; images?: string[] };
 type ItineraryScheduleItem = { time: string; activity: string };
 type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
+type AccommodationStay = { name: string; image: string; features: string[] };
 type Trip = {
   id?: string;
   slug: string;
@@ -45,7 +46,7 @@ type Trip = {
   event_dates?: TripDate[];
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
-  accommodation?: { name: string; images: string[]; features: string[]; policy: string };
+  accommodation?: { name?: string; images?: string[]; features?: string[]; policy?: string; stays?: AccommodationStay[] };
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 
@@ -283,7 +284,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', image: '', features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -560,12 +561,25 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
   const dates = trip.event_dates ?? [];
   const pickups = trip.pickup_points ?? [];
-  const acc = trip.accommodation ?? { name: '', images: ['','',''], features: ['','',''], policy: '' };
-  const accImages: string[] = [0,1,2].map(i => acc.images?.[i] ?? '');
-  const accFeatures: string[] = [0,1,2].map(i => acc.features?.[i] ?? '');
-  const setAcc = (patch: Partial<typeof acc>) => onChange({ ...trip, accommodation: { ...acc, ...patch } });
-  const setAccImage = (i: number, val: string) => { const imgs = [...accImages]; imgs[i] = val; setAcc({ images: imgs.filter(Boolean) }); };
-  const setAccFeature = (i: number, val: string) => { const feats = [...accFeatures]; feats[i] = val; setAcc({ features: feats }); };
+  const acc = trip.accommodation ?? {};
+  const legacyStay: AccommodationStay = {
+    name: acc.name ?? '',
+    image: acc.images?.[0] ?? '',
+    features: [0, 1, 2].map(i => acc.features?.[i] ?? ''),
+  };
+  const stays: AccommodationStay[] = (acc.stays && acc.stays.length > 0) ? acc.stays : [legacyStay];
+  const setStays = (next: AccommodationStay[]) => onChange({ ...trip, accommodation: { ...acc, stays: next } });
+  const updateStay = (index: number, patch: Partial<AccommodationStay>) => {
+    setStays(stays.map((s, i) => i === index ? { ...s, ...patch } : s));
+  };
+  const updateStayFeature = (stayIndex: number, featureIndex: number, value: string) => {
+    const stay = stays[stayIndex] ?? { name: '', image: '', features: ['', '', ''] };
+    const features = [0, 1, 2].map(i => stay.features?.[i] ?? '');
+    features[featureIndex] = value;
+    updateStay(stayIndex, { features });
+  };
+  const addStay = () => setStays([...stays, { name: '', image: '', features: ['', '', ''] }]);
+  const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
@@ -684,24 +698,37 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           </button>
         </div>
         {trip.show_accommodation && (
-          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px' }}>
-            <div style={{ marginBottom: 10 }}>
-              <label style={s.label}>Stay Name</label>
-              <input style={s.input} placeholder="e.g. White Town Courtyard Stay" value={acc.name} onChange={e => setAcc({ name: e.target.value })} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={s.label}>Images (up to 3 URLs)</label>
-              {[0,1,2].map(i => (
-                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Image URL ${i+1}`} value={accImages[i]} onChange={e => setAccImage(i, e.target.value)} />
-              ))}
-            </div>
-            <div>
-              <label style={s.label}>Bullet Points (3)</label>
-              {[0,1,2].map(i => (
-                <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Feature ${i+1}`} value={accFeatures[i]} onChange={e => setAccFeature(i, e.target.value)} />
-              ))}
-            </div>
-          </div>
+          <>
+            {stays.map((stay, stayIndex) => (
+              <div key={stayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label style={{ ...s.label, marginBottom: 0 }}>Stay {stayIndex + 1}</label>
+                  {stays.length > 1 && (
+                    <button type="button" onClick={() => removeStay(stayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                      Remove Stay
+                    </button>
+                  )}
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={s.label}>Stay Name</label>
+                  <input style={s.input} placeholder="e.g. Night Tent Camp / Hilltop Hotel" value={stay.name} onChange={e => updateStay(stayIndex, { name: e.target.value })} />
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={s.label}>Image URL</label>
+                  <input style={s.input} placeholder="e.g. https://..." value={stay.image} onChange={e => updateStay(stayIndex, { image: e.target.value })} />
+                </div>
+                <div>
+                  <label style={s.label}>Bullet Points (3)</label>
+                  {[0, 1, 2].map(i => (
+                    <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Feature ${i + 1}`} value={stay.features?.[i] ?? ''} onChange={e => updateStayFeature(stayIndex, i, e.target.value)} />
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button type="button" onClick={addStay} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              + Add Stay
+            </button>
+          </>
         )}
       </CollapsibleSection>
 
