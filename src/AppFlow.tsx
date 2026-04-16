@@ -74,7 +74,7 @@ interface Event {
     images?: string[];
     features?: string[];
     policy?: string;
-    stays?: { name: string; image: string; features: string[] }[];
+    stays?: { name: string; image?: string; images?: string[]; features: string[] }[];
   };
   optionalActivities?: string[];
   videos: { thumbnail: string; url?: string; caption: string }[];
@@ -1782,6 +1782,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [showWorkWithUs, setShowWorkWithUs] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
+  const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1806,6 +1807,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       setExpandedItinerary(0);
     }
   }, [event]);
+
+  useEffect(() => {
+    setStayImageIndexes({});
+  }, [event.id]);
 
   // Reset calendar to nearest upcoming month whenever the event changes
   useEffect(() => {
@@ -2239,7 +2244,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 ? accommodation.stays
                 : [{
                     name: accommodation.name ?? 'Stay',
-                    image: accommodation.images?.[0] ?? '',
+                    images: [0, 1, 2].map(i => accommodation.images?.[i] ?? ''),
                     features: [0, 1, 2].map(i => accommodation.features?.[i] ?? '').filter(Boolean),
                   }];
               return (
@@ -2247,11 +2252,42 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   {stays.map((stay, stayIndex) => (
                     <div key={stayIndex} className={stayIndex > 0 ? 'border-t border-gray-200' : ''}>
                       <div className="relative w-full h-48">
-                        {stay.image ? (
-                          <img src={stay.image} alt={stay.name || `Stay ${stayIndex + 1}`} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-gray-200" />
-                        )}
+                        {(() => {
+                          const stayImages = (stay.images ?? []).filter(Boolean);
+                          const images = stayImages.length > 0 ? stayImages : (stay.image ? [stay.image] : []);
+                          const currentIndex = Math.max(0, Math.min(stayImageIndexes[stayIndex] ?? 0, Math.max(images.length - 1, 0)));
+                          return images.length > 0 ? (
+                            <>
+                              <img src={images[currentIndex]} alt={stay.name || `Stay ${stayIndex + 1}`} className="w-full h-full object-cover" />
+                              {images.length > 1 && (
+                                <>
+                                  <button
+                                    onClick={() => setStayImageIndexes(prev => ({ ...prev, [stayIndex]: (currentIndex - 1 + images.length) % images.length }))}
+                                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+                                  >
+                                    <ChevronLeft size={20} className="text-gray-800 pr-0.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setStayImageIndexes(prev => ({ ...prev, [stayIndex]: (currentIndex + 1) % images.length }))}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+                                  >
+                                    <ChevronRight size={20} className="text-gray-800 pl-0.5" />
+                                  </button>
+                                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                                    {images.map((_, imgIndex) => (
+                                      <div
+                                        key={imgIndex}
+                                        className={`w-1.5 h-1.5 rounded-full transition-colors ${imgIndex === currentIndex ? 'bg-white' : 'bg-white/50'}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <div className="w-full h-full bg-gray-200" />
+                          );
+                        })()}
                       </div>
                       <div className="p-4">
                         <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-black text-white text-[10px] font-bold uppercase tracking-wide mb-2">

@@ -21,7 +21,7 @@ type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: s
 type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; review_count?: number; images?: string[] };
 type ItineraryScheduleItem = { time: string; activity: string };
 type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
-type AccommodationStay = { name: string; image: string; features: string[] };
+type AccommodationStay = { name: string; image?: string; images?: string[]; features: string[] };
 type Trip = {
   id?: string;
   slug: string;
@@ -284,7 +284,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Plans</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', image: '', features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -564,7 +564,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const acc = trip.accommodation ?? {};
   const legacyStay: AccommodationStay = {
     name: acc.name ?? '',
-    image: acc.images?.[0] ?? '',
+    images: [0, 1, 2].map(i => acc.images?.[i] ?? ''),
     features: [0, 1, 2].map(i => acc.features?.[i] ?? ''),
   };
   const stays: AccommodationStay[] = (acc.stays && acc.stays.length > 0) ? acc.stays : [legacyStay];
@@ -578,7 +578,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     features[featureIndex] = value;
     updateStay(stayIndex, { features });
   };
-  const addStay = () => setStays([...stays, { name: '', image: '', features: ['', '', ''] }]);
+  const updateStayImage = (stayIndex: number, imageIndex: number, value: string) => {
+    const stay = stays[stayIndex] ?? { name: '', images: ['', '', ''], features: ['', '', ''] };
+    const images = [0, 1, 2].map(i => stay.images?.[i] ?? (i === 0 ? (stay.image ?? '') : ''));
+    images[imageIndex] = value;
+    updateStay(stayIndex, { images, image: images[0] || '' });
+  };
+  const addStay = () => setStays([...stays, { name: '', images: ['', '', ''], features: ['', '', ''] }]);
   const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
@@ -714,8 +720,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   <input style={s.input} placeholder="e.g. Night Tent Camp / Hilltop Hotel" value={stay.name} onChange={e => updateStay(stayIndex, { name: e.target.value })} />
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <label style={s.label}>Image URL</label>
-                  <input style={s.input} placeholder="e.g. https://..." value={stay.image} onChange={e => updateStay(stayIndex, { image: e.target.value })} />
+                  <label style={s.label}>Images (up to 3 URLs)</label>
+                  {[0, 1, 2].map(imageIndex => (
+                    <input
+                      key={imageIndex}
+                      style={{ ...s.input, marginBottom: 6 }}
+                      placeholder={`Image URL ${imageIndex + 1}`}
+                      value={stay.images?.[imageIndex] ?? (imageIndex === 0 ? (stay.image ?? '') : '')}
+                      onChange={e => updateStayImage(stayIndex, imageIndex, e.target.value)}
+                    />
+                  ))}
                 </div>
                 <div>
                   <label style={s.label}>Bullet Points (3)</label>
