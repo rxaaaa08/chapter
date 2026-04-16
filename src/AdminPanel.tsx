@@ -659,17 +659,18 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
       </div>
 
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <label style={{ ...s.label, marginBottom: 0 }}>Show In "Other" City Feed</label>
-        <button type="button" onClick={toggleShowInOther}
-          style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-          {showInOther ? 'ON' : 'OFF'}
-        </button>
-        <span style={{ color: '#999', fontSize: 12 }}>When ON, users selecting "Other" city can see this event.</span>
-      </div>
-
       {/* ── LOGISTICS ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 4 }}>Logistics</div>
+
+      <CollapsibleSection title="Show In Other City Feed" badge={showInOther ? 'ON' : 'OFF'} badgeColor={showInOther ? '#16a34a' : undefined}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, color: '#555' }}>When ON, users selecting "Other" city can see this event.</span>
+          <button type="button" onClick={toggleShowInOther}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>
+            {showInOther ? 'ON' : 'OFF'}
+          </button>
+        </div>
+      </CollapsibleSection>
 
       <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`} action={addBtn(addDate)}>
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>No dates added yet.</div>}
