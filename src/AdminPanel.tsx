@@ -232,7 +232,7 @@ export default function AdminPanel() {
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Trips</button>
-        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other</button>
+        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other City</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Bot Messages</button>
       </div>
 

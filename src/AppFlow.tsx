@@ -523,13 +523,16 @@ export default function App() {
     setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text }]);
   };
 
-  const handleCitySelect = (city: string) => {
+  const formatCityLabel = (city: string) => (city === 'Other' ? 'Other City' : city);
+
+  const handleCitySelect = (city: string, label?: string) => {
     setStep('PROCESSING');
-    addUserMessage(city);
+    const cityLabel = label ?? formatCityLabel(city);
+    addUserMessage(cityLabel);
     setSelectedCity(city);
     
     simulateBotTyping(() => {
-      addBotMessage(fillMsg(msgs, 'ask_category', { city }, `Awesome! What would you like to attend in ${city}?`));
+      addBotMessage(fillMsg(msgs, 'ask_category', { city: cityLabel }, `Awesome! What would you like to attend in ${cityLabel}?`));
       setStep('ASK_CATEGORY');
     });
   };
@@ -540,12 +543,13 @@ export default function App() {
     setSelectedCategory(category);
     
     simulateBotTyping(() => {
+      const cityLabel = formatCityLabel(selectedCity);
       const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === category);
       if (filteredEvents.length > 0) {
-        addBotMessage(fillMsg(msgs, 'select_event', { city: selectedCity, category }, `Here are the upcoming ${category} in ${selectedCity}. Which one are you interested in?`));
+        addBotMessage(fillMsg(msgs, 'select_event', { city: cityLabel, category }, `Here are the upcoming ${category} in ${cityLabel}. Which one are you interested in?`));
         setStep('SELECT_EVENT');
       } else {
-        addBotMessage(fillMsg(msgs, 'no_events', { city: selectedCity, category }, `Oops, looks like we don't have any ${category} scheduled in ${selectedCity} right now. Check back later!`));
+        addBotMessage(fillMsg(msgs, 'no_events', { city: cityLabel, category }, `Oops, looks like we don't have any ${category} scheduled in ${cityLabel} right now. Check back later!`));
         setStep('NO_EVENTS');
       }
     }, 1000);
@@ -739,17 +743,21 @@ export default function App() {
           })
           .sort((a, b) => a.localeCompare(b));
         const availableCities = ['Chennai', ...middleCities, 'Other'];
+        const cityOptions = availableCities.map((city) => ({
+          value: city,
+          label: city === 'Other' ? 'Other City' : city,
+        }));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {availableCities.map((city, i) => (
-              <button key={city} onClick={() => handleCitySelect(city)} className={`${btnClass} relative overflow-hidden`}>
+            {cityOptions.map((city, i) => (
+              <button key={city.value} onClick={() => handleCitySelect(city.value, city.label)} className={`${btnClass} relative overflow-hidden`}>
                 <motion.div
                   className="absolute inset-0 -skew-x-12"
                   style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
                   animate={{ x: ['-100%', '300%'] }}
                   transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
                 />
-                <span>{city}</span> <Send size={16} />
+                <span>{city.label}</span> <Send size={16} />
               </button>
             ))}
           </motion.div>
