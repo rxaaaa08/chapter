@@ -198,8 +198,14 @@ export default function AdminPanel() {
       return;
     }
     if (action === 'preview') {
-      const previewUrl = trip.booking_url?.trim() || 'https://chaptera.in';
+      const previewTarget = trip.id || trip.slug;
+      if (!previewTarget) return;
+      const previewUrl = `${window.location.origin}/?preview_event=${encodeURIComponent(previewTarget)}`;
+      if (navigator?.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(previewUrl); } catch (_) {}
+      }
       window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      showToast('Preview link opened. URL copied.');
       return;
     }
     if (action === 'delete') {

@@ -122,3 +122,30 @@ export async function fetchEvents(): Promise<any[]> {
 
   return (data ?? []).map(mapDbEventToEvent);
 }
+
+export async function fetchEventByIdOrSlug(idOrSlug: string): Promise<any | null> {
+  const baseSelect = `
+      *,
+      event_dates ( * ),
+      event_media ( * ),
+      event_reviews ( * ),
+      faqs ( * )
+    `;
+
+  let { data, error } = await supabase
+    .from('events')
+    .select(baseSelect)
+    .eq('id', idOrSlug)
+    .single();
+
+  if (error || !data) {
+    const slugRes = await supabase
+      .from('events')
+      .select(baseSelect)
+      .eq('slug', idOrSlug)
+      .single();
+    data = slugRes.data;
+  }
+
+  return data ? mapDbEventToEvent(data) : null;
+}

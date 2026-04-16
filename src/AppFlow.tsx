@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchEvents, fetchChatMessages, fillMsg } from './supabase';
+import { fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -335,6 +335,21 @@ export default function App() {
   useEffect(() => {
     fetchEvents().then((data) => { if (data.length > 0) setEvents(data); });
     fetchChatMessages().then((data) => { if (Object.keys(data).length > 0) setMsgs(data); });
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const previewEvent = params.get('preview_event');
+    if (!previewEvent) return;
+    fetchEventByIdOrSlug(previewEvent).then((event) => {
+      if (!event) return;
+      setSelectedEvent(event);
+      setSelectedCity(event.cities?.[0] || 'Chennai');
+      setSelectedCategory(event.category || 'Trips');
+      setShowTransition(false);
+      setShowDetails(true);
+      setStep('EVENT_SELECTED');
+    });
   }, []);
 
   const [messages, setMessages] = useState<Message[]>([]);
