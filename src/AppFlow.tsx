@@ -430,6 +430,7 @@ export default function App() {
       reporting_time: pickup.reportingTime,
       name: '',
       phone: '',
+      doubt: '',
       ...overrides,
     };
   };
@@ -747,16 +748,24 @@ export default function App() {
     const name = doubtFormData.name;
     const phone = doubtFormData.phone;
     const message = doubtFormData.message;
+    const pickup = getSelectedPickupForVars();
+    const selectedDate = getSelectedDateForVars();
     const webhookPayload = {
       name,
       phone,
       doubt: message,
       message,
+      city: selectedCity ? formatCityLabel(selectedCity) : '',
+      category: selectedCategory || selectedEvent?.category || '',
+      title: selectedEvent?.title ?? '',
+      date: selectedDate,
+      meeting_spot: pickup.meetingSpot,
+      transport: pickup.transport,
+      reporting_time: pickup.reportingTime,
       eventId: selectedEvent?.id ?? '',
       eventTitle: selectedEvent?.title ?? '',
       eventCategory: selectedEvent?.category ?? selectedCategory ?? '',
-      city: selectedCity ?? '',
-      selectedDate: bookingDate || journeyCardData?.startDate || selectedEvent?.dates?.[0]?.date || '',
+      selectedDate,
       submittedAt: new Date().toISOString(),
       source: 'chaptera_doubt_form',
     };
@@ -773,7 +782,7 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(message);
     simulateBotTyping(() => {
-      addBotMessage(fillMsgForSelectedEvent('contact_success', getTemplateVars({ name, phone }), `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
+      addBotMessage(fillMsgForSelectedEvent('contact_success', getTemplateVars({ name, phone, doubt: message }), `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
       setStep('DONE');
     }, 1000);
   };
