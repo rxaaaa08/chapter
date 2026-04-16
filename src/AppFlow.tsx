@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { fetchEvents } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -73,8 +74,8 @@ interface Event {
   waitlistUrl?: string;
 }
 
-// Mock Data
-const EVENTS: Event[] = [
+// Fallback data used only if Supabase is unavailable
+const FALLBACK_EVENTS: Event[] = [
   {
     id: 'e1',
     cities: ['Chennai'],
@@ -314,6 +315,14 @@ const GENERAL_ANNOUNCEMENTS = [
 ];
 
 export default function App() {
+  const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
+
+  useEffect(() => {
+    fetchEvents().then((data) => {
+      if (data.length > 0) setEvents(data);
+    });
+  }, []);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
   const [selectedCity, setSelectedCity] = useState('');
@@ -523,7 +532,7 @@ export default function App() {
     setSelectedCategory(category);
     
     simulateBotTyping(() => {
-      const filteredEvents = EVENTS.filter(e => e.cities.includes(selectedCity) && e.category === category);
+      const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === category);
       if (filteredEvents.length > 0) {
         addBotMessage(`Here are the upcoming ${category} in ${selectedCity}. Which one are you interested in?`);
         setStep('SELECT_EVENT');
@@ -712,7 +721,7 @@ export default function App() {
 
     switch (step) {
       case 'ASK_CITY': {
-        const availableCities = Array.from(new Set(EVENTS.flatMap(e => e.cities)));
+        const availableCities = Array.from(new Set(events.flatMap(e => e.cities)));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {availableCities.map((city, i) => (
@@ -730,7 +739,7 @@ export default function App() {
         );
       }
       case 'ASK_CATEGORY': {
-        const availableCategories = Array.from(new Set(EVENTS.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
+        const availableCategories = Array.from(new Set(events.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {availableCategories.map((cat, i) => (
@@ -825,7 +834,7 @@ export default function App() {
           </motion.div>
         );
       case 'SELECT_EVENT': {
-        const filteredEvents = EVENTS.filter(e => e.cities.includes(selectedCity) && e.category === selectedCategory);
+        const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === selectedCategory);
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {filteredEvents.map((event, i) => (
