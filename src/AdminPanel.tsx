@@ -1012,7 +1012,7 @@ export default function AdminPanel() {
           <>
             <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Bot Messages</div>
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
-              Use <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code> as placeholders.
+              You can use dynamic variables like <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{category}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code> and <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{phone}'}</code>.
             </div>
             <CollapsibleSection title="Global Announcements">
               <div style={{ display: 'grid', gap: 8 }}>
@@ -1026,7 +1026,11 @@ export default function AdminPanel() {
                       next[idx] = e.target.value;
                       return next;
                     })}
-                    placeholder={`Announcement ${idx + 1}`}
+                    placeholder={[
+                      'Chennai-based social club with 4000+ members',
+                      'Weekend plans drop every week',
+                      'Spots fill fast - book early to lock your seat',
+                    ][idx]}
                   />
                 ))}
               </div>
@@ -1039,17 +1043,17 @@ export default function AdminPanel() {
 
             <CollapsibleSection title="Pre-selection Messages">
               {[
-                { key: 'welcome', label: 'Select City' },
-                { key: 'ask_category', label: 'Select Category' },
-                { key: 'select_event', label: 'Select Plan' },
-              ].map(({ key, label }) => (
+                { key: 'welcome', label: 'Select City', placeholder: "Welcome to chapter அ! 👋 Which city are you from buddy?" },
+                { key: 'ask_category', label: 'Select Category', placeholder: "Awesome, {city}! What are you looking for today - events or trips?" },
+                { key: 'select_event', label: 'Select Plan', placeholder: "Here are the upcoming {category} in {city}. Which one should I open for you?" },
+              ].map(({ key, label, placeholder }) => (
                 <div key={key} style={{ marginBottom: 12 }}>
                   <label style={s.label}>{label}</label>
                   <textarea
                     style={s.textarea}
                     value={globalMessageDrafts[key] ?? ''}
                     onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={`Template for ${key}`}
+                    placeholder={placeholder}
                   />
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                     <button
@@ -1066,16 +1070,16 @@ export default function AdminPanel() {
 
             <CollapsibleSection title="Post-selection Messages">
               {[
-                { key: 'ask_doubts_book', label: 'Book Now Flow' },
-                { key: 'ask_doubts_contact', label: 'Contact Us Flow' },
-              ].map(({ key, label }) => (
+                { key: 'ask_doubts_book', label: 'Book Now Flow', placeholder: "You're about to lock your spot for {title}. All clear or do you have any last-minute doubts?" },
+                { key: 'ask_doubts_contact', label: 'Contact Us Flow', placeholder: "Got questions about {title}? Tap a common doubt below or ask your own question." },
+              ].map(({ key, label, placeholder }) => (
                 <div key={key} style={{ marginBottom: 12 }}>
                   <label style={s.label}>{label}</label>
                   <textarea
                     style={s.textarea}
                     value={globalMessageDrafts[key] ?? ''}
                     onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={`Template for ${key}`}
+                    placeholder={placeholder}
                   />
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                     <button
@@ -1096,7 +1100,7 @@ export default function AdminPanel() {
                 style={s.input}
                 value={doubtCtaLabel}
                 onChange={e => setDoubtCtaLabel(e.target.value)}
-                placeholder="Vera Doubt Iruku"
+                placeholder="Still have a different doubt?"
               />
 
               <label style={{ ...s.label, marginTop: 10 }}>Google Sheets Webhook URL</label>
@@ -1104,7 +1108,7 @@ export default function AdminPanel() {
                 style={s.input}
                 value={doubtFormWebhookUrl}
                 onChange={e => setDoubtFormWebhookUrl(e.target.value)}
-                placeholder="https://script.google.com/macros/s/.../exec"
+                placeholder="Paste Google Apps Script Web App URL (…/exec)"
               />
               <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
                 We send name, phone, doubt, selected event, city, event category and selected date on form submit.
@@ -1155,7 +1159,15 @@ export default function AdminPanel() {
                         style={s.textarea}
                         value={tripMessageDrafts[stepKey] ?? ''}
                         onChange={e => setTripMessageDrafts(prev => ({ ...prev, [stepKey]: e.target.value }))}
-                        placeholder={`Template for ${stepKey}`}
+                        placeholder={
+                          stepKey === 'ask_doubts_book'
+                            ? "You're about to lock your spot for {title}. All clear or any last-minute doubts?"
+                            : stepKey === 'show_faq'
+                              ? "No sweat - here are common doubts. Tap one, or ask your own question."
+                              : stepKey === 'faq_followup'
+                                ? "Hope that helps. Want to ask another doubt or proceed to booking?"
+                                : "Got it, {name}! Our team will contact you shortly on {phone}."
+                        }
                       />
                     </div>
                   ))}
@@ -1177,7 +1189,7 @@ export default function AdminPanel() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                           <input
                             style={s.input}
-                            placeholder="Question"
+                            placeholder="Example: Can I join solo?"
                             value={faq.question}
                             onChange={e => setTripFaqDrafts(prev => prev.map((x, idx) => idx === i ? { ...x, question: e.target.value } : x))}
                           />
@@ -1191,7 +1203,7 @@ export default function AdminPanel() {
                         </div>
                         <textarea
                           style={s.textarea}
-                          placeholder="Answer"
+                          placeholder="Example: Yes. Most members join solo and we make sure the group vibe is welcoming."
                           value={faq.answer}
                           onChange={e => setTripFaqDrafts(prev => prev.map((x, idx) => idx === i ? { ...x, answer: e.target.value } : x))}
                         />
