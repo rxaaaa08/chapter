@@ -1766,7 +1766,16 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<string>('');
   const [showMeetingPointSwitchBorder, setShowMeetingPointSwitchBorder] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
+  const nearestEventMonth = () => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const upcoming = (event.dates ?? [])
+      .map(d => new Date(d.date + 'T00:00:00'))
+      .filter(d => d >= today)
+      .sort((a, b) => a.getTime() - b.getTime());
+    const target = upcoming[0] ?? new Date();
+    return new Date(target.getFullYear(), target.getMonth(), 1);
+  };
+  const [currentMonth, setCurrentMonth] = useState(nearestEventMonth);
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarRevealed, setCalendarRevealed] = useState(false);
   const [showWorkWithUs, setShowWorkWithUs] = useState(false);
@@ -1797,6 +1806,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
       setExpandedItinerary(0);
     }
   }, [event]);
+
+  // Reset calendar to nearest upcoming month whenever the event changes
+  useEffect(() => {
+    setCurrentMonth(nearestEventMonth());
+  }, [event.id]);
 
   useEffect(() => {
     if (!showCalendar || !selectedDate) return;
