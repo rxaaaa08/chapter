@@ -477,10 +477,10 @@ export default function AdminPanel() {
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
-        <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media & Reviews</button>
-        <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Per Trip Q&A</button>
-        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other City</button>
-        <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Bot Messages</button>
+        <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
+        <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
+        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>For Other Cities</button>
+        <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
       </div>
 
       <div style={{ maxWidth: 720, margin: '32px auto', padding: '0 20px' }}>
