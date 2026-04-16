@@ -315,20 +315,21 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   };
   const addDate = () => onChange({ ...trip, event_dates: [...dates, { start_date: '', status: 'available', label: '' }] });
   const removeDate = (i: number) => onChange({ ...trip, event_dates: dates.filter((_, idx) => idx !== i) });
-  const includedText = (trip.included ?? []).join('\n');
-  const optionalActivitiesText = (trip.optional_activities ?? []).join('\n');
-  const notIncludedText = (trip.not_included ?? []).join('\n');
-  const setIncludedText = (text: string) => {
-    const items = text.split('\n').map(v => v.trim()).filter(Boolean);
-    onChange({ ...trip, included: items });
+  const setStringList = (key: 'included' | 'optional_activities' | 'not_included', list: string[]) => {
+    onChange({ ...trip, [key]: list });
   };
-  const setOptionalActivitiesText = (text: string) => {
-    const items = text.split('\n').map(v => v.trim()).filter(Boolean);
-    onChange({ ...trip, optional_activities: items });
+  const updateStringListItem = (key: 'included' | 'optional_activities' | 'not_included', index: number, value: string) => {
+    const current = [...(trip[key] ?? [])];
+    current[index] = value;
+    setStringList(key, current);
   };
-  const setNotIncludedText = (text: string) => {
-    const items = text.split('\n').map(v => v.trim()).filter(Boolean);
-    onChange({ ...trip, not_included: items });
+  const addStringListItem = (key: 'included' | 'optional_activities' | 'not_included') => {
+    const current = [...(trip[key] ?? [])];
+    setStringList(key, [...current, '']);
+  };
+  const removeStringListItem = (key: 'included' | 'optional_activities' | 'not_included', index: number) => {
+    const current = [...(trip[key] ?? [])];
+    setStringList(key, current.filter((_, i) => i !== index));
   };
 
   const field = (label: string, key: keyof Trip, type = 'text') => (
@@ -352,33 +353,33 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       </div>
 
       {/* What's Included */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>What's Included (one item per line)</label>
-        <textarea
-          style={s.textarea}
-          value={includedText}
-          onChange={e => setIncludedText(e.target.value)}
-          placeholder={'Round-trip transport\nStay\nBreakfast\nExperience host'}
-        />
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Optional Activities (one item per line)</label>
-        <textarea
-          style={s.textarea}
-          value={optionalActivitiesText}
-          onChange={e => setOptionalActivitiesText(e.target.value)}
-          placeholder={'Sunrise walk\nCampfire games\nCafe trail'}
-        />
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>What's Not Included (one item per line)</label>
-        <textarea
-          style={s.textarea}
-          value={notIncludedText}
-          onChange={e => setNotIncludedText(e.target.value)}
-          placeholder={'Lunch\nPersonal expenses\nEntry tickets not listed'}
-        />
-      </div>
+      <StringListEditor
+        title="What's Included"
+        values={trip.included ?? []}
+        placeholder="e.g. Round-trip transport"
+        s={s}
+        onAdd={() => addStringListItem('included')}
+        onChange={(i, v) => updateStringListItem('included', i, v)}
+        onRemove={(i) => removeStringListItem('included', i)}
+      />
+      <StringListEditor
+        title="Optional Activities"
+        values={trip.optional_activities ?? []}
+        placeholder="e.g. Sunrise walk"
+        s={s}
+        onAdd={() => addStringListItem('optional_activities')}
+        onChange={(i, v) => updateStringListItem('optional_activities', i, v)}
+        onRemove={(i) => removeStringListItem('optional_activities', i)}
+      />
+      <StringListEditor
+        title="What's Not Included"
+        values={trip.not_included ?? []}
+        placeholder="e.g. Lunch"
+        s={s}
+        onAdd={() => addStringListItem('not_included')}
+        onChange={(i, v) => updateStringListItem('not_included', i, v)}
+        onRemove={(i) => removeStringListItem('not_included', i)}
+      />
 
       {/* Dates */}
       <div style={{ marginBottom: 14 }}>
@@ -486,6 +487,49 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {saving ? 'Saving…' : 'Save Trip'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function StringListEditor({
+  title,
+  values,
+  placeholder,
+  s,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  title: string;
+  values: string[];
+  placeholder: string;
+  s: any;
+  onAdd: () => void;
+  onChange: (index: number, value: string) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <label style={{ ...s.label, marginBottom: 0 }}>{title}</label>
+        <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={onAdd}>
+          + Add Item
+        </button>
+      </div>
+      {values.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+      {values.map((item, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <input
+            style={s.input}
+            placeholder={placeholder}
+            value={item}
+            onChange={e => onChange(i, e.target.value)}
+          />
+          <button type="button" onClick={() => onRemove(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
