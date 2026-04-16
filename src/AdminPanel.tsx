@@ -75,7 +75,10 @@ export default function AdminPanel() {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
+  const [doubtCtaLabel, setDoubtCtaLabel] = useState('');
+  const [doubtFormWebhookUrl, setDoubtFormWebhookUrl] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
+  const [savingDoubtSettings, setSavingDoubtSettings] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -133,6 +136,10 @@ export default function AdminPanel() {
         setMsgs(allMsgs);
         const generalAnnouncementsMsg = allMsgs.find(m => m.step_key === 'general_announcements');
         if (generalAnnouncementsMsg) setGeneralAnnouncementsText(generalAnnouncementsMsg.bot_message || '');
+        const doubtLabelMsg = allMsgs.find(m => m.step_key === 'doubt_cta_label');
+        setDoubtCtaLabel(doubtLabelMsg?.bot_message || '');
+        const webhookMsg = allMsgs.find(m => m.step_key === 'doubt_form_webhook_url');
+        setDoubtFormWebhookUrl(webhookMsg?.bot_message || '');
       }
       setLoading(false);
     });
@@ -376,6 +383,43 @@ export default function AdminPanel() {
     }
     setSavingGeneralAnnouncements(false);
     showToast('Global announcements saved!');
+  };
+
+  const saveDoubtFormSettings = async () => {
+    setSavingDoubtSettings(true);
+    const saveSetting = async (stepKey: string, value: string) => {
+      const trimmed = value.trim();
+      const existing = msgs.find(m => m.step_key === stepKey);
+      if (existing?.id) {
+        if (!trimmed) {
+          await supabase.from('chat_messages').delete().eq('id', existing.id);
+          setMsgs(prev => prev.filter(m => m.id !== existing.id));
+        } else {
+          await supabase.from('chat_messages').update({ bot_message: trimmed }).eq('id', existing.id);
+          setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: trimmed } : m));
+        }
+      } else if (trimmed) {
+        const maxSortOrder = msgs.length > 0
+          ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
+          : 0;
+        const { data } = await supabase
+          .from('chat_messages')
+          .insert({
+            step_key: stepKey,
+            bot_message: trimmed,
+            flow: 'global',
+            sort_order: maxSortOrder + 1,
+          })
+          .select('*')
+          .single();
+        if (data) setMsgs(prev => [...prev, data as ChatMsg]);
+      }
+    };
+
+    await saveSetting('doubt_cta_label', doubtCtaLabel);
+    await saveSetting('doubt_form_webhook_url', doubtFormWebhookUrl);
+    setSavingDoubtSettings(false);
+    showToast('Doubt form settings saved!');
   };
 
   const handleMessagesTripChange = (tripId: string) => {
@@ -976,6 +1020,32 @@ export default function AdminPanel() {
                 <button style={s.btn(savingGeneralAnnouncements ? '#aaa' : '#111')} disabled={savingGeneralAnnouncements} onClick={saveGeneralAnnouncements}>
                   {savingGeneralAnnouncements ? 'Saving…' : 'Save Global Announcements'}
                 </button>
+              </div>
+
+              <div style={{ marginTop: 18, borderTop: '1px solid #ececec', paddingTop: 12 }}>
+                <label style={s.label}>Doubt Button Text (FAQ section)</label>
+                <input
+                  style={s.input}
+                  value={doubtCtaLabel}
+                  onChange={e => setDoubtCtaLabel(e.target.value)}
+                  placeholder="Vera Doubt Iruku"
+                />
+
+                <label style={{ ...s.label, marginTop: 10 }}>Google Sheets Webhook URL (for Doubt Form)</label>
+                <input
+                  style={s.input}
+                  value={doubtFormWebhookUrl}
+                  onChange={e => setDoubtFormWebhookUrl(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                />
+                <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+                  Add your Apps Script Web App URL. We send name, phone, doubt, selected event and city on form submit.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button style={s.btn(savingDoubtSettings ? '#aaa' : '#111')} disabled={savingDoubtSettings} onClick={saveDoubtFormSettings}>
+                    {savingDoubtSettings ? 'Saving…' : 'Save Doubt Settings'}
+                  </button>
+                </div>
               </div>
             </CollapsibleSection>
 
