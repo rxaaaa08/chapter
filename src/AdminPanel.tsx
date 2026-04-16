@@ -638,13 +638,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     set('cities', showInOther ? current.filter(c => c !== 'Other') : Array.from(new Set([...current, 'Other'])));
   };
 
-  const addBtn = (onClick: () => void, label = '+ Add') => (
-    <button type="button" onClick={onClick}
-      style={{ padding: '3px 10px', background: 'transparent', color: '#555', border: '1.5px solid #ccc', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-      {label}
-    </button>
-  );
-
   return (
     <div>
       {/* ── ESSENTIALS ── */}
@@ -666,7 +659,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       {/* ── LOGISTICS ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 14 }}>Logistics</div>
 
-      <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`} action={addBtn(addDate)}>
+      <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`}>
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -711,7 +704,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`} action={addBtn(addPickup)}>
+      <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`}>
         {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No transport pickup points added.</div>}
         {regularPickups.map((p) => (
           <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
@@ -810,7 +803,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       {/* ── CONTENT ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 10 }}>Content</div>
 
-      <CollapsibleSection title="Header Announcements" action={addBtn(() => onChange({ ...trip, announcements: [...(trip.announcements ?? []), ''] }))}>
+      <CollapsibleSection title="Header Announcements">
         {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No announcements yet.</div>}
         {(trip.announcements ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -822,7 +815,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         ))}
       </CollapsibleSection>
 
-      <CollapsibleSection title="You'll Experience (Itinerary)" action={addBtn(addItineraryDay, '+ Add Day')}>
+      <CollapsibleSection title="You'll Experience (Itinerary)">
         {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
         {itinerary.map((day, dayIndex) => (
           <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
@@ -850,7 +843,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         ))}
       </CollapsibleSection>
 
-      <CollapsibleSection title="What's Included" action={addBtn(() => addStringListItem('included'))}>
+      <CollapsibleSection title="What's Included">
         {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
         {(trip.included ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -860,7 +853,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         ))}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Optional Activities" action={addBtn(() => addStringListItem('optional_activities'))}>
+      <CollapsibleSection title="Optional Activities">
         {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
         {(trip.optional_activities ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -870,7 +863,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         ))}
       </CollapsibleSection>
 
-      <CollapsibleSection title="What's Not Included" action={addBtn(() => addStringListItem('not_included'))}>
+      <CollapsibleSection title="What's Not Included">
         {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
         {(trip.not_included ?? []).map((item, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
