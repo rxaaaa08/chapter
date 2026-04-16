@@ -492,8 +492,8 @@ export default function AdminPanel() {
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
-        <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
         <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
+        <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
       </div>
