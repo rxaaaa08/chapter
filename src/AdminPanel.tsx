@@ -1771,7 +1771,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       </CollapsibleSection>
 
       <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
-        💡 Videos and Google Reviews are managed in the <strong>Media & Reviews</strong> tab above.
+        💡 <strong>Media</strong> (videos & reviews), <strong>Timelines</strong> (booking steps), and <strong>Q&A</strong> are managed in their own tabs above.
       </div>
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
