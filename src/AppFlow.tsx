@@ -1956,7 +1956,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
 
         {/* Quick Info — boarding pass card */}
         {event.quickInfo && event.quickInfo.length > 0 && (() => {
-          const madeFor    = event.quickInfo!.find(c => c.label === 'Made For')     || event.quickInfo![3];
+          const madeFor    = event.quickInfo!.find(c => c.label === 'Made For' || c.label === "You'll Meet") || event.quickInfo![3];
           const groupSize  = event.quickInfo!.find(c => c.label === 'Group Size')   || event.quickInfo![2];
           const meetingSpot= event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
           const transport  = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
@@ -1990,7 +1990,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                   <div className="flex-1 px-3 py-4 border-r border-dashed border-[#bfbfbf]/50">
                     <div className="flex items-center gap-1 mb-1.5">
                       <Heart size={9} className="text-gray-500" />
-                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">{madeFor?.label}</span>
+                      <span className="text-[8px] text-gray-500 font-semibold uppercase tracking-wider">You'll Meet</span>
                     </div>
                     <span className="text-[14px] font-black text-gray-900 leading-snug">{madeFor?.value}</span>
                   </div>
