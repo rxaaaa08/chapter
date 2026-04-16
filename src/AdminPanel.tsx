@@ -18,6 +18,7 @@ type Trip = {
   hero_image: string;
   cities: string[];
   category: string;
+  included: string[];
   booking_url: string;
   cta_label: string;
   is_active: boolean;
@@ -207,7 +208,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -312,6 +313,11 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   };
   const addDate = () => onChange({ ...trip, event_dates: [...dates, { start_date: '', status: 'available', label: '' }] });
   const removeDate = (i: number) => onChange({ ...trip, event_dates: dates.filter((_, idx) => idx !== i) });
+  const includedText = (trip.included ?? []).join('\n');
+  const setIncludedText = (text: string) => {
+    const items = text.split('\n').map(v => v.trim()).filter(Boolean);
+    onChange({ ...trip, included: items });
+  };
 
   const field = (label: string, key: keyof Trip, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
@@ -331,6 +337,17 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {field('Booking URL', 'booking_url')}
         {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
         {field('Hero Image URL', 'hero_image')}
+      </div>
+
+      {/* What's Included */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>What's Included (one item per line)</label>
+        <textarea
+          style={s.textarea}
+          value={includedText}
+          onChange={e => setIncludedText(e.target.value)}
+          placeholder={'Round-trip transport\nStay\nBreakfast\nExperience host'}
+        />
       </div>
 
       {/* Dates */}
