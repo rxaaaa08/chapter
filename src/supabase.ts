@@ -60,10 +60,11 @@ export function mapDbEventToEvent(row: any): any {
       url: m.url ?? '',
       caption: m.caption,
     })),
-    reviews: (row.event_reviews ?? []).map((r: any) => ({
+    reviews: (row.event_reviews ?? []).filter((r: any) => r.name).map((r: any) => ({
       name: r.name,
       rating: r.rating,
       text: r.review_text,
+      dateLabel: r.date_label ?? '',
       images: Array.isArray(r.images) ? r.images : (r.images ?? []),
     })),
     faqs: (row.faqs ?? []).map((f: any) => ({

@@ -18,7 +18,7 @@ type PickupPoint = {
   otherAdvance?: number;
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
-type EventReview = { id?: string; name: string; rating: number; review_text: string; images?: string[] };
+type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; images?: string[] };
 type ItineraryScheduleItem = { time: string; activity: string };
 type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
 type Trip = {
@@ -148,13 +148,14 @@ export default function AdminPanel() {
       const validReviews = event_reviews.filter(r => r.name.trim() && r.review_text.trim());
       if (validReviews.length > 0) {
         await supabase.from('event_reviews').insert(
-          validReviews.map((r, i) => ({
+          validReviews.map((r, idx) => ({
             event_id: eventId,
             name: r.name.trim(),
             rating: Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5))),
             review_text: r.review_text.trim(),
+            date_label: r.date_label?.trim() ?? '',
             images: Array.isArray(r.images) ? r.images : [],
-            sort_order: i
+            sort_order: idx
           }))
         );
       }
@@ -884,26 +885,27 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {reviews.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
         {reviews.map((review, i) => (
           <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
               <input
                 style={s.input}
                 placeholder="Reviewer name"
                 value={review.name}
                 onChange={e => updateReview(i, { name: e.target.value })}
               />
-              <input
-                type="number"
-                min={1}
-                max={5}
-                step={1}
+              <select
                 style={s.input}
-                placeholder="Rating (1-5)"
                 value={review.rating ?? 5}
                 onChange={e => updateReview(i, { rating: Number(e.target.value) })}
+              >
+                {[5,4,3,2,1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
+              </select>
+              <input
+                style={s.input}
+                placeholder="e.g. 2 months ago"
+                value={review.date_label ?? ''}
+                onChange={e => updateReview(i, { date_label: e.target.value })}
               />
-              <button type="button" onClick={() => removeReview(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
-                ×
-              </button>
+              <button type="button" onClick={() => removeReview(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
             </div>
             <textarea
               style={s.textarea}

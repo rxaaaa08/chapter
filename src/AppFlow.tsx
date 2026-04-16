@@ -77,7 +77,7 @@ interface Event {
   };
   optionalActivities?: string[];
   videos: { thumbnail: string; url?: string; caption: string }[];
-  reviews: { name: string; rating: number; text: string; images: string[] }[];
+  reviews: { name: string; rating: number; text: string; dateLabel?: string; images: string[] }[];
   dates: TripDate[];
   faqs: FAQ[];
   bookingUrl: string;
@@ -2271,7 +2271,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         )}
 
         {/* Reviews */}
-        {!event.isActivity && (
+        {!event.isActivity && (event.reviews?.length ?? 0) > 0 && (
           <div className="pt-5 pb-2">
             <div className="px-6 mb-2">
               <h3 className="text-xl font-black">Fellow Lifemaxxers Said</h3>
@@ -2312,7 +2312,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           <Star key={j} size={14} fill={j < review.rating ? "currentColor" : "none"} className={j < review.rating ? "" : "text-gray-300"} />
                         ))}
                       </div>
-                      <span className="text-xs text-gray-500">{(i * 2) + 1} months ago</span>
+                      <span className="text-xs text-gray-500">{review.dateLabel || `${(i * 2) + 1} months ago`}</span>
                     </div>
 
                     {/* Review Text */}
