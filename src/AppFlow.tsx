@@ -400,6 +400,39 @@ export default function App() {
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
   const doubtFormWebhookUrl = (msgs.doubt_form_webhook_url || '').trim();
+  const getSelectedDateForVars = () => bookingDate || journeyCardData?.startDate || selectedEvent?.dates?.[0]?.date || '';
+  const getSelectedPickupForVars = () => {
+    const selectedPointId = journeyCardData?.meetingPoint || '';
+    if (!selectedEvent || !selectedPointId) {
+      return {
+        meetingSpot: selectedEvent?.startLocation || '',
+        transport: selectedEvent?.transport || '',
+        reportingTime: '',
+      };
+    }
+    const point = selectedEvent.pickupPoints?.find(p => p.id === selectedPointId);
+    return {
+      meetingSpot: point?.meetingSpot || point?.label || selectedEvent.startLocation || '',
+      transport: point?.transport || selectedEvent.transport || '',
+      reportingTime: point?.time || '',
+    };
+  };
+  const getTemplateVars = (overrides: Record<string, string> = {}) => {
+    const dateStr = getSelectedDateForVars();
+    const pickup = getSelectedPickupForVars();
+    return {
+      city: selectedCity ? formatCityLabel(selectedCity) : '',
+      category: selectedCategory || selectedEvent?.category || '',
+      title: selectedEvent?.title || '',
+      date: dateStr ? formatFullDate(dateStr) : '',
+      meeting_spot: pickup.meetingSpot,
+      transport: pickup.transport,
+      reporting_time: pickup.reportingTime,
+      name: '',
+      phone: '',
+      ...overrides,
+    };
+  };
   const fillMsgForSelectedEvent = (
     key: string,
     vars: Record<string, string> = {},
@@ -631,10 +664,10 @@ export default function App() {
     
     simulateBotTyping(() => {
       if (action === 'book') {
-        addBotMessage(fillMsgForSelectedEvent('ask_doubts_book', { title: selectedEvent?.title ?? '' }, `Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`));
+        addBotMessage(fillMsgForSelectedEvent('ask_doubts_book', getTemplateVars(), `Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`));
         setStep('ASK_DOUBTS');
       } else {
-        addBotMessage(fillMsgForSelectedEvent('ask_doubts_contact', { title: selectedEvent?.title ?? '' }, `Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`));
+        addBotMessage(fillMsgForSelectedEvent('ask_doubts_contact', getTemplateVars(), `Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`));
         setStep('SHOW_FAQ');
       }
     });
@@ -645,7 +678,7 @@ export default function App() {
     if (hasDoubts) {
       addUserMessage("Hold up, I have a question.");
       simulateBotTyping(() => {
-        addBotMessage(fillMsgForSelectedEvent('show_faq', {}, "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book."));
+        addBotMessage(fillMsgForSelectedEvent('show_faq', getTemplateVars(), "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book."));
         setStep('SHOW_FAQ');
       });
     } else {
@@ -668,7 +701,7 @@ export default function App() {
       addBotMessage(faq.answer);
       if (isFirstFaqAnswer) {
         simulateBotTyping(() => {
-          addBotMessage(fillMsgForSelectedEvent('faq_followup', {}, "Hope that clears it up! Got anything else, or are we locking this in?"));
+          addBotMessage(fillMsgForSelectedEvent('faq_followup', getTemplateVars(), "Hope that clears it up! Got anything else, or are we locking this in?"));
           setStep('SHOW_FAQ');
         }, 1000);
       } else {
@@ -740,7 +773,7 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(message);
     simulateBotTyping(() => {
-      addBotMessage(fillMsgForSelectedEvent('contact_success', { name, phone }, `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
+      addBotMessage(fillMsgForSelectedEvent('contact_success', getTemplateVars({ name, phone }), `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
       setStep('DONE');
     }, 1000);
   };
