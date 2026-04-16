@@ -2542,7 +2542,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
             >
-              <div className="w-full max-w-md rounded-2xl overflow-hidden bg-black shadow-2xl">
+              <div className="w-[86%] max-w-[320px] rounded-[28px] overflow-hidden bg-black border border-white/10 shadow-2xl">
                 <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-white/10">
                   <p className="text-xs font-semibold text-white/80 truncate pr-2">{activeVideo.caption}</p>
                   <button
@@ -2553,7 +2553,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     <X size={16} />
                   </button>
                 </div>
-                <div className="relative w-full" style={{ paddingTop: '177.78%' }}>
+                <div className="relative w-full overflow-hidden rounded-b-[28px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
                   <iframe
                     src={activeVideo.embedUrl}
                     title={activeVideo.caption}
