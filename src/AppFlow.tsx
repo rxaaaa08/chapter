@@ -2555,18 +2555,20 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 >
                   <X size={20} strokeWidth={3} />
                 </button>
-                <div className="relative w-full overflow-hidden rounded-[28px] bg-black" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
-                  <iframe
-                    id="video-modal-player"
-                    src={activeVideo.embedUrl}
-                    title={activeVideo.caption}
-                    className="absolute inset-0 w-full h-full"
-                    allow="autoplay; fullscreen; picture-in-picture"
-                    onLoad={(e) => {
-                      e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
-                    }}
-                    allowFullScreen
-                  />
+                <div className="relative w-full rounded-[28px] bg-black p-[2px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
+                  <div className="relative w-full h-full overflow-hidden rounded-[26px] bg-black">
+                    <iframe
+                      id="video-modal-player"
+                      src={activeVideo.embedUrl}
+                      title={activeVideo.caption}
+                      className="absolute inset-0 w-full h-full"
+                      allow="autoplay; fullscreen; picture-in-picture"
+                      onLoad={(e) => {
+                        e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
+                      }}
+                      allowFullScreen
+                    />
+                  </div>
                 </div>
               </div>
             </motion.div>
