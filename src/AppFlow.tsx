@@ -2555,29 +2555,33 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 >
                   <X size={20} strokeWidth={3} />
                 </button>
-                <div className="relative w-full rounded-[28px] bg-black p-[1px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
-                  <div
-                    className="relative w-full h-full overflow-hidden rounded-[27px]"
-                    style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
-                  >
-                    <iframe
-                      id="video-modal-player"
-                      src={activeVideo.embedUrl}
-                      title={activeVideo.caption}
-                      className="absolute max-w-none"
-                      style={{
-                        inset: '-2px',
-                        width: 'calc(100% + 4px)',
-                        height: 'calc(100% + 4px)',
-                        border: 0,
-                        clipPath: 'inset(0 round 27px)'
-                      }}
-                      allow="autoplay; fullscreen; picture-in-picture"
-                      onLoad={(e) => {
-                        e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
-                      }}
-                      allowFullScreen
-                    />
+                <div className="relative w-full max-w-[320px]">
+                  {/* Reserve final 9:16 size immediately to prevent opening jank */}
+                  <div style={{ paddingTop: '177.7778%' }} />
+                  <div className="absolute inset-0 rounded-[28px] bg-black p-[1px]">
+                    <div
+                      className="relative w-full h-full overflow-hidden rounded-[27px]"
+                      style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
+                    >
+                      <iframe
+                        id="video-modal-player"
+                        src={activeVideo.embedUrl}
+                        title={activeVideo.caption}
+                        className="absolute max-w-none"
+                        style={{
+                          inset: '-2px',
+                          width: 'calc(100% + 4px)',
+                          height: 'calc(100% + 4px)',
+                          border: 0,
+                          clipPath: 'inset(0 round 27px)'
+                        }}
+                        allow="autoplay; fullscreen; picture-in-picture"
+                        onLoad={(e) => {
+                          e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
+                        }}
+                        allowFullScreen
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
