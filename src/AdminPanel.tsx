@@ -554,7 +554,7 @@ export default function AdminPanel() {
                       const isExpanded = mediaEditingId === trip.id;
                       return (
                         <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0 }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
                               <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
