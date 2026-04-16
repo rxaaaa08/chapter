@@ -2555,21 +2555,19 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 >
                   <X size={20} strokeWidth={3} />
                 </button>
-                <div className="relative w-full rounded-[28px] bg-black p-[1.5px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
-                  <div className="relative w-full h-full overflow-hidden rounded-[26.5px] bg-black">
-                    <iframe
-                      id="video-modal-player"
-                      src={activeVideo.embedUrl}
-                      title={activeVideo.caption}
-                      className="absolute max-w-none"
-                      style={{ inset: '-3px', width: 'calc(100% + 6px)', height: 'calc(100% + 6px)' }}
-                      allow="autoplay; fullscreen; picture-in-picture"
-                      onLoad={(e) => {
-                        e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
-                      }}
-                      allowFullScreen
-                    />
-                  </div>
+                <div className="relative w-full h-full overflow-hidden rounded-[28px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
+                  <iframe
+                    id="video-modal-player"
+                    src={activeVideo.embedUrl}
+                    title={activeVideo.caption}
+                    className="absolute max-w-none"
+                    style={{ inset: '-5px', width: 'calc(100% + 10px)', height: 'calc(100% + 10px)' }}
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    onLoad={(e) => {
+                      e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
+                    }}
+                    allowFullScreen
+                  />
                 </div>
               </div>
             </motion.div>
