@@ -2336,7 +2336,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 const vimeoId = vid.url?.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1];
                 const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0&api=1&player_id=video-modal-player` : null;
                 return (
-                  <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
+                  <div key={i} className="group relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
                     onClick={() => embedUrl && setActiveVideo({ embedUrl, caption: vid.caption || 'Trip video' })}
                     style={{ cursor: embedUrl ? 'pointer' : 'default' }}
                   >
@@ -2345,15 +2345,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     ) : (
                       <div className="w-full h-full bg-gray-800" />
                     )}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
+                    <div className="absolute bottom-3 right-3">
+                      <div className="relative w-11 h-11 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-105">
                         <motion.div
                           className="absolute inset-0 -skew-x-12 pointer-events-none"
                           style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.32) 50%, transparent 100%)', width: '45%' }}
                           animate={{ x: ['-130%', '320%'] }}
                           transition={{ duration: 0.95, delay: i * 2.2, repeat: Infinity, repeatDelay: 6.5, ease: 'easeInOut' }}
                         />
-                        <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
+                        <Play size={18} className="text-white ml-0.5 relative z-10" fill="currentColor" />
                       </div>
                     </div>
                   </div>
