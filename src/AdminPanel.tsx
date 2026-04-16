@@ -1290,7 +1290,10 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
   // ── Booking Steps ──
+  // Index 0 = the "Now" row (always green Now tag, no date)
+  // Index 1+ = middle steps with deadline date pickers
   const bookingSteps = trip.booking_steps?.length ? trip.booking_steps : [
+    { label: 'Advance', value: '', date: '' },
     { label: 'Remaining Balance', value: '', date: '' },
     { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
   ];
@@ -1390,27 +1393,44 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
       <CollapsibleSection title="Booking Timeline">
         <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
-          These are the middle steps shown in the "Your Booking Timeline" popup. The <strong>Advance</strong> (Now) row and the final event date row are fixed — only the steps below are editable.
+          All steps are editable. The first step always shows a <strong style={{ color: '#16a34a' }}>Now</strong> tag. Steps after it get a deadline date. The final event date row is always fixed.
         </div>
-        {bookingSteps.map((step, i) => (
-          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 160px auto', gap: 8, alignItems: 'end' }}>
-              <div>
-                <label style={s.label}>Label (small text)</label>
-                <input style={s.input} placeholder="e.g. Remaining Balance" value={step.label} onChange={e => setBookingStep(i, { label: e.target.value })} />
+        {bookingSteps.map((step, i) => {
+          const isNowRow = i === 0;
+          return (
+            <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                {isNowRow ? (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '2px 10px' }}>NOW</span>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#888', background: '#f0f0ea', border: '1px solid #e0e0da', borderRadius: 99, padding: '2px 10px' }}>Step {i + 1}</span>
+                )}
               </div>
-              <div>
-                <label style={s.label}>Value (big text)</label>
-                <input style={s.input} placeholder={step.label === 'Remaining Balance' ? 'Auto (remaining price)' : 'e.g. Pickup, stay & trip details'} value={step.value} onChange={e => setBookingStep(i, { value: e.target.value })} />
+              <div style={{ display: 'grid', gridTemplateColumns: isNowRow ? '1fr 1fr auto' : '1fr 1fr 160px auto', gap: 8, alignItems: 'end' }}>
+                <div>
+                  <label style={s.label}>Label (small text)</label>
+                  <input style={s.input} placeholder={isNowRow ? 'e.g. Advance' : 'e.g. Remaining Balance'} value={step.label} onChange={e => setBookingStep(i, { label: e.target.value })} />
+                </div>
+                <div>
+                  <label style={s.label}>Value (big text)</label>
+                  <input
+                    style={s.input}
+                    placeholder={isNowRow ? 'Auto (advance price)' : i === 1 ? 'Auto (remaining balance)' : 'e.g. Pickup, stay & trip details'}
+                    value={step.value}
+                    onChange={e => setBookingStep(i, { value: e.target.value })}
+                  />
+                </div>
+                {!isNowRow && (
+                  <div>
+                    <label style={s.label}>Deadline Date</label>
+                    <input type="date" style={s.input} value={step.date} onChange={e => setBookingStep(i, { date: e.target.value })} />
+                  </div>
+                )}
+                <button type="button" onClick={() => removeBookingStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', marginBottom: 2 }}>×</button>
               </div>
-              <div>
-                <label style={s.label}>Deadline Date</label>
-                <input type="date" style={s.input} value={step.date} onChange={e => setBookingStep(i, { date: e.target.value })} />
-              </div>
-              <button type="button" onClick={() => removeBookingStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', marginBottom: 2 }}>×</button>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <button type="button" onClick={addBookingStep} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Step</button>
       </CollapsibleSection>
 

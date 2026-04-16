@@ -1141,34 +1141,24 @@ export default function App() {
 
                   <div className="px-6 pb-6">
                     <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                      {/* Advance / Sign Up row */}
-                      <div className="px-5 py-3 flex items-center justify-between border-b border-black/5">
-                        <div>
-                          <p className="text-[11px] text-gray-400 font-medium mb-0.5">{selectedEvent.inviteOnly ? 'Sign Up' : 'Advance'}</p>
-                          <p className="text-[15px] font-black text-gray-900 leading-none">
-                            {selectedEvent.inviteOnly ? 'Free — no payment yet' : (() => {
-                              const meetingPoint = journeyCardData?.meetingPoint || '';
-                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
-                              return `₹${pricing.advance.toLocaleString('en-IN')}`;
-                            })()}
-                          </p>
-                        </div>
-                        <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">
-                          {selectedEvent.inviteOnly ? 'Free' : 'Now'}
-                        </span>
-                      </div>
-
-                      {/* Middle steps — editable per-plan via admin Booking Timeline */}
+                      {/* All booking steps — index 0 = "Now" row, rest = deadline rows */}
                       {(selectedEvent.bookingSteps ?? [
+                        { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: '', date: '' },
                         { label: 'Remaining Balance', value: '', date: '' },
                         { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                       ]).map((step, si) => {
-                        const stepValue = step.value || (() => {
-                          const meetingPoint = journeyCardData?.meetingPoint || '';
-                          const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
-                          return `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
-                        })();
-                        const dateLabel = step.date
+                        const isNowRow = si === 0;
+                        const meetingPoint = journeyCardData?.meetingPoint || '';
+                        const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
+                        let stepValue = step.value;
+                        if (!stepValue) {
+                          if (isNowRow) {
+                            stepValue = selectedEvent.inviteOnly ? 'Free — no payment yet' : `₹${pricing.advance.toLocaleString('en-IN')}`;
+                          } else if (si === 1) {
+                            stepValue = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
+                          }
+                        }
+                        const dateLabel = !isNowRow && step.date
                           ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                           : null;
                         return (
@@ -1177,11 +1167,15 @@ export default function App() {
                               <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
                               <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
                             </div>
-                            {dateLabel && (
+                            {isNowRow ? (
+                              <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                {selectedEvent.inviteOnly ? 'Free' : 'Now'}
+                              </span>
+                            ) : dateLabel ? (
                               <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                                 {dateLabel}
                               </span>
-                            )}
+                            ) : null}
                           </div>
                         );
                       })}
