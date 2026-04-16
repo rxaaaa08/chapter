@@ -50,6 +50,7 @@ type Trip = {
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
   accommodation?: { name?: string; images?: string[]; features?: string[]; policy?: string; stays?: AccommodationStay[] };
+  booking_steps?: Array<{ label: string; value: string; daysBefore: number }>;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 
@@ -1288,6 +1289,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const addStay = () => setStays([...stays, { name: '', images: ['', '', ''], features: ['', '', ''] }]);
   const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
+  // ── Booking Steps ──
+  const bookingSteps = trip.booking_steps?.length ? trip.booking_steps : [
+    { label: 'Remaining Balance', value: '', daysBefore: 5 },
+    { label: 'Receive', value: 'Pickup, stay & trip details', daysBefore: 3 },
+  ];
+  const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; daysBefore: number }>) =>
+    onChange({ ...trip, booking_steps: bookingSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
+  const addBookingStep = () => onChange({ ...trip, booking_steps: [...bookingSteps, { label: '', value: '', daysBefore: 1 }] });
+  const removeBookingStep = (i: number) => onChange({ ...trip, booking_steps: bookingSteps.filter((_, idx) => idx !== i) });
+
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
     onChange({ ...trip, pickup_points: updated });
@@ -1375,6 +1386,32 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('CTA Text (e.g. Book Now)', 'cta_label')}
           <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Booking Timeline">
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+          These are the middle steps shown in the "Your Booking Timeline" popup. The <strong>Advance</strong> (Now) row and the final event date row are fixed — only the steps below are editable.
+        </div>
+        {bookingSteps.map((step, i) => (
+          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px auto', gap: 8, alignItems: 'end' }}>
+              <div>
+                <label style={s.label}>Label (small text)</label>
+                <input style={s.input} placeholder="e.g. Remaining Balance" value={step.label} onChange={e => setBookingStep(i, { label: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Value (big text)</label>
+                <input style={s.input} placeholder={step.label === 'Remaining Balance' ? 'Auto (remaining price)' : 'e.g. Pickup, stay & trip details'} value={step.value} onChange={e => setBookingStep(i, { value: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Days Before</label>
+                <input type="number" min={1} style={s.input} value={step.daysBefore} onChange={e => setBookingStep(i, { daysBefore: Number(e.target.value) })} />
+              </div>
+              <button type="button" onClick={() => removeBookingStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', marginBottom: 2 }}>×</button>
+            </div>
+          </div>
+        ))}
+        <button type="button" onClick={addBookingStep} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Step</button>
       </CollapsibleSection>
 
       {/* ── LOGISTICS ── */}
