@@ -148,14 +148,13 @@ export default function AdminPanel() {
       const validReviews = event_reviews.filter(r => r.name.trim() && r.review_text.trim());
       if (validReviews.length > 0) {
         await supabase.from('event_reviews').insert(
-          validReviews.map((r, idx) => ({
+          validReviews.map((r) => ({
             event_id: eventId,
             name: r.name.trim(),
             rating: Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5))),
             review_text: r.review_text.trim(),
             date_label: r.date_label?.trim() ?? '',
             images: Array.isArray(r.images) ? r.images : [],
-            sort_order: idx
           }))
         );
       }
