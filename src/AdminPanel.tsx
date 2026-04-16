@@ -75,6 +75,7 @@ export default function AdminPanel() {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
+  const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
   const [doubtCtaLabel, setDoubtCtaLabel] = useState('');
   const [doubtFormWebhookUrl, setDoubtFormWebhookUrl] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
@@ -97,6 +98,7 @@ export default function AdminPanel() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
   const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
+  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact'] as const;
   const perTripPostSelectionKeys = ['ask_doubts_book', 'show_faq', 'faq_followup', 'contact_success'] as const;
   const labelForStepKey = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
   const buildTripStepKey = (tripRef: string, baseKey: string) => `trip_message:${tripRef}:${baseKey}`;
@@ -135,7 +137,12 @@ export default function AdminPanel() {
         const allMsgs = msgRes.data as ChatMsg[];
         setMsgs(allMsgs);
         const generalAnnouncementsMsg = allMsgs.find(m => m.step_key === 'general_announcements');
-        if (generalAnnouncementsMsg) setGeneralAnnouncementsText(generalAnnouncementsMsg.bot_message || '');
+        if (generalAnnouncementsMsg) {
+          const text = generalAnnouncementsMsg.bot_message || '';
+          setGeneralAnnouncementsText(text);
+          const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+          setGlobalAnnouncementsFields([lines[0] ?? '', lines[1] ?? '', lines[2] ?? '']);
+        }
         const doubtLabelMsg = allMsgs.find(m => m.step_key === 'doubt_cta_label');
         setDoubtCtaLabel(doubtLabelMsg?.bot_message || '');
         const webhookMsg = allMsgs.find(m => m.step_key === 'doubt_form_webhook_url');
@@ -148,7 +155,7 @@ export default function AdminPanel() {
   useEffect(() => {
     setGlobalMessageDrafts(prev => {
       const next = { ...prev };
-      globalPreSelectionKeys.forEach((key) => {
+      [...globalPreSelectionKeys, ...globalPostSelectionKeys].forEach((key) => {
         if (next[key] === undefined) {
           next[key] = msgs.find(m => m.step_key === key)?.bot_message ?? '';
         }
@@ -361,10 +368,12 @@ export default function AdminPanel() {
 
   const saveGeneralAnnouncements = async () => {
     setSavingGeneralAnnouncements(true);
+    const joinedAnnouncements = globalAnnouncementsFields.map(v => v.trim()).filter(Boolean).join('\n');
+    setGeneralAnnouncementsText(joinedAnnouncements);
     const existing = msgs.find(m => m.step_key === 'general_announcements');
     if (existing?.id) {
-      await supabase.from('chat_messages').update({ bot_message: generalAnnouncementsText }).eq('id', existing.id);
-      setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: generalAnnouncementsText } : m));
+      await supabase.from('chat_messages').update({ bot_message: joinedAnnouncements }).eq('id', existing.id);
+      setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: joinedAnnouncements } : m));
     } else {
       const maxSortOrder = msgs.length > 0
         ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
@@ -373,7 +382,7 @@ export default function AdminPanel() {
         .from('chat_messages')
         .insert({
           step_key: 'general_announcements',
-          bot_message: generalAnnouncementsText,
+          bot_message: joinedAnnouncements,
           flow: 'global',
           sort_order: maxSortOrder + 1,
         })
@@ -1005,71 +1014,106 @@ export default function AdminPanel() {
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
               Use <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code> as placeholders.
             </div>
-            <CollapsibleSection title="Global: Before Trip/Event Selection">
-              <label style={s.label}>Top Header Announcements (Before Event Selection)</label>
-              <textarea
-                style={s.textarea}
-                value={generalAnnouncementsText}
-                onChange={e => setGeneralAnnouncementsText(e.target.value)}
-                placeholder={'One announcement per line\nExample:\nChennai-based social club with 4000+ members'}
-              />
-              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
-                These lines rotate in the top header before a user selects a specific trip/event.
+            <CollapsibleSection title="Global Announcements">
+              <div style={{ display: 'grid', gap: 8 }}>
+                {[0, 1, 2].map((idx) => (
+                  <input
+                    key={idx}
+                    style={s.input}
+                    value={globalAnnouncementsFields[idx]}
+                    onChange={e => setGlobalAnnouncementsFields(prev => {
+                      const next: [string, string, string] = [...prev] as [string, string, string];
+                      next[idx] = e.target.value;
+                      return next;
+                    })}
+                    placeholder={`Announcement ${idx + 1}`}
+                  />
+                ))}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                 <button style={s.btn(savingGeneralAnnouncements ? '#aaa' : '#111')} disabled={savingGeneralAnnouncements} onClick={saveGeneralAnnouncements}>
                   {savingGeneralAnnouncements ? 'Saving…' : 'Save Global Announcements'}
                 </button>
               </div>
-
-              <div style={{ marginTop: 18, borderTop: '1px solid #ececec', paddingTop: 12 }}>
-                <label style={s.label}>Doubt Button Text (FAQ section)</label>
-                <input
-                  style={s.input}
-                  value={doubtCtaLabel}
-                  onChange={e => setDoubtCtaLabel(e.target.value)}
-                  placeholder="Vera Doubt Iruku"
-                />
-
-                <label style={{ ...s.label, marginTop: 10 }}>Google Sheets Webhook URL (for Doubt Form)</label>
-                <input
-                  style={s.input}
-                  value={doubtFormWebhookUrl}
-                  onChange={e => setDoubtFormWebhookUrl(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                />
-                <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
-                  Add your Apps Script Web App URL. We send name, phone, doubt, selected event and city on form submit.
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <button style={s.btn(savingDoubtSettings ? '#aaa' : '#111')} disabled={savingDoubtSettings} onClick={saveDoubtFormSettings}>
-                    {savingDoubtSettings ? 'Saving…' : 'Save Doubt Settings'}
-                  </button>
-                </div>
-              </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Global Conversation Messages (Pre-selection)">
-              {globalPreSelectionKeys.map((stepKey) => (
-                <div key={stepKey} style={{ marginBottom: 12 }}>
-                  <label style={s.label}>{labelForStepKey(stepKey)}</label>
+            <CollapsibleSection title="Pre-selection Messages">
+              {[
+                { key: 'welcome', label: 'Select City' },
+                { key: 'ask_category', label: 'Select Category' },
+                { key: 'select_event', label: 'Select Plan' },
+              ].map(({ key, label }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <label style={s.label}>{label}</label>
                   <textarea
                     style={s.textarea}
-                    value={globalMessageDrafts[stepKey] ?? ''}
-                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [stepKey]: e.target.value }))}
-                    placeholder={`Template for ${stepKey}`}
+                    value={globalMessageDrafts[key] ?? ''}
+                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={`Template for ${key}`}
                   />
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                     <button
-                      style={s.btn(saving === `global:${stepKey}` ? '#aaa' : '#111')}
-                      disabled={saving === `global:${stepKey}`}
-                      onClick={() => saveGlobalStepTemplate(stepKey)}
+                      style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
+                      disabled={saving === `global:${key}`}
+                      onClick={() => saveGlobalStepTemplate(key)}
                     >
-                      {saving === `global:${stepKey}` ? 'Saving…' : 'Save'}
+                      {saving === `global:${key}` ? 'Saving…' : 'Save'}
                     </button>
                   </div>
                 </div>
               ))}
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Post-selection Messages">
+              {[
+                { key: 'ask_doubts_book', label: 'Book Now Flow' },
+                { key: 'ask_doubts_contact', label: 'Contact Us Flow' },
+              ].map(({ key, label }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <label style={s.label}>{label}</label>
+                  <textarea
+                    style={s.textarea}
+                    value={globalMessageDrafts[key] ?? ''}
+                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={`Template for ${key}`}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
+                      disabled={saving === `global:${key}`}
+                      onClick={() => saveGlobalStepTemplate(key)}
+                    >
+                      {saving === `global:${key}` ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Global Doubts">
+              <label style={s.label}>Unique Doubt Button</label>
+              <input
+                style={s.input}
+                value={doubtCtaLabel}
+                onChange={e => setDoubtCtaLabel(e.target.value)}
+                placeholder="Vera Doubt Iruku"
+              />
+
+              <label style={{ ...s.label, marginTop: 10 }}>Google Sheets Webhook URL</label>
+              <input
+                style={s.input}
+                value={doubtFormWebhookUrl}
+                onChange={e => setDoubtFormWebhookUrl(e.target.value)}
+                placeholder="https://script.google.com/macros/s/.../exec"
+              />
+              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+                We send name, phone, doubt, selected event, city, event category and selected date on form submit.
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <button style={s.btn(savingDoubtSettings ? '#aaa' : '#111')} disabled={savingDoubtSettings} onClick={saveDoubtFormSettings}>
+                  {savingDoubtSettings ? 'Saving…' : 'Save Doubt Settings'}
+                </button>
+              </div>
             </CollapsibleSection>
 
             <div style={s.card}>
