@@ -668,7 +668,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         <span style={{ color: '#999', fontSize: 12 }}>When ON, users selecting "Other" city can see this event.</span>
       </div>
 
-      {/* ── Collapsible sections ── */}
+      {/* ── LOGISTICS ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 4 }}>Logistics</div>
 
       <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`} action={addBtn(addDate)}>
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>No dates added yet.</div>}
@@ -681,80 +682,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <option value="sold_out">Sold Out</option>
             </select>
             <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-          </div>
-        ))}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="What's Included" badge={`${(trip.included ?? []).length} item${(trip.included ?? []).length !== 1 ? 's' : ''}`} action={addBtn(() => addStringListItem('included'))}>
-        {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
-        {(trip.included ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Round-trip transport" value={item} onChange={e => updateStringListItem('included', i, e.target.value)} />
-            <button type="button" onClick={() => removeStringListItem('included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-          </div>
-        ))}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Optional Activities" badge={`${(trip.optional_activities ?? []).length} item${(trip.optional_activities ?? []).length !== 1 ? 's' : ''}`} action={addBtn(() => addStringListItem('optional_activities'))}>
-        {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
-        {(trip.optional_activities ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Sunrise walk" value={item} onChange={e => updateStringListItem('optional_activities', i, e.target.value)} />
-            <button type="button" onClick={() => removeStringListItem('optional_activities', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-          </div>
-        ))}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="What's Not Included" badge={`${(trip.not_included ?? []).length} item${(trip.not_included ?? []).length !== 1 ? 's' : ''}`} action={addBtn(() => addStringListItem('not_included'))}>
-        {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
-        {(trip.not_included ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Lunch" value={item} onChange={e => updateStringListItem('not_included', i, e.target.value)} />
-            <button type="button" onClick={() => removeStringListItem('not_included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-          </div>
-        ))}
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title="Header Announcements (This Event)"
-        badge={`${(trip.announcements ?? []).length}`}
-        action={addBtn(() => onChange({ ...trip, announcements: [...(trip.announcements ?? []), ''] }))}
-      >
-        {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No announcements yet.</div>}
-        {(trip.announcements ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Weekend Escape bookings are live" value={item}
-              onChange={e => { const a = [...(trip.announcements ?? [])]; a[i] = e.target.value; onChange({ ...trip, announcements: a }); }} />
-            <button type="button" onClick={() => { const a = [...(trip.announcements ?? [])]; onChange({ ...trip, announcements: a.filter((_, idx) => idx !== i) }); }}
-              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-          </div>
-        ))}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="You'll Experience (Itinerary)" badge={`${itinerary.length} day${itinerary.length !== 1 ? 's' : ''}`} action={addBtn(addItineraryDay, '+ Add Day')}>
-        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
-        {itinerary.map((day, dayIndex) => (
-          <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <input style={s.input} placeholder="Day label (e.g. Day 1)" value={day.day} onChange={e => updateItineraryDay(dayIndex, { day: e.target.value })} />
-              <input style={s.input} placeholder="Day title" value={day.title} onChange={e => updateItineraryDay(dayIndex, { title: e.target.value })} />
-              <button type="button" onClick={() => removeItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-            </div>
-            <textarea style={s.textarea} placeholder="Day description" value={day.description} onChange={e => updateItineraryDay(dayIndex, { description: e.target.value })} />
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ ...s.label, marginBottom: 0 }}>Schedule</label>
-                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addScheduleItem(dayIndex)}>+ Add Time Slot</button>
-              </div>
-              {(day.schedule ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No time slots yet.</div>}
-              {(day.schedule ?? []).map((item, itemIndex) => (
-                <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                  <input style={s.input} placeholder="e.g. 7:30 PM" value={item.time} onChange={e => updateScheduleItem(dayIndex, itemIndex, { time: e.target.value })} />
-                  <input style={s.input} placeholder="Activity" value={item.activity} onChange={e => updateScheduleItem(dayIndex, itemIndex, { activity: e.target.value })} />
-                  <button type="button" onClick={() => removeScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
-                </div>
-              ))}
-            </div>
           </div>
         ))}
       </CollapsibleSection>
@@ -873,6 +800,79 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
           </div>
         )}
+      </CollapsibleSection>
+
+      {/* ── CONTENT ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 10 }}>Content</div>
+
+      <CollapsibleSection title="Header Announcements" action={addBtn(() => onChange({ ...trip, announcements: [...(trip.announcements ?? []), ''] }))}>
+        {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No announcements yet.</div>}
+        {(trip.announcements ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Weekend Escape bookings are live" value={item}
+              onChange={e => { const a = [...(trip.announcements ?? [])]; a[i] = e.target.value; onChange({ ...trip, announcements: a }); }} />
+            <button type="button" onClick={() => { const a = [...(trip.announcements ?? [])]; onChange({ ...trip, announcements: a.filter((_, idx) => idx !== i) }); }}
+              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="You'll Experience (Itinerary)" action={addBtn(addItineraryDay, '+ Add Day')}>
+        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
+        {itinerary.map((day, dayIndex) => (
+          <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <input style={s.input} placeholder="Day label (e.g. Day 1)" value={day.day} onChange={e => updateItineraryDay(dayIndex, { day: e.target.value })} />
+              <input style={s.input} placeholder="Day title" value={day.title} onChange={e => updateItineraryDay(dayIndex, { title: e.target.value })} />
+              <button type="button" onClick={() => removeItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+            </div>
+            <textarea style={s.textarea} placeholder="Day description" value={day.description} onChange={e => updateItineraryDay(dayIndex, { description: e.target.value })} />
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label style={{ ...s.label, marginBottom: 0 }}>Schedule</label>
+                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addScheduleItem(dayIndex)}>+ Add Time Slot</button>
+              </div>
+              {(day.schedule ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No time slots yet.</div>}
+              {(day.schedule ?? []).map((item, itemIndex) => (
+                <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                  <input style={s.input} placeholder="e.g. 7:30 PM" value={item.time} onChange={e => updateScheduleItem(dayIndex, itemIndex, { time: e.target.value })} />
+                  <input style={s.input} placeholder="Activity" value={item.activity} onChange={e => updateScheduleItem(dayIndex, itemIndex, { activity: e.target.value })} />
+                  <button type="button" onClick={() => removeScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="What's Included" action={addBtn(() => addStringListItem('included'))}>
+        {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.included ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Round-trip transport" value={item} onChange={e => updateStringListItem('included', i, e.target.value)} />
+            <button type="button" onClick={() => removeStringListItem('included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Optional Activities" action={addBtn(() => addStringListItem('optional_activities'))}>
+        {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.optional_activities ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Sunrise walk" value={item} onChange={e => updateStringListItem('optional_activities', i, e.target.value)} />
+            <button type="button" onClick={() => removeStringListItem('optional_activities', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="What's Not Included" action={addBtn(() => addStringListItem('not_included'))}>
+        {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.not_included ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Lunch" value={item} onChange={e => updateStringListItem('not_included', i, e.target.value)} />
+            <button type="button" onClick={() => removeStringListItem('not_included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
       </CollapsibleSection>
 
       <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
