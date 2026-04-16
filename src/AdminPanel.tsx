@@ -93,7 +93,7 @@ export default function AdminPanel() {
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
-  const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event', 'no_events', 'retry_city'] as const;
+  const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
   const perTripPostSelectionKeys = ['ask_doubts_book', 'show_faq', 'faq_followup', 'contact_success'] as const;
   const labelForStepKey = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
   const buildTripStepKey = (tripRef: string, baseKey: string) => `trip_message:${tripRef}:${baseKey}`;
