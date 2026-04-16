@@ -2561,7 +2561,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     src={activeVideo.embedUrl}
                     title={activeVideo.caption}
                     className="absolute max-w-none"
-                    style={{ inset: '-2px', width: 'calc(100% + 4px)', height: 'calc(100% + 4px)' }}
+                    style={{ inset: '-5px', width: 'calc(100% + 10px)', height: 'calc(100% + 10px)' }}
                     allow="autoplay; fullscreen; picture-in-picture"
                     onLoad={(e) => {
                       e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
