@@ -6,6 +6,7 @@ const ADMIN_PASSWORD = 'chaptera2025';
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string };
 type PickupPoint = { id: string; label: string; meetingSpot: string; time: string; transport: string };
+type EventMedia = { id?: string; url: string; caption: string };
 type Trip = {
   id?: string;
   slug: string;
@@ -21,6 +22,7 @@ type Trip = {
   cta_label: string;
   is_active: boolean;
   pickup_points?: PickupPoint[];
+  event_media?: EventMedia[];
   event_dates?: TripDate[];
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
@@ -64,7 +66,7 @@ export default function AdminPanel() {
     if (!authed) return;
     setLoading(true);
     Promise.all([
-      supabase.from('events').select('*, event_dates(*)').order('created_at', { ascending: true }),
+      supabase.from('events').select('*, event_dates(*), event_media(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
     ]).then(([evRes, msgRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
@@ -76,7 +78,7 @@ export default function AdminPanel() {
   // ─── SAVE TRIP ──────────────────────────────────────────────────────────────
   const saveTrip = async (trip: Trip) => {
     setSaving(trip.id ?? 'new');
-    const { event_dates, id, ...fields } = trip;
+    const { event_dates, event_media, id, ...fields } = trip;
 
     let eventId = id;
     if (id) {
@@ -87,7 +89,6 @@ export default function AdminPanel() {
     }
 
     if (eventId && event_dates) {
-      // Delete existing dates and re-insert
       await supabase.from('event_dates').delete().eq('event_id', eventId);
       if (event_dates.length > 0) {
         await supabase.from('event_dates').insert(
@@ -96,8 +97,18 @@ export default function AdminPanel() {
       }
     }
 
+    if (eventId && event_media) {
+      await supabase.from('event_media').delete().eq('event_id', eventId);
+      const validMedia = event_media.filter(m => m.url.trim());
+      if (validMedia.length > 0) {
+        await supabase.from('event_media').insert(
+          validMedia.map((m, i) => ({ event_id: eventId, url: m.url, thumbnail_url: m.url, caption: m.caption, type: 'vimeo', sort_order: i }))
+        );
+      }
+    }
+
     // Refresh
-    const { data } = await supabase.from('events').select('*, event_dates(*)').order('created_at', { ascending: true });
+    const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*)').order('created_at', { ascending: true });
     if (data) setTrips(data as Trip[]);
     setSaving(null);
     setEditingTrip(null);
@@ -187,7 +198,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, event_dates: [] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', booking_url: '', cta_label: '', is_active: true, event_dates: [], event_media: [{url:'',caption:''},{url:'',caption:''},{url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -264,6 +275,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
   const dates = trip.event_dates ?? [];
   const pickups = trip.pickup_points ?? [];
+  // Always show exactly 3 video slots
+  const rawMedia = trip.event_media ?? [];
+  const videos: EventMedia[] = [0,1,2].map(i => rawMedia[i] ?? { url: '', caption: '' });
+  const setVideo = (i: number, key: keyof EventMedia, val: string) => {
+    const updated = videos.map((v, idx) => idx === i ? { ...v, [key]: val } : v);
+    onChange({ ...trip, event_media: updated });
+  };
 
   const setPickup = (i: number, key: keyof PickupPoint, val: string) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
@@ -346,6 +364,17 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
             </div>
             <button onClick={() => removePickup(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Videos */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Vimeo Videos (up to 3)</label>
+        {videos.map((v, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, marginBottom: 8 }}>
+            <input style={s.input} placeholder={`Vimeo URL ${i + 1} (e.g. https://vimeo.com/123456789)`} value={v.url} onChange={e => setVideo(i, 'url', e.target.value)} />
+            <input style={s.input} placeholder="Caption" value={v.caption} onChange={e => setVideo(i, 'caption', e.target.value)} />
           </div>
         ))}
       </div>

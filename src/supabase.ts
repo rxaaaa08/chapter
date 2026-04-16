@@ -51,6 +51,7 @@ export function mapDbEventToEvent(row: any): any {
     })),
     videos: (row.event_media ?? []).map((m: any) => ({
       thumbnail: m.thumbnail_url,
+      url: m.url ?? '',
       caption: m.caption,
     })),
     reviews: (row.event_reviews ?? []).map((r: any) => ({

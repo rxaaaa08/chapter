@@ -64,7 +64,7 @@ interface Event {
     policy: string;
   };
   optionalActivities?: string[];
-  videos: { thumbnail: string; caption: string }[];
+  videos: { thumbnail: string; url?: string; caption: string }[];
   reviews: { name: string; rating: number; text: string; images: string[] }[];
   dates: TripDate[];
   faqs: FAQ[];
@@ -2233,26 +2233,36 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
             </div>
             <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4">
-              {event.videos?.map((vid, i) => (
-                <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-800 shadow-lg">
-                  <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
-                      <motion.div
-                        className="absolute inset-0 -skew-x-12 pointer-events-none"
-                        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.32) 50%, transparent 100%)', width: '45%' }}
-                        animate={{ x: ['-130%', '320%'] }}
-                        transition={{ duration: 0.95, delay: i * 2.2, repeat: Infinity, repeatDelay: 6.5, ease: 'easeInOut' }}
-                      />
-                      <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
+              {event.videos?.map((vid, i) => {
+                const vimeoId = vid.url?.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1];
+                const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=1&muted=0&badge=0&byline=0&title=0&portrait=0` : null;
+                return (
+                  <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
+                    onClick={() => embedUrl && window.open(`https://vimeo.com/${vimeoId}`, '_blank')}
+                    style={{ cursor: embedUrl ? 'pointer' : 'default' }}
+                  >
+                    {vid.thumbnail
+                      ? <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
+                      : <div className="w-full h-full bg-gray-800" />
+                    }
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
+                        <motion.div
+                          className="absolute inset-0 -skew-x-12 pointer-events-none"
+                          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.32) 50%, transparent 100%)', width: '45%' }}
+                          animate={{ x: ['-130%', '320%'] }}
+                          transition={{ duration: 0.95, delay: i * 2.2, repeat: Infinity, repeatDelay: 6.5, ease: 'easeInOut' }}
+                        />
+                        <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
+                      </div>
                     </div>
+                    <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
+                      {vid.caption}
+                    </p>
                   </div>
-                  <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
-                    {vid.caption}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
