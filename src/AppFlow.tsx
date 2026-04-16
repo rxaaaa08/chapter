@@ -2257,11 +2257,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                     style={{ cursor: embedUrl ? 'pointer' : 'default' }}
                   >
                     {vid.thumbnail ? (
-                      <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
+                      <img src={vid.thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full bg-gray-800" />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 overflow-hidden">
                         <motion.div
@@ -2273,9 +2272,6 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                         <Play size={20} className="text-white ml-1 relative z-10" fill="currentColor" />
                       </div>
                     </div>
-                    <p className="absolute bottom-4 left-4 right-4 text-sm font-bold leading-tight text-white">
-                      {vid.caption}
-                    </p>
                   </div>
                 );
               })}
