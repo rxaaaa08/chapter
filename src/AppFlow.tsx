@@ -1745,9 +1745,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   // For "Other" city users, default to Own Transport after date is selected.
   useEffect(() => {
     if (!selectedDate || selectedCity !== 'Other') return;
-    const hasOwnTransport = (event.pickupPoints ?? []).some(p => p.id === 'own_transport');
-    if (!hasOwnTransport) return;
-    setSelectedMeetingPoint(prev => prev || 'own_transport');
+    setSelectedMeetingPoint('own_transport');
   }, [selectedDate, selectedCity, event.pickupPoints]);
 
   // Full staggered animation only on initial calendar open
@@ -2474,13 +2472,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                                 ? (() => {
                                     const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
                                     const points = selectedCity === 'Other'
-                                      ? (ownPoint ? [ownPoint] : [])
+                                      ? [ownPoint ?? { id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport' }]
                                       : ownPoint?.ownOnly
                                         ? (ownPoint ? [ownPoint] : [])
                                         : (event.pickupPoints ?? []);
                                     return points.map(p => ({ value: p.id, label: p.label || p.meetingSpot }));
                                   })()
-                                : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel }));
+                                : (selectedCity === 'Other'
+                                    ? [{ value: 'own_transport', label: 'Own Transport' }]
+                                    : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel })));
                               return pickupOptions.map(opt => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ));
