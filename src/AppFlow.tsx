@@ -45,6 +45,8 @@ interface Event {
     transport: string;
     ownTransportPrice?: number;
     ownOnly?: boolean;
+    availableForOther?: boolean;
+    otherPrice?: number;
   }[];
   transport: string;
   groupSize: string;
@@ -677,7 +679,7 @@ export default function App() {
     if (!selectedEvent) return;
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
     const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
-    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint);
+    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
     const balanceDueRaw = shiftDateString(dateStr, -5) || '';
     const balanceDue = balanceDueRaw ? formatDisplayDate(balanceDueRaw) : 'TBD';
     const pickupDetails = dateStr ? formatDisplayDate(shiftDateString(dateStr, -3) || undefined) : 'TBD';
@@ -1027,7 +1029,7 @@ export default function App() {
                           <p className="text-[15px] font-black text-gray-900 leading-none">
                             {selectedEvent.inviteOnly ? 'Free — no payment yet' : (() => {
                               const meetingPoint = journeyCardData?.meetingPoint || '';
-                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint);
+                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
                               return `₹${pricing.advance.toLocaleString('en-IN')}`;
                             })()}
                           </p>
@@ -1044,7 +1046,7 @@ export default function App() {
                           <p className="text-[15px] font-black text-gray-900 leading-none">
                             {(() => {
                               const meetingPoint = journeyCardData?.meetingPoint || '';
-                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint);
+                              const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
                               return `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
                             })()}
                           </p>
@@ -1626,15 +1628,51 @@ const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: str
   anna_nagar:    { meetingSpot: 'Anna Nagar', transport: 'Party Bus', pickupTime: '8:00 AM', dropdownLabel: 'Anna Nagar — by 8:00 AM' },
 };
 
-const getMeetingPointPricing = (event: Event, meetingPointId?: string) => {
+const getMeetingPointPricing = (event: Event, meetingPointId?: string, city?: string) => {
   const baseTotal = parseInt(event.price.replace(/[^0-9]/g, ''), 10) || 0;
   const baseAdvance = event.advanceAmount || 0;
+  if (!meetingPointId) {
+    return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
+  }
+  const selectedPoint = event.pickupPoints?.find(p => p.id === meetingPointId);
+  if (city === 'Other' && selectedPoint?.otherPrice && selectedPoint.otherPrice > 0) {
+    return { total: selectedPoint.otherPrice, advance: Math.min(baseAdvance, selectedPoint.otherPrice) };
+  }
   if (meetingPointId !== 'own_transport') {
     return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
   }
   const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
   const ownTotal = ownPoint?.ownTransportPrice ?? baseTotal;
   return { total: ownTotal, advance: Math.min(baseAdvance, ownTotal) };
+};
+
+const getCityPickupPoints = (event: Event, selectedCity: string) => {
+  const dbPoints = event.pickupPoints ?? [];
+  if (dbPoints.length === 0) {
+    if (selectedCity === 'Other') {
+      return [{ id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport', availableForOther: true }];
+    }
+    return Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({
+      id: k,
+      label: v.dropdownLabel,
+      meetingSpot: v.meetingSpot,
+      time: v.pickupTime ?? '',
+      transport: v.transport,
+    }));
+  }
+
+  const ownPoint = dbPoints.find(p => p.id === 'own_transport');
+  if (selectedCity === 'Other') {
+    const otherEnabled = dbPoints.filter(p => p.availableForOther);
+    if (otherEnabled.length > 0) return otherEnabled;
+    if (ownPoint) return [ownPoint];
+    return [{ id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport', availableForOther: true }];
+  }
+
+  if (ownPoint?.ownOnly) {
+    return [ownPoint];
+  }
+  return dbPoints;
 };
 
 const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
@@ -2462,19 +2500,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           >
                             <option value="" disabled hidden>Where will you join us?</option>
                             {(() => {
-                              const pickupOptions = event.pickupPoints && event.pickupPoints.length > 0
-                                ? (() => {
-                                    const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
-                                    const points = selectedCity === 'Other'
-                                      ? [ownPoint ?? { id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport' }]
-                                      : ownPoint?.ownOnly
-                                        ? (ownPoint ? [ownPoint] : [])
-                                        : (event.pickupPoints ?? []);
-                                    return points.map(p => ({ value: p.id, label: p.label || p.meetingSpot }));
-                                  })()
-                                : (selectedCity === 'Other'
-                                    ? [{ value: 'own_transport', label: 'Own Transport' }]
-                                    : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel })));
+                              const pickupOptions = getCityPickupPoints(event, selectedCity).map(p => ({
+                                value: p.id,
+                                label: p.label || p.meetingSpot || 'Pickup Point',
+                              }));
                               return pickupOptions.map(opt => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ));
@@ -2506,7 +2535,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                           >
                             <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 flex flex-col gap-3">
                               {(() => {
-                                const pricing = getMeetingPointPricing(event, selectedMeetingPoint);
+                                const pricing = getMeetingPointPricing(event, selectedMeetingPoint, selectedCity);
                                 const displayAdvance = pricing.advance;
                                 const displayTotal = pricing.total;
                                 const displayRemaining = Math.max(displayTotal - displayAdvance, 0);

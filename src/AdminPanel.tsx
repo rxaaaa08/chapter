@@ -13,6 +13,8 @@ type PickupPoint = {
   transport: string;
   ownTransportPrice?: number;
   ownOnly?: boolean;
+  availableForOther?: boolean;
+  otherPrice?: number;
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
 type EventReview = { id?: string; name: string; rating: number; review_text: string; images?: string[] };
@@ -62,7 +64,7 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'messages'>('trips');
+  const [tab, setTab] = useState<'trips' | 'other' | 'messages'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [loading, setLoading] = useState(false);
@@ -229,6 +231,7 @@ export default function AdminPanel() {
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Trips</button>
+        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Bot Messages</button>
       </div>
 
@@ -278,6 +281,51 @@ export default function AdminPanel() {
                 <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => { setAddingTrip(false); setEditingTrip(null); }} saving={saving === 'new'} s={s} />
               </div>
             )}
+          </>
+        )}
+
+        {/* ── OTHER TAB ─────────────────────────────────────────────────────── */}
+        {!loading && tab === 'other' && (
+          <>
+            <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Other City Feed</div>
+            <div style={{ color: '#888', fontSize: 14, marginBottom: 18 }}>
+              Manage trips/events visible for users who choose <strong>Other</strong>, and configure which pickup points they can join from.
+            </div>
+            {trips.filter(t => (t.cities ?? []).includes('Other')).length === 0 && (
+              <div style={{ ...s.card, color: '#777' }}>
+                No trips are enabled for Other city users yet. Turn ON <strong>Show In "Other" City Feed</strong> in any trip to see it here.
+              </div>
+            )}
+            {trips
+              .filter(t => (t.cities ?? []).includes('Other'))
+              .map(trip => (
+                <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
+                  {editingTrip?.id === trip.id ? (
+                    <OtherCityForm
+                      trip={editingTrip}
+                      onChange={setEditingTrip}
+                      onSave={() => saveTrip(editingTrip!)}
+                      onCancel={() => setEditingTrip(null)}
+                      saving={saving === trip.id}
+                      s={s}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                      {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 72, height: 56, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
+                        <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>{trip.category} · ₹{trip.price_full?.toLocaleString('en-IN')}</div>
+                        <div style={{ color: '#666', fontSize: 12, marginTop: 6 }}>
+                          Other-enabled pickup points: {(trip.pickup_points ?? []).filter(p => p.availableForOther).length}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                        <button style={s.outlineBtn} onClick={() => setEditingTrip({ ...trip })}>Edit Other Setup</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
           </>
         )}
 
@@ -332,7 +380,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     onChange({ ...trip, event_media: updated });
   };
 
-  const setPickup = (i: number, key: keyof PickupPoint, val: string) => {
+  const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
     onChange({ ...trip, pickup_points: updated });
   };
@@ -356,6 +404,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             transport: 'Your Own Transport',
             ownTransportPrice: trip.price_full || 0,
             ownOnly: false,
+            availableForOther: true,
           }
         ]
       });
@@ -607,7 +656,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
               <div>
                 <label style={s.label}>Own Transport Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
+            <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Meeting Point (Event Location)</label>
@@ -616,6 +665,10 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <div>
                 <label style={s.label}>Reporting Time</label>
                 <input style={s.input} placeholder="e.g. 6:00 PM" value={ownTransport.time} onChange={e => setOwnTransport({ time: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Price (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -626,6 +679,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.ownOnly ? '#111' : '#ddd', color: ownTransport.ownOnly ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
               >
                 {ownTransport.ownOnly ? 'YES' : 'NO'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+              <label style={{ ...s.label, marginBottom: 0 }}>Available For "Other" City</label>
+              <button
+                type="button"
+                onClick={() => setOwnTransport({ availableForOther: !ownTransport.availableForOther })}
+                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.availableForOther ? '#111' : '#ddd', color: ownTransport.availableForOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                {ownTransport.availableForOther ? 'YES' : 'NO'}
               </button>
             </div>
           </div>
@@ -657,6 +720,29 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <div>
                 <label style={s.label}>Transport</label>
                 <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(p._idx, 'transport', e.target.value)} />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={s.label}>Available For "Other" City</label>
+                <button
+                  type="button"
+                  onClick={() => setPickup(p._idx, 'availableForOther', !p.availableForOther)}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: p.availableForOther ? '#111' : '#ddd', color: p.availableForOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                >
+                  {p.availableForOther ? 'YES' : 'NO'}
+                </button>
+              </div>
+              <div>
+                <label style={s.label}>Other City Price (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  style={s.input}
+                  placeholder="Leave blank = base event price"
+                  value={p.otherPrice ?? ''}
+                  onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))}
+                />
               </div>
             </div>
             <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
@@ -705,10 +791,9 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ marginBottom: 14 }}>
         <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Vimeo Videos (up to 3)</label>
         {videos.map((v, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
             <input style={s.input} placeholder={`Vimeo URL ${i + 1} (e.g. https://vimeo.com/123456789)`} value={v.url} onChange={e => setVideo(i, 'url', e.target.value)} />
             <input style={s.input} placeholder="Thumbnail Image URL" value={v.thumbnail_url ?? ''} onChange={e => setVideo(i, 'thumbnail_url', e.target.value)} />
-            <input style={s.input} placeholder="Caption" value={v.caption} onChange={e => setVideo(i, 'caption', e.target.value)} />
           </div>
         ))}
       </div>
@@ -759,6 +844,110 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         <button style={s.outlineBtn} onClick={onCancel}>Cancel</button>
         <button style={s.btn(saving ? '#aaa' : '#111')} disabled={saving} onClick={onSave}>
           {saving ? 'Saving…' : 'Save Trip'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
+  trip: Trip; onChange: (t: Trip) => void; onSave: () => void; onCancel: () => void; saving: boolean; s: any;
+}) {
+  const pickups = trip.pickup_points ?? [];
+  const setTrip = (patch: Partial<Trip>) => onChange({ ...trip, ...patch });
+  const setPickup = (index: number, patch: Partial<PickupPoint>) => {
+    const next = pickups.map((p, i) => i === index ? { ...p, ...patch } : p);
+    setTrip({ pickup_points: next });
+  };
+  const addPickup = () => {
+    setTrip({
+      pickup_points: [
+        ...pickups,
+        { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '', availableForOther: true }
+      ]
+    });
+  };
+  const removePickup = (index: number) => setTrip({ pickup_points: pickups.filter((_, i) => i !== index) });
+  const showInOther = (trip.cities ?? []).includes('Other');
+  const toggleShowInOther = () => {
+    const current = trip.cities ?? [];
+    const next = showInOther ? current.filter(c => c !== 'Other') : Array.from(new Set([...current, 'Other']));
+    setTrip({ cities: next });
+  };
+
+  return (
+    <div>
+      <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 4 }}>{trip.title}</div>
+      <div style={{ color: '#777', fontSize: 13, marginBottom: 12 }}>
+        Configure pickup points and pricing for users selecting <strong>Other</strong>.
+      </div>
+
+      <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <label style={{ ...s.label, marginBottom: 0 }}>Show In "Other" City Feed</label>
+        <button
+          type="button"
+          onClick={toggleShowInOther}
+          style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+        >
+          {showInOther ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Pickup Points For "Other" Users</label>
+          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addPickup}>+ Add Point</button>
+        </div>
+        {pickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No pickup points configured yet.</div>}
+        {pickups.map((point, index) => (
+          <div key={point.id || index} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={s.label}>Dropdown Label</label>
+                <input style={s.input} placeholder="e.g. Dindigul Pickup — 5:30 AM" value={point.label} onChange={e => setPickup(index, { label: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Meeting Spot</label>
+                <input style={s.input} placeholder="e.g. Dindigul Bus Stand" value={point.meetingSpot} onChange={e => setPickup(index, { meetingSpot: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Pickup Time</label>
+                <input style={s.input} placeholder="e.g. 5:30 AM" value={point.time} onChange={e => setPickup(index, { time: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Transport</label>
+                <input style={s.input} placeholder="e.g. Party Bus" value={point.transport} onChange={e => setPickup(index, { transport: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Price (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={point.otherPrice ?? ''} onChange={e => setPickup(index, { otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
+              {point.id === 'own_transport' && (
+                <div>
+                  <label style={s.label}>Own Transport Price (₹)</label>
+                  <input type="number" min={0} style={s.input} placeholder="Used when own transport is selected" value={point.ownTransportPrice ?? ''} onChange={e => setPickup(index, { ownTransportPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <label style={{ ...s.label, marginBottom: 0 }}>Available For Other Users</label>
+              <button
+                type="button"
+                onClick={() => setPickup(index, { availableForOther: !point.availableForOther })}
+                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: point.availableForOther ? '#111' : '#ddd', color: point.availableForOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                {point.availableForOther ? 'YES' : 'NO'}
+              </button>
+            </div>
+            <button type="button" onClick={() => removePickup(index)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <button style={s.outlineBtn} onClick={onCancel}>Cancel</button>
+        <button style={s.btn(saving ? '#aaa' : '#111')} disabled={saving} onClick={onSave}>
+          {saving ? 'Saving…' : 'Save Other Setup'}
         </button>
       </div>
     </div>

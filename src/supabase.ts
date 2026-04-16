@@ -41,6 +41,8 @@ export function mapDbEventToEvent(row: any): any {
           transport: p.transport ?? '',
           ownTransportPrice: Number(p.ownTransportPrice ?? p.own_transport_price ?? 0) || undefined,
           ownOnly: Boolean(p.ownOnly ?? p.own_only ?? false),
+          availableForOther: Boolean(p.availableForOther ?? p.available_for_other ?? false),
+          otherPrice: Number(p.otherPrice ?? p.other_price ?? 0) || undefined,
         }))
       : [],
     transportPlan: row.transport_plan ?? [],
