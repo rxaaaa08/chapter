@@ -19,6 +19,8 @@ type Trip = {
   cities: string[];
   category: string;
   included: string[];
+  optional_activities: string[];
+  not_included: string[];
   booking_url: string;
   cta_label: string;
   is_active: boolean;
@@ -208,7 +210,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -314,9 +316,19 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const addDate = () => onChange({ ...trip, event_dates: [...dates, { start_date: '', status: 'available', label: '' }] });
   const removeDate = (i: number) => onChange({ ...trip, event_dates: dates.filter((_, idx) => idx !== i) });
   const includedText = (trip.included ?? []).join('\n');
+  const optionalActivitiesText = (trip.optional_activities ?? []).join('\n');
+  const notIncludedText = (trip.not_included ?? []).join('\n');
   const setIncludedText = (text: string) => {
     const items = text.split('\n').map(v => v.trim()).filter(Boolean);
     onChange({ ...trip, included: items });
+  };
+  const setOptionalActivitiesText = (text: string) => {
+    const items = text.split('\n').map(v => v.trim()).filter(Boolean);
+    onChange({ ...trip, optional_activities: items });
+  };
+  const setNotIncludedText = (text: string) => {
+    const items = text.split('\n').map(v => v.trim()).filter(Boolean);
+    onChange({ ...trip, not_included: items });
   };
 
   const field = (label: string, key: keyof Trip, type = 'text') => (
@@ -347,6 +359,24 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           value={includedText}
           onChange={e => setIncludedText(e.target.value)}
           placeholder={'Round-trip transport\nStay\nBreakfast\nExperience host'}
+        />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>Optional Activities (one item per line)</label>
+        <textarea
+          style={s.textarea}
+          value={optionalActivitiesText}
+          onChange={e => setOptionalActivitiesText(e.target.value)}
+          placeholder={'Sunrise walk\nCampfire games\nCafe trail'}
+        />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ ...s.label, marginBottom: 8, display: 'block' }}>What's Not Included (one item per line)</label>
+        <textarea
+          style={s.textarea}
+          value={notIncludedText}
+          onChange={e => setNotIncludedText(e.target.value)}
+          placeholder={'Lunch\nPersonal expenses\nEntry tickets not listed'}
         />
       </div>
 
