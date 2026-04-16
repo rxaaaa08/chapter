@@ -479,7 +479,7 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
         <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
-        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>For Other Cities</button>
+        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
       </div>
 
