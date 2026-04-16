@@ -728,7 +728,7 @@ export default function App() {
 
     switch (step) {
       case 'ASK_CITY': {
-        const availableCities = Array.from(new Set(events.flatMap(e => e.cities)));
+        const availableCities = Array.from(new Set([...events.flatMap(e => e.cities), 'Other']));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {availableCities.map((city, i) => (
@@ -1735,6 +1735,14 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
     return () => clearInterval(timer);
   }, [showCalendar, selectedDate]);
 
+  // For "Other" city users, default to Own Transport after date is selected.
+  useEffect(() => {
+    if (!selectedDate || selectedCity !== 'Other') return;
+    const hasOwnTransport = (event.pickupPoints ?? []).some(p => p.id === 'own_transport');
+    if (!hasOwnTransport) return;
+    setSelectedMeetingPoint(prev => prev || 'own_transport');
+  }, [selectedDate, selectedCity, event.pickupPoints]);
+
   // Full staggered animation only on initial calendar open
   useEffect(() => {
     if (!showCalendar) { setCalendarRevealed(false); return; }
@@ -2458,9 +2466,11 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                               const pickupOptions = event.pickupPoints && event.pickupPoints.length > 0
                                 ? (() => {
                                     const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
-                                    const points = ownPoint?.ownOnly
+                                    const points = selectedCity === 'Other'
                                       ? (ownPoint ? [ownPoint] : [])
-                                      : (event.pickupPoints ?? []);
+                                      : ownPoint?.ownOnly
+                                        ? (ownPoint ? [ownPoint] : [])
+                                        : (event.pickupPoints ?? []);
                                     return points.map(p => ({ value: p.id, label: p.label || p.meetingSpot }));
                                   })()
                                 : Object.entries(MEETING_POINT_CONFIG).map(([k, v]) => ({ value: k, label: v.dropdownLabel }));

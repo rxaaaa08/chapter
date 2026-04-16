@@ -433,6 +433,12 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <input type={type} style={s.input} value={(trip[key] as string) ?? ''} onChange={e => set(key, type === 'number' ? Number(e.target.value) : e.target.value)} />
     </div>
   );
+  const showInOther = (trip.cities ?? []).includes('Other');
+  const toggleShowInOther = () => {
+    const current = trip.cities ?? [];
+    const next = showInOther ? current.filter(c => c !== 'Other') : Array.from(new Set([...current, 'Other']));
+    set('cities', next);
+  };
 
   return (
     <div>
@@ -445,6 +451,23 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {field('Booking URL', 'booking_url')}
         {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
         {field('Hero Image URL', 'hero_image')}
+      </div>
+
+      {/* City feed controls */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Show In "Other" City Feed</label>
+          <button
+            type="button"
+            onClick={toggleShowInOther}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          >
+            {showInOther ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+          When ON, users selecting "Other" city can see this event (with Own Transport flow).
+        </div>
       </div>
 
       {/* What's Included */}
