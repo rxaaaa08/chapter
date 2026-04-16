@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import adminLogo from './assets/admin-logo.png';
 
 const ADMIN_PASSWORD = 'chaptera2025';
 
@@ -228,10 +227,7 @@ export default function AdminPanel() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f0', fontFamily: 'sans-serif' }}>
         <div style={{ background: '#fff', padding: 40, borderRadius: 16, width: 340, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <img src={adminLogo} alt="chapter அ logo" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', background: '#000' }} />
-            <div style={{ fontSize: 28, fontWeight: 700 }}>chapter அ</div>
-          </div>
+          <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>chapter அ</div>
           <div style={{ color: '#888', marginBottom: 28 }}>Admin Panel</div>
           <input
             type="password"
@@ -274,10 +270,7 @@ export default function AdminPanel() {
 
       {/* Header */}
       <div style={s.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src={adminLogo} alt="chapter அ logo" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', background: '#000' }} />
-          <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
-        </div>
+        <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media & Reviews</button>
