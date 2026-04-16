@@ -883,18 +883,20 @@ export default function App() {
               <CheckCircle2 size={16} className="text-blue-500 fill-blue-50" />
             </div>
             <div className="h-[14px] overflow-hidden relative mt-0.5">
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={announcementIndex + (isAfterTripInfo ? '-event' : '-general')}
-                  initial={{ y: 15, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: -15, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="text-[11px] text-gray-500 font-medium leading-tight absolute inset-0 whitespace-nowrap"
-                >
-                  {currentAnnouncements[announcementIndex]}
-                </motion.p>
-              </AnimatePresence>
+              {!showDetails && (
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={announcementIndex + (isAfterTripInfo ? '-event' : '-general')}
+                    initial={{ y: 15, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -15, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="text-[11px] text-gray-500 font-medium leading-tight absolute inset-0 whitespace-nowrap"
+                  >
+                    {currentAnnouncements[announcementIndex]}
+                  </motion.p>
+                </AnimatePresence>
+              )}
             </div>
           </div>
         </div>
