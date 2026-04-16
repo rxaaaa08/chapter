@@ -2237,7 +2237,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
             <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4">
               {event.videos?.map((vid, i) => {
                 const vimeoId = vid.url?.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1];
-                const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=1&muted=0&badge=0&byline=0&title=0&portrait=0` : null;
+                const embedUrl = vimeoId ? `https://player.vimeo.com/video/${vimeoId}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0` : null;
                 return (
                   <div key={i} className="relative w-48 h-72 flex-shrink-0 snap-center rounded-2xl overflow-hidden bg-gray-900 shadow-lg"
                     onClick={() => embedUrl && setActiveVideo({ embedUrl, caption: vid.caption || 'Trip video' })}
@@ -2542,18 +2542,17 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
             >
-              <div className="w-[86%] max-w-[320px] rounded-[28px] overflow-hidden bg-black border border-white/10 shadow-2xl">
-                <div className="flex items-center justify-between px-3 py-2 bg-black/80 border-b border-white/10">
-                  <p className="text-xs font-semibold text-white/80 truncate pr-2">{activeVideo.caption}</p>
+              <div className="relative w-[88%] max-w-[320px] rounded-[28px] overflow-hidden border border-white/20 bg-transparent shadow-2xl">
+                <div className="absolute top-2 right-2 z-10">
                   <button
                     onClick={() => setActiveVideo(null)}
-                    className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
+                    className="w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
                     aria-label="Close video"
                   >
                     <X size={16} />
                   </button>
                 </div>
-                <div className="relative w-full overflow-hidden rounded-b-[28px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
+                <div className="relative w-full overflow-hidden rounded-[28px]" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
                   <iframe
                     src={activeVideo.embedUrl}
                     title={activeVideo.caption}
