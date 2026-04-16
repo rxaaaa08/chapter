@@ -2550,7 +2550,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               <div className="relative w-[88%] max-w-[320px] overflow-visible" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => setActiveVideo(null)}
-                  className="absolute -top-5 -right-2 z-10 w-10 h-10 rounded-full bg-[#FFD700] text-black flex items-center justify-center hover:bg-[#e6c200] transition-colors shadow-lg"
+                  className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 z-10 w-10 h-10 rounded-full bg-[#FFD700] text-black flex items-center justify-center hover:bg-[#e6c200] transition-colors shadow-lg"
                   aria-label="Close video"
                 >
                   <X size={20} strokeWidth={3} />
