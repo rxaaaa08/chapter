@@ -297,16 +297,33 @@ export default function AdminPanel() {
                     .sort((a, b) => a.localeCompare(b));
                   const orderedCities = ['Chennai', ...middleCities, 'Other'].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
                   return (
-                    <select
-                      value={plansCityFilter}
-                      onChange={e => setPlansCityFilter(e.target.value)}
-                      style={{ ...s.input, width: 180, padding: '8px 10px', fontSize: 13 }}
-                    >
-                      <option value="all">All Cities</option>
-                      {orderedCities.map(city => (
-                        <option key={city} value={city}>{city === 'Other' ? 'Other City' : city}</option>
-                      ))}
-                    </select>
+                    <div style={{ position: 'relative', minWidth: 190 }}>
+                      <select
+                        value={plansCityFilter}
+                        onChange={e => setPlansCityFilter(e.target.value)}
+                        style={{
+                          ...s.input,
+                          width: '100%',
+                          padding: '9px 34px 9px 12px',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          borderRadius: 999,
+                          border: '1.5px solid #d7d7d7',
+                          background: '#fff',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                          appearance: 'none',
+                          WebkitAppearance: 'none',
+                          MozAppearance: 'none',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <option value="all">All Cities</option>
+                        {orderedCities.map(city => (
+                          <option key={city} value={city}>{city === 'Other' ? 'Other City' : city}</option>
+                        ))}
+                      </select>
+                      <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+                    </div>
                   );
                 })()}
               </div>
