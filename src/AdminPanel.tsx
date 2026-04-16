@@ -7,6 +7,8 @@ const ADMIN_PASSWORD = 'chaptera2025';
 type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string };
 type PickupPoint = { id: string; label: string; meetingSpot: string; time: string; transport: string };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
+type ItineraryScheduleItem = { time: string; activity: string };
+type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
 type Trip = {
   id?: string;
   slug: string;
@@ -27,6 +29,7 @@ type Trip = {
   pickup_points?: PickupPoint[];
   event_media?: EventMedia[];
   event_dates?: TripDate[];
+  itinerary?: ItineraryDay[];
   show_accommodation: boolean;
   accommodation?: { name: string; images: string[]; features: string[]; policy: string };
 };
@@ -210,7 +213,7 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Trips & Events</div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', included: [], optional_activities: [], not_included: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { name: '', images: ['','',''], features: ['','',''], policy: '' }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Trip
               </button>
             </div>
@@ -331,6 +334,34 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     const current = [...(trip[key] ?? [])];
     setStringList(key, current.filter((_, i) => i !== index));
   };
+  const itinerary = trip.itinerary ?? [];
+  const updateItineraryDay = (index: number, patch: Partial<ItineraryDay>) => {
+    const updated = itinerary.map((d, i) => i === index ? { ...d, ...patch } : d);
+    onChange({ ...trip, itinerary: updated });
+  };
+  const addItineraryDay = () => {
+    const nextDayNo = itinerary.length + 1;
+    onChange({ ...trip, itinerary: [...itinerary, { day: `Day ${nextDayNo}`, title: '', description: '', schedule: [] }] });
+  };
+  const removeItineraryDay = (index: number) => {
+    onChange({ ...trip, itinerary: itinerary.filter((_, i) => i !== index) });
+  };
+  const updateScheduleItem = (dayIndex: number, itemIndex: number, patch: Partial<ItineraryScheduleItem>) => {
+    const day = itinerary[dayIndex] ?? { day: '', title: '', description: '', schedule: [] };
+    const schedule = day.schedule ?? [];
+    const updatedSchedule = schedule.map((item, i) => i === itemIndex ? { ...item, ...patch } : item);
+    updateItineraryDay(dayIndex, { schedule: updatedSchedule });
+  };
+  const addScheduleItem = (dayIndex: number) => {
+    const day = itinerary[dayIndex] ?? { day: '', title: '', description: '', schedule: [] };
+    const schedule = day.schedule ?? [];
+    updateItineraryDay(dayIndex, { schedule: [...schedule, { time: '', activity: '' }] });
+  };
+  const removeScheduleItem = (dayIndex: number, itemIndex: number) => {
+    const day = itinerary[dayIndex] ?? { day: '', title: '', description: '', schedule: [] };
+    const schedule = day.schedule ?? [];
+    updateItineraryDay(dayIndex, { schedule: schedule.filter((_, i) => i !== itemIndex) });
+  };
 
   const field = (label: string, key: keyof Trip, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
@@ -380,6 +411,74 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         onChange={(i, v) => updateStringListItem('not_included', i, v)}
         onRemove={(i) => removeStringListItem('not_included', i)}
       />
+
+      {/* You'll Experience */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>You'll Experience (Itinerary)</label>
+          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addItineraryDay}>
+            + Add Day
+          </button>
+        </div>
+        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
+        {itinerary.map((day, dayIndex) => (
+          <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <input
+                style={s.input}
+                placeholder="Day label (e.g. Day 1)"
+                value={day.day}
+                onChange={e => updateItineraryDay(dayIndex, { day: e.target.value })}
+              />
+              <input
+                style={s.input}
+                placeholder="Day title"
+                value={day.title}
+                onChange={e => updateItineraryDay(dayIndex, { title: e.target.value })}
+              />
+              <button type="button" onClick={() => removeItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
+                ×
+              </button>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <textarea
+                style={s.textarea}
+                placeholder="Day description"
+                value={day.description}
+                onChange={e => updateItineraryDay(dayIndex, { description: e.target.value })}
+              />
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label style={{ ...s.label, marginBottom: 0 }}>Schedule</label>
+                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addScheduleItem(dayIndex)}>
+                  + Add Time Slot
+                </button>
+              </div>
+              {(day.schedule ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No time slots yet.</div>}
+              {(day.schedule ?? []).map((item, itemIndex) => (
+                <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                  <input
+                    style={s.input}
+                    placeholder="e.g. 7:30 PM"
+                    value={item.time}
+                    onChange={e => updateScheduleItem(dayIndex, itemIndex, { time: e.target.value })}
+                  />
+                  <input
+                    style={s.input}
+                    placeholder="Activity"
+                    value={item.activity}
+                    onChange={e => updateScheduleItem(dayIndex, itemIndex, { activity: e.target.value })}
+                  />
+                  <button type="button" onClick={() => removeScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Dates */}
       <div style={{ marginBottom: 14 }}>
