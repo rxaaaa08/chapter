@@ -398,6 +398,18 @@ export default function App() {
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
+  const fillMsgForSelectedEvent = (
+    key: string,
+    vars: Record<string, string> = {},
+    fallback = ''
+  ) => {
+    const tripRef = selectedEvent?.id;
+    if (tripRef) {
+      const tripKey = `trip_message:${tripRef}:${key}`;
+      if (msgs[tripKey]) return fillMsg(msgs, tripKey, vars, fallback);
+    }
+    return fillMsg(msgs, key, vars, fallback);
+  };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -617,10 +629,10 @@ export default function App() {
     
     simulateBotTyping(() => {
       if (action === 'book') {
-        addBotMessage(fillMsg(msgs, 'ask_doubts_book', { title: selectedEvent?.title ?? '' }, `Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`));
+        addBotMessage(fillMsgForSelectedEvent('ask_doubts_book', { title: selectedEvent?.title ?? '' }, `Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`));
         setStep('ASK_DOUBTS');
       } else {
-        addBotMessage(fillMsg(msgs, 'ask_doubts_contact', { title: selectedEvent?.title ?? '' }, `Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`));
+        addBotMessage(fillMsgForSelectedEvent('ask_doubts_contact', { title: selectedEvent?.title ?? '' }, `Hey! 🌊 Got some questions about ${selectedEvent?.title}? I've got answers. Check out these common questions below, or let me know if you're ready to roll!`));
         setStep('SHOW_FAQ');
       }
     });
@@ -631,7 +643,7 @@ export default function App() {
     if (hasDoubts) {
       addUserMessage("Hold up, I have a question.");
       simulateBotTyping(() => {
-        addBotMessage(fillMsg(msgs, 'show_faq', {}, "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book."));
+        addBotMessage(fillMsgForSelectedEvent('show_faq', {}, "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book."));
         setStep('SHOW_FAQ');
       });
     } else {
@@ -652,7 +664,7 @@ export default function App() {
     simulateBotTyping(() => {
       addBotMessage(faq.answer);
       simulateBotTyping(() => {
-        addBotMessage(fillMsg(msgs, 'faq_followup', {}, "Hope that clears it up! Got anything else, or are we locking this in?"));
+        addBotMessage(fillMsgForSelectedEvent('faq_followup', {}, "Hope that clears it up! Got anything else, or are we locking this in?"));
         setStep('SHOW_FAQ');
       }, 1000);
     }, 800);
@@ -672,7 +684,7 @@ export default function App() {
     addUserMessage(gender);
     
     simulateBotTyping(() => {
-      addBotMessage(fillMsg(msgs, 'ask_transport', {}, "Got it. And do you need transport from Chennai, or will you arrange your own transport?"));
+      addBotMessage(fillMsgForSelectedEvent('ask_transport', {}, "Got it. And do you need transport from Chennai, or will you arrange your own transport?"));
       setStep('ASK_TRANSPORT');
     });
   };
@@ -683,7 +695,7 @@ export default function App() {
     addUserMessage(transport);
     
     simulateBotTyping(() => {
-      addBotMessage(fillMsg(msgs, 'kyn_ready', {}, "Perfect! I'll show you exactly what to select on KYN."));
+      addBotMessage(fillMsgForSelectedEvent('kyn_ready', {}, "Perfect! I'll show you exactly what to select on KYN."));
       setStep('DONE');
       setShowKynPopup(true);
       setShowWaitlistForm(false);
@@ -700,7 +712,7 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(message);
     simulateBotTyping(() => {
-      addBotMessage(fillMsg(msgs, 'contact_success', { name, phone }, `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
+      addBotMessage(fillMsgForSelectedEvent('contact_success', { name, phone }, `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
       setStep('DONE');
     }, 1000);
   };

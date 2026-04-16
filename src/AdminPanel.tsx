@@ -19,6 +19,7 @@ type PickupPoint = {
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
 type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; review_count?: number; images?: string[] };
+type FAQ = { id?: string; question: string; answer: string };
 type ItineraryScheduleItem = { time: string; activity: string };
 type ItineraryDay = { day: string; title: string; description: string; schedule?: ItineraryScheduleItem[] };
 type AccommodationStay = { name: string; image?: string; images?: string[]; features: string[] };
@@ -44,6 +45,7 @@ type Trip = {
   pickup_points?: PickupPoint[];
   event_media?: EventMedia[];
   event_reviews?: EventReview[];
+  faqs?: FAQ[];
   event_dates?: TripDate[];
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
@@ -71,6 +73,7 @@ export default function AdminPanel() {
   const [tab, setTab] = useState<'trips' | 'media' | 'other' | 'messages'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -83,9 +86,17 @@ export default function AdminPanel() {
   const [otherEditingId, setOtherEditingId] = useState<string | null>(null);
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [otherActionById, setOtherActionById] = useState<Record<string, string>>({});
+  const [messagesTripId, setMessagesTripId] = useState<string>('');
+  const [tripMessageDrafts, setTripMessageDrafts] = useState<Record<string, string>>({});
+  const [tripFaqDrafts, setTripFaqDrafts] = useState<FAQ[]>([]);
+  const [savingTripBotConfig, setSavingTripBotConfig] = useState(false);
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event', 'no_events', 'retry_city'] as const;
+  const perTripPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact', 'show_faq', 'faq_followup', 'ask_transport', 'kyn_ready', 'contact_success'] as const;
+  const labelForStepKey = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+  const buildTripStepKey = (tripRef: string, baseKey: string) => `trip_message:${tripRef}:${baseKey}`;
 
   const allCities = [
     ...new Set(
@@ -113,7 +124,7 @@ export default function AdminPanel() {
     if (!authed) return;
     setLoading(true);
     Promise.all([
-      supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*)').order('created_at', { ascending: true }),
+      supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
     ]).then(([evRes, msgRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
@@ -127,10 +138,22 @@ export default function AdminPanel() {
     });
   }, [authed]);
 
+  useEffect(() => {
+    setGlobalMessageDrafts(prev => {
+      const next = { ...prev };
+      globalPreSelectionKeys.forEach((key) => {
+        if (next[key] === undefined) {
+          next[key] = msgs.find(m => m.step_key === key)?.bot_message ?? '';
+        }
+      });
+      return next;
+    });
+  }, [msgs]);
+
   // ─── SAVE TRIP ──────────────────────────────────────────────────────────────
   const saveTrip = async (trip: Trip) => {
     setSaving(trip.id ?? 'new');
-    const { event_dates, event_media, event_reviews, id, ...fields } = trip;
+    const { event_dates, event_media, event_reviews, faqs, id, ...fields } = trip;
 
     let eventId = id;
     if (id) {
@@ -184,8 +207,23 @@ export default function AdminPanel() {
       }
     }
 
+    if (eventId && faqs) {
+      await supabase.from('faqs').delete().eq('event_id', eventId);
+      const validFaqs = faqs.filter(f => f.question.trim() && f.answer.trim());
+      if (validFaqs.length > 0) {
+        await supabase.from('faqs').insert(
+          validFaqs.map((f, i) => ({
+            event_id: eventId,
+            question: f.question.trim(),
+            answer: f.answer.trim(),
+            sort_order: i,
+          }))
+        );
+      }
+    }
+
     // Refresh
-    const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*)').order('created_at', { ascending: true });
+    const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true });
     if (data) setTrips(data as Trip[]);
     setSaving(null);
     setEditingTrip(null);
@@ -280,6 +318,40 @@ export default function AdminPanel() {
     showToast('Message saved!');
   };
 
+  const saveGlobalStepTemplate = async (stepKey: string) => {
+    const draft = (globalMessageDrafts[stepKey] ?? '').trim();
+    const existing = msgs.find(m => m.step_key === stepKey);
+    setSaving(`global:${stepKey}`);
+
+    if (existing?.id) {
+      if (!draft) {
+        await supabase.from('chat_messages').delete().eq('id', existing.id);
+        setMsgs(prev => prev.filter(m => m.id !== existing.id));
+      } else {
+        await supabase.from('chat_messages').update({ bot_message: draft }).eq('id', existing.id);
+        setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: draft } : m));
+      }
+    } else if (draft) {
+      const maxSortOrder = msgs.length > 0
+        ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
+        : 0;
+      const { data } = await supabase
+        .from('chat_messages')
+        .insert({
+          step_key: stepKey,
+          bot_message: draft,
+          flow: 'global',
+          sort_order: maxSortOrder + 1,
+        })
+        .select('*')
+        .single();
+      if (data) setMsgs(prev => [...prev, data as ChatMsg]);
+    }
+
+    setSaving(null);
+    showToast('Global bot message saved!');
+  };
+
   const saveGeneralAnnouncements = async () => {
     setSavingGeneralAnnouncements(true);
     const existing = msgs.find(m => m.step_key === 'general_announcements');
@@ -304,6 +376,70 @@ export default function AdminPanel() {
     }
     setSavingGeneralAnnouncements(false);
     showToast('Global announcements saved!');
+  };
+
+  const handleMessagesTripChange = (tripId: string) => {
+    setMessagesTripId(tripId);
+    const trip = trips.find(t => t.id === tripId);
+    if (!trip) {
+      setTripMessageDrafts({});
+      setTripFaqDrafts([]);
+      return;
+    }
+    const tripRef = (trip.slug || trip.id || '').trim();
+    const nextDrafts: Record<string, string> = {};
+    perTripPostSelectionKeys.forEach((key) => {
+      const stepKey = buildTripStepKey(tripRef, key);
+      nextDrafts[key] = msgs.find(m => m.step_key === stepKey)?.bot_message ?? '';
+    });
+    setTripMessageDrafts(nextDrafts);
+    setTripFaqDrafts((trip.faqs ?? []).map(f => ({ question: f.question ?? '', answer: f.answer ?? '' })));
+  };
+
+  const savePerTripBotConfig = async () => {
+    const selectedTrip = trips.find(t => t.id === messagesTripId);
+    if (!selectedTrip?.id) return;
+    const tripRef = (selectedTrip.slug || selectedTrip.id || '').trim();
+    setSavingTripBotConfig(true);
+
+    for (const key of perTripPostSelectionKeys) {
+      const stepKey = buildTripStepKey(tripRef, key);
+      const text = (tripMessageDrafts[key] ?? '').trim();
+      const existing = msgs.find(m => m.step_key === stepKey);
+
+      if (existing?.id) {
+        if (!text) {
+          await supabase.from('chat_messages').delete().eq('id', existing.id);
+          setMsgs(prev => prev.filter(m => m.id !== existing.id));
+        } else {
+          await supabase.from('chat_messages').update({ bot_message: text }).eq('id', existing.id);
+          setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: text } : m));
+        }
+      } else if (text) {
+        const maxSortOrder = msgs.length > 0
+          ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
+          : 0;
+        const { data } = await supabase
+          .from('chat_messages')
+          .insert({
+            step_key: stepKey,
+            bot_message: text,
+            flow: `trip:${tripRef}`,
+            sort_order: maxSortOrder + 1,
+          })
+          .select('*')
+          .single();
+        if (data) setMsgs(prev => [...prev, data as ChatMsg]);
+      }
+    }
+
+    const updatedTrip: Trip = {
+      ...selectedTrip,
+      faqs: tripFaqDrafts.filter(f => f.question.trim() || f.answer.trim()),
+    };
+    await saveTrip(updatedTrip);
+    setSavingTripBotConfig(false);
+    showToast('Per-trip bot messages and FAQs saved!');
   };
 
   // ─── LOGIN SCREEN ────────────────────────────────────────────────────────────
@@ -398,7 +534,7 @@ export default function AdminPanel() {
                   <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
               </div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -826,6 +962,7 @@ export default function AdminPanel() {
               Use <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code> as placeholders.
             </div>
             <div style={{ ...s.card, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Global: Before Trip/Event Selection</div>
               <label style={s.label}>Top Header Announcements (Before Event Selection)</label>
               <textarea
                 style={s.textarea}
@@ -842,21 +979,126 @@ export default function AdminPanel() {
                 </button>
               </div>
             </div>
-            {msgs.filter(msg => msg.step_key !== 'general_announcements').map(msg => (
-              <div key={msg.id} style={s.card}>
-                <label style={s.label}>{msg.step_key}</label>
-                <textarea
-                  style={s.textarea}
-                  value={msg.bot_message}
-                  onChange={e => setMsgs(prev => prev.map(m => m.id === msg.id ? { ...m, bot_message: e.target.value } : m))}
-                />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <button style={s.btn(saving === msg.id ? '#aaa' : '#111')} disabled={saving === msg.id} onClick={() => saveMsg(msg)}>
-                    {saving === msg.id ? 'Saving…' : 'Save'}
-                  </button>
+
+            <div style={{ ...s.card, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Global Conversation Messages (Pre-selection)</div>
+              {globalPreSelectionKeys.map((stepKey) => (
+                <div key={stepKey} style={{ marginBottom: 12 }}>
+                  <label style={s.label}>{labelForStepKey(stepKey)}</label>
+                  <textarea
+                    style={s.textarea}
+                    value={globalMessageDrafts[stepKey] ?? ''}
+                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [stepKey]: e.target.value }))}
+                    placeholder={`Template for ${stepKey}`}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      style={s.btn(saving === `global:${stepKey}` ? '#aaa' : '#111')}
+                      disabled={saving === `global:${stepKey}`}
+                      onClick={() => saveGlobalStepTemplate(stepKey)}
+                    >
+                      {saving === `global:${stepKey}` ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={s.card}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Per Trip/Event: Post-selection Messages + Doubts (FAQ)</div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>Choose Plan</label>
+                <div style={{ position: 'relative', maxWidth: 360 }}>
+                  <select
+                    value={messagesTripId}
+                    onChange={e => handleMessagesTripChange(e.target.value)}
+                    style={{
+                      ...s.input,
+                      width: '100%',
+                      padding: '9px 34px 9px 12px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      borderRadius: 10,
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">Select a trip/event</option>
+                    {trips.map(t => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                  </select>
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
               </div>
-            ))}
+
+              {messagesTripId && (
+                <>
+                  {perTripPostSelectionKeys.map((stepKey) => (
+                    <div key={stepKey} style={{ marginBottom: 12 }}>
+                      <label style={s.label}>{labelForStepKey(stepKey)}</label>
+                      <textarea
+                        style={s.textarea}
+                        value={tripMessageDrafts[stepKey] ?? ''}
+                        onChange={e => setTripMessageDrafts(prev => ({ ...prev, [stepKey]: e.target.value }))}
+                        placeholder={`Template for ${stepKey}`}
+                      />
+                    </div>
+                  ))}
+
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <label style={{ ...s.label, marginBottom: 0 }}>Possible Doubts (FAQ)</label>
+                      <button
+                        type="button"
+                        style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                        onClick={() => setTripFaqDrafts(prev => [...prev, { question: '', answer: '' }])}
+                      >
+                        + Add Q&A
+                      </button>
+                    </div>
+                    {tripFaqDrafts.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No FAQs added yet.</div>}
+                    {tripFaqDrafts.map((faq, i) => (
+                      <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                          <input
+                            style={s.input}
+                            placeholder="Question"
+                            value={faq.question}
+                            onChange={e => setTripFaqDrafts(prev => prev.map((x, idx) => idx === i ? { ...x, question: e.target.value } : x))}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setTripFaqDrafts(prev => prev.filter((_, idx) => idx !== i))}
+                            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <textarea
+                          style={s.textarea}
+                          placeholder="Answer"
+                          value={faq.answer}
+                          onChange={e => setTripFaqDrafts(prev => prev.map((x, idx) => idx === i ? { ...x, answer: e.target.value } : x))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      style={s.btn(savingTripBotConfig ? '#aaa' : '#111')}
+                      disabled={savingTripBotConfig}
+                      onClick={savePerTripBotConfig}
+                    >
+                      {savingTripBotConfig ? 'Saving…' : 'Save Per-Trip Bot Setup'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </>
         )}
       </div>
