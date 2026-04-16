@@ -1293,8 +1293,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   // Index 0 = the "Now" row (always green Now tag, no date)
   // Index 1+ = middle steps with deadline date pickers
   const bookingSteps = trip.booking_steps?.length ? trip.booking_steps : [
-    { label: 'Advance', value: '', date: '' },
-    { label: 'Remaining Balance', value: '', date: '' },
+    { label: 'Advance', value: '{advance}', date: '' },
+    { label: 'Remaining Balance', value: '{balance}', date: '' },
     { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
   ];
   const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) =>
@@ -1395,6 +1395,9 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
           All steps are editable. The first step always shows a <strong style={{ color: '#16a34a' }}>Now</strong> tag. Steps after it get a deadline date. The final event date row is always fixed.
         </div>
+        <div style={{ fontSize: 12, color: '#666', background: '#f0f0ea', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+          Use <code style={{ background: '#e4e4de', borderRadius: 4, padding: '1px 5px' }}>{'{advance}'}</code> to auto-fill the advance amount, <code style={{ background: '#e4e4de', borderRadius: 4, padding: '1px 5px' }}>{'{balance}'}</code> for the remaining balance.
+        </div>
         {bookingSteps.map((step, i) => {
           const isNowRow = i === 0;
           return (
@@ -1413,12 +1416,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 </div>
                 <div>
                   <label style={s.label}>Value (big text)</label>
-                  <input
-                    style={s.input}
-                    placeholder={isNowRow ? 'Auto (advance price)' : i === 1 ? 'Auto (remaining balance)' : 'e.g. Pickup, stay & trip details'}
-                    value={step.value}
-                    onChange={e => setBookingStep(i, { value: e.target.value })}
-                  />
+                  <input style={s.input} placeholder="e.g. {advance} or {balance} or Pickup details" value={step.value} onChange={e => setBookingStep(i, { value: e.target.value })} />
                 </div>
                 {!isNowRow && (
                   <div>
