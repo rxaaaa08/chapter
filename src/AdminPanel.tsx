@@ -303,12 +303,28 @@ export default function AdminPanel() {
                 if (dateDiff !== 0) return dateDiff;
                 return a.title.localeCompare(b.title);
               });
-              const eventsList = sortPlans(trips.filter(t => (t.category || '').toLowerCase() === 'events'));
-              const tripsList = sortPlans(trips.filter(t => (t.category || '').toLowerCase() !== 'events'));
-              const sections = [
-                { title: 'Events', items: eventsList },
-                { title: 'Trips', items: tripsList },
+              const grouped = new Map<string, Trip[]>();
+              trips.forEach((plan) => {
+                const rawCategory = (plan.category || '').trim();
+                const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(plan);
+              });
+
+              const preferredOrder = ['events', 'trips'];
+              const categoryKeys = Array.from(grouped.keys());
+              const orderedKeys = [
+                ...preferredOrder.filter(k => categoryKeys.includes(k)),
+                ...categoryKeys
+                  .filter(k => !preferredOrder.includes(k))
+                  .sort((a, b) => a.localeCompare(b)),
               ];
+
+              const sections = orderedKeys.map((key) => {
+                const items = sortPlans(grouped.get(key) ?? []);
+                const displayTitle = items[0]?.category?.trim() || (key === 'uncategorized' ? 'Uncategorized' : key);
+                return { title: displayTitle, items };
+              });
 
               return sections.map(section => (
                 section.items.length > 0 ? (
