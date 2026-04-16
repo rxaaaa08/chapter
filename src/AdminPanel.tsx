@@ -82,6 +82,7 @@ export default function AdminPanel() {
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [otherEditingId, setOtherEditingId] = useState<string | null>(null);
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
+  const [otherActionById, setOtherActionById] = useState<Record<string, string>>({});
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -231,6 +232,40 @@ export default function AdminPanel() {
     }
     if (action === 'delete') {
       await deleteTrip(trip.id, trip.title);
+    }
+  };
+  const setOtherFeedState = async (trip: Trip, enabled: boolean) => {
+    if (!trip.id) return;
+    const currentCities = trip.cities ?? [];
+    const nextCities = enabled
+      ? Array.from(new Set([...currentCities, 'Other']))
+      : currentCities.filter(c => c !== 'Other');
+    await supabase.from('events').update({ cities: nextCities }).eq('id', trip.id);
+    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, cities: nextCities } : t));
+  };
+  const handleOtherAction = async (trip: Trip, action: string) => {
+    if (!trip.id) return;
+    if (action === 'live') {
+      if (!trip.is_active) await setLiveState(trip, true);
+      if (!(trip.cities ?? []).includes('Other')) await setOtherFeedState(trip, true);
+      showToast('Plan is live in Other Cities.');
+      return;
+    }
+    if (action === 'preview') {
+      const previewTarget = trip.id || trip.slug;
+      if (!previewTarget) return;
+      const previewUrl = `${window.location.origin}/?preview_event=${encodeURIComponent(previewTarget)}`;
+      if (navigator?.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(previewUrl); } catch (_) {}
+      }
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      showToast('Preview opened. URL copied.');
+      return;
+    }
+    if (action === 'remove' || action === 'deactivate') {
+      await setOtherFeedState(trip, false);
+      if (otherEditingId === trip.id) setOtherEditingId(null);
+      showToast('Removed from Other Cities feed.');
     }
   };
   const updateTripInList = (tripId: string, updater: (t: Trip) => Trip) => {
@@ -734,6 +769,36 @@ export default function AdminPanel() {
                       >
                         {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
                       </button>
+                      <div style={{ position: 'relative', minWidth: 118 }}>
+                        <select
+                          value={otherActionById[trip.id!] ?? ''}
+                          onChange={async (e) => {
+                            const action = e.target.value;
+                            setOtherActionById(prev => ({ ...prev, [trip.id!]: action }));
+                            await handleOtherAction(trip, action);
+                            setOtherActionById(prev => ({ ...prev, [trip.id!]: '' }));
+                          }}
+                          style={{
+                            ...s.input,
+                            width: '100%',
+                            padding: '8px 30px 8px 10px',
+                            fontSize: 13,
+                            fontWeight: 700,
+                            borderRadius: 8,
+                            color: '#16a34a',
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            MozAppearance: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <option value="" disabled>Live</option>
+                          <option value="live">Live</option>
+                          <option value="preview">Preview</option>
+                          <option value="remove">Remove</option>
+                        </select>
+                        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
+                      </div>
                     </div>
 
                     {isExpanded && (
