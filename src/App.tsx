@@ -512,8 +512,7 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-
-  if (path === '/admin') return <AdminPanel />;
+  const isAdmin = path === '/admin';
   const isAboutPage = path === '/aboutus';
   const [showHomepage, setShowHomepage] = useState(isAboutPage);
 
@@ -526,14 +525,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || isAdmin) return;
     document.body.style.overflow = showHomepage ? 'auto' : 'hidden';
     document.documentElement.style.overflow = showHomepage ? 'auto' : 'hidden';
     return () => {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage]);
+  }, [showHomepage, isAdmin]);
+
+  if (isAdmin) return <AdminPanel />;
 
   if (showHomepage) {
     return (
