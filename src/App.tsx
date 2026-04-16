@@ -510,11 +510,14 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
 
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [showHomepage, setShowHomepage] = useState(true);
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const isAboutPage = path === '/aboutus';
+  const [showHomepage, setShowHomepage] = useState(isAboutPage);
 
   const enterApp = () => {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.history.pushState({}, '', '/');
     }
     setShowHomepage(false);
   };
@@ -528,16 +531,6 @@ export default function App() {
       document.documentElement.style.overflow = '';
     };
   }, [showHomepage]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('view')) {
-      url.searchParams.delete('view');
-      url.hash = '';
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, []);
 
   if (showHomepage) {
     return (
