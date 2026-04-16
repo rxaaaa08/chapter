@@ -728,7 +728,14 @@ export default function App() {
 
     switch (step) {
       case 'ASK_CITY': {
-        const availableCities = Array.from(new Set([...events.flatMap(e => e.cities), 'Other']));
+        const baseCities = Array.from(new Set(events.flatMap(e => e.cities).filter(Boolean)));
+        const middleCities = baseCities
+          .filter(c => {
+            const lc = c.toLowerCase();
+            return lc !== 'chennai' && lc !== 'other';
+          })
+          .sort((a, b) => a.localeCompare(b));
+        const availableCities = ['Chennai', ...middleCities, 'Other'];
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {availableCities.map((city, i) => (
