@@ -2555,7 +2555,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 >
                   <X size={20} strokeWidth={3} />
                 </button>
-                <div className="relative w-full overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
+                <div className="relative w-full overflow-hidden rounded-[28px] bg-black" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }}>
                   <iframe
                     id="video-modal-player"
                     src={activeVideo.embedUrl}
