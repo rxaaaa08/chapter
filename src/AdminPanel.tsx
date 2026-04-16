@@ -567,14 +567,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const setAccImage = (i: number, val: string) => { const imgs = [...accImages]; imgs[i] = val; setAcc({ images: imgs.filter(Boolean) }); };
   const setAccFeature = (i: number, val: string) => { const feats = [...accFeatures]; feats[i] = val; setAcc({ features: feats }); };
 
-  // Always show exactly 3 video slots
-  const rawMedia = trip.event_media ?? [];
-  const videos: EventMedia[] = [0,1,2].map(i => rawMedia[i] ?? { url: '', thumbnail_url: '', caption: '' });
-  const setVideo = (i: number, key: keyof EventMedia, val: string) => {
-    const updated = videos.map((v, idx) => idx === i ? { ...v, [key]: val } : v);
-    onChange({ ...trip, event_media: updated });
-  };
-
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
     onChange({ ...trip, pickup_points: updated });
@@ -587,88 +579,52 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const toggleOwnTransport = (enabled: boolean) => {
     if (enabled) {
       if (ownTransportIndex >= 0) return;
-      onChange({
-        ...trip,
-        pickup_points: [
-          ...pickups,
-          {
-            id: 'own_transport',
-            label: 'Own Transport',
-            meetingSpot: 'Event Location',
-            time: '',
-            transport: 'Your Own Transport',
-            ownTransportPrice: trip.price_full || 0,
-            ownOnly: false,
-          }
-        ]
-      });
+      onChange({ ...trip, pickup_points: [...pickups, { id: 'own_transport', label: 'Own Transport', meetingSpot: 'Event Location', time: '', transport: 'Your Own Transport', ownTransportPrice: trip.price_full || 0, ownOnly: false }] });
       return;
     }
     onChange({ ...trip, pickup_points: pickups.filter(p => p.id !== 'own_transport') });
   };
   const setOwnTransport = (patch: Partial<PickupPoint>) => {
     if (ownTransportIndex < 0) return;
-    const updated = pickups.map((p, idx) => idx === ownTransportIndex ? { ...p, ...patch } : p);
-    onChange({ ...trip, pickup_points: updated });
+    onChange({ ...trip, pickup_points: pickups.map((p, idx) => idx === ownTransportIndex ? { ...p, ...patch } : p) });
   };
 
   const setDate = (i: number, key: keyof TripDate, val: string) => {
-    const updated = dates.map((d, idx) => idx === i ? { ...d, [key]: val } : d);
-    onChange({ ...trip, event_dates: updated });
+    onChange({ ...trip, event_dates: dates.map((d, idx) => idx === i ? { ...d, [key]: val } : d) });
   };
   const addDate = () => onChange({ ...trip, event_dates: [...dates, { start_date: '', status: 'available', label: '' }] });
   const removeDate = (i: number) => onChange({ ...trip, event_dates: dates.filter((_, idx) => idx !== i) });
-  const setStringList = (key: 'included' | 'optional_activities' | 'not_included', list: string[]) => {
-    onChange({ ...trip, [key]: list });
-  };
+
   const updateStringListItem = (key: 'included' | 'optional_activities' | 'not_included', index: number, value: string) => {
-    const current = [...(trip[key] ?? [])];
-    current[index] = value;
-    setStringList(key, current);
+    const current = [...(trip[key] ?? [])]; current[index] = value; onChange({ ...trip, [key]: current });
   };
   const addStringListItem = (key: 'included' | 'optional_activities' | 'not_included') => {
-    const current = [...(trip[key] ?? [])];
-    setStringList(key, [...current, '']);
+    onChange({ ...trip, [key]: [...(trip[key] ?? []), ''] });
   };
   const removeStringListItem = (key: 'included' | 'optional_activities' | 'not_included', index: number) => {
-    const current = [...(trip[key] ?? [])];
-    setStringList(key, current.filter((_, i) => i !== index));
+    onChange({ ...trip, [key]: (trip[key] ?? []).filter((_: any, i: number) => i !== index) });
   };
+
   const itinerary = trip.itinerary ?? [];
   const updateItineraryDay = (index: number, patch: Partial<ItineraryDay>) => {
-    const updated = itinerary.map((d, i) => i === index ? { ...d, ...patch } : d);
-    onChange({ ...trip, itinerary: updated });
+    onChange({ ...trip, itinerary: itinerary.map((d, i) => i === index ? { ...d, ...patch } : d) });
   };
   const addItineraryDay = () => {
-    const nextDayNo = itinerary.length + 1;
-    onChange({ ...trip, itinerary: [...itinerary, { day: `Day ${nextDayNo}`, title: '', description: '', schedule: [] }] });
+    onChange({ ...trip, itinerary: [...itinerary, { day: `Day ${itinerary.length + 1}`, title: '', description: '', schedule: [] }] });
   };
-  const removeItineraryDay = (index: number) => {
-    onChange({ ...trip, itinerary: itinerary.filter((_, i) => i !== index) });
-  };
+  const removeItineraryDay = (index: number) => onChange({ ...trip, itinerary: itinerary.filter((_, i) => i !== index) });
   const updateScheduleItem = (dayIndex: number, itemIndex: number, patch: Partial<ItineraryScheduleItem>) => {
     const day = itinerary[dayIndex] ?? { day: '', title: '', description: '', schedule: [] };
-    const schedule = day.schedule ?? [];
-    const updatedSchedule = schedule.map((item, i) => i === itemIndex ? { ...item, ...patch } : item);
-    updateItineraryDay(dayIndex, { schedule: updatedSchedule });
+    updateItineraryDay(dayIndex, { schedule: (day.schedule ?? []).map((item, i) => i === itemIndex ? { ...item, ...patch } : item) });
   };
   const addScheduleItem = (dayIndex: number) => {
     const day = itinerary[dayIndex] ?? { day: '', title: '', description: '', schedule: [] };
-    const schedule = day.schedule ?? [];
-    updateItineraryDay(dayIndex, { schedule: [...schedule, { time: '', activity: '' }] });
+    updateItineraryDay(dayIndex, { schedule: [...(day.schedule ?? []), { time: '', activity: '' }] });
   };
   const removeScheduleItem = (dayIndex: number, itemIndex: number) => {
     const day = itinerary[dayIndex] ?? { day: '', title: '', description: '', schedule: [] };
-    const schedule = day.schedule ?? [];
-    updateItineraryDay(dayIndex, { schedule: schedule.filter((_, i) => i !== itemIndex) });
+    updateItineraryDay(dayIndex, { schedule: (day.schedule ?? []).filter((_, i) => i !== itemIndex) });
   };
-  const reviews = trip.event_reviews ?? [];
-  const addReview = () => onChange({ ...trip, event_reviews: [...reviews, { name: '', rating: 5, review_text: '', images: [] }] });
-  const updateReview = (index: number, patch: Partial<EventReview>) => {
-    const updated = reviews.map((r, i) => i === index ? { ...r, ...patch } : r);
-    onChange({ ...trip, event_reviews: updated });
-  };
-  const removeReview = (index: number) => onChange({ ...trip, event_reviews: reviews.filter((_, i) => i !== index) });
 
   const field = (label: string, key: keyof Trip, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
@@ -679,13 +635,20 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const showInOther = (trip.cities ?? []).includes('Other');
   const toggleShowInOther = () => {
     const current = trip.cities ?? [];
-    const next = showInOther ? current.filter(c => c !== 'Other') : Array.from(new Set([...current, 'Other']));
-    set('cities', next);
+    set('cities', showInOther ? current.filter(c => c !== 'Other') : Array.from(new Set([...current, 'Other'])));
   };
+
+  const addBtn = (onClick: () => void, label = '+ Add') => (
+    <button type="button" onClick={onClick}
+      style={{ padding: '3px 10px', background: 'transparent', color: '#555', border: '1.5px solid #ccc', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+      {label}
+    </button>
+  );
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      {/* ── Core fields — always visible ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 6 }}>
         <div style={{ gridColumn: '1/-1' }}>{field('Title', 'title')}</div>
         {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
         {field('Category', 'category')}
@@ -693,148 +656,22 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {field('Advance Amount (₹)', 'price_advance', 'number')}
         {field('Booking URL', 'booking_url')}
         {field('CTA Button Text (e.g. Book Now, Confirm)', 'cta_label')}
-        {field('Hero Image URL', 'hero_image')}
+        <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
       </div>
 
-      {/* City feed controls */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Show In "Other" City Feed</label>
-          <button
-            type="button"
-            onClick={toggleShowInOther}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-          >
-            {showInOther ? 'ON' : 'OFF'}
-          </button>
-        </div>
-        <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
-          When ON, users selecting "Other" city can see this event (with Own Transport flow).
-        </div>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <label style={{ ...s.label, marginBottom: 0 }}>Show In "Other" City Feed</label>
+        <button type="button" onClick={toggleShowInOther}
+          style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+          {showInOther ? 'ON' : 'OFF'}
+        </button>
+        <span style={{ color: '#999', fontSize: 12 }}>When ON, users selecting "Other" city can see this event.</span>
       </div>
 
-      {/* What's Included */}
-      <StringListEditor
-        title="What's Included"
-        values={trip.included ?? []}
-        placeholder="e.g. Round-trip transport"
-        s={s}
-        onAdd={() => addStringListItem('included')}
-        onChange={(i, v) => updateStringListItem('included', i, v)}
-        onRemove={(i) => removeStringListItem('included', i)}
-      />
-      <StringListEditor
-        title="Optional Activities"
-        values={trip.optional_activities ?? []}
-        placeholder="e.g. Sunrise walk"
-        s={s}
-        onAdd={() => addStringListItem('optional_activities')}
-        onChange={(i, v) => updateStringListItem('optional_activities', i, v)}
-        onRemove={(i) => removeStringListItem('optional_activities', i)}
-      />
-      <StringListEditor
-        title="What's Not Included"
-        values={trip.not_included ?? []}
-        placeholder="e.g. Lunch"
-        s={s}
-        onAdd={() => addStringListItem('not_included')}
-        onChange={(i, v) => updateStringListItem('not_included', i, v)}
-        onRemove={(i) => removeStringListItem('not_included', i)}
-      />
-      <StringListEditor
-        title="Header Announcements (This Event)"
-        values={trip.announcements ?? []}
-        placeholder="e.g. Weekend Escape bookings are live"
-        s={s}
-        onAdd={() => {
-          const current = [...(trip.announcements ?? [])];
-          onChange({ ...trip, announcements: [...current, ''] });
-        }}
-        onChange={(i, v) => {
-          const current = [...(trip.announcements ?? [])];
-          current[i] = v;
-          onChange({ ...trip, announcements: current });
-        }}
-        onRemove={(i) => {
-          const current = [...(trip.announcements ?? [])];
-          onChange({ ...trip, announcements: current.filter((_, idx) => idx !== i) });
-        }}
-      />
+      {/* ── Collapsible sections ── */}
 
-      {/* You'll Experience */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>You'll Experience (Itinerary)</label>
-          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addItineraryDay}>
-            + Add Day
-          </button>
-        </div>
-        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
-        {itinerary.map((day, dayIndex) => (
-          <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <input
-                style={s.input}
-                placeholder="Day label (e.g. Day 1)"
-                value={day.day}
-                onChange={e => updateItineraryDay(dayIndex, { day: e.target.value })}
-              />
-              <input
-                style={s.input}
-                placeholder="Day title"
-                value={day.title}
-                onChange={e => updateItineraryDay(dayIndex, { title: e.target.value })}
-              />
-              <button type="button" onClick={() => removeItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
-                ×
-              </button>
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <textarea
-                style={s.textarea}
-                placeholder="Day description"
-                value={day.description}
-                onChange={e => updateItineraryDay(dayIndex, { description: e.target.value })}
-              />
-            </div>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ ...s.label, marginBottom: 0 }}>Schedule</label>
-                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addScheduleItem(dayIndex)}>
-                  + Add Time Slot
-                </button>
-              </div>
-              {(day.schedule ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No time slots yet.</div>}
-              {(day.schedule ?? []).map((item, itemIndex) => (
-                <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                  <input
-                    style={s.input}
-                    placeholder="e.g. 7:30 PM"
-                    value={item.time}
-                    onChange={e => updateScheduleItem(dayIndex, itemIndex, { time: e.target.value })}
-                  />
-                  <input
-                    style={s.input}
-                    placeholder="Activity"
-                    value={item.activity}
-                    onChange={e => updateScheduleItem(dayIndex, itemIndex, { activity: e.target.value })}
-                  />
-                  <button type="button" onClick={() => removeScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Dates */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Trip Dates</label>
-          <button style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addDate}>+ Add Date</button>
-        </div>
+      <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`} action={addBtn(addDate)}>
+        {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
             <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
@@ -846,22 +683,92 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
-      </div>
+      </CollapsibleSection>
 
-      {/* Own Transport */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Own Transport Option</label>
-          <button
-            type="button"
-            onClick={() => toggleOwnTransport(!ownTransport)}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport ? '#16a34a' : '#ddd', color: ownTransport ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-          >
+      <CollapsibleSection title="What's Included" badge={`${(trip.included ?? []).length} item${(trip.included ?? []).length !== 1 ? 's' : ''}`} action={addBtn(() => addStringListItem('included'))}>
+        {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.included ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Round-trip transport" value={item} onChange={e => updateStringListItem('included', i, e.target.value)} />
+            <button type="button" onClick={() => removeStringListItem('included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Optional Activities" badge={`${(trip.optional_activities ?? []).length} item${(trip.optional_activities ?? []).length !== 1 ? 's' : ''}`} action={addBtn(() => addStringListItem('optional_activities'))}>
+        {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.optional_activities ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Sunrise walk" value={item} onChange={e => updateStringListItem('optional_activities', i, e.target.value)} />
+            <button type="button" onClick={() => removeStringListItem('optional_activities', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="What's Not Included" badge={`${(trip.not_included ?? []).length} item${(trip.not_included ?? []).length !== 1 ? 's' : ''}`} action={addBtn(() => addStringListItem('not_included'))}>
+        {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
+        {(trip.not_included ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Lunch" value={item} onChange={e => updateStringListItem('not_included', i, e.target.value)} />
+            <button type="button" onClick={() => removeStringListItem('not_included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Header Announcements (This Event)"
+        badge={`${(trip.announcements ?? []).length}`}
+        action={addBtn(() => onChange({ ...trip, announcements: [...(trip.announcements ?? []), ''] }))}
+      >
+        {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No announcements yet.</div>}
+        {(trip.announcements ?? []).map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Weekend Escape bookings are live" value={item}
+              onChange={e => { const a = [...(trip.announcements ?? [])]; a[i] = e.target.value; onChange({ ...trip, announcements: a }); }} />
+            <button type="button" onClick={() => { const a = [...(trip.announcements ?? [])]; onChange({ ...trip, announcements: a.filter((_, idx) => idx !== i) }); }}
+              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="You'll Experience (Itinerary)" badge={`${itinerary.length} day${itinerary.length !== 1 ? 's' : ''}`} action={addBtn(addItineraryDay, '+ Add Day')}>
+        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No itinerary days yet.</div>}
+        {itinerary.map((day, dayIndex) => (
+          <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <input style={s.input} placeholder="Day label (e.g. Day 1)" value={day.day} onChange={e => updateItineraryDay(dayIndex, { day: e.target.value })} />
+              <input style={s.input} placeholder="Day title" value={day.title} onChange={e => updateItineraryDay(dayIndex, { title: e.target.value })} />
+              <button type="button" onClick={() => removeItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+            </div>
+            <textarea style={s.textarea} placeholder="Day description" value={day.description} onChange={e => updateItineraryDay(dayIndex, { description: e.target.value })} />
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label style={{ ...s.label, marginBottom: 0 }}>Schedule</label>
+                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addScheduleItem(dayIndex)}>+ Add Time Slot</button>
+              </div>
+              {(day.schedule ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No time slots yet.</div>}
+              {(day.schedule ?? []).map((item, itemIndex) => (
+                <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                  <input style={s.input} placeholder="e.g. 7:30 PM" value={item.time} onChange={e => updateScheduleItem(dayIndex, itemIndex, { time: e.target.value })} />
+                  <input style={s.input} placeholder="Activity" value={item.activity} onChange={e => updateScheduleItem(dayIndex, itemIndex, { activity: e.target.value })} />
+                  <button type="button" onClick={() => removeScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Own Transport Option" badge={ownTransport ? 'ON' : 'OFF'} badgeColor={ownTransport ? '#16a34a' : undefined}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: ownTransport ? 12 : 0 }}>
+          <span style={{ fontSize: 13, color: '#555' }}>Enable own transport option for this trip</span>
+          <button type="button" onClick={() => toggleOwnTransport(!ownTransport)}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport ? '#16a34a' : '#ddd', color: ownTransport ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             {ownTransport ? 'ON' : 'OFF'}
           </button>
         </div>
         {ownTransport && (
-          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={s.label}>Dropdown Label</label>
@@ -869,7 +776,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
               <div>
                 <label style={s.label}>Own Transport Price (₹)</label>
-            <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
+                <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Meeting Point (Event Location)</label>
@@ -890,27 +797,19 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <label style={{ ...s.label, marginBottom: 0 }}>Own Transport As Only Option</label>
-              <button
-                type="button"
-                onClick={() => setOwnTransport({ ownOnly: !ownTransport.ownOnly })}
-                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.ownOnly ? '#111' : '#ddd', color: ownTransport.ownOnly ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-              >
+              <button type="button" onClick={() => setOwnTransport({ ownOnly: !ownTransport.ownOnly })}
+                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.ownOnly ? '#111' : '#ddd', color: ownTransport.ownOnly ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 {ownTransport.ownOnly ? 'YES' : 'NO'}
               </button>
             </div>
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* Pickup Points */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Transport Pickup Options</label>
-          <button style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addPickup}>+ Add Point</button>
-        </div>
+      <CollapsibleSection title="Transport Pickup Options" badge={`${regularPickups.length} point${regularPickups.length !== 1 ? 's' : ''}`} action={addBtn(addPickup)}>
         {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No transport pickup points added.</div>}
-        {regularPickups.map((p, i) => (
-          <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+        {regularPickups.map((p) => (
+          <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={s.label}>Dropdown Label</label>
@@ -930,52 +829,27 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
               <div>
                 <label style={s.label}>Date Offset (days)</label>
-                <input
-                  type="number"
-                  style={s.input}
-                  placeholder="0 = same day, -1 = previous day"
-                  value={p.dateOffset ?? 0}
-                  onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))}
-                />
+                <input type="number" style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
-                <input
-                  type="number"
-                  min={0}
-                  style={s.input}
-                  placeholder="Leave blank = base event price"
-                  value={p.otherPrice ?? ''}
-                  onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))}
-                />
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
               </div>
-              <div>
+              <div style={{ gridColumn: '1/-1' }}>
                 <label style={s.label}>Other City Advance (₹)</label>
-                <input
-                  type="number"
-                  min={0}
-                  style={s.input}
-                  placeholder="Leave blank = event advance amount"
-                  value={p.otherAdvance ?? ''}
-                  onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))}
-                />
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
               </div>
             </div>
             <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
-      </div>
+      </CollapsibleSection>
 
-      {/* Where We Stay */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Where We Stay Section</label>
-          <button
-            onClick={() => set('show_accommodation', !trip.show_accommodation)}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: trip.show_accommodation ? '#16a34a' : '#ddd', color: trip.show_accommodation ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-          >
+      <CollapsibleSection title="Where We Stay" badge={trip.show_accommodation ? 'ON' : 'OFF'} badgeColor={trip.show_accommodation ? '#16a34a' : undefined}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: trip.show_accommodation ? 12 : 0 }}>
+          <span style={{ fontSize: 13, color: '#555' }}>Show "Where We Stay" section on the event page</span>
+          <button type="button" onClick={() => set('show_accommodation', !trip.show_accommodation)}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: trip.show_accommodation ? '#16a34a' : '#ddd', color: trip.show_accommodation ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             {trip.show_accommodation ? 'ON' : 'OFF'}
           </button>
         </div>
@@ -991,19 +865,15 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Image URL ${i+1}`} value={accImages[i]} onChange={e => setAccImage(i, e.target.value)} />
               ))}
             </div>
-            <div style={{ marginBottom: 10 }}>
+            <div>
               <label style={s.label}>Bullet Points (3)</label>
               {[0,1,2].map(i => (
                 <input key={i} style={{ ...s.input, marginBottom: 6 }} placeholder={`Feature ${i+1}`} value={accFeatures[i]} onChange={e => setAccFeature(i, e.target.value)} />
               ))}
             </div>
-            <div>
-              <label style={s.label}>Rooming Policy</label>
-              <input style={s.input} placeholder="e.g. Rooms are same-gender" value={acc.policy} onChange={e => setAcc({ policy: e.target.value })} />
-            </div>
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
       <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
         💡 Videos and Google Reviews are managed in the <strong>Media & Reviews</strong> tab above.
@@ -1206,6 +1076,50 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {saving ? 'Saving…' : 'Save Other Setup'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── COLLAPSIBLE SECTION ─────────────────────────────────────────────────────
+function CollapsibleSection({ title, badge, badgeColor, defaultOpen = false, children, action }: {
+  title: string;
+  badge?: string;
+  badgeColor?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          background: open ? '#ebebе7' : '#f4f4f0',
+          border: '1.5px solid #e0e0da',
+          borderRadius: open ? '10px 10px 0 0' : 10,
+          padding: '10px 14px', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontWeight: 700, fontSize: 12, color: '#444', textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }}>{title}</span>
+        {badge !== undefined && (
+          <span style={{
+            background: badgeColor ? badgeColor + '22' : '#e4e4de',
+            color: badgeColor ?? '#666',
+            border: `1px solid ${badgeColor ? badgeColor + '55' : '#d0d0ca'}`,
+            borderRadius: 99, padding: '1px 9px', fontSize: 11, fontWeight: 700, flexShrink: 0,
+          }}>{badge}</span>
+        )}
+        {action && <span onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>{action}</span>}
+        <span style={{ color: '#999', fontSize: 13, flexShrink: 0, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+      </button>
+      {open && (
+        <div style={{ border: '1.5px solid #e0e0da', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '14px', background: '#fff' }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
