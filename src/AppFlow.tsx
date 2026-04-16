@@ -2254,6 +2254,9 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                         )}
                       </div>
                       <div className="p-4">
+                        <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-black text-white text-[10px] font-bold uppercase tracking-wide mb-2">
+                          Night {stayIndex + 1}
+                        </div>
                         <h4 className="font-bold text-lg mb-3">{stay.name || `Stay ${stayIndex + 1}`}</h4>
                         <ul className="space-y-2">
                           {(stay.features ?? []).filter(Boolean).map((feat, i) => (
