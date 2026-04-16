@@ -269,7 +269,7 @@ export default function AdminPanel() {
       <div style={s.header}>
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
-        <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Trips</button>
+        <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media & Reviews</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other City</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Bot Messages</button>
@@ -887,7 +887,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
         <button style={s.outlineBtn} onClick={onCancel}>Cancel</button>
         <button style={s.btn(saving ? '#aaa' : '#111')} disabled={saving} onClick={onSave}>
-          {saving ? 'Saving…' : 'Save Trip'}
+          {saving ? 'Saving…' : 'Save Plan'}
         </button>
       </div>
     </div>
