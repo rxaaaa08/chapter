@@ -290,32 +290,56 @@ export default function AdminPanel() {
               </button>
             </div>
 
-            {trips.map(trip => (
-              <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
-                {editingTrip?.id === trip.id ? (
-                  <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => setEditingTrip(null)} saving={saving === trip.id} s={s} />
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                    {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 72, height: 56, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />}
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                      <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
-                      <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(trip.event_dates ?? []).map((d, i) => <Badge key={i} status={d.status} />)}
+            {(() => {
+              const getNearestDateTs = (trip: Trip) => {
+                const dates = (trip.event_dates ?? [])
+                  .map(d => new Date(`${d.start_date}T00:00:00`).getTime())
+                  .filter(ts => !Number.isNaN(ts));
+                return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
+              };
+              const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
+                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
+                if (dateDiff !== 0) return dateDiff;
+                return a.title.localeCompare(b.title);
+              });
+              const eventsList = sortPlans(trips.filter(t => (t.category || '').toLowerCase() === 'events'));
+              const tripsList = sortPlans(trips.filter(t => (t.category || '').toLowerCase() !== 'events'));
+              const sections = [
+                { title: 'Events', items: eventsList },
+                { title: 'Trips', items: tripsList },
+              ];
+
+              return sections.map(section => (
+                section.items.length > 0 ? (
+                  <div key={section.title}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{section.title}</div>
+                    {section.items.map(trip => (
+                      <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
+                        {editingTrip?.id === trip.id ? (
+                          <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => setEditingTrip(null)} saving={saving === trip.id} s={s} />
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
+                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                              <button onClick={() => toggleActive(trip)} title={trip.is_active ? 'Hide trip' : 'Show trip'}
+                                style={{ ...s.outlineBtn, color: trip.is_active ? '#16a34a' : '#aaa' }}>
+                                {trip.is_active ? 'Live' : 'Hidden'}
+                              </button>
+                              <button style={s.outlineBtn} onClick={() => setEditingTrip({ ...trip })}>Edit</button>
+                              <button style={s.btn('#dc2626')} onClick={() => deleteTrip(trip.id!, trip.title)}>Delete</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                      <button onClick={() => toggleActive(trip)} title={trip.is_active ? 'Hide trip' : 'Show trip'}
-                        style={{ ...s.outlineBtn, color: trip.is_active ? '#16a34a' : '#aaa' }}>
-                        {trip.is_active ? 'Live' : 'Hidden'}
-                      </button>
-                      <button style={s.outlineBtn} onClick={() => setEditingTrip({ ...trip })}>Edit</button>
-                      <button style={s.btn('#dc2626')} onClick={() => deleteTrip(trip.id!, trip.title)}>Delete</button>
-                    </div>
+                    ))}
                   </div>
-                )}
-              </div>
-            ))}
+                ) : null
+              ));
+            })()}
 
             {addingTrip && editingTrip && !editingTrip.id && (
               <div style={s.card}>
