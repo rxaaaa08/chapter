@@ -997,7 +997,7 @@ export default function AdminPanel() {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Pre-selection Messages">
+            <CollapsibleSection title="Global Pre Selection Messages">
               {[
                 { key: 'welcome', label: 'Select City', placeholder: "Welcome to chapter அ! 👋 Which city are you from buddy?" },
                 { key: 'ask_category', label: 'Select Category', placeholder: "Awesome, {city}! What are you looking for today - events or trips?" },
@@ -1024,7 +1024,7 @@ export default function AdminPanel() {
               ))}
             </CollapsibleSection>
 
-            <CollapsibleSection title="Post-selection Messages">
+            <CollapsibleSection title="Global Post Selection Messages">
               {[
                 { key: 'ask_doubts_book', label: 'Book Now Flow', placeholder: "You're about to lock your spot for {title}. All clear or do you have any last-minute doubts?" },
                 { key: 'ask_doubts_contact', label: 'Contact Us Flow', placeholder: "Got questions about {title}? Tap a common doubt below or ask your own question." },
@@ -1048,9 +1048,8 @@ export default function AdminPanel() {
                   </div>
                 </div>
               ))}
-            </CollapsibleSection>
 
-            <CollapsibleSection title="Global Doubts">
+              <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid #ececec' }}>
               <label style={s.label}>Unique Doubt Button</label>
               <input
                 style={s.input}
@@ -1074,10 +1073,10 @@ export default function AdminPanel() {
                   {savingDoubtSettings ? 'Saving…' : 'Save Doubt Settings'}
                 </button>
               </div>
+              </div>
             </CollapsibleSection>
 
-            <div style={s.card}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Per Trip/Event: Possible Doubts (FAQ)</div>
+            <CollapsibleSection title="Per Trip Q&A">
               <div style={{ marginBottom: 12 }}>
                 <label style={s.label}>Choose Plan</label>
                 <div style={{ position: 'relative', maxWidth: 360 }}>
@@ -1158,7 +1157,7 @@ export default function AdminPanel() {
                   </div>
                 </>
               )}
-            </div>
+            </CollapsibleSection>
           </>
         )}
       </div>
