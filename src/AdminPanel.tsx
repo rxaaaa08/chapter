@@ -325,7 +325,7 @@ export default function AdminPanel() {
                       return lc !== 'chennai' && lc !== 'other';
                     })
                     .sort((a, b) => a.localeCompare(b));
-                  const orderedCities = ['Chennai', ...middleCities, 'Other'].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
+                  const orderedCities = ['Chennai', ...middleCities].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
                   return (
                     <div style={{ position: 'relative', minWidth: 190 }}>
                       <select
