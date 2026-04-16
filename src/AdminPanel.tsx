@@ -1024,8 +1024,41 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
 }) {
   const pickups = trip.pickup_points ?? [];
   const setTrip = (patch: Partial<Trip>) => onChange({ ...trip, ...patch });
-  const setPickup = (index: number, patch: Partial<PickupPoint>) => {
-      const next = pickups.map((p, i) => i === index ? { ...p, ...patch } : p);
+
+  // Separate own_transport from regular pickup points
+  const ownTransportIndex = pickups.findIndex(p => p.id === 'own_transport');
+  const ownTransport = ownTransportIndex >= 0 ? pickups[ownTransportIndex] : null;
+  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport');
+
+  const toggleOwnTransport = (enabled: boolean) => {
+    if (enabled) {
+      if (ownTransportIndex >= 0) return;
+      setTrip({
+        pickup_points: [
+          ...pickups,
+          {
+            id: 'own_transport',
+            label: 'Own Transport',
+            meetingSpot: 'Event Location',
+            time: '',
+            transport: 'Your Own Transport',
+            ownTransportPrice: trip.price_full || 0,
+            ownOnly: false,
+          }
+        ]
+      });
+    } else {
+      setTrip({ pickup_points: pickups.filter(p => p.id !== 'own_transport') });
+    }
+  };
+  const setOwnTransport = (patch: Partial<PickupPoint>) => {
+    if (ownTransportIndex < 0) return;
+    const updated = pickups.map((p, idx) => idx === ownTransportIndex ? { ...p, ...patch } : p);
+    setTrip({ pickup_points: updated });
+  };
+
+  const setPickup = (origIdx: number, patch: Partial<PickupPoint>) => {
+    const next = pickups.map((p, i) => i === origIdx ? { ...p, ...patch } : p);
     setTrip({ pickup_points: next });
   };
   const addPickup = () => {
@@ -1036,7 +1069,8 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
       ]
     });
   };
-  const removePickup = (index: number) => setTrip({ pickup_points: pickups.filter((_, i) => i !== index) });
+  const removePickup = (origIdx: number) => setTrip({ pickup_points: pickups.filter((_, i) => i !== origIdx) });
+
   const showInOther = (trip.cities ?? []).includes('Other');
   const toggleShowInOther = () => {
     const current = trip.cities ?? [];
@@ -1062,30 +1096,85 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
         </button>
       </div>
 
+      {/* Own Transport Preset */}
       <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Pickup Points For "Other" Feed</label>
-          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addPickup}>+ Add Point</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Own Transport Option</label>
+          <button
+            type="button"
+            onClick={() => toggleOwnTransport(!ownTransport)}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport ? '#16a34a' : '#ddd', color: ownTransport ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          >
+            {ownTransport ? 'ON' : 'OFF'}
+          </button>
         </div>
-        {pickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No pickup points configured yet.</div>}
-        {pickups.map((point, index) => (
-          <div key={point.id || index} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+        {ownTransport && (
+          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={s.label}>Dropdown Label</label>
-                <input style={s.input} placeholder="e.g. Dindigul Pickup — 5:30 AM" value={point.label} onChange={e => setPickup(index, { label: e.target.value })} />
+                <input style={s.input} placeholder="Own Transport" value={ownTransport.label} onChange={e => setOwnTransport({ label: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Own Transport Price (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label style={s.label}>Meeting Point (Event Location)</label>
+                <input style={s.input} placeholder="e.g. Villa near Auroville" value={ownTransport.meetingSpot} onChange={e => setOwnTransport({ meetingSpot: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Reporting Time</label>
+                <input style={s.input} placeholder="e.g. 6:00 PM" value={ownTransport.time} onChange={e => setOwnTransport({ time: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Price (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
+              <div>
+                <label style={s.label}>Other City Advance (₹)</label>
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label style={{ ...s.label, marginBottom: 0 }}>Own Transport As Only Option</label>
+              <button
+                type="button"
+                onClick={() => setOwnTransport({ ownOnly: !ownTransport.ownOnly })}
+                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.ownOnly ? '#111' : '#ddd', color: ownTransport.ownOnly ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                {ownTransport.ownOnly ? 'YES' : 'NO'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Regular Pickup Points */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Other Pickup Points</label>
+          <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={addPickup}>+ Add Point</button>
+        </div>
+        {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No pickup points configured yet.</div>}
+        {regularPickups.map((point) => (
+          <div key={point.id || point._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={s.label}>Dropdown Label</label>
+                <input style={s.input} placeholder="e.g. Dindigul Pickup — 5:30 AM" value={point.label} onChange={e => setPickup(point._idx, { label: e.target.value })} />
               </div>
               <div>
                 <label style={s.label}>Meeting Spot</label>
-                <input style={s.input} placeholder="e.g. Dindigul Bus Stand" value={point.meetingSpot} onChange={e => setPickup(index, { meetingSpot: e.target.value })} />
+                <input style={s.input} placeholder="e.g. Dindigul Bus Stand" value={point.meetingSpot} onChange={e => setPickup(point._idx, { meetingSpot: e.target.value })} />
               </div>
               <div>
                 <label style={s.label}>Pickup Time</label>
-                <input style={s.input} placeholder="e.g. 5:30 AM" value={point.time} onChange={e => setPickup(index, { time: e.target.value })} />
+                <input style={s.input} placeholder="e.g. 5:30 AM" value={point.time} onChange={e => setPickup(point._idx, { time: e.target.value })} />
               </div>
               <div>
                 <label style={s.label}>Transport</label>
-                <input style={s.input} placeholder="e.g. Party Bus" value={point.transport} onChange={e => setPickup(index, { transport: e.target.value })} />
+                <input style={s.input} placeholder="e.g. Party Bus" value={point.transport} onChange={e => setPickup(point._idx, { transport: e.target.value })} />
               </div>
               <div>
                 <label style={s.label}>Journey Card Date Offset (days)</label>
@@ -1094,25 +1183,19 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   style={s.input}
                   placeholder="0 = same day, -1 = previous day"
                   value={point.dateOffset ?? 0}
-                  onChange={e => setPickup(index, { dateOffset: Number(e.target.value) })}
+                  onChange={e => setPickup(point._idx, { dateOffset: Number(e.target.value) })}
                 />
               </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={point.otherPrice ?? ''} onChange={e => setPickup(index, { otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={point.otherPrice ?? ''} onChange={e => setPickup(point._idx, { otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={point.otherAdvance ?? ''} onChange={e => setPickup(index, { otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={point.otherAdvance ?? ''} onChange={e => setPickup(point._idx, { otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
-              {point.id === 'own_transport' && (
-                <div>
-                  <label style={s.label}>Own Transport Price (₹)</label>
-                  <input type="number" min={0} style={s.input} placeholder="Used when own transport is selected" value={point.ownTransportPrice ?? ''} onChange={e => setPickup(index, { ownTransportPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
-                </div>
-              )}
             </div>
-            <button type="button" onClick={() => removePickup(index)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
+            <button type="button" onClick={() => removePickup(point._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
       </div>
