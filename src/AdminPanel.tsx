@@ -11,6 +11,7 @@ type PickupPoint = {
   meetingSpot: string;
   time: string;
   transport: string;
+  dateOffset?: number;
   ownTransportPrice?: number;
   ownOnly?: boolean;
   availableForOther?: boolean;
@@ -721,6 +722,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <label style={s.label}>Transport</label>
                 <input style={s.input} placeholder="e.g. AC Tempo Traveller" value={p.transport} onChange={e => setPickup(p._idx, 'transport', e.target.value)} />
               </div>
+              <div>
+                <label style={s.label}>Date Offset (days)</label>
+                <input
+                  type="number"
+                  style={s.input}
+                  placeholder="0 = same day, -1 = previous day"
+                  value={p.dateOffset ?? 0}
+                  onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))}
+                />
+              </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
@@ -917,6 +928,16 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <div>
                 <label style={s.label}>Transport</label>
                 <input style={s.input} placeholder="e.g. Party Bus" value={point.transport} onChange={e => setPickup(index, { transport: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Journey Card Date Offset (days)</label>
+                <input
+                  type="number"
+                  style={s.input}
+                  placeholder="0 = same day, -1 = previous day"
+                  value={point.dateOffset ?? 0}
+                  onChange={e => setPickup(index, { dateOffset: Number(e.target.value) })}
+                />
               </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>

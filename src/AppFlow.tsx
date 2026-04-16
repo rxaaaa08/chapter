@@ -43,6 +43,7 @@ interface Event {
     meetingSpot: string;
     time: string;
     transport: string;
+    dateOffset?: number;
     ownTransportPrice?: number;
     ownOnly?: boolean;
     availableForOther?: boolean;
@@ -1658,6 +1659,7 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
       meetingSpot: v.meetingSpot,
       time: v.pickupTime ?? '',
       transport: v.transport,
+      dateOffset: 0,
     }));
   }
 
@@ -1676,7 +1678,10 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
 };
 
 const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
+  const dbPoint = meetingPoint ? event.pickupPoints?.find(p => p.id === meetingPoint) : null;
+  const pointDateOffset = dbPoint?.dateOffset ?? 0;
   const d = new Date(startDate + 'T00:00:00');
+  d.setDate(d.getDate() + pointDateOffset);
   const day    = d.getDate().toString();
   const month  = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
   const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
@@ -1687,7 +1692,6 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
 
   const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
 
-  const dbPoint = meetingPoint ? event.pickupPoints?.find(p => p.id === meetingPoint) : null;
   const cfg = (!dbPoint && meetingPoint) ? MEETING_POINT_CONFIG[meetingPoint] : null;
   const resolvedMeeting   = dbPoint ? dbPoint.meetingSpot : cfg ? cfg.meetingSpot  : spotField?.value;
   const resolvedTransport = dbPoint ? dbPoint.transport   : cfg ? cfg.transport     : transportField?.value;

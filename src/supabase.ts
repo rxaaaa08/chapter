@@ -39,6 +39,7 @@ export function mapDbEventToEvent(row: any): any {
           meetingSpot: p.meetingSpot ?? p.meeting_spot ?? p.location ?? '',
           time: p.time ?? '',
           transport: p.transport ?? '',
+          dateOffset: Number(p.dateOffset ?? p.date_offset ?? 0) || 0,
           ownTransportPrice: Number(p.ownTransportPrice ?? p.own_transport_price ?? 0) || undefined,
           ownOnly: Boolean(p.ownOnly ?? p.own_only ?? false),
           availableForOther: Boolean(p.availableForOther ?? p.available_for_other ?? false),
