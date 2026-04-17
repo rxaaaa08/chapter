@@ -96,6 +96,8 @@ export default function AdminPanel() {
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
+  const [mediaOriginalById, setMediaOriginalById] = useState<Record<string, Trip>>({});
+  const [qnaOriginalById, setQnaOriginalById] = useState<Record<string, Trip>>({});
   const [otherEditingId, setOtherEditingId] = useState<string | null>(null);
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
   const [otherActionById, setOtherActionById] = useState<Record<string, string>>({});
@@ -364,6 +366,37 @@ export default function AdminPanel() {
   };
   const updateTripInList = (tripId: string, updater: (t: Trip) => Trip) => {
     setTrips(prev => prev.map(t => (t.id === tripId ? updater(t) : t)));
+  };
+  const cloneTrip = (trip: Trip): Trip => JSON.parse(JSON.stringify(trip));
+  const beginMediaEdit = (trip: Trip) => {
+    if (!trip.id) return;
+    setMediaOriginalById(prev => ({ ...prev, [trip.id!]: cloneTrip(trip) }));
+    setMediaEditingId(trip.id);
+  };
+  const cancelMediaEdit = (tripId: string) => {
+    const snapshot = mediaOriginalById[tripId];
+    if (snapshot) updateTripInList(tripId, () => cloneTrip(snapshot));
+    setMediaOriginalById(prev => {
+      const next = { ...prev };
+      delete next[tripId];
+      return next;
+    });
+    setMediaEditingId(null);
+  };
+  const beginQnaEdit = (trip: Trip) => {
+    if (!trip.id) return;
+    setQnaOriginalById(prev => ({ ...prev, [trip.id!]: cloneTrip(trip) }));
+    setQnaEditingId(trip.id);
+  };
+  const cancelQnaEdit = (tripId: string) => {
+    const snapshot = qnaOriginalById[tripId];
+    if (snapshot) updateTripInList(tripId, () => cloneTrip(snapshot));
+    setQnaOriginalById(prev => {
+      const next = { ...prev };
+      delete next[tripId];
+      return next;
+    });
+    setQnaEditingId(null);
   };
 
   // ─── SAVE MESSAGE ────────────────────────────────────────────────────────────
@@ -779,21 +812,40 @@ export default function AdminPanel() {
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
                               <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
-                            <button
-                              style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
-                              disabled={saving === trip.id}
-                              onClick={async () => {
-                                if (!trip.id) return;
-                                if (!isExpanded) {
-                                  setMediaEditingId(trip.id);
-                                  return;
-                                }
-                                await saveTrip(trip);
-                                setMediaEditingId(null);
-                              }}
-                            >
-                              {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
-                            </button>
+                            {isExpanded ? (
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <button
+                                  style={s.outlineBtn}
+                                  disabled={saving === trip.id}
+                                  onClick={() => trip.id && cancelMediaEdit(trip.id)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  style={s.btn(saving === trip.id ? '#aaa' : '#111')}
+                                  disabled={saving === trip.id}
+                                  onClick={async () => {
+                                    if (!trip.id) return;
+                                    await saveTrip(trip);
+                                    setMediaOriginalById(prev => {
+                                      const next = { ...prev };
+                                      delete next[trip.id!];
+                                      return next;
+                                    });
+                                    setMediaEditingId(null);
+                                  }}
+                                >
+                                  {saving === trip.id ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                style={s.outlineBtn}
+                                onClick={() => beginMediaEdit(trip)}
+                              >
+                                Edit
+                              </button>
+                            )}
                           </div>
 
                           {isExpanded && (
@@ -993,13 +1045,33 @@ export default function AdminPanel() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                             <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
                             {isDirty && (
-                              <button
-                                style={{ ...s.btn(savingTimeline === trip.id ? '#aaa' : '#111'), fontSize: 12, padding: '6px 14px' }}
-                                disabled={savingTimeline === trip.id}
-                                onClick={() => saveTimeline(trip, currentSteps, hasMultipleDates ? selectedDate : undefined, ctaEdits[trip.id!])}
-                              >
-                                {savingTimeline === trip.id ? 'Saving…' : 'Save'}
-                              </button>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button
+                                  style={{ ...s.outlineBtn, fontSize: 12, padding: '6px 14px' }}
+                                  disabled={savingTimeline === trip.id}
+                                  onClick={() => {
+                                    setTimelineEdits(prev => {
+                                      const next = { ...prev };
+                                      delete next[editKey];
+                                      return next;
+                                    });
+                                    setCtaEdits(prev => {
+                                      const next = { ...prev };
+                                      delete next[trip.id!];
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  style={{ ...s.btn(savingTimeline === trip.id ? '#aaa' : '#111'), fontSize: 12, padding: '6px 14px' }}
+                                  disabled={savingTimeline === trip.id}
+                                  onClick={() => saveTimeline(trip, currentSteps, hasMultipleDates ? selectedDate : undefined, ctaEdits[trip.id!])}
+                                >
+                                  {savingTimeline === trip.id ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
                             )}
                           </div>
 
@@ -1168,21 +1240,40 @@ export default function AdminPanel() {
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
                               <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
-                            <button
-                              style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
-                              disabled={saving === trip.id}
-                              onClick={async () => {
-                                if (!trip.id) return;
-                                if (!isExpanded) {
-                                  setQnaEditingId(trip.id);
-                                  return;
-                                }
-                                await saveTrip(trip);
-                                setQnaEditingId(null);
-                              }}
-                            >
-                              {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
-                            </button>
+                            {isExpanded ? (
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <button
+                                  style={s.outlineBtn}
+                                  disabled={saving === trip.id}
+                                  onClick={() => trip.id && cancelQnaEdit(trip.id)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  style={s.btn(saving === trip.id ? '#aaa' : '#111')}
+                                  disabled={saving === trip.id}
+                                  onClick={async () => {
+                                    if (!trip.id) return;
+                                    await saveTrip(trip);
+                                    setQnaOriginalById(prev => {
+                                      const next = { ...prev };
+                                      delete next[trip.id!];
+                                      return next;
+                                    });
+                                    setQnaEditingId(null);
+                                  }}
+                                >
+                                  {saving === trip.id ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                style={s.outlineBtn}
+                                onClick={() => beginQnaEdit(trip)}
+                              >
+                                Edit
+                              </button>
+                            )}
                           </div>
 
                           {isExpanded && (
@@ -1484,16 +1575,20 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const dates = trip.event_dates ?? [];
   const pickups = trip.pickup_points ?? [];
   const quickInfo = trip.quick_info ?? [];
-  const planTitle = quickInfo.find(item => item.label === 'Plan Title')?.value ?? 'The Plan';
-  const setPlanTitle = (value: string) => {
-    const remaining = quickInfo.filter(item => item.label !== 'Plan Title');
+  const getPlanValue = (labels: string[]) => quickInfo.find(item => labels.includes(item.label))?.value ?? '';
+  const setPlanValue = (removeLabels: string[], saveLabel: string, value: string, icon: string) => {
+    const next = quickInfo.filter(item => !removeLabels.includes(item.label));
+    const trimmed = value.trim();
     onChange({
       ...trip,
-      quick_info: value.trim()
-        ? [...remaining, { icon: 'map', label: 'Plan Title', value }]
-        : remaining,
+      quick_info: trimmed ? [...next, { icon, label: saveLabel, value: trimmed }] : next,
     });
   };
+  const meetingSpotValue = getPlanValue(['Meeting Spot']);
+  const transportValue = getPlanValue(['Transport']);
+  const youllMeetValue = getPlanValue(["You'll Meet", 'Made For']);
+  const gangSizeValue = getPlanValue(['Group Size']);
+  const gangSizeNumber = (gangSizeValue.match(/\d+/)?.[0] ?? '');
   const acc = trip.accommodation ?? {};
   const legacyStay: AccommodationStay = {
     name: acc.name ?? '',
@@ -1609,7 +1704,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       {/* ── ESSENTIALS ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Essentials</div>
 
-      <CollapsibleSection title="Basic Info" defaultOpen={true}>
+      <CollapsibleSection title="Basic Info">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div style={{ gridColumn: '1/-1' }}>{field('Title', 'title')}</div>
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
@@ -1626,15 +1721,50 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 14 }}>Logistics</div>
 
       <CollapsibleSection title="The Plan">
-        <div style={{ marginBottom: 10 }}>
-          <label style={s.label}>Section Title</label>
-          <input
-            style={s.input}
-            placeholder="The Plan"
-            value={planTitle}
-            onChange={e => setPlanTitle(e.target.value)}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div>
+            <label style={s.label}>Meeting Spot</label>
+            <input
+              style={s.input}
+              placeholder="e.g. Airport Metro"
+              value={meetingSpotValue}
+              onChange={e => setPlanValue(['Meeting Spot'], 'Meeting Spot', e.target.value, 'map')}
+            />
+          </div>
+          <div>
+            <label style={s.label}>Transport</label>
+            <input
+              style={s.input}
+              placeholder="e.g. Party Bus"
+              value={transportValue}
+              onChange={e => setPlanValue(['Transport'], 'Transport', e.target.value, 'bus')}
+            />
+          </div>
+          <div>
+            <label style={s.label}>You'll Meet</label>
+            <input
+              style={s.input}
+              placeholder="e.g. For those who bond over stories, chaos & good times"
+              value={youllMeetValue}
+              onChange={e => setPlanValue(["You'll Meet", 'Made For'], "You'll Meet", e.target.value, 'heart')}
+            />
+          </div>
+          <div>
+            <label style={s.label}>Gang Size</label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              style={s.input}
+              placeholder="e.g. 15"
+              value={gangSizeNumber}
+              onChange={e => setPlanValue(['Group Size'], 'Group Size', e.target.value, 'users')}
+            />
+          </div>
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Pickup Points">
         {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No transport pickup points added.</div>}
         {regularPickups.map((p) => (
           <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
