@@ -2792,7 +2792,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                                     animate={{ x: ['-100%', '300%'] }}
                                     transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
                                   />
-                                  {event.ctaLabel || 'Book Now'}
+                                  {(event.quickInfo?.find(item => item.label === 'Calendar CTA')?.value?.trim()) || 'Book Now'}
                                   <ArrowRight size={16} strokeWidth={3.0} />
                                 </button>
                               </div>

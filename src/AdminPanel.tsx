@@ -656,7 +656,7 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>
       </div>
 
-      <div style={{ maxWidth: 720, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -1965,6 +1965,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const youllMeetValue = getPlanValue(["You'll Meet", 'Made For']);
   const gangSizeValue = getPlanValue(['Group Size']);
   const gangSizeNumber = (gangSizeValue.match(/\d+/)?.[0] ?? '');
+  const calendarCtaValue = getPlanValue(['Calendar CTA']) || trip.cta_label || '';
   const secretOfferPhoneValue = getPlanValue(['Secret Offer Number', 'Secret Offer Phone', 'Secret Offer WhatsApp']);
   const secretOfferMessageValue = getPlanValue(['Secret Offer Message']);
   const acc = trip.accommodation ?? {};
@@ -2090,7 +2091,14 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('Full Price (₹)', 'price_full', 'number')}
           {field('Advance Amount (₹)', 'price_advance', 'number')}
           {field('Booking URL', 'booking_url')}
-          {field('CTA Text (e.g. Book Now)', 'cta_label')}
+          <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>Calendar CTA Text (e.g. Book Now)</label>
+            <input
+              style={s.input}
+              value={calendarCtaValue}
+              onChange={e => setPlanValue(['Calendar CTA'], 'Calendar CTA', e.target.value, 'ticket')}
+            />
+          </div>
           <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
         </div>
       </CollapsibleSection>
