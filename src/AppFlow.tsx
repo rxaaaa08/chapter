@@ -15,6 +15,7 @@ interface TripDate {
   date: string;
   status: 'available' | 'selling_out' | 'sold_out';
   label?: string;
+  bookingSteps?: Array<{ label: string; value: string; date: string }>;
 }
 
 type FAQ = {
@@ -332,10 +333,14 @@ const GENERAL_ANNOUNCEMENTS = [
 export default function App() {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [msgs, setMsgs] = useState<Record<string, string>>({});
+  const [msgsReady, setMsgsReady] = useState(false);
 
   useEffect(() => {
     fetchEvents().then((data) => { if (data.length > 0) setEvents(data); });
-    fetchChatMessages().then((data) => { if (Object.keys(data).length > 0) setMsgs(data); });
+    fetchChatMessages().then((data) => {
+      if (Object.keys(data).length > 0) setMsgs(data);
+      setMsgsReady(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -571,6 +576,7 @@ export default function App() {
   }, [messages, isTyping]);
 
   useEffect(() => {
+    if (!msgsReady) return;
     simulateBotTyping(() => {
       setMessages([{
         id: Date.now().toString(),
@@ -579,7 +585,7 @@ export default function App() {
       }]);
       setStep('ASK_CITY');
     }, 1000);
-  }, []);
+  }, [msgsReady]);
 
   const simulateBotTyping = (callback: () => void, delay: number = 800) => {
     setIsTyping(true);
@@ -709,7 +715,10 @@ export default function App() {
           setStep('SHOW_FAQ');
         }, 1000);
       } else {
-        setStep('SHOW_FAQ');
+        simulateBotTyping(() => {
+          addBotMessage(fillMsgForSelectedEvent('faq_followup_repeat', getTemplateVars(), "Anything else on your mind? 😊"));
+          setStep('SHOW_FAQ');
+        }, 1000);
       }
     }, 800);
   };
@@ -1151,7 +1160,8 @@ export default function App() {
                           .replace(/\{advance\}/gi, advanceStr)
                           .replace(/\{balance\}/gi, balanceStr);
 
-                        const steps = selectedEvent.bookingSteps ?? [
+                        const selectedDateEntry = selectedEvent.dates.find(d => d.date === bookingDate);
+                        const steps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? [
                           { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },

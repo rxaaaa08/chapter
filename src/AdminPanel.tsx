@@ -90,7 +90,9 @@ export default function AdminPanel() {
   const [mediaCityFilter, setMediaCityFilter] = useState<'all' | string>('all');
   const [timelinesCityFilter, setTimelinesCityFilter] = useState<'all' | string>('all');
   const [timelineEdits, setTimelineEdits] = useState<Record<string, Array<{ label: string; value: string; date: string }>>>({});
+  const [selectedTimelineDates, setSelectedTimelineDates] = useState<Record<string, string>>({});
   const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
+  const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
@@ -102,7 +104,19 @@ export default function AdminPanel() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
   const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
   const otherCityPreSelectionKeys = ['other_ask_category', 'other_select_event'] as const;
-  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact', 'faq_followup', 'contact_success'] as const;
+  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact', 'show_faq', 'faq_followup', 'faq_followup_repeat', 'contact_success'] as const;
+
+  // Maps each step_key to the correct flow value required by the DB constraint
+  const stepKeyFlow: Record<string, string> = {
+    welcome: 'initial', ask_category: 'initial', select_event: 'initial',
+    no_events: 'initial', retry_city: 'initial',
+    other_ask_category: 'initial', other_select_event: 'initial',
+    ask_doubts_book: 'booking', ask_doubts_contact: 'booking',
+    faq_followup: 'booking', faq_followup_repeat: 'booking', show_faq: 'booking',
+    ask_transport: 'booking', kyn_ready: 'booking',
+    contact_success: 'contact',
+    general_announcements: 'global', doubt_cta_label: 'global', doubt_form_webhook_url: 'global',
+  };
 
   const allCities = [
     ...new Set(
@@ -154,10 +168,12 @@ export default function AdminPanel() {
   }, [authed]);
 
   useEffect(() => {
+    if (msgs.length === 0) return;
     setGlobalMessageDrafts(prev => {
       const next = { ...prev };
       [...globalPreSelectionKeys, ...otherCityPreSelectionKeys, ...globalPostSelectionKeys].forEach((key) => {
-        if (next[key] === undefined) {
+        // Only populate from DB if the user hasn't typed anything yet
+        if (!next[key]) {
           next[key] = msgs.find(m => m.step_key === key)?.bot_message ?? '';
         }
       });
@@ -246,11 +262,27 @@ export default function AdminPanel() {
     showToast('Saved!');
   };
 
-  const saveTimeline = async (trip: Trip, steps: Array<{ label: string; value: string; date: string }>) => {
+  const saveTimeline = async (trip: Trip, steps: Array<{ label: string; value: string; date: string }>, forDate?: string, ctaLabel?: string) => {
     setSavingTimeline(trip.id!);
-    await supabase.from('events').update({ booking_steps: steps }).eq('id', trip.id!);
-    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, booking_steps: steps } : t));
-    setTimelineEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
+    const editKey = forDate ? `${trip.id}:${forDate}` : trip.id!;
+    if (forDate) {
+      const dateRow = (trip.event_dates ?? []).find(d => d.start_date === forDate);
+      if (dateRow?.id) {
+        await supabase.from('event_dates').update({ booking_steps: steps }).eq('id', dateRow.id);
+        setTrips(prev => prev.map(t => t.id === trip.id
+          ? { ...t, event_dates: (t.event_dates ?? []).map(d => d.start_date === forDate ? { ...d, booking_steps: steps } : d) }
+          : t));
+      }
+    } else {
+      await supabase.from('events').update({ booking_steps: steps }).eq('id', trip.id!);
+      setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, booking_steps: steps } : t));
+    }
+    if (ctaLabel !== undefined) {
+      await supabase.from('events').update({ cta_label: ctaLabel }).eq('id', trip.id!);
+      setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, cta_label: ctaLabel } : t));
+    }
+    setTimelineEdits(prev => { const next = { ...prev }; delete next[editKey]; return next; });
+    setCtaEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
     setSavingTimeline(null);
     showToast('Timeline saved!');
   };
@@ -367,7 +399,8 @@ export default function AdminPanel() {
         .insert({
           step_key: stepKey,
           bot_message: draft,
-          flow: 'global',
+          flow: stepKeyFlow[stepKey] ?? 'global',
+          options: [],
           sort_order: maxSortOrder + 1,
         })
         .select('*')
@@ -398,7 +431,8 @@ export default function AdminPanel() {
         .insert({
           step_key: 'general_announcements',
           bot_message: joinedAnnouncements,
-          flow: 'global',
+          flow: stepKeyFlow['general_announcements'],
+          options: [],
           sort_order: maxSortOrder + 1,
         })
         .select('*')
@@ -435,7 +469,8 @@ export default function AdminPanel() {
           .insert({
             step_key: stepKey,
             bot_message: trimmed,
-            flow: 'global',
+            flow: stepKeyFlow[stepKey] ?? 'global',
+            options: [],
             sort_order: maxSortOrder + 1,
           })
           .select('*')
@@ -886,7 +921,7 @@ export default function AdminPanel() {
         {/* ── TIMELINES TAB ─────────────────────────────────────────────────── */}
         {!loading && tab === 'timelines' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Timelines</div>
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
@@ -899,6 +934,9 @@ export default function AdminPanel() {
                 </select>
                 <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
               </div>
+            </div>
+            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 18 }}>
+              Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code> or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code> in Value to auto-fill prices.
             </div>
             {(() => {
               const getNearestDateTs = (trip: Trip) => {
@@ -928,63 +966,116 @@ export default function AdminPanel() {
                   <div key={key}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{displayTitle}</div>
                     {items.map(trip => {
+                      const sortedDates = (trip.event_dates ?? []).filter(d => d.start_date).sort((a, b) => a.start_date.localeCompare(b.start_date));
+                      const hasMultipleDates = sortedDates.length > 1;
+                      const selectedDate = sortedDates.length > 0
+                        ? (selectedTimelineDates[trip.id!] ?? sortedDates[0]?.start_date ?? '')
+                        : '';
+                      const editKey = hasMultipleDates ? `${trip.id}:${selectedDate}` : trip.id!;
+                      const activeDateRow = sortedDates.find(d => d.start_date === selectedDate);
+                      const perDateSteps = (activeDateRow as any)?.booking_steps as Array<{ label: string; value: string; date: string }> | undefined;
+                      const defaultSteps = trip.booking_steps ?? [
+                        { label: 'Advance', value: '{advance}', date: '' },
+                        { label: 'Remaining Balance', value: '{balance}', date: '' },
+                        { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                      ];
                       const currentSteps: Array<{ label: string; value: string; date: string }> =
-                        timelineEdits[trip.id!] ?? trip.booking_steps ?? [
-                          { label: 'Advance', value: '{advance}', date: '' },
-                          { label: 'Remaining Balance', value: '{balance}', date: '' },
-                          { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
-                        ];
+                        timelineEdits[editKey] ?? (hasMultipleDates ? (perDateSteps ?? defaultSteps) : defaultSteps);
                       const setStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) => {
                         const next = currentSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s);
-                        setTimelineEdits(prev => ({ ...prev, [trip.id!]: next }));
+                        setTimelineEdits(prev => ({ ...prev, [editKey]: next }));
                       };
-                      const addStep = () => setTimelineEdits(prev => ({ ...prev, [trip.id!]: [...currentSteps, { label: '', value: '', date: '' }] }));
-                      const removeStep = (i: number) => setTimelineEdits(prev => ({ ...prev, [trip.id!]: currentSteps.filter((_, idx) => idx !== i) }));
-                      const isDirty = !!timelineEdits[trip.id!];
-                      const nearestDate = (trip.event_dates ?? []).map(d => d.start_date).filter(Boolean).sort()[0];
+                      const addStep = () => setTimelineEdits(prev => ({ ...prev, [editKey]: [...currentSteps, { label: '', value: '', date: '' }] }));
+                      const removeStep = (i: number) => setTimelineEdits(prev => ({ ...prev, [editKey]: currentSteps.filter((_, idx) => idx !== i) }));
+                      const isDirty = !!timelineEdits[editKey] || ctaEdits[trip.id!] !== undefined;
                       return (
                         <div key={trip.id} style={{ ...s.card, marginBottom: 12 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                            {trip.hero_image && <img src={trip.hero_image} alt="" style={{ width: 48, height: 38, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
-                              {nearestDate && <div style={{ fontSize: 12, color: '#aaa', marginTop: 1 }}>{new Date(`${nearestDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>}
-                            </div>
+                            <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
                             {isDirty && (
                               <button
                                 style={{ ...s.btn(savingTimeline === trip.id ? '#aaa' : '#111'), fontSize: 12, padding: '6px 14px' }}
                                 disabled={savingTimeline === trip.id}
-                                onClick={() => saveTimeline(trip, currentSteps)}
+                                onClick={() => saveTimeline(trip, currentSteps, hasMultipleDates ? selectedDate : undefined, ctaEdits[trip.id!])}
                               >
                                 {savingTimeline === trip.id ? 'Saving…' : 'Save'}
                               </button>
                             )}
                           </div>
 
-                          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
-                            Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code> or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code> in Value to auto-fill prices.
-                          </div>
-
                           {currentSteps.map((step, i) => {
                             const isNowRow = i === 0;
                             return (
-                              <div key={i} style={{ display: 'grid', gridTemplateColumns: isNowRow ? '24px 1fr 1fr auto' : '24px 1fr 1fr 150px auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                                <div style={{ textAlign: 'center' }}>
-                                  {isNowRow
-                                    ? <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '2px 6px', whiteSpace: 'nowrap' }}>NOW</span>
-                                    : <span style={{ fontSize: 10, color: '#bbb', fontWeight: 600 }}>{i + 1}</span>
-                                  }
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: '1px solid #ebebeb', borderRadius: 10, marginBottom: 6 }}>
+                                {/* Left: tag + value stacked */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <input
+                                    style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 11, fontWeight: 600, color: '#999', padding: 0, marginBottom: 3 }}
+                                    placeholder={isNowRow ? 'e.g. Advance' : 'Tag label'}
+                                    value={step.label}
+                                    onChange={e => setStep(i, { label: e.target.value })}
+                                  />
+                                  <input
+                                    style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 15, fontWeight: 700, color: '#111', padding: 0 }}
+                                    placeholder={isNowRow ? '{advance}' : i === 1 ? '{balance}' : 'Value or text'}
+                                    value={step.value}
+                                    onChange={e => setStep(i, { value: e.target.value })}
+                                  />
                                 </div>
-                                <input style={{ ...s.input, fontSize: 13 }} placeholder={isNowRow ? 'e.g. Advance' : 'Label'} value={step.label} onChange={e => setStep(i, { label: e.target.value })} />
-                                <input style={{ ...s.input, fontSize: 13 }} placeholder={isNowRow ? '{advance}' : i === 1 ? '{balance}' : 'Value or text'} value={step.value} onChange={e => setStep(i, { value: e.target.value })} />
-                                {!isNowRow && (
-                                  <input type="date" style={{ ...s.input, fontSize: 13 }} value={step.date} onChange={e => setStep(i, { date: e.target.value })} />
-                                )}
-                                <button type="button" onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 16, padding: '0 2px' }}>×</button>
+                                {/* Right: date or NOW pill + delete */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                  {isNowRow
+                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
+                                    : <input
+                                        type="date"
+                                        style={{ border: '1px solid #ddd', borderRadius: 8, padding: '5px 8px', fontSize: 12, color: '#111', background: '#fff', outline: 'none', cursor: 'pointer', fontWeight: 600 }}
+                                        value={step.date}
+                                        onChange={e => setStep(i, { date: e.target.value })}
+                                      />
+                                  }
+                                  <button type="button" onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 18, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>×</button>
+                                </div>
                               </div>
                             );
                           })}
-                          <button type="button" onClick={addStep} style={{ marginTop: 4, padding: '5px 14px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>+ Add Step</button>
+
+                          {/* Reference row — styled like a step row, dropdown on the right */}
+                          {sortedDates.length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: '1px solid #ebebeb', borderRadius: 10, marginBottom: 6, marginTop: 2 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>{trip.title}</div>
+                              </div>
+                              <div style={{ position: 'relative', flexShrink: 0 }}>
+                                <select
+                                  value={selectedDate}
+                                  onChange={e => setSelectedTimelineDates(prev => ({ ...prev, [trip.id!]: e.target.value }))}
+                                  style={{ border: '1.5px solid #FFD700', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 700, color: '#111', background: '#FFF9D6', outline: 'none', appearance: 'none', WebkitAppearance: 'none', cursor: hasMultipleDates ? 'pointer' : 'default', opacity: hasMultipleDates ? 1 : 0.85 }}
+                                  disabled={!hasMultipleDates}
+                                >
+                                  {sortedDates.map(d => (
+                                    <option key={d.start_date} value={d.start_date}>
+                                      {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </option>
+                                  ))}
+                                </select>
+                                {hasMultipleDates && (
+                                  <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#888', pointerEvents: 'none' }}>▾</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                            <button type="button" onClick={addStep} style={{ padding: '5px 14px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>+ Add Step</button>
+                            <div style={{ flex: 1 }}>
+                              <input
+                                style={{ ...s.input, fontSize: 13 }}
+                                placeholder="Booking CTA button label…"
+                                value={ctaEdits[trip.id!] !== undefined ? ctaEdits[trip.id!] : (trip.cta_label ?? '')}
+                                onChange={e => setCtaEdits(prev => ({ ...prev, [trip.id!]: e.target.value }))}
+                              />
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -1326,7 +1417,9 @@ export default function AdminPanel() {
               {[
                 { key: 'ask_doubts_book', label: 'Book Now Flow', placeholder: "You're about to lock your spot for {title}. All clear or do you have any last-minute doubts?" },
                 { key: 'ask_doubts_contact', label: 'Contact Us Flow', placeholder: "Got questions about {title}? Tap a common doubt below or ask your own question." },
+                { key: 'show_faq', label: 'Show FAQs (when user has a doubt)', placeholder: "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book." },
                 { key: 'faq_followup', label: 'FAQ Follow Up (after 1st doubt answer)', placeholder: "Hope that helps. Want to ask another doubt or proceed to booking?" },
+                { key: 'faq_followup_repeat', label: 'FAQ Follow Up (after 2nd, 3rd… doubt answers)', placeholder: "Anything else on your mind? 😊" },
                 { key: 'contact_success', label: 'Contact Success (after form submit)', placeholder: "Got it, {name}! Our team will contact you shortly on {phone}." },
               ].map(({ key, label, placeholder }) => (
                 <div key={key} style={{ marginBottom: 12 }}>
