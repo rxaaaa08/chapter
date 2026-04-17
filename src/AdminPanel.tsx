@@ -117,6 +117,7 @@ export default function AdminPanel() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
+  const [qnaDoubtCityFilter, setQnaDoubtCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCategoryFilter, setQnaDoubtCategoryFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
@@ -1267,33 +1268,6 @@ export default function AdminPanel() {
                 </select>
                 <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
               </div>
-              <div style={{ position: 'relative', minWidth: 190 }}>
-                <select
-                  value={qnaDoubtCategoryFilter}
-                  onChange={e => setQnaDoubtCategoryFilter(e.target.value)}
-                  style={{
-                    ...s.input,
-                    width: '100%',
-                    padding: '9px 34px 9px 12px',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 999,
-                    border: '1.5px solid #d7d7d7',
-                    background: '#fff',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                    appearance: 'none',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="all">All Categories</option>
-                  {qnaDoubtCategories.map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
-              </div>
             </div>
 
             {(() => {
@@ -1439,11 +1413,67 @@ export default function AdminPanel() {
 
             <div style={{ marginTop: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10 }}>Doubt Submissions</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <div style={{ position: 'relative', minWidth: 190 }}>
+                  <select
+                    value={qnaDoubtCityFilter}
+                    onChange={e => setQnaDoubtCityFilter(e.target.value)}
+                    style={{
+                      ...s.input,
+                      width: '100%',
+                      padding: '9px 34px 9px 12px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      borderRadius: 999,
+                      border: '1.5px solid #d7d7d7',
+                      background: '#fff',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="all">All Cities</option>
+                    {orderedCities.map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+                </div>
+                <div style={{ position: 'relative', minWidth: 190 }}>
+                  <select
+                    value={qnaDoubtCategoryFilter}
+                    onChange={e => setQnaDoubtCategoryFilter(e.target.value)}
+                    style={{
+                      ...s.input,
+                      width: '100%',
+                      padding: '9px 34px 9px 12px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      borderRadius: 999,
+                      border: '1.5px solid #d7d7d7',
+                      background: '#fff',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="all">All Categories</option>
+                    {qnaDoubtCategories.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+                </div>
+              </div>
               {(() => {
                 const filteredSubmissions = (doubtSubmissions ?? []).filter((submission) => {
-                  const cityMatch = qnaCityFilter === 'all'
+                  const cityMatch = qnaDoubtCityFilter === 'all'
                     ? true
-                    : (submission.city ?? '').trim().toLowerCase() === qnaCityFilter.trim().toLowerCase();
+                    : (submission.city ?? '').trim().toLowerCase() === qnaDoubtCityFilter.trim().toLowerCase();
                   const submissionCategory = (submission.event_category || submission.category || '').trim();
                   const categoryMatch = qnaDoubtCategoryFilter === 'all'
                     ? true
