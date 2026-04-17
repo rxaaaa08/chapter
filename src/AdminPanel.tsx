@@ -102,7 +102,7 @@ export default function AdminPanel() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
   const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
   const otherCityPreSelectionKeys = ['other_ask_category', 'other_select_event'] as const;
-  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact'] as const;
+  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact', 'faq_followup', 'contact_success'] as const;
 
   const allCities = [
     ...new Set(
@@ -337,8 +337,9 @@ export default function AdminPanel() {
   // ─── SAVE MESSAGE ────────────────────────────────────────────────────────────
   const saveMsg = async (msg: ChatMsg) => {
     setSaving(msg.id);
-    await supabase.from('chat_messages').update({ bot_message: msg.bot_message }).eq('id', msg.id);
+    const { error } = await supabase.from('chat_messages').update({ bot_message: msg.bot_message }).eq('id', msg.id);
     setSaving(null);
+    if (error) { showToast('❌ Save failed — check your connection'); return; }
     showToast('Message saved!');
   };
 
@@ -349,17 +350,19 @@ export default function AdminPanel() {
 
     if (existing?.id) {
       if (!draft) {
-        await supabase.from('chat_messages').delete().eq('id', existing.id);
-        setMsgs(prev => prev.filter(m => m.id !== existing.id));
+        const { error } = await supabase.from('chat_messages').delete().eq('id', existing.id);
+        if (!error) setMsgs(prev => prev.filter(m => m.id !== existing.id));
+        else { setSaving(null); showToast('❌ Save failed — check your connection'); return; }
       } else {
-        await supabase.from('chat_messages').update({ bot_message: draft }).eq('id', existing.id);
-        setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: draft } : m));
+        const { error } = await supabase.from('chat_messages').update({ bot_message: draft }).eq('id', existing.id);
+        if (!error) setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: draft } : m));
+        else { setSaving(null); showToast('❌ Save failed — check your connection'); return; }
       }
     } else if (draft) {
       const maxSortOrder = msgs.length > 0
         ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
         : 0;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('chat_messages')
         .insert({
           step_key: stepKey,
@@ -369,26 +372,28 @@ export default function AdminPanel() {
         })
         .select('*')
         .single();
+      if (error) { setSaving(null); showToast('❌ Save failed — check your connection'); return; }
       if (data) setMsgs(prev => [...prev, data as ChatMsg]);
     }
 
     setSaving(null);
-    showToast('Global bot message saved!');
+    showToast('Message saved!');
   };
 
   const saveGeneralAnnouncements = async () => {
     setSavingGeneralAnnouncements(true);
     const joinedAnnouncements = globalAnnouncementsFields.map(v => v.trim()).filter(Boolean).join('\n');
-    setGeneralAnnouncementsText(joinedAnnouncements);
     const existing = msgs.find(m => m.step_key === 'general_announcements');
     if (existing?.id) {
-      await supabase.from('chat_messages').update({ bot_message: joinedAnnouncements }).eq('id', existing.id);
+      const { error } = await supabase.from('chat_messages').update({ bot_message: joinedAnnouncements }).eq('id', existing.id);
+      if (error) { setSavingGeneralAnnouncements(false); showToast('❌ Save failed — check your connection'); return; }
+      setGeneralAnnouncementsText(joinedAnnouncements);
       setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: joinedAnnouncements } : m));
     } else {
       const maxSortOrder = msgs.length > 0
         ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
         : 0;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('chat_messages')
         .insert({
           step_key: 'general_announcements',
@@ -398,6 +403,8 @@ export default function AdminPanel() {
         })
         .select('*')
         .single();
+      if (error) { setSavingGeneralAnnouncements(false); showToast('❌ Save failed — check your connection'); return; }
+      setGeneralAnnouncementsText(joinedAnnouncements);
       if (data) setMsgs(prev => [...prev, data as ChatMsg]);
     }
     setSavingGeneralAnnouncements(false);
@@ -406,22 +413,24 @@ export default function AdminPanel() {
 
   const saveDoubtFormSettings = async () => {
     setSavingDoubtSettings(true);
-    const saveSetting = async (stepKey: string, value: string) => {
+    const saveSetting = async (stepKey: string, value: string): Promise<boolean> => {
       const trimmed = value.trim();
       const existing = msgs.find(m => m.step_key === stepKey);
       if (existing?.id) {
         if (!trimmed) {
-          await supabase.from('chat_messages').delete().eq('id', existing.id);
+          const { error } = await supabase.from('chat_messages').delete().eq('id', existing.id);
+          if (error) return false;
           setMsgs(prev => prev.filter(m => m.id !== existing.id));
         } else {
-          await supabase.from('chat_messages').update({ bot_message: trimmed }).eq('id', existing.id);
+          const { error } = await supabase.from('chat_messages').update({ bot_message: trimmed }).eq('id', existing.id);
+          if (error) return false;
           setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: trimmed } : m));
         }
       } else if (trimmed) {
         const maxSortOrder = msgs.length > 0
           ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0))
           : 0;
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('chat_messages')
           .insert({
             step_key: stepKey,
@@ -431,13 +440,16 @@ export default function AdminPanel() {
           })
           .select('*')
           .single();
+        if (error) return false;
         if (data) setMsgs(prev => [...prev, data as ChatMsg]);
       }
+      return true;
     };
 
-    await saveSetting('doubt_cta_label', doubtCtaLabel);
-    await saveSetting('doubt_form_webhook_url', doubtFormWebhookUrl);
+    const ok1 = await saveSetting('doubt_cta_label', doubtCtaLabel);
+    const ok2 = await saveSetting('doubt_form_webhook_url', doubtFormWebhookUrl);
     setSavingDoubtSettings(false);
+    if (!ok1 || !ok2) { showToast('❌ Save failed — check your connection'); return; }
     showToast('Doubt form settings saved!');
   };
 
@@ -1230,7 +1242,7 @@ export default function AdminPanel() {
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
               You can use dynamic variables like <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{category}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{reporting_date}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{meeting_spot}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{transport}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{reporting_time}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{phone}'}</code> and <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{doubt}'}</code>.
             </div>
-            <CollapsibleSection title="Global Announcements">
+            <CollapsibleSection title="Global Announcements" defaultOpen={true}>
               <div style={{ display: 'grid', gap: 8 }}>
                 {[0, 1, 2].map((idx) => (
                   <input
@@ -1257,7 +1269,7 @@ export default function AdminPanel() {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Global Pre Selection Messages">
+            <CollapsibleSection title="Global Pre Selection Messages" defaultOpen={true}>
               {[
                 { key: 'welcome', label: 'Select City', placeholder: "Welcome to chapter அ! 👋 Which city are you from buddy?" },
                 { key: 'ask_category', label: 'Select Category', placeholder: "Awesome, {city}! What are you looking for today - events or trips?" },
@@ -1284,7 +1296,7 @@ export default function AdminPanel() {
               ))}
             </CollapsibleSection>
 
-            <CollapsibleSection title="Other City Pre Selection Messages">
+            <CollapsibleSection title="Other City Pre Selection Messages" defaultOpen={true}>
               {[
                 { key: 'other_ask_category', label: 'Select Category (Other City)', placeholder: "Awesome! Which type of plan are you looking for from Other Cities - events or trips?" },
                 { key: 'other_select_event', label: 'Select Plan (Other City)', placeholder: "Here are plans available for Other Cities in {category}. Which one should I open for you?" },
@@ -1310,7 +1322,7 @@ export default function AdminPanel() {
               ))}
             </CollapsibleSection>
 
-            <CollapsibleSection title="Global Post Selection Messages">
+            <CollapsibleSection title="Global Post Selection Messages" defaultOpen={true}>
               {[
                 { key: 'ask_doubts_book', label: 'Book Now Flow', placeholder: "You're about to lock your spot for {title}. All clear or do you have any last-minute doubts?" },
                 { key: 'ask_doubts_contact', label: 'Contact Us Flow', placeholder: "Got questions about {title}? Tap a common doubt below or ask your own question." },
