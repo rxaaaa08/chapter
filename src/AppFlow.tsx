@@ -406,6 +406,8 @@ export default function App() {
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
   const doubtFormWebhookUrl = (msgs.doubt_form_webhook_url || '').trim();
+  const getSelectedEventQuickInfoValue = (labels: string[]) =>
+    selectedEvent?.quickInfo?.find(item => labels.includes(item.label))?.value?.trim() ?? '';
   const getSelectedDateForVars = () => bookingDate || journeyCardData?.startDate || selectedEvent?.dates?.[0]?.date || '';
   const getSelectedPickupForVars = () => {
     const selectedPointId = journeyCardData?.meetingPoint || '';
@@ -1525,7 +1527,16 @@ export default function App() {
                 </div>
 
                 <a
-                  href={offerAcknowledged ? `https://wa.me/919739832100?text=${encodeURIComponent(`Hi! I just paid the advance for ${paymentContext.eventTitle} (${paymentContext.date}). I'd like to pay the remaining balance and claim my offer!`)}` : undefined}
+                  href={(() => {
+                    if (!offerAcknowledged) return undefined;
+                    const phoneRaw = getSelectedEventQuickInfoValue(['Secret Offer Number', 'Secret Offer Phone', 'Secret Offer WhatsApp']) || '919739832100';
+                    const phone = phoneRaw.replace(/\D/g, '');
+                    const template = getSelectedEventQuickInfoValue(['Secret Offer Message']) || "Hi! I just paid the advance for {title} ({date}). I'd like to pay the remaining balance and claim my offer!";
+                    const message = template
+                      .replace(/\{title\}/gi, paymentContext.eventTitle)
+                      .replace(/\{date\}/gi, paymentContext.date);
+                    return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                  })()}
                   onClick={!offerAcknowledged ? (e) => e.preventDefault() : undefined}
                   className={`relative overflow-hidden flex items-center justify-center gap-2.5 font-bold py-[18px] text-[16px] transition-all duration-200 ${offerAcknowledged ? 'bg-[#25D366] text-white active:opacity-80' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
                   target="_blank"

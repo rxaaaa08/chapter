@@ -1589,6 +1589,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const youllMeetValue = getPlanValue(["You'll Meet", 'Made For']);
   const gangSizeValue = getPlanValue(['Group Size']);
   const gangSizeNumber = (gangSizeValue.match(/\d+/)?.[0] ?? '');
+  const secretOfferPhoneValue = getPlanValue(['Secret Offer Number', 'Secret Offer Phone', 'Secret Offer WhatsApp']);
+  const secretOfferMessageValue = getPlanValue(['Secret Offer Message']);
   const acc = trip.accommodation ?? {};
   const legacyStay: AccommodationStay = {
     name: acc.name ?? '',
@@ -1759,6 +1761,34 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               placeholder="e.g. 15"
               value={gangSizeNumber}
               onChange={e => setPlanValue(['Group Size'], 'Group Size', e.target.value, 'users')}
+            />
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Secret Offer">
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div>
+            <label style={s.label}>WhatsApp Number</label>
+            <input
+              style={s.input}
+              placeholder="e.g. 919739832100"
+              value={secretOfferPhoneValue}
+              onChange={e => setPlanValue(
+                ['Secret Offer Number', 'Secret Offer Phone', 'Secret Offer WhatsApp'],
+                'Secret Offer Number',
+                e.target.value,
+                'ticket'
+              )}
+            />
+          </div>
+          <div>
+            <label style={s.label}>Prefilled Message</label>
+            <textarea
+              style={s.textarea}
+              placeholder="Example: Hi! I just paid the advance for {title} ({date}). I'd like to pay the remaining balance and claim my offer!"
+              value={secretOfferMessageValue}
+              onChange={e => setPlanValue(['Secret Offer Message'], 'Secret Offer Message', e.target.value, 'ticket')}
             />
           </div>
         </div>
