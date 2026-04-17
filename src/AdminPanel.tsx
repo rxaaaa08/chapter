@@ -1037,52 +1037,6 @@ export default function AdminPanel() {
               ));
             })()}
 
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10 }}>Doubt Submissions</div>
-              {(() => {
-                const filteredSubmissions = (doubtSubmissions ?? []).filter((submission) => {
-                  if (qnaCityFilter === 'all') return true;
-                  return (submission.city ?? '').trim().toLowerCase() === qnaCityFilter.trim().toLowerCase();
-                });
-                if (filteredSubmissions.length === 0) {
-                  return <div style={{ ...s.card, color: '#888' }}>No doubt submissions yet.</div>;
-                }
-                return (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {filteredSubmissions.map((submission, index) => {
-                      const eventName = submission.event_title || submission.event || submission.event_name || '-';
-                      const eventCategory = submission.event_category || submission.category || '-';
-                      const selectedDate = submission.selected_date || submission.date || '-';
-                      const reportingDate = submission.reporting_date || '-';
-                      const reportingTime = submission.reporting_time || '-';
-                      const submittedAtRaw = submission.submitted_at || submission.created_at || '';
-                      const submittedAt = submittedAtRaw
-                        ? new Date(submittedAtRaw).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
-                        : '-';
-                      return (
-                        <div key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ ...s.card, marginBottom: 0 }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
-                            <div><span style={s.label}>Name</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.name || '-'}</div></div>
-                            <div><span style={s.label}>Phone</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.phone || '-'}</div></div>
-                            <div><span style={s.label}>Event</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{eventName}</div></div>
-                            <div><span style={s.label}>City</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.city || '-'}</div></div>
-                            <div><span style={s.label}>Category</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{eventCategory}</div></div>
-                            <div><span style={s.label}>Date</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{selectedDate}</div></div>
-                            <div><span style={s.label}>Reporting Date</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{reportingDate}</div></div>
-                            <div><span style={s.label}>Reporting Time</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{reportingTime}</div></div>
-                          </div>
-                          <div style={{ marginBottom: 8 }}>
-                            <span style={s.label}>Doubt</span>
-                            <div style={{ fontSize: 14, color: '#333', lineHeight: 1.5 }}>{submission.doubt || submission.message || '-'}</div>
-                          </div>
-                          <div style={{ fontSize: 12, color: '#777' }}>Submitted: {submittedAt}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
           </>
         )}
 
@@ -1447,6 +1401,53 @@ export default function AdminPanel() {
                 ) : null
               ));
             })()}
+
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10 }}>Doubt Submissions</div>
+              {(() => {
+                const filteredSubmissions = (doubtSubmissions ?? []).filter((submission) => {
+                  if (qnaCityFilter === 'all') return true;
+                  return (submission.city ?? '').trim().toLowerCase() === qnaCityFilter.trim().toLowerCase();
+                });
+                if (filteredSubmissions.length === 0) {
+                  return <div style={{ ...s.card, color: '#888' }}>No doubt submissions yet.</div>;
+                }
+                return (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {filteredSubmissions.map((submission, index) => {
+                      const eventName = submission.event_title || submission.event || submission.event_name || '-';
+                      const eventCategory = submission.event_category || submission.category || '-';
+                      const selectedDate = submission.selected_date || submission.date || '-';
+                      const reportingDate = submission.reporting_date || '-';
+                      const reportingTime = submission.reporting_time || '-';
+                      const submittedAtRaw = submission.submitted_at || submission.created_at || '';
+                      const submittedAt = submittedAtRaw
+                        ? new Date(submittedAtRaw).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                        : '-';
+                      return (
+                        <div key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ ...s.card, marginBottom: 0 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
+                            <div><span style={s.label}>Name</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.name || '-'}</div></div>
+                            <div><span style={s.label}>Phone</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.phone || '-'}</div></div>
+                            <div><span style={s.label}>Event</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{eventName}</div></div>
+                            <div><span style={s.label}>City</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.city || '-'}</div></div>
+                            <div><span style={s.label}>Category</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{eventCategory}</div></div>
+                            <div><span style={s.label}>Date</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{selectedDate}</div></div>
+                            <div><span style={s.label}>Reporting Date</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{reportingDate}</div></div>
+                            <div><span style={s.label}>Reporting Time</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{reportingTime}</div></div>
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <span style={s.label}>Doubt</span>
+                            <div style={{ fontSize: 14, color: '#333', lineHeight: 1.5 }}>{submission.doubt || submission.message || '-'}</div>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#777' }}>Submitted: {submittedAt}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </>
         )}
 
