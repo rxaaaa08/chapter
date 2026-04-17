@@ -1,6 +1,53 @@
 // chaptera admin panel
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+
+// ─── IMAGE UPLOAD ─────────────────────────────────────────────────────────────
+async function uploadImageToStorage(file: File, folder = 'general'): Promise<string | null> {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from('event-images').upload(path, file, { upsert: true });
+  if (error) { console.error('Upload error:', error); return null; }
+  const { data } = supabase.storage.from('event-images').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+function ImageUploadInput({
+  value, onChange, placeholder, folder = 'general', style: extraStyle,
+}: {
+  value: string; onChange: (url: string) => void; placeholder?: string; folder?: string; style?: React.CSSProperties;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const url = await uploadImageToStorage(file, folder);
+    setUploading(false);
+    if (url) onChange(url);
+    e.target.value = '';
+  };
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...extraStyle }}>
+      <input
+        style={{ flex: 1, padding: '9px 12px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fafafa', outline: 'none', minWidth: 0 }}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder ?? 'Paste URL or upload ↑'}
+      />
+      <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        style={{ padding: '8px 13px', borderRadius: 8, border: '1.5px solid #d0d0d0', background: uploading ? '#f0f0f0' : '#fff', fontWeight: 600, fontSize: 12, cursor: uploading ? 'default' : 'pointer', whiteSpace: 'nowrap', color: uploading ? '#aaa' : '#444', flexShrink: 0, transition: 'all 0.15s' }}
+      >
+        {uploading ? '⏳ Uploading…' : '⬆ Upload'}
+      </button>
+    </div>
+  );
+}
 
 const ADMIN_PASSWORD = 'chaptera2025';
 
@@ -990,14 +1037,14 @@ export default function AdminPanel() {
                                         updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
                                       }}
                                     />
-                                    <input
-                                      style={s.input}
-                                      placeholder="Thumbnail URL"
+                                    <ImageUploadInput
                                       value={v.thumbnail_url ?? ''}
-                                      onChange={e => {
-                                        const updated = videos.map((x, idx) => idx === i ? { ...x, thumbnail_url: e.target.value } : x);
+                                      onChange={url => {
+                                        const updated = videos.map((x, idx) => idx === i ? { ...x, thumbnail_url: url } : x);
                                         updateTripInList(trip.id!, t => ({ ...t, event_media: updated }));
                                       }}
+                                      placeholder="Thumbnail — paste URL or upload"
+                                      folder="thumbnails"
                                     />
                                   </div>
                                 ))}
@@ -2234,7 +2281,15 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               onChange={e => setPlanValue(['Calendar CTA'], 'Calendar CTA', e.target.value, 'ticket')}
             />
           </div>
-          <div style={{ gridColumn: '1/-1' }}>{field('Hero Image URL', 'hero_image')}</div>
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Hero Image</label>
+            <ImageUploadInput
+              value={trip.hero_image ?? ''}
+              onChange={url => set('hero_image', url)}
+              placeholder="Paste URL or upload image"
+              folder="hero"
+            />
+          </div>
         </div>
       </CollapsibleSection>
 
@@ -2394,15 +2449,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   <input style={s.input} placeholder="e.g. Night Tent Camp / Hilltop Hotel" value={stay.name} onChange={e => updateStay(stayIndex, { name: e.target.value })} />
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <label style={s.label}>Images (up to 3 URLs)</label>
+                  <label style={s.label}>Images (up to 3)</label>
                   {[0, 1, 2].map(imageIndex => (
-                    <input
-                      key={imageIndex}
-                      style={{ ...s.input, marginBottom: 6 }}
-                      placeholder={`Image URL ${imageIndex + 1}`}
-                      value={stay.images?.[imageIndex] ?? (imageIndex === 0 ? (stay.image ?? '') : '')}
-                      onChange={e => updateStayImage(stayIndex, imageIndex, e.target.value)}
-                    />
+                    <div key={imageIndex} style={{ marginBottom: 6 }}>
+                      <ImageUploadInput
+                        value={stay.images?.[imageIndex] ?? (imageIndex === 0 ? (stay.image ?? '') : '')}
+                        onChange={url => updateStayImage(stayIndex, imageIndex, url)}
+                        placeholder={`Image ${imageIndex + 1} — paste URL or upload`}
+                        folder="accommodation"
+                      />
+                    </div>
                   ))}
                 </div>
                 <div>
