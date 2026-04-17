@@ -54,6 +54,25 @@ type Trip = {
   booking_steps?: Array<{ label: string; value: string; date: string }>;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
+type DoubtSubmission = {
+  id?: string;
+  name?: string;
+  phone?: string;
+  doubt?: string;
+  message?: string;
+  event_title?: string;
+  event?: string;
+  event_name?: string;
+  event_category?: string;
+  category?: string;
+  city?: string;
+  selected_date?: string;
+  reporting_date?: string;
+  reporting_time?: string;
+  date?: string;
+  submitted_at?: string;
+  created_at?: string;
+};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const statusLabel = { available: 'Available', selling_out: 'Selling Out', sold_out: 'Sold Out' };
@@ -75,6 +94,7 @@ export default function AdminPanel() {
   const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'other' | 'messages' | 'analytics'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
@@ -151,7 +171,8 @@ export default function AdminPanel() {
     Promise.all([
       supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
-    ]).then(([evRes, msgRes]) => {
+      supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
+    ]).then(([evRes, msgRes, doubtsRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
       if (msgRes.data) {
         const allMsgs = msgRes.data as ChatMsg[];
@@ -168,6 +189,7 @@ export default function AdminPanel() {
         const webhookMsg = allMsgs.find(m => m.step_key === 'doubt_form_webhook_url');
         setDoubtFormWebhookUrl(webhookMsg?.bot_message || '');
       }
+      if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
       setLoading(false);
     });
   }, [authed]);
@@ -1014,6 +1036,53 @@ export default function AdminPanel() {
                 ) : null
               ));
             })()}
+
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10 }}>Doubt Submissions</div>
+              {(() => {
+                const filteredSubmissions = (doubtSubmissions ?? []).filter((submission) => {
+                  if (qnaCityFilter === 'all') return true;
+                  return (submission.city ?? '').trim().toLowerCase() === qnaCityFilter.trim().toLowerCase();
+                });
+                if (filteredSubmissions.length === 0) {
+                  return <div style={{ ...s.card, color: '#888' }}>No doubt submissions yet.</div>;
+                }
+                return (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {filteredSubmissions.map((submission, index) => {
+                      const eventName = submission.event_title || submission.event || submission.event_name || '-';
+                      const eventCategory = submission.event_category || submission.category || '-';
+                      const selectedDate = submission.selected_date || submission.date || '-';
+                      const reportingDate = submission.reporting_date || '-';
+                      const reportingTime = submission.reporting_time || '-';
+                      const submittedAtRaw = submission.submitted_at || submission.created_at || '';
+                      const submittedAt = submittedAtRaw
+                        ? new Date(submittedAtRaw).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                        : '-';
+                      return (
+                        <div key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ ...s.card, marginBottom: 0 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
+                            <div><span style={s.label}>Name</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.name || '-'}</div></div>
+                            <div><span style={s.label}>Phone</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.phone || '-'}</div></div>
+                            <div><span style={s.label}>Event</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{eventName}</div></div>
+                            <div><span style={s.label}>City</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{submission.city || '-'}</div></div>
+                            <div><span style={s.label}>Category</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{eventCategory}</div></div>
+                            <div><span style={s.label}>Date</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{selectedDate}</div></div>
+                            <div><span style={s.label}>Reporting Date</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{reportingDate}</div></div>
+                            <div><span style={s.label}>Reporting Time</span><div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{reportingTime}</div></div>
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <span style={s.label}>Doubt</span>
+                            <div style={{ fontSize: 14, color: '#333', lineHeight: 1.5 }}>{submission.doubt || submission.message || '-'}</div>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#777' }}>Submitted: {submittedAt}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </>
         )}
 

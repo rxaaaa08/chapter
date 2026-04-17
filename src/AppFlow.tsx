@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -762,7 +762,7 @@ export default function App() {
     });
   };
 
-  const handleDoubtSubmit = (e: React.FormEvent) => {
+  const handleDoubtSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = doubtFormData.name;
     const phone = doubtFormData.phone;
@@ -777,7 +777,7 @@ export default function App() {
       city: selectedCity ? formatCityLabel(selectedCity) : '',
       category: selectedCategory || selectedEvent?.category || '',
       title: selectedEvent?.title ?? '',
-      reporting_date: selectedDate,
+      reporting_date: selectedDate ? formatFullDate(selectedDate) : '',
       meeting_spot: pickup.meetingSpot,
       transport: pickup.transport,
       reporting_time: pickup.reportingTime,
@@ -788,6 +788,20 @@ export default function App() {
       submittedAt: new Date().toISOString(),
       source: 'chaptera_doubt_form',
     };
+    try {
+      await supabase.from('doubt_submissions').insert({
+        name,
+        phone,
+        doubt: message,
+        event_title: selectedEvent?.title ?? '',
+        event_category: selectedEvent?.category ?? selectedCategory ?? '',
+        city: selectedCity ? formatCityLabel(selectedCity) : '',
+        selected_date: selectedDate || null,
+        reporting_date: selectedDate ? formatFullDate(selectedDate) : null,
+        reporting_time: pickup.reportingTime || null,
+        submitted_at: new Date().toISOString(),
+      });
+    } catch (_) {}
     if (doubtFormWebhookUrl) {
       fetch(doubtFormWebhookUrl, {
         method: 'POST',
