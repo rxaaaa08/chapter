@@ -2313,7 +2313,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Pickup Points">
+      <CollapsibleSection title="Meeting Points">
         {regularPickups.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No transport pickup points added.</div>}
         {regularPickups.map((p) => (
           <div key={p._idx} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
