@@ -1417,7 +1417,7 @@ export default function AdminPanel() {
                     <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ background: '#fafafa' }}>
-                          {['Name', 'Event', 'City', 'Category', 'Date', 'Reporting Date', 'Reporting Time', 'Doubt', 'Submitted', 'Contact'].map((heading) => (
+                          {['Event', 'City', 'Reporting Date', 'Reporting Time', 'Doubt', 'Submitted', 'Contact'].map((heading) => (
                             <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
                               {heading}
                             </th>
@@ -1427,8 +1427,6 @@ export default function AdminPanel() {
                       <tbody>
                         {filteredSubmissions.map((submission, index) => {
                           const eventName = submission.event_title || submission.event || submission.event_name || '-';
-                          const eventCategory = submission.event_category || submission.category || '-';
-                          const selectedDate = submission.selected_date || submission.date || '-';
                           const reportingDate = submission.reporting_date || '-';
                           const reportingTime = submission.reporting_time || '-';
                           const doubtText = submission.doubt || submission.message || '-';
@@ -1442,11 +1440,8 @@ export default function AdminPanel() {
 
                           return (
                             <tr key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                              <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', fontWeight: 600, whiteSpace: 'nowrap' }}>{submission.name || '-'}</td>
                               <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', fontWeight: 600, whiteSpace: 'nowrap' }}>{eventName}</td>
                               <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>{submission.city || '-'}</td>
-                              <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>{eventCategory}</td>
-                              <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>{selectedDate}</td>
                               <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>{reportingDate}</td>
                               <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>{reportingTime}</td>
                               <td title={doubtText} style={{ padding: '10px 12px', fontSize: 14, color: '#333', maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
