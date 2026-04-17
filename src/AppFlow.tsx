@@ -2390,7 +2390,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                 <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
                   {stays.map((stay, stayIndex) => (
                     <div key={stayIndex} className={stayIndex > 0 ? 'border-t border-gray-200' : ''}>
-                      <div className="relative w-full h-48">
+                      <div className="relative w-full aspect-[4/3]">
                         {(() => {
                           const stayImages = (stay.images ?? []).filter(Boolean);
                           const images = stayImages.length > 0 ? stayImages : (stay.image ? [stay.image] : []);
