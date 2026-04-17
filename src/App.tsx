@@ -244,7 +244,7 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
         .hp-hero h1 { font-family: 'Instrument Serif', serif; font-size: clamp(38px, 6vw, 60px); font-weight: 400; color: #0e0e0e; line-height: 1.12; letter-spacing: -1.5px; margin-bottom: 1.25rem; max-width: 760px; margin-left: auto; margin-right: auto; }
         .hp-hero h1 em { font-style: italic; color: #555; }
         .hp-hero p { font-size: 16px; color: #555; max-width: 620px; margin: 0 auto 2.25rem; line-height: 1.75; }
-        .hp-btn-primary { display: inline-block; background: #0e0e0e; color: #fff; font-size: 14px; font-weight: 600; padding: 0.8rem 2rem; border-radius: 50px; text-decoration: none; border: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; letter-spacing: -0.2px; }
+        .hp-btn-primary { display: inline-block; background: #FFD700; color: #111; font-size: 16px; font-weight: 700; padding: 0.95rem 2.4rem; border-radius: 50px; text-decoration: none; border: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; letter-spacing: -0.2px; }
         .hp-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
         .hp-about { padding: 5rem 2.5rem; background: #0e0e0e; color: #fff; }
         .hp-about-inner { max-width: 720px; margin: 0 auto; }
@@ -515,6 +515,17 @@ export default function App() {
   const isAdmin = path === '/admin';
   const isAboutPage = path === '/aboutus';
   const [showHomepage, setShowHomepage] = useState(isAboutPage);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const isRootPath = url.pathname === '/';
+    const hasPreviewEvent = !!url.searchParams.get('preview_event');
+    if (isRootPath && !hasPreviewEvent) {
+      window.history.replaceState({}, '', '/aboutus');
+      setShowHomepage(true);
+    }
+  }, []);
 
   const enterApp = () => {
     if (typeof window !== 'undefined') {
