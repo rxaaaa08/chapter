@@ -692,13 +692,13 @@ export default function App() {
   const handleDoubtsSelect = (hasDoubts: boolean) => {
     setStep('PROCESSING');
     if (hasDoubts) {
-      addUserMessage("Hold up, I have a question.");
+      addUserMessage((msgs.doubts_btn_yes || '').trim() || 'Hold up, I have a question');
       simulateBotTyping(() => {
         addBotMessage(fillMsgForSelectedEvent('show_faq', getTemplateVars(), "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book."));
         setStep('SHOW_FAQ');
       });
     } else {
-      addUserMessage("All clear, let's book it! 🚀");
+      addUserMessage((msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀");
       // Skip extra questions and jump straight to booking timeline
       setShowChat(false);
       setTimeout(() => setShowBookingTimeline(true), 150);
@@ -730,7 +730,7 @@ export default function App() {
   };
 
   const handleReadyToBook = () => {
-    addUserMessage("All clear, let's book it! 🚀");
+    addUserMessage((msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀");
     setShowChat(false);
     trackEvent('book_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setTimeout(() => setShowBookingTimeline(true), 150);
@@ -920,8 +920,8 @@ export default function App() {
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {[
-              { label: 'Hold up, I have a question', onClick: () => handleDoubtsSelect(true), cls: btnClass },
-              { label: "All clear, let's book! 🚀", onClick: () => handleDoubtsSelect(false), cls: primaryBtnClass },
+              { label: (msgs.doubts_btn_yes || '').trim() || 'Hold up, I have a question', onClick: () => handleDoubtsSelect(true), cls: btnClass },
+              { label: (msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀", onClick: () => handleDoubtsSelect(false), cls: primaryBtnClass },
             ].map(({ label, onClick, cls }, i) => (
               <button key={label} onClick={onClick} className={`${cls} relative overflow-hidden`}>
                 <motion.div
@@ -978,7 +978,7 @@ export default function App() {
             </button>
             <button onClick={handleReadyToBook} className={primaryBtnClass + " mt-2 relative overflow-hidden"}>
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
-              <span>All clear, let's book! 🚀</span> <Send size={16} />
+              <span>{(msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀"}</span> <Send size={16} />
             </button>
           </motion.div>
         );

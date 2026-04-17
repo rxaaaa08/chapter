@@ -131,7 +131,7 @@ export default function AdminPanel() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
   const globalPreSelectionKeys = ['welcome', 'ask_category', 'select_event'] as const;
   const otherCityPreSelectionKeys = ['other_ask_category', 'other_select_event'] as const;
-  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact', 'show_faq', 'faq_followup', 'faq_followup_repeat', 'contact_success'] as const;
+  const globalPostSelectionKeys = ['ask_doubts_book', 'ask_doubts_contact', 'doubts_btn_yes', 'doubts_btn_no', 'show_faq', 'faq_followup', 'faq_followup_repeat', 'contact_success'] as const;
 
   // Maps each step_key to the correct flow value required by the DB constraint
   const stepKeyFlow: Record<string, string> = {
@@ -139,6 +139,7 @@ export default function AdminPanel() {
     no_events: 'initial', retry_city: 'initial',
     other_ask_category: 'initial', other_select_event: 'initial',
     ask_doubts_book: 'booking', ask_doubts_contact: 'booking',
+    doubts_btn_yes: 'booking', doubts_btn_no: 'booking',
     faq_followup: 'booking', faq_followup_repeat: 'booking', show_faq: 'booking',
     ask_transport: 'booking', kyn_ready: 'booking',
     contact_success: 'contact',
@@ -1763,6 +1764,55 @@ export default function AdminPanel() {
               {[
                 { key: 'ask_doubts_book', label: 'Book Now Flow', placeholder: "You're about to lock your spot for {title}. All clear or do you have any last-minute doubts?" },
                 { key: 'ask_doubts_contact', label: 'Contact Us Flow', placeholder: "Got questions about {title}? Tap a common doubt below or ask your own question." },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <label style={s.label}>{label}</label>
+                  <textarea
+                    style={s.textarea}
+                    value={globalMessageDrafts[key] ?? ''}
+                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
+                      disabled={saving === `global:${key}`}
+                      onClick={() => saveGlobalStepTemplate(key)}
+                    >
+                      {saving === `global:${key}` ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Reply button labels */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                {[
+                  { key: 'doubts_btn_yes', label: '"I have a doubt" Button', placeholder: 'Hold up, I have a question' },
+                  { key: 'doubts_btn_no', label: '"All clear" Button', placeholder: "All clear, let's book! 🚀" },
+                ].map(({ key, label, placeholder }) => (
+                  <div key={key}>
+                    <label style={s.label}>{label}</label>
+                    <input
+                      style={s.input}
+                      value={globalMessageDrafts[key] ?? ''}
+                      onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={placeholder}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                      <button
+                        style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
+                        disabled={saving === `global:${key}`}
+                        onClick={() => saveGlobalStepTemplate(key)}
+                      >
+                        {saving === `global:${key}` ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {[
                 { key: 'show_faq', label: 'Show FAQs (when user has a doubt)', placeholder: "No sweat! Here's what people usually ask. Tap one to see the answer, or let me know when you're ready to book." },
                 { key: 'faq_followup', label: 'FAQ Follow Up (after 1st doubt answer)', placeholder: "Hope that helps. Want to ask another doubt or proceed to booking?" },
                 { key: 'faq_followup_repeat', label: 'FAQ Follow Up (after 2nd, 3rd… doubt answers)', placeholder: "Anything else on your mind? 😊" },
