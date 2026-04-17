@@ -117,6 +117,7 @@ export default function AdminPanel() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
+  const [qnaDoubtCategoryFilter, setQnaDoubtCategoryFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
   const [mediaOriginalById, setMediaOriginalById] = useState<Record<string, Trip>>({});
@@ -157,6 +158,13 @@ export default function AdminPanel() {
     })
     .sort((a, b) => a.localeCompare(b));
   const orderedCities = ['Chennai', ...middleCities].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
+  const qnaDoubtCategories = [
+    ...new Set(
+      (doubtSubmissions ?? [])
+        .map(s => (s.event_category || s.category || '').trim())
+        .filter(Boolean)
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 
 
   const login = () => {
@@ -1231,7 +1239,7 @@ export default function AdminPanel() {
         {/* ── Q&A TAB ───────────────────────────────────────────────────────── */}
         {!loading && tab === 'qna' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
                   value={qnaCityFilter}
@@ -1255,6 +1263,33 @@ export default function AdminPanel() {
                   <option value="all">All Cities</option>
                   {orderedCities.map(city => (
                     <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
+              </div>
+              <div style={{ position: 'relative', minWidth: 190 }}>
+                <select
+                  value={qnaDoubtCategoryFilter}
+                  onChange={e => setQnaDoubtCategoryFilter(e.target.value)}
+                  style={{
+                    ...s.input,
+                    width: '100%',
+                    padding: '9px 34px 9px 12px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 999,
+                    border: '1.5px solid #d7d7d7',
+                    background: '#fff',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="all">All Categories</option>
+                  {qnaDoubtCategories.map(category => (
+                    <option key={category} value={category}>{category}</option>
                   ))}
                 </select>
                 <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
@@ -1406,18 +1441,24 @@ export default function AdminPanel() {
               <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10 }}>Doubt Submissions</div>
               {(() => {
                 const filteredSubmissions = (doubtSubmissions ?? []).filter((submission) => {
-                  if (qnaCityFilter === 'all') return true;
-                  return (submission.city ?? '').trim().toLowerCase() === qnaCityFilter.trim().toLowerCase();
+                  const cityMatch = qnaCityFilter === 'all'
+                    ? true
+                    : (submission.city ?? '').trim().toLowerCase() === qnaCityFilter.trim().toLowerCase();
+                  const submissionCategory = (submission.event_category || submission.category || '').trim();
+                  const categoryMatch = qnaDoubtCategoryFilter === 'all'
+                    ? true
+                    : submissionCategory.toLowerCase() === qnaDoubtCategoryFilter.trim().toLowerCase();
+                  return cityMatch && categoryMatch;
                 });
                 if (filteredSubmissions.length === 0) {
                   return <div style={{ ...s.card, color: '#888' }}>No doubt submissions yet.</div>;
                 }
                 return (
-                  <div style={{ ...s.card, overflowX: 'auto', padding: 0 }}>
-                    <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse' }}>
+                  <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
+                    <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ background: '#fafafa' }}>
-                          {['Doubt', 'Event', 'City', 'Reporting Date & Time', 'Submitted', 'Contact'].map((heading) => (
+                          {['Doubt', 'Event', 'City', 'Reporting Date & Time', 'Contact'].map((heading) => (
                             <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
                               {heading}
                             </th>
@@ -1430,26 +1471,21 @@ export default function AdminPanel() {
                           const reportingDate = submission.reporting_date || '-';
                           const reportingTime = submission.reporting_time || '-';
                           const doubtText = submission.doubt || submission.message || '-';
-                          const submittedAtRaw = submission.submitted_at || submission.created_at || '';
-                          const submittedAt = submittedAtRaw
-                            ? new Date(submittedAtRaw).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
-                            : '-';
                           const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
                           const contactMessage = `Hi, ${submission.name || 'there'}, we're contacting you from chapter அ regarding ${eventName} (${reportingDate}).`;
                           const contactHref = phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(contactMessage)}` : '';
 
                           return (
                             <tr key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                              <td title={doubtText} style={{ padding: '10px 12px', fontSize: 14, color: '#333', maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <td title={doubtText} style={{ width: '18%', padding: '10px 10px', fontSize: 13, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {doubtText}
                               </td>
-                              <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', fontWeight: 600, whiteSpace: 'nowrap' }}>{eventName}</td>
-                              <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>{submission.city || '-'}</td>
-                              <td style={{ padding: '10px 12px', fontSize: 14, color: '#111', whiteSpace: 'nowrap' }}>
+                              <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
+                              <td style={{ width: '14%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{submission.city || '-'}</td>
+                              <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {reportingDate === '-' && reportingTime === '-' ? '-' : `${reportingDate}${reportingTime !== '-' ? ` · ${reportingTime}` : ''}`}
                               </td>
-                              <td style={{ padding: '10px 12px', fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>{submittedAt}</td>
-                              <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                              <td style={{ width: '20%', padding: '10px 10px', whiteSpace: 'nowrap' }}>
                                 {phoneDigits ? (
                                   <a
                                     href={contactHref}
