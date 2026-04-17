@@ -362,7 +362,7 @@ export default function AdminPanel() {
 
     const totalReached = reachedRows.length;
     const totalConverted = convertedRows.length;
-    const overallConvPct = totalReached > 0 ? Math.round((totalConverted / totalReached) * 100) : 0;
+    const overallConvPct = totalReached > 0 ? Math.min(Math.round((totalConverted / totalReached) * 100), 100) : 0;
     return { visitors, overallConvPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent };
   };
 
@@ -371,6 +371,49 @@ export default function AdminPanel() {
     await supabase.from('events').delete().eq('id', id);
     setTrips(prev => prev.filter(t => t.id !== id));
     showToast('Deleted.');
+  };
+
+  const duplicateTrip = async (trip: Trip) => {
+    const { id, slug, event_dates, event_media, event_reviews, faqs, ...rest } = trip as any;
+    const newSlug = `${trip.slug ?? trip.id ?? 'event'}-copy-${Date.now()}`;
+    const { data, error } = await supabase.from('events').insert({
+      ...rest,
+      title: `${trip.title} (duplicate)`,
+      slug: newSlug,
+      is_active: false,
+    }).select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').single();
+    if (error || !data) { showToast('Duplicate failed.'); return; }
+
+    // Copy related rows
+    const related: Promise<any>[] = [];
+    if ((event_dates ?? []).length > 0) {
+      related.push(supabase.from('event_dates').insert(
+        event_dates.map(({ id: _id, ...d }: any) => ({ ...d, event_id: data.id }))
+      ));
+    }
+    if ((event_media ?? []).length > 0) {
+      related.push(supabase.from('event_media').insert(
+        event_media.map(({ id: _id, ...m }: any) => ({ ...m, event_id: data.id }))
+      ));
+    }
+    if ((event_reviews ?? []).length > 0) {
+      related.push(supabase.from('event_reviews').insert(
+        event_reviews.map(({ id: _id, ...r }: any) => ({ ...r, event_id: data.id }))
+      ));
+    }
+    if ((faqs ?? []).length > 0) {
+      related.push(supabase.from('faqs').insert(
+        faqs.map(({ id: _id, ...f }: any) => ({ ...f, event_id: data.id }))
+      ));
+    }
+    await Promise.all(related);
+
+    // Reload so related rows appear
+    const { data: fresh } = await supabase.from('events')
+      .select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)')
+      .eq('id', data.id).single();
+    if (fresh) setTrips(prev => [...prev, fresh as Trip]);
+    showToast(`"${trip.title}" duplicated ✓`);
   };
 
   const setLiveState = async (trip: Trip, live: boolean) => {
@@ -401,6 +444,10 @@ export default function AdminPanel() {
       }
       window.open(previewUrl, '_blank', 'noopener,noreferrer');
       showToast('Preview opened. Plan set to Hidden. URL copied.');
+      return;
+    }
+    if (action === 'duplicate') {
+      await duplicateTrip(trip);
       return;
     }
     if (action === 'delete') {
@@ -780,6 +827,7 @@ export default function AdminPanel() {
                                   <option value="live">Live</option>
                                   <option value="hide">Hide</option>
                                   <option value="preview">Preview</option>
+                                  <option value="duplicate">Duplicate</option>
                                   <option value="delete">Delete</option>
                                 </select>
                                 <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
@@ -1947,17 +1995,24 @@ export default function AdminPanel() {
                     {allDropoffEvents.map((title, idx) => {
                       const reached = reachedByEvent[title] || 0;
                       const converted = convertedByEvent[title] || 0;
-                      const pct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
+                      const rawPct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
+                      const pct = Math.min(rawPct, 100);
+                      const isSkewed = rawPct > 100;
                       return (
                         <div key={title} style={{ marginBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < allDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
-                            <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>{pct}%</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
+                              {pct}%{isSkewed && <span style={{ fontSize: 11, fontWeight: 500, color: '#bbb', marginLeft: 4 }}>*</span>}
+                            </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
                             <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
-                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>{converted} of {reached} who saw the price continued booking</div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                            {converted} of {reached} who saw the price continued booking
+                            {isSkewed && <span style={{ marginLeft: 4, color: '#d4b483' }}>* more clicks than price views — clear old data for accuracy</span>}
+                          </div>
                         </div>
                       );
                     })}
