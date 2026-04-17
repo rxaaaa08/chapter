@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
+import { trackEvent } from './supabase';
 
 // Types
 type Message = {
@@ -244,7 +245,7 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
         .hp-hero h1 { font-family: 'Instrument Serif', serif; font-size: clamp(38px, 6vw, 60px); font-weight: 400; color: #0e0e0e; line-height: 1.12; letter-spacing: -1.5px; margin-bottom: 1.25rem; max-width: 760px; margin-left: auto; margin-right: auto; }
         .hp-hero h1 em { font-style: italic; color: #555; }
         .hp-hero p { font-size: 16px; color: #555; max-width: 620px; margin: 0 auto 2.25rem; line-height: 1.75; }
-        .hp-btn-primary { display: inline-block; background: #FFD700; color: #111; font-size: 16px; font-weight: 700; padding: 0.95rem 2.4rem; border-radius: 50px; text-decoration: none; border: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; letter-spacing: -0.2px; }
+        .hp-btn-primary { display: inline-block; background: #FFD700; color: #111; font-size: 19px; font-weight: 700; padding: 1.15rem 3rem; border-radius: 50px; text-decoration: none; border: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; letter-spacing: -0.2px; }
         .hp-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
         .hp-about { padding: 5rem 2.5rem; background: #0e0e0e; color: #fff; }
         .hp-about-inner { max-width: 720px; margin: 0 auto; }
@@ -525,6 +526,7 @@ export default function App() {
       window.history.replaceState({}, '', '/aboutus');
       setShowHomepage(true);
     }
+    if (!isAdmin) trackEvent('page_view');
   }, []);
 
   const enterApp = () => {

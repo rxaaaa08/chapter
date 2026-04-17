@@ -6,6 +6,35 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'eyJhbGciOiJIU
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// ─── ANALYTICS ───────────────────────────────────────────────────────────────
+function getSessionId(): string {
+  const key = 'ca_session_id';
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+}
+
+export async function trackEvent(
+  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked',
+  meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
+) {
+  try {
+    await supabase.from('flow_analytics').insert({
+      event_type,
+      session_id: getSessionId(),
+      city: meta.city ?? null,
+      category: meta.category ?? null,
+      event_id: meta.event_id ?? null,
+      event_title: meta.event_title ?? null,
+    });
+  } catch (_) {
+    // fire-and-forget — never block the user flow
+  }
+}
+
 // Maps a raw Supabase row + related rows to the Event shape used in AppFlow
 export function mapDbEventToEvent(row: any): any {
   return {

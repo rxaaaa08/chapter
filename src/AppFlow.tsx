@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg } from './supabase';
+import { fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -612,6 +612,7 @@ export default function App() {
     const cityLabel = label ?? formatCityLabel(city);
     addUserMessage(cityLabel);
     setSelectedCity(city);
+    trackEvent('city_selected', { city: cityLabel });
     
     simulateBotTyping(() => {
       const categoryKey = city === 'Other' ? 'other_ask_category' : 'ask_category';
@@ -624,6 +625,7 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(category);
     setSelectedCategory(category);
+    trackEvent('category_selected', { city: formatCityLabel(selectedCity), category });
     
     simulateBotTyping(() => {
       const cityLabel = formatCityLabel(selectedCity);
@@ -643,6 +645,7 @@ export default function App() {
     setStep('PROCESSING');
     addUserMessage(event.title);
     setSelectedEvent(event);
+    trackEvent('event_selected', { city: formatCityLabel(selectedCity), category: selectedCategory || event.category, event_id: event.id, event_title: event.title });
 
     clearDetailTimers();
     setDetailsReady(false);
@@ -672,8 +675,9 @@ export default function App() {
         meetingPoint: meetingPoint || ''
       });
     }
+    trackEvent(action === 'book' ? 'book_clicked' : 'contact_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setStep('PROCESSING');
-    
+
     simulateBotTyping(() => {
       if (action === 'book') {
         addBotMessage(fillMsgForSelectedEvent('ask_doubts_book', getTemplateVars(), `Yo! 🤙 You're about to lock in your spot for ${selectedEvent?.title}. Just making sure we're on the exact same page before we make it official—all clear on the details, or got any last-minute questions?`));
@@ -728,6 +732,7 @@ export default function App() {
   const handleReadyToBook = () => {
     addUserMessage("All clear, let's book it! 🚀");
     setShowChat(false);
+    trackEvent('book_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setTimeout(() => setShowBookingTimeline(true), 150);
     setShowWaitlistForm(false);
     setStep('DONE');
@@ -1233,6 +1238,7 @@ export default function App() {
                       <button
                         onClick={() => {
                           setShowBookingTimeline(false);
+                          trackEvent('book_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
                           if (selectedEvent.bookingUrl) window.open(selectedEvent.bookingUrl, '_blank');
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
@@ -2677,6 +2683,10 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
                             onChange={e => {
                               const nextMeetingPoint = e.target.value;
                               const isSwitchingMeetingPoint = !!selectedMeetingPoint && selectedMeetingPoint !== nextMeetingPoint;
+                              if (!selectedMeetingPoint) {
+                                // First time selecting a meeting point — price is now visible
+                                trackEvent('reached_pricing', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+                              }
                               setSelectedMeetingPoint(nextMeetingPoint);
                               if (isSwitchingMeetingPoint) {
                                 triggerMeetingPointSwitchBorder();

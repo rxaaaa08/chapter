@@ -72,7 +72,7 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'other' | 'messages'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'other' | 'messages' | 'analytics'>('trips');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
@@ -93,6 +93,9 @@ export default function AdminPanel() {
   const [selectedTimelineDates, setSelectedTimelineDates] = useState<Record<string, string>>({});
   const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
+  const [analyticsData, setAnalyticsData] = useState<any[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
@@ -287,6 +290,49 @@ export default function AdminPanel() {
     setCtaEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
     setSavingTimeline(null);
     showToast('Timeline saved!');
+  };
+
+  const loadAnalytics = async () => {
+    setAnalyticsLoading(true);
+    // Purge rows older than 30 days to keep storage lean
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    await supabase.from('flow_analytics').delete().lt('created_at', cutoff);
+    const { data } = await supabase.from('flow_analytics').select('*').order('created_at', { ascending: false });
+    setAnalyticsData(data ?? []);
+    setAnalyticsLoading(false);
+  };
+
+  // Compute analytics aggregates from a pre-filtered slice of rows
+  const computeAnalytics = (rows: any[]) => {
+    const pageViews = rows.filter(r => r.event_type === 'page_view');
+    const visitors = new Set(pageViews.map(r => r.session_id)).size;
+
+    const cityRows = rows.filter(r => r.event_type === 'city_selected' && r.city);
+    const cityCounts: Record<string, number> = {};
+    cityRows.forEach(r => { cityCounts[r.city] = (cityCounts[r.city] || 0) + 1; });
+    const cityTotal = cityRows.length || 1;
+
+    const catRows = rows.filter(r => r.event_type === 'category_selected' && r.category);
+    const catCounts: Record<string, number> = {};
+    catRows.forEach(r => { catCounts[r.category] = (catCounts[r.category] || 0) + 1; });
+    const catTotal = catRows.length || 1;
+
+    const eventRows = rows.filter(r => r.event_type === 'event_selected' && r.event_title);
+    const eventCounts: Record<string, number> = {};
+    eventRows.forEach(r => { eventCounts[r.event_title] = (eventCounts[r.event_title] || 0) + 1; });
+    const eventTotal = eventRows.length || 1;
+
+    const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title);
+    const convertedRows = rows.filter(r => (r.event_type === 'book_clicked' || r.event_type === 'contact_clicked') && r.event_title);
+    const reachedByEvent: Record<string, number> = {};
+    const convertedByEvent: Record<string, number> = {};
+    reachedRows.forEach(r => { reachedByEvent[r.event_title] = (reachedByEvent[r.event_title] || 0) + 1; });
+    convertedRows.forEach(r => { convertedByEvent[r.event_title] = (convertedByEvent[r.event_title] || 0) + 1; });
+
+    const totalReached = reachedRows.length;
+    const totalConverted = convertedRows.length;
+    const overallConvPct = totalReached > 0 ? Math.round((totalConverted / totalReached) * 100) : 0;
+    return { visitors, overallConvPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent };
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -577,6 +623,7 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
+        <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>
       </div>
 
       <div style={{ maxWidth: 720, margin: '32px auto', padding: '0 20px' }}>
@@ -1562,6 +1609,205 @@ export default function AdminPanel() {
 
           </>
         )}
+
+        {/* ── ANALYTICS TAB ────────────────────────────────────────────────── */}
+        {tab === 'analytics' && (() => {
+          const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+          const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
+          const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
+          const { visitors, overallConvPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent } = computeAnalytics(filteredData);
+          const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
+          const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+          const sortedEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]);
+          const allDropoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
+
+          const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
+            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
+              <div style={{ fontSize: 12, color: '#999', fontWeight: 600, marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: '#111', lineHeight: 1 }}>{value}</div>
+              {sub && <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>{sub}</div>}
+            </div>
+          );
+
+          const BarRow = ({ label, count, total, color = '#FFD700' }: { label: string; count: number; total: number; color?: string }) => {
+            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+            return (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: '#222', marginBottom: 4 }}>
+                  <span>{label}</span>
+                  <span style={{ color: '#666' }}>{count} <span style={{ color: '#aaa', fontWeight: 400 }}>({pct}%)</span></span>
+                </div>
+                <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.4s' }} />
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Analytics</div>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={analyticsWindow}
+                    onChange={e => setAnalyticsWindow(e.target.value as any)}
+                    style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', minWidth: 130 }}
+                  >
+                    <option value="24h">Last 24 Hours</option>
+                    <option value="week">Last Week</option>
+                    <option value="month">Last Month</option>
+                  </select>
+                  <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
+                </div>
+                <button
+                  style={{ ...s.btn('#111'), fontSize: 12, padding: '6px 16px' }}
+                  onClick={loadAnalytics}
+                  disabled={analyticsLoading}
+                >
+                  {analyticsLoading ? 'Loading…' : '↻ Refresh'}
+                </button>
+              </div>
+
+              {analyticsLoading && <div style={{ color: '#aaa', fontSize: 14 }}>Fetching data…</div>}
+
+              {!analyticsLoading && (
+                <>
+                  {/* Visitors */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Visitors</div>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+                    <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
+                    <StatCard label="Pricing Conversion" value={`${overallConvPct}%`} sub="continued booking after seeing price" />
+                  </div>
+
+                  {/* City */}
+                  {/* Shared pie chart renderer */}
+                  {(() => {
+                    const PASTEL = ['#FDE68A','#BFDBFE','#BBF7D0','#FBCFE8','#DDD6FE','#FED7AA','#99F6E4','#F9A8D4'];
+                    const PieChart = ({ entries, total }: { entries: [string, number][]; total: number }) => {
+                      if (entries.length === 0) return <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>;
+                      const R = 72, CX = 82, CY = 82;
+                      let cum = -Math.PI / 2;
+                      const slices = entries.map(([label, count], idx) => {
+                        const angle = (count / (total || 1)) * 2 * Math.PI;
+                        const x1 = CX + R * Math.cos(cum);
+                        const y1 = CY + R * Math.sin(cum);
+                        cum += angle;
+                        const x2 = CX + R * Math.cos(cum);
+                        const y2 = CY + R * Math.sin(cum);
+                        const d = `M${CX},${CY} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${angle > Math.PI ? 1 : 0} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
+                        return { label, count, d, color: PASTEL[idx % PASTEL.length] };
+                      });
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+                          <svg width={164} height={164}>
+                            {slices.length === 1
+                              ? <circle cx={CX} cy={CY} r={R} fill={slices[0].color} />
+                              : slices.map((sl, i) => <path key={i} d={sl.d} fill={sl.color} stroke="#fff" strokeWidth={2.5} />)
+                            }
+                          </svg>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', justifyContent: 'center' }}>
+                            {slices.map((sl, i) => {
+                              const pct = Math.round((sl.count / (total || 1)) * 100);
+                              return (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <div style={{ width: 10, height: 10, borderRadius: 3, background: sl.color, border: '1px solid #ddd', flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>{sl.label}</span>
+                                  <span style={{ fontSize: 12, color: '#999' }}>{pct}%</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Chosen City</div>
+                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
+                          <PieChart entries={sortedCities} total={cityTotal} />
+                        </div>
+
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Chosen Category</div>
+                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
+                          <PieChart entries={sortedCats} total={catTotal} />
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Event */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Chosen Plan</div>
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
+                    {(() => {
+                      const PASTEL = ['#FDE68A','#BFDBFE','#BBF7D0','#FBCFE8','#DDD6FE','#FED7AA','#99F6E4','#F9A8D4'];
+                      if (sortedEvents.length === 0) return <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>;
+                      const R = 72, CX = 82, CY = 82;
+                      let cum = -Math.PI / 2;
+                      const slices = sortedEvents.map(([label, count], idx) => {
+                        const angle = (count / (eventTotal || 1)) * 2 * Math.PI;
+                        const x1 = CX + R * Math.cos(cum);
+                        const y1 = CY + R * Math.sin(cum);
+                        cum += angle;
+                        const x2 = CX + R * Math.cos(cum);
+                        const y2 = CY + R * Math.sin(cum);
+                        const d = `M${CX},${CY} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${angle > Math.PI ? 1 : 0} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
+                        return { label, count, d, color: PASTEL[idx % PASTEL.length] };
+                      });
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+                          <svg width={164} height={164}>
+                            {slices.length === 1
+                              ? <circle cx={CX} cy={CY} r={R} fill={slices[0].color} />
+                              : slices.map((sl, i) => <path key={i} d={sl.d} fill={sl.color} stroke="#fff" strokeWidth={2.5} />)
+                            }
+                          </svg>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', justifyContent: 'center' }}>
+                            {slices.map((sl, i) => {
+                              const pct = Math.round((sl.count / (eventTotal || 1)) * 100);
+                              return (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <div style={{ width: 10, height: 10, borderRadius: 3, background: sl.color, border: '1px solid #ddd', flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>{sl.label}</span>
+                                  <span style={{ fontSize: 12, color: '#999' }}>{pct}%</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Drop-off */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Pricing Conversion Rate</div>
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                    {allDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {allDropoffEvents.map((title, idx) => {
+                      const reached = reachedByEvent[title] || 0;
+                      const converted = convertedByEvent[title] || 0;
+                      const pct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
+                      return (
+                        <div key={title} style={{ marginBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < allDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>{pct}%</span>
+                          </div>
+                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>{converted} of {reached} who saw the price continued booking</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
       </div>
     </div>
   );
