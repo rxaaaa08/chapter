@@ -3003,7 +3003,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
               {/* Header */}
               <div className="px-6 pt-3 pb-4 border-b border-gray-100 flex-shrink-0">
-                <p className="text-[12px] font-normal text-gray-300 tracking-wide text-center">plans we dream</p>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center">plans we dream</p>
               </div>
               {/* Plan list grouped by city → category */}
               <div className="flex-1 overflow-y-auto px-4 py-4">
