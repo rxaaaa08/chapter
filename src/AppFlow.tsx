@@ -2019,6 +2019,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  useEffect(() => { if (!activeVideo) setVideoReady(false); }, [activeVideo]);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2085,7 +2086,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
     const onMessage = (event: MessageEvent) => {
       if (!event.origin.includes('vimeo.com')) return;
       const payload = typeof event.data === 'string' ? (() => { try { return JSON.parse(event.data); } catch { return null; } })() : event.data;
-      if (payload?.event === 'ended') { setActiveVideo(null); setVideoReady(false); }
+      if (payload?.event === 'ended') { setActiveVideo(null); }
     };
 
     window.addEventListener('message', onMessage);
@@ -2960,7 +2961,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-[210] bg-black/70 flex items-center justify-center"
-              onClick={() => { setActiveVideo(null); setVideoReady(false); }}
+              onClick={() => { setActiveVideo(null); }}
             >
               {!videoReady && (
                 <svg className="animate-spin w-8 h-8 text-gray-300 pointer-events-none" viewBox="0 0 24 24" fill="none">
@@ -2972,17 +2973,17 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
 
             <motion.div
               key="video-modal"
-              initial={{ opacity: 0, y: 32, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.97 }}
-              transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
-              style={{ opacity: videoReady ? 1 : 0, pointerEvents: videoReady ? 'auto' : 'none' }}
-              onClick={() => { setActiveVideo(null); setVideoReady(false); }}
+              style={{ opacity: videoReady ? 1 : 0, pointerEvents: videoReady ? 'auto' : 'none', transition: 'opacity 0.25s ease' }}
+              onClick={() => setActiveVideo(null)}
             >
               <div className="relative w-[88%] max-w-[320px] overflow-visible" onClick={(e) => e.stopPropagation()}>
                 <button
-                  onClick={() => { setActiveVideo(null); setVideoReady(false); }}
+                  onClick={() => { setActiveVideo(null); }}
                   className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 z-10 w-10 h-10 rounded-full bg-[#FFD700] text-black flex items-center justify-center hover:bg-[#e6c200] transition-colors shadow-lg"
                   style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 0.3s ease' }}
                   aria-label="Close video"
