@@ -335,18 +335,21 @@ const GENERAL_ANNOUNCEMENTS = [
 export default function App() {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [eventsLoaded, setEventsLoaded] = useState(false);
+  const [loadingSlow, setLoadingSlow] = useState(false);
   const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [msgsReady, setMsgsReady] = useState(false);
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
 
   useEffect(() => {
-    // Safety timeouts — if Supabase hangs, unblock the app rather than loading forever
-    const eventsTimeout = setTimeout(() => setEventsLoaded(true), 5000);
+    // After 5s without events, show a "connection slow" retry screen instead of
+    // unblocking with stale fallback data. msgsReady CAN timeout safely since
+    // message strings fall back to hardcoded defaults which are fine.
+    const slowTimeout = setTimeout(() => setLoadingSlow(true), 5000);
     const msgsTimeout = setTimeout(() => setMsgsReady(true), 5000);
 
     fetchEvents().then((data) => {
-      clearTimeout(eventsTimeout);
+      clearTimeout(slowTimeout);
       if (data.length > 0) setEvents(data);
       setEventsLoaded(true);
     });
@@ -355,7 +358,7 @@ export default function App() {
       if (Object.keys(data).length > 0) setMsgs(data);
       setMsgsReady(true);
     });
-    return () => { clearTimeout(eventsTimeout); clearTimeout(msgsTimeout); };
+    return () => { clearTimeout(slowTimeout); clearTimeout(msgsTimeout); };
   }, []);
 
   useEffect(() => {
@@ -1065,16 +1068,38 @@ export default function App() {
       >
         <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
       </motion.div>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2, duration: 0.4 }}
-        className="flex items-center gap-1.5"
-      >
-        <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
-        <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
-        <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
-      </motion.div>
+
+      <AnimatePresence mode="wait">
+        {loadingSlow ? (
+          <motion.div
+            key="slow"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center gap-3"
+          >
+            <p className="text-sm text-gray-400 font-medium">connection is slow…</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2 bg-[#FFD700] text-black text-sm font-bold rounded-full active:scale-95 transition-transform"
+            >
+              Tap to reload
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="dots"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ delay: 0.2, duration: 0.4 }}
+            className="flex items-center gap-1.5"
+          >
+            <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
+            <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
+            <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 
