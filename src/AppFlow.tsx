@@ -49,6 +49,7 @@ interface Event {
     ownOnly?: boolean;
     otherPrice?: number;
     otherAdvance?: number;
+    forOtherCity?: boolean;
   }[];
   transport: string;
   groupSize: string;
@@ -1138,9 +1139,10 @@ export default function App() {
             event={selectedEvent}
             selectedCity={selectedCity}
             allEvents={events.filter(e => !e.inviteOnly)}
-            onSwitchEvent={(e) => {
+            onSwitchEvent={(e, city) => {
               setSelectedEvent(e);
               setSelectedCategory(e.category);
+              setSelectedCity(city);
             }}
             onClose={() => {
               setShowDetails(false);
@@ -1361,7 +1363,7 @@ export default function App() {
                 <div className="px-6 pt-7 pb-5 space-y-3">
                   <div className="flex items-center justify-center gap-1.5">
                     <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
-                    <span className="text-[12px] text-gray-400">Secure Payments via PhonePe</span>
+                    <span className="text-[12px] text-gray-400">Secure Payments via Paytm</span>
                   </div>
                   <button
                     type="button"
@@ -1436,8 +1438,8 @@ export default function App() {
             >
               <div className="p-6 flex items-center justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400 font-semibold">Mock PhonePe</p>
-                  <h2 className="text-2xl font-black mt-1">Redirecting to PhonePe</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400 font-semibold">Mock Paytm</p>
+                  <h2 className="text-2xl font-black mt-1">Redirecting to Paytm</h2>
                   <p className="text-sm text-gray-400 mt-1">Amount: {formatINR(paymentContext.amount)}</p>
                 </div>
                 <ShieldCheck className="text-emerald-400" size={28} />
@@ -1470,7 +1472,7 @@ export default function App() {
                     </button>
                   </div>
                   <p className="text-[11px] text-gray-400 mt-3">
-                    Use these buttons to mock PhonePe response. You'll be redirected back to the site accordingly.
+                    Use these buttons to mock Paytm response. You'll be redirected back to the site accordingly.
                   </p>
                 </div>
               </div>
@@ -1833,14 +1835,26 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
   }
 
   const ownPoint = dbPoints.find(p => p.id === 'own_transport');
-  if (selectedCity === 'Other') {
-    return dbPoints;
+  const isOtherCity = selectedCity === 'Other';
+
+  // Points that have been explicitly tagged
+  const hasTaggedPoints = dbPoints.some(p => p.id !== 'own_transport' && p.forOtherCity !== undefined);
+
+  let points: typeof dbPoints;
+  if (hasTaggedPoints) {
+    // Filter by flag — home city sees forOtherCity:false, Other sees forOtherCity:true
+    points = dbPoints.filter(p =>
+      p.id === 'own_transport' || (isOtherCity ? p.forOtherCity === true : p.forOtherCity === false)
+    );
+  } else {
+    // Legacy: no flags set — show all points to everyone (backward compatible)
+    points = dbPoints;
   }
 
-  if (ownPoint?.ownOnly) {
+  if (!isOtherCity && ownPoint?.ownOnly) {
     return [ownPoint];
   }
-  return dbPoints;
+  return points;
 };
 
 const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
@@ -1904,7 +1918,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], onSwitchEvent: (e: Event) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -1925,6 +1939,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   const [showWorkWithUs, setShowWorkWithUs] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
+  const [switcherCity, setSwitcherCity] = useState(selectedCity);
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2209,7 +2224,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
           <div className="absolute top-4 left-4">
             <div
               className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 transition-transform duration-200 active:scale-95 cursor-pointer"
-              onClick={() => setShowPlanSwitcher(true)}
+              onClick={() => { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); }}
             >
               <ChevronLeft size={15} className="text-white ml-[-1px]" strokeWidth={2.5} />
             </div>
@@ -3001,55 +3016,65 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
             >
               {/* Handle */}
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
-              {/* Header */}
-              <div className="px-6 pt-3 pb-4 border-b border-gray-100 flex-shrink-0">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center">plans we dream</p>
-              </div>
-              {/* Plan list grouped by city → category */}
-              <div className="flex-1 overflow-y-auto px-4 py-4">
-                {(() => {
-                  const today = new Date(); today.setHours(0,0,0,0);
-                  const cityOrder: string[] = [];
-                  allEvents.forEach(e => (e.cities ?? []).forEach(c => { if (!cityOrder.includes(c)) cityOrder.push(c); }));
+              {/* City switcher — same style as month switcher in calendar */}
+              {(() => {
+                const cityOrder: string[] = [];
+                allEvents.forEach(e => (e.cities ?? []).forEach(c => { if (!cityOrder.includes(c)) cityOrder.push(c); }));
+                const cityIdx = cityOrder.indexOf(switcherCity);
+                const cityLabel = switcherCity.toLowerCase() === 'other' ? 'Other Cities' : switcherCity.charAt(0).toUpperCase() + switcherCity.slice(1).toLowerCase();
+                const cityEvents = allEvents.filter(e => (e.cities ?? []).includes(switcherCity));
+                const categories: string[] = [];
+                cityEvents.forEach(e => { if (!categories.includes(e.category)) categories.push(e.category); });
 
-                  return cityOrder.map(city => {
-                    const cityEvents = allEvents.filter(e => (e.cities ?? []).includes(city));
-                    if (cityEvents.length === 0) return null;
-
-                    const categories: string[] = [];
-                    cityEvents.forEach(e => { if (!categories.includes(e.category)) categories.push(e.category); });
-
-                    return (
-                      <div key={city} className="mb-6">
-                        <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
-                          {city.toLowerCase() === 'other' ? 'Other Cities' : city.charAt(0).toUpperCase() + city.slice(1).toLowerCase()}
-                        </div>
-                        {categories.map(cat => {
-                          const catEvents = cityEvents.filter(e => e.category === cat);
-                          return (
-                            <div key={cat} className="mb-3">
-                              <div className="text-[10px] font-medium text-gray-300 uppercase tracking-wider mb-2 px-1">{cat}</div>
-                              {catEvents.map(e => {
-                                const isActive = e.id === event.id;
-                                return (
-                                  <button
-                                    key={e.id}
-                                    onClick={() => { if (!isActive) { onSwitchEvent(e); } setShowPlanSwitcher(false); }}
-                                    className={`w-full text-left px-4 py-3 rounded-2xl mb-2 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
-                                  >
-                                    <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
-                                    {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Selected</span>}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
+                return (
+                  <>
+                    <div className="flex flex-col items-center gap-3 px-6 pt-5 pb-5 border-b border-gray-100 flex-shrink-0">
+                      <div className="flex items-center gap-6">
+                        <button
+                          onClick={() => setSwitcherCity(cityOrder[(cityIdx - 1 + cityOrder.length) % cityOrder.length])}
+                          className="p-1 bg-gray-100 text-gray-500 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors"
+                        >
+                          <ChevronLeft size={14} />
+                        </button>
+                        <span className="font-black text-[20px] tracking-tight">{cityLabel}</span>
+                        <button
+                          onClick={() => setSwitcherCity(cityOrder[(cityIdx + 1) % cityOrder.length])}
+                          className="p-1 bg-gray-100 text-gray-500 rounded-full border border-gray-200 hover:bg-gray-200 transition-colors"
+                        >
+                          <ChevronRight size={14} />
+                        </button>
                       </div>
-                    );
-                  });
-                })()}
-              </div>
+                    </div>
+                    {/* Plans for selected city */}
+                    <div className="flex-1 overflow-y-auto px-5 py-5">
+                      {categories.map(cat => {
+                        const catEvents = cityEvents.filter(e => e.category === cat);
+                        return (
+                          <div key={cat} className="mb-5">
+                            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3 px-1">{cat}</div>
+                            {catEvents.map(e => {
+                              const isActive = e.id === event.id && switcherCity === selectedCity;
+                              return (
+                                <button
+                                  key={e.id}
+                                  onClick={() => { if (!isActive) onSwitchEvent(e, switcherCity); setShowPlanSwitcher(false); }}
+                                  className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
+                                >
+                                  <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
+                                  {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Selected</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {cityEvents.length === 0 && (
+                        <p className="text-[13px] text-gray-400 text-center py-8">No plans for this city yet.</p>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </motion.div>
           </>
         )}

@@ -64,6 +64,7 @@ type PickupPoint = {
   ownOnly?: boolean;
   otherPrice?: number;
   otherAdvance?: number;
+  forOtherCity?: boolean;
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
 type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; review_count?: number; images?: string[] };
@@ -2193,7 +2194,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
     onChange({ ...trip, pickup_points: updated });
   };
-  const addPickup = () => onChange({ ...trip, pickup_points: [...pickups, { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '' }] });
+  const addPickup = () => onChange({ ...trip, pickup_points: [...pickups, { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '', forOtherCity: false }] });
   const removePickup = (i: number) => onChange({ ...trip, pickup_points: pickups.filter((_, idx) => idx !== i) });
   const ownTransportIndex = pickups.findIndex(p => p.id === 'own_transport');
   const ownTransport = ownTransportIndex >= 0 ? pickups[ownTransportIndex] : null;
@@ -2671,7 +2672,7 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
     setTrip({
       pickup_points: [
         ...pickups,
-        { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '' }
+        { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '', forOtherCity: true }
       ]
     });
   };
