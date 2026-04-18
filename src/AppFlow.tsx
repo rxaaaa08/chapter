@@ -604,8 +604,10 @@ export default function App() {
     scrollToBottom();
   }, [messages, isTyping]);
 
+  // Only start typing after loading screen clears (both events + msgs ready)
+  // so users see: loading screen → chat appears → typing dots → first message
   useEffect(() => {
-    if (!msgsReady) return;
+    if (!eventsLoaded || !msgsReady) return;
     simulateBotTyping(() => {
       setMessages([{
         id: Date.now().toString(),
@@ -614,7 +616,7 @@ export default function App() {
       }]);
       setStep('ASK_CITY');
     }, 1000);
-  }, [msgsReady]);
+  }, [eventsLoaded, msgsReady]);
 
   const simulateBotTyping = (callback: () => void, delay: number = 800) => {
     setIsTyping(true);
@@ -1059,20 +1061,30 @@ export default function App() {
 
   const appReady = eventsLoaded && msgsReady;
   if (!appReady) return (
-    <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-5">
+    <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
+      {/* Logo with gentle glow pulse */}
       <motion.div
         initial={{ opacity: 0, scale: 0.85 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5"
+        className="relative"
       >
-        <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
+        {/* Glow ring behind logo */}
+        <motion.div
+          animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+          transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+          className="absolute inset-0 rounded-2xl bg-[#FFD700]"
+          style={{ filter: 'blur(10px)' }}
+        />
+        <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
+          <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
+        </div>
       </motion.div>
 
-      <AnimatePresence mode="wait">
-        {loadingSlow ? (
+      {/* Slow connection fallback */}
+      <AnimatePresence>
+        {loadingSlow && (
           <motion.div
-            key="slow"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center gap-3"
@@ -1084,19 +1096,6 @@ export default function App() {
             >
               Tap to reload
             </button>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="dots"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ delay: 0.2, duration: 0.4 }}
-            className="flex items-center gap-1.5"
-          >
-            <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
-            <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
-            <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
           </motion.div>
         )}
       </AnimatePresence>
