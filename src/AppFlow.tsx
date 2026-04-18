@@ -2959,9 +2959,16 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[210] bg-black/70"
+              className="absolute inset-0 z-[210] bg-black/70 flex items-center justify-center"
               onClick={() => { setActiveVideo(null); setVideoReady(false); }}
-            />
+            >
+              {!videoReady && (
+                <svg className="animate-spin w-8 h-8 text-gray-300 pointer-events-none" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                </svg>
+              )}
+
             <motion.div
               key="video-modal"
               initial={{ opacity: 0, y: 32, scale: 0.95 }}
@@ -2969,6 +2976,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
+              style={{ opacity: videoReady ? 1 : 0, pointerEvents: videoReady ? 'auto' : 'none' }}
               onClick={() => { setActiveVideo(null); setVideoReady(false); }}
             >
               <div className="relative w-[88%] max-w-[320px] overflow-visible" onClick={(e) => e.stopPropagation()}>
@@ -2983,15 +2991,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                 <div className="relative w-full max-w-[320px]">
                   {/* Reserve final 9:16 size immediately to prevent opening jank */}
                   <div style={{ paddingTop: '177.7778%' }} />
-                  {/* Spinner while video loads */}
-                  {!videoReady && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-[28px] bg-black/60 z-10">
-                      <svg className="animate-spin w-8 h-8 text-gray-300" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-                      </svg>
-                    </div>
-                  )}
                   <div className="absolute inset-0 rounded-[28px] bg-transparent">
                     <div
                       className="relative w-full h-full overflow-hidden rounded-[27px]"
