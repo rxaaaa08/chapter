@@ -225,13 +225,14 @@ const GENERAL_ANNOUNCEMENTS = [
 ];
 
 // ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────
-function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
+function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; onViewExperiences: () => void }) {
   const [showSending, setShowSending] = useState(false);
 
   const handleViewExperiences = () => {
     setShowSending(true);
+    // Wait for animation to finish, then switch view inside SPA (no page reload)
     setTimeout(() => {
-      window.location.href = 'https://chaptera.in/?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61';
+      onViewExperiences();
     }, 1900);
   };
 
@@ -581,6 +582,16 @@ export default function App() {
     setShowHomepage(false);
   };
 
+  // Navigate within the SPA — no page reload, so the sending animation completes
+  // cleanly and AppFlow mounts with previewLoading=true already blocking the chat UI
+  const enterAppWithPreview = () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.history.pushState({}, '', '/?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61');
+    }
+    setShowHomepage(false);
+  };
+
   useEffect(() => {
     if (typeof document === 'undefined' || isAdmin || showHomepage) return;
     // AppFlow is a fixed-height mobile UI — lock body scroll so only internal containers scroll
@@ -603,7 +614,7 @@ export default function App() {
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.4 }}
         >
-          <HomePage onEnterApp={enterApp} />
+          <HomePage onEnterApp={enterApp} onViewExperiences={enterAppWithPreview} />
         </motion.div>
       </AnimatePresence>
     );
