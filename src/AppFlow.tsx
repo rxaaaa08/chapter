@@ -2015,6 +2015,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
   const [switcherCity, setSwitcherCity] = useState(selectedCity);
   const [heroLoaded, setHeroLoaded] = useState(false);
+  const [heroError, setHeroError] = useState(false);
+  const [heroKey, setHeroKey] = useState(0); // bump to force image reload
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
@@ -2046,6 +2048,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   useEffect(() => {
     setStayImageIndexes({});
     setHeroLoaded(false);
+    setHeroError(false);
+    setHeroKey(k => k + 1);
   }, [event.id]);
 
   // Reset calendar to nearest upcoming month whenever the event changes
@@ -2296,8 +2300,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
       <div className="flex-1 overflow-y-auto pb-0">
         {/* Header with Hero Image */}
         <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0 bg-gray-200 overflow-hidden">
-          {/* Spinner shown while image loads or if it errors */}
-          {!heroLoaded && (
+          {/* Spinner while loading */}
+          {!heroLoaded && !heroError && (
             <div className="absolute inset-0 flex items-center justify-center">
               <svg className="animate-spin w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
@@ -2305,13 +2309,26 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               </svg>
             </div>
           )}
+          {/* Retry button on error */}
+          {heroError && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <p className="text-sm text-gray-400 font-medium">Image failed to load</p>
+              <button
+                onClick={() => { setHeroError(false); setHeroLoaded(false); setHeroKey(k => k + 1); }}
+                className="px-4 py-2 bg-white rounded-full text-sm font-bold text-gray-700 shadow-sm border border-gray-200 active:scale-95 transition-transform"
+              >
+                ↺ Retry
+              </button>
+            </div>
+          )}
           <img
+            key={heroKey}
             src={event.heroImage}
             alt={event.title}
             className="w-full h-full object-cover object-center transition-opacity duration-300"
             style={{ opacity: heroLoaded ? 1 : 0 }}
-            onLoad={() => setHeroLoaded(true)}
-            onError={() => setHeroLoaded(true)}
+            onLoad={() => { setHeroLoaded(true); setHeroError(false); }}
+            onError={() => { setHeroLoaded(false); setHeroError(true); }}
           />
           {/* Back / plan switcher button */}
           <div className="absolute top-4 left-4">
