@@ -1134,14 +1134,19 @@ export default function App() {
 
         {/* Event Details Overlay (no mount animation) */}
         {showDetails && selectedEvent && (
-          <EventDetailsOverlay 
-            event={selectedEvent} 
+          <EventDetailsOverlay
+            event={selectedEvent}
             selectedCity={selectedCity}
+            allEvents={events.filter(e => !e.inviteOnly)}
+            onSwitchEvent={(e) => {
+              setSelectedEvent(e);
+              setSelectedCategory(e.category);
+            }}
             onClose={() => {
               setShowDetails(false);
               setStep('SELECT_EVENT');
             }}
-            onAction={handleDetailsAction} 
+            onAction={handleDetailsAction}
           />
         )}
 
@@ -1899,7 +1904,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event: Event, selectedCity: string, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], onSwitchEvent: (e: Event) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -1919,6 +1924,7 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
   const [calendarRevealed, setCalendarRevealed] = useState(false);
   const [showWorkWithUs, setShowWorkWithUs] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
+  const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2199,6 +2205,15 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
         {/* Header with Hero Image */}
         <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0">
           <img src={event.heroImage} alt={event.title} className="w-full h-full object-cover object-center" />
+          {/* Back / plan switcher button */}
+          <div className="absolute top-4 left-4">
+            <div
+              className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 transition-transform duration-200 active:scale-95 cursor-pointer"
+              onClick={() => setShowPlanSwitcher(true)}
+            >
+              <ChevronLeft size={15} className="text-white ml-[-1px]" strokeWidth={2.5} />
+            </div>
+          </div>
         </div>
 
         {/* Quick Info — boarding pass card */}
@@ -2961,6 +2976,82 @@ const EventDetailsOverlay = ({ event, selectedCity, onClose, onAction }: { event
               </button>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Plan Switcher Bottom Sheet ───────────────────────────────────── */}
+      <AnimatePresence>
+        {showPlanSwitcher && (
+          <>
+            <motion.div
+              key="switcher-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[200] bg-black/50"
+              onClick={() => setShowPlanSwitcher(false)}
+            />
+            <motion.div
+              key="switcher-sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="absolute bottom-0 left-0 right-0 z-[201] bg-white rounded-t-[2rem] flex flex-col max-h-[85%]"
+            >
+              {/* Handle */}
+              <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+              {/* Header */}
+              <div className="px-6 pt-3 pb-4 border-b border-gray-100 flex-shrink-0">
+                <p className="text-[12px] font-normal text-gray-300 tracking-wide text-center">plans we dream</p>
+              </div>
+              {/* Plan list grouped by city → category */}
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                {(() => {
+                  const today = new Date(); today.setHours(0,0,0,0);
+                  const cityOrder: string[] = [];
+                  allEvents.forEach(e => (e.cities ?? []).forEach(c => { if (!cityOrder.includes(c)) cityOrder.push(c); }));
+
+                  return cityOrder.map(city => {
+                    const cityEvents = allEvents.filter(e => (e.cities ?? []).includes(city));
+                    if (cityEvents.length === 0) return null;
+
+                    const categories: string[] = [];
+                    cityEvents.forEach(e => { if (!categories.includes(e.category)) categories.push(e.category); });
+
+                    return (
+                      <div key={city} className="mb-6">
+                        <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
+                          {city.toLowerCase() === 'other' ? 'Other Cities' : city.charAt(0).toUpperCase() + city.slice(1).toLowerCase()}
+                        </div>
+                        {categories.map(cat => {
+                          const catEvents = cityEvents.filter(e => e.category === cat);
+                          return (
+                            <div key={cat} className="mb-3">
+                              <div className="text-[10px] font-medium text-gray-300 uppercase tracking-wider mb-2 px-1">{cat}</div>
+                              {catEvents.map(e => {
+                                const isActive = e.id === event.id;
+                                return (
+                                  <button
+                                    key={e.id}
+                                    onClick={() => { if (!isActive) { onSwitchEvent(e); } setShowPlanSwitcher(false); }}
+                                    className={`w-full text-left px-4 py-3 rounded-2xl mb-2 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
+                                  >
+                                    <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
+                                    {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Selected</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
