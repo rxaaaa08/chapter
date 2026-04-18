@@ -341,16 +341,21 @@ export default function App() {
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
 
   useEffect(() => {
-    fetchEvents().then((data) => { if (data.length > 0) setEvents(data); setEventsLoaded(true); });
+    // Safety timeouts — if Supabase hangs, unblock the app rather than loading forever
+    const eventsTimeout = setTimeout(() => setEventsLoaded(true), 5000);
+    const msgsTimeout = setTimeout(() => setMsgsReady(true), 5000);
 
-    // Timeout ensures the chat starts even if Supabase hangs (no error, no resolve)
-    const msgsTimeout = setTimeout(() => setMsgsReady(true), 4000);
+    fetchEvents().then((data) => {
+      clearTimeout(eventsTimeout);
+      if (data.length > 0) setEvents(data);
+      setEventsLoaded(true);
+    });
     fetchChatMessages().then((data) => {
       clearTimeout(msgsTimeout);
       if (Object.keys(data).length > 0) setMsgs(data);
       setMsgsReady(true);
     });
-    return () => clearTimeout(msgsTimeout);
+    return () => { clearTimeout(eventsTimeout); clearTimeout(msgsTimeout); };
   }, []);
 
   useEffect(() => {
@@ -1048,6 +1053,30 @@ export default function App() {
   const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted;
 
   if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
+
+  const appReady = eventsLoaded && msgsReady;
+  if (!appReady) return (
+    <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-5">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5"
+      >
+        <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2, duration: 0.4 }}
+        className="flex items-center gap-1.5"
+      >
+        <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
+        <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.15 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
+        <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay: 0.3 }} className="w-1.5 h-1.5 bg-gray-300 rounded-full" />
+      </motion.div>
+    </div>
+  );
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
