@@ -2548,7 +2548,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
         )}
 
         {/* Video Carousel */}
-        {!event.isActivity && (
+        {!event.isActivity && !!event.videos?.length && (
           <div className="pt-4 pb-6">
             <div className="px-6 mb-3 flex items-center justify-between">
               <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
