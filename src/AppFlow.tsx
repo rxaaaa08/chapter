@@ -2293,8 +2293,16 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
     >
       <div className="flex-1 overflow-y-auto pb-0">
         {/* Header with Hero Image */}
-        <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0">
-          <img src={event.heroImage} alt={event.title} className="w-full h-full object-cover object-center" />
+        <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0 bg-gray-200 overflow-hidden">
+          {/* Shimmer skeleton shown while image loads */}
+          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.4s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+          <img
+            src={event.heroImage}
+            alt={event.title}
+            className="w-full h-full object-cover object-center transition-opacity duration-300"
+            style={{ opacity: 0 }}
+            onLoad={e => { (e.target as HTMLImageElement).style.opacity = '1'; }}
+          />
           {/* Back / plan switcher button */}
           <div className="absolute top-4 left-4">
             <div
