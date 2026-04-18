@@ -2019,7 +2019,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
-  useEffect(() => { if (!activeVideo) setVideoReady(false); }, [activeVideo]);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2952,7 +2951,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
       </AnimatePresence>
 
       {/* Policy / Legal Modals */}
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={() => setVideoReady(false)}>
         {activeVideo && (
           <>
             <motion.div
@@ -2974,11 +2973,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
             <motion.div
               key="video-modal"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              animate={{ opacity: videoReady ? 1 : 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
+              transition={{ duration: 0.3 }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
-              style={{ opacity: videoReady ? 1 : 0, pointerEvents: videoReady ? 'auto' : 'none', transition: 'opacity 0.25s ease' }}
+              style={{ pointerEvents: videoReady ? 'auto' : 'none' }}
               onClick={() => setActiveVideo(null)}
             >
               <div className="relative w-[88%] max-w-[320px] overflow-visible" onClick={(e) => e.stopPropagation()}>
