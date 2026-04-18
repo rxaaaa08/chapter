@@ -2636,8 +2636,9 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
   // Separate own_transport from regular pickup points
   const ownTransportIndex = pickups.findIndex(p => p.id === 'own_transport');
   const ownTransport = ownTransportIndex >= 0 ? pickups[ownTransportIndex] : null;
-  // Only show Other-city-specific points (forOtherCity: true) or legacy untagged points (undefined)
-  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport' && p.forOtherCity !== false);
+  // Only show explicitly tagged Other-city points (forOtherCity === true)
+  // Legacy untagged points (undefined) are treated as Pondy-only and stay in TripForm
+  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport' && p.forOtherCity === true);
 
   const toggleOwnTransport = (enabled: boolean) => {
     if (enabled) {
