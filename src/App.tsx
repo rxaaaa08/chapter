@@ -599,8 +599,8 @@ function InAppBrowserNudge() {
             <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
 
             {/* Icon */}
-            <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 overflow-hidden p-1">
-              <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
+            <div className="w-12 h-12 rounded-2xl bg-black mx-auto mb-4 overflow-hidden">
+              <img src={chatProfile} alt="chapter அ" className="w-full h-full object-cover" />
             </div>
 
             <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
