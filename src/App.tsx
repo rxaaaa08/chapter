@@ -603,13 +603,13 @@ function InAppBrowserNudge() {
               <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
             </div>
 
-            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Open in your browser</h2>
+            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
             <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
-              For the best experience, open this in Safari or Chrome — not the Instagram browser.
+              For the best experience, follow these steps
             </p>
 
             {/* Step instruction */}
-            <div className="bg-gray-50 rounded-2xl p-4 mb-5 flex items-start gap-3">
+            <div className="bg-gray-50 rounded-2xl p-4 mb-3 flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">1</div>
               <div>
                 <p className="font-bold text-sm text-gray-800">Tap the <span className="font-black">···</span> menu</p>
@@ -620,16 +620,9 @@ function InAppBrowserNudge() {
               <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">2</div>
               <div>
                 <p className="font-bold text-sm text-gray-800">Tap <span className="italic">"Open in external browser"</span></p>
-                <p className="text-xs text-gray-500 mt-0.5">Safari or Chrome opens automatically</p>
+                <p className="text-xs text-gray-500 mt-0.5">Your favourite browser opens automatically</p>
               </div>
             </div>
-
-            <button
-              onClick={dismiss}
-              className="w-full py-4 bg-black text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform"
-            >
-              I'll do it later
-            </button>
           </motion.div>
         </>
       )}
