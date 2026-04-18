@@ -2964,10 +2964,10 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
             />
             <motion.div
               key="video-modal"
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              initial={{ opacity: 0, y: 32, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
+              exit={{ opacity: 0, y: 20, scale: 0.97 }}
+              transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
               onClick={() => { setActiveVideo(null); setVideoReady(false); }}
             >
