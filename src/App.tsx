@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send } from 'lucide-react';
+import { ArrowRight, Send } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -595,20 +595,29 @@ function InAppBrowserNudge() {
       <motion.div
         initial={{ y: '100%' }} animate={{ y: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-        className="fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 pb-10 shadow-2xl"
+        className={`fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 ${isAndroid ? 'pb-6' : 'pb-10'} shadow-2xl`}
       >
         {isAndroid ? (
           /* ── Android: one-tap button ── */
           <>
             <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
-            <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
+            <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
               Instagram's browser doesn't fully support this site
             </p>
             <button
               onClick={openInBrowser}
-              className="w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity"
+              className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
             >
-              Open in Browser
+              <motion.span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+                animate={{ x: ['0%', '240%'] }}
+                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
+              />
+              <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                Open in Browser
+                <ArrowRight size={18} strokeWidth={2.6} />
+              </span>
             </button>
           </>
         ) : (
