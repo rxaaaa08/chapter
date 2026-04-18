@@ -564,46 +564,64 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 
 // ─── IN-APP BROWSER NUDGE ──────────────────────────────────────────────────────
 function InAppBrowserNudge() {
-  const [dismissed, setDismissed] = useState(() =>
-    typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem('iab_dismissed')
-  );
-
   const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
   const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
+  const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isInApp = isInstagram || isFacebook;
 
-  if (!isInApp || dismissed) return null;
+  if (!isInApp) return null;
 
-  const dismiss = () => {
-    sessionStorage.setItem('iab_dismissed', '1');
-    setDismissed(true);
+  const openInBrowser = () => {
+    const url = window.location.href;
+    // Android: fire a Chrome intent; falls back to the URL in any browser if Chrome isn't default
+    window.location.href =
+      `intent://${window.location.host}${window.location.pathname}${window.location.search}` +
+      `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
   };
 
   return (
-    <AnimatePresence>
-      {!dismissed && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
-            onClick={dismiss}
-          />
-          {/* Bottom sheet */}
-          <motion.div
-            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-            className="fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 pb-10 shadow-2xl"
-          >
-            {/* Pill handle */}
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+    <>
+      {/* Non-dismissible backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      />
 
-            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
+      {/* Bottom sheet */}
+      <motion.div
+        initial={{ y: '100%' }} animate={{ y: 0 }}
+        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        className="fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 pb-10 shadow-2xl"
+      >
+        {/* Pill handle */}
+        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+
+        {isAndroid ? (
+          /* ── Android: one-tap button ── */
+          <>
+            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Open in your browser</h2>
             <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
-              For a smoother experience, follow these steps
+              Instagram's browser doesn't fully support this site
+            </p>
+            <button
+              onClick={openInBrowser}
+              className="w-full py-4 rounded-2xl bg-black text-white font-bold text-base active:opacity-80 transition-opacity"
+            >
+              Open in Browser
+            </button>
+          </>
+        ) : (
+          /* ── iOS: manual steps ── */
+          <>
+            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Open in your browser first</h2>
+            <p className="text-center text-sm text-gray-500 leading-relaxed mb-6 whitespace-pre-line">
+              {'Wait a minute!\nTo continue, follow these steps'}
             </p>
 
-            {/* Step instruction */}
             <div className="bg-gray-50 rounded-2xl p-4 mb-3 flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">1</div>
               <div>
@@ -611,17 +629,17 @@ function InAppBrowserNudge() {
                 <p className="text-xs text-gray-500 mt-0.5">Top right corner of this screen</p>
               </div>
             </div>
-            <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex items-start gap-3">
+            <div className="bg-gray-50 rounded-2xl p-4 flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">2</div>
               <div>
                 <p className="font-bold text-sm text-gray-800">Tap <span className="italic">"Open in external browser"</span></p>
                 <p className="text-xs text-gray-500 mt-0.5">Your favourite browser opens automatically</p>
               </div>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          </>
+        )}
+      </motion.div>
+    </>
   );
 }
 
