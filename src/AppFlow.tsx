@@ -2296,9 +2296,14 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
       <div className="flex-1 overflow-y-auto pb-0">
         {/* Header with Hero Image */}
         <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0 bg-gray-200 overflow-hidden">
-          {/* Shimmer skeleton — removed from DOM once image loads */}
+          {/* Spinner shown while image loads or if it errors */}
           {!heroLoaded && (
-            <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.4s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <svg className="animate-spin w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+              </svg>
+            </div>
           )}
           <img
             src={event.heroImage}
@@ -2306,6 +2311,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
             className="w-full h-full object-cover object-center transition-opacity duration-300"
             style={{ opacity: heroLoaded ? 1 : 0 }}
             onLoad={() => setHeroLoaded(true)}
+            onError={() => setHeroLoaded(true)}
           />
           {/* Back / plan switcher button */}
           <div className="absolute top-4 left-4">
