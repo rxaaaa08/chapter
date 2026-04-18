@@ -335,6 +335,8 @@ export default function App() {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [msgsReady, setMsgsReady] = useState(false);
+  const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
+  const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
 
   useEffect(() => {
     fetchEvents().then((data) => { if (data.length > 0) setEvents(data); });
@@ -349,13 +351,14 @@ export default function App() {
     const previewEvent = params.get('preview_event');
     if (!previewEvent) return;
     fetchEventByIdOrSlug(previewEvent).then((event) => {
-      if (!event) return;
+      if (!event) { setPreviewLoading(false); return; }
       setSelectedEvent(event);
       setSelectedCity(event.cities?.[0] || 'Chennai');
       setSelectedCategory(event.category || 'Trips');
       setShowTransition(false);
       setShowDetails(true);
       setStep('EVENT_SELECTED');
+      setPreviewLoading(false);
     });
   }, []);
 
@@ -1028,6 +1031,8 @@ export default function App() {
   const isNameValid = detailsForm.name.trim().length >= 1;
   const isPhoneValid = /^\d{10,}$/.test(detailsForm.phone);
   const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted;
+
+  if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">

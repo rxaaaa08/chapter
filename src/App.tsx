@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Send } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -225,8 +226,56 @@ const GENERAL_ANNOUNCEMENTS = [
 
 // ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────
 function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
+  const [showSending, setShowSending] = useState(false);
+
+  const handleViewExperiences = () => {
+    setShowSending(true);
+    setTimeout(() => {
+      window.location.href = 'https://chaptera.in/?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61';
+    }, 1900);
+  };
+
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0e0e0e', lineHeight: 1.6, WebkitFontSmoothing: 'antialiased', overflowX: 'hidden', minHeight: '100vh' }}>
+      {/* Sending animation overlay */}
+      <AnimatePresence>
+        {showSending && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ opacity: { duration: 0.35, ease: 'easeOut' }, scale: { type: 'spring', damping: 20, stiffness: 120 } }}
+            style={{ position: 'fixed', inset: 0, background: '#FFD700', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+          >
+            <motion.div
+              initial={{ x: -100, y: 100, scale: 0.5, opacity: 0 }}
+              animate={{ x: 0, y: 0, scale: 1, opacity: 1 }}
+              transition={{
+                x: { type: 'spring', damping: 14, stiffness: 130 },
+                y: { type: 'spring', damping: 14, stiffness: 130 },
+                scale: { type: 'spring', damping: 16, stiffness: 150 },
+                opacity: { duration: 0.25, ease: 'easeOut' },
+              }}
+            >
+              <motion.div
+                animate={{ x: 150, y: -150, scale: 0.5, opacity: 0 }}
+                transition={{ delay: 1.35, duration: 0.45, ease: 'easeIn' }}
+              >
+                <Send size={48} color="#000" />
+              </motion.div>
+            </motion.div>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ delay: 0.15, duration: 0.4 }}
+              style={{ marginTop: '1rem', fontWeight: 700, fontSize: '1.125rem', color: '#000', letterSpacing: '0.025em', position: 'absolute', top: '55%' }}
+            >
+              Sending details...
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -334,7 +383,7 @@ function HomePage({ onEnterApp }: { onEnterApp: () => void }) {
       <section className="hp-hero">
         <h1>Curated experiences <br /><em>for people who want to step out and connect</em></h1>
         <p>chapter அ is a Chennai-based social experiences brand that curates group trips, social gatherings, activities and community-led events. Participants can browse upcoming experiences, view event details and make bookings online.</p>
-        <button type="button" className="hp-btn-primary" onClick={() => { window.location.href = 'https://chaptera.in/?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61'; }}>View Experiences</button>
+        <button type="button" className="hp-btn-primary" onClick={handleViewExperiences}>View Experiences</button>
       </section>
 
       {/* About */}
