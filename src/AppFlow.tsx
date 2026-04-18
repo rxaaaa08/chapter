@@ -2981,7 +2981,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                 <div className="relative w-full max-w-[320px]">
                   {/* Reserve final 9:16 size immediately to prevent opening jank */}
                   <div style={{ paddingTop: '177.7778%' }} />
-                  <div className="absolute inset-0 rounded-[28px] bg-black p-[1px]">
+                  <div className="absolute inset-0 rounded-[28px] bg-transparent">
                     <div
                       className="relative w-full h-full overflow-hidden rounded-[27px]"
                       style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
