@@ -2198,7 +2198,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const removePickup = (i: number) => onChange({ ...trip, pickup_points: pickups.filter((_, idx) => idx !== i) });
   const ownTransportIndex = pickups.findIndex(p => p.id === 'own_transport');
   const ownTransport = ownTransportIndex >= 0 ? pickups[ownTransportIndex] : null;
-  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport');
+  // Only show Pondy-specific points (forOtherCity: false) or legacy untagged points (undefined)
+  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport' && p.forOtherCity !== true);
   const toggleOwnTransport = (enabled: boolean) => {
     if (enabled) {
       if (ownTransportIndex >= 0) return;
@@ -2635,7 +2636,8 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
   // Separate own_transport from regular pickup points
   const ownTransportIndex = pickups.findIndex(p => p.id === 'own_transport');
   const ownTransport = ownTransportIndex >= 0 ? pickups[ownTransportIndex] : null;
-  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport');
+  // Only show Other-city-specific points (forOtherCity: true) or legacy untagged points (undefined)
+  const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport' && p.forOtherCity !== false);
 
   const toggleOwnTransport = (enabled: boolean) => {
     if (enabled) {
