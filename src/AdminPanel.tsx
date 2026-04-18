@@ -98,6 +98,7 @@ type Trip = {
   event_dates?: TripDate[];
   itinerary?: ItineraryDay[];
   show_accommodation: boolean;
+  show_secret_offer: boolean;
   accommodation?: { name?: string; images?: string[]; features?: string[]; policy?: string; stays?: AccommodationStay[] };
   booking_steps?: Array<{ label: string; value: string; date: string }>;
 };
@@ -789,7 +790,7 @@ export default function AdminPanel() {
                   <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
               </div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: true, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -2343,6 +2344,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       </CollapsibleSection>
 
       <CollapsibleSection title="Secret Offer">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <label style={{ ...s.label, marginBottom: 0 }}>Show Secret Offer after payment</label>
+          <button
+            type="button"
+            onClick={() => set('show_secret_offer', !(trip.show_secret_offer ?? true))}
+            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: (trip.show_secret_offer ?? true) ? '#16a34a' : '#ddd', color: (trip.show_secret_offer ?? true) ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}
+          >
+            {(trip.show_secret_offer ?? true) ? 'ON' : 'OFF'}
+          </button>
+        </div>
         <div style={{ display: 'grid', gap: 8 }}>
           <div>
             <label style={s.label}>WhatsApp Number</label>

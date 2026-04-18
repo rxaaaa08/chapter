@@ -31,6 +31,7 @@ interface Event {
   cities: string[];
   category: string;
   isActivity?: boolean;
+  showSecretOffer?: boolean;
   title: string;
   timing: string;
   price: string;
@@ -1539,7 +1540,7 @@ export default function App() {
               </div>
 
               {/* Card 2 — Secret Offer (dashed border) */}
-              <div className="mx-6 rounded-3xl overflow-hidden flex-shrink-0 border border-dashed border-gray-400/60">
+              {selectedEvent?.showSecretOffer !== false && <div className="mx-6 rounded-3xl overflow-hidden flex-shrink-0 border border-dashed border-gray-400/60">
                 <div className="px-5 pt-5 pb-4">
                   <p className="text-[17px] font-black leading-tight text-gray-900">Secret Offer — Claim Now or Never</p>
                 </div>
@@ -1587,7 +1588,7 @@ export default function App() {
                   </svg>
                   <span className="relative z-10">Claim Secret Offer</span>
                 </a>
-              </div>
+              </div>}
 
               <div className="pb-8" />
             </motion.div>

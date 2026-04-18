@@ -42,6 +42,7 @@ export function mapDbEventToEvent(row: any): any {
     cities: Array.isArray(row.cities) ? row.cities : (row.cities ?? []),
     category: row.category ?? 'Trips',
     isActivity: row.is_activity ?? false,
+    showSecretOffer: row.show_secret_offer ?? true,
     title: row.title,
     timing: row.timing,
     price: `₹${Number(row.price_full).toLocaleString('en-IN')}`,
