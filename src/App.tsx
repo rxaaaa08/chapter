@@ -601,7 +601,7 @@ function InAppBrowserNudge() {
           /* ── Android: one-tap button ── */
           <>
             <h2 className="text-center font-black text-lg text-gray-900 mb-2">Wait a minute!</h2>
-            <p className="text-center text-sm text-gray-500 leading-relaxed mb-8">
+            <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
               Instagram's browser doesn't fully support this site
             </p>
             <button
