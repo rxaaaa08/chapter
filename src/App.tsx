@@ -562,6 +562,81 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
   );
 }
 
+// ─── IN-APP BROWSER NUDGE ──────────────────────────────────────────────────────
+function InAppBrowserNudge() {
+  const [dismissed, setDismissed] = useState(() =>
+    typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem('iab_dismissed')
+  );
+
+  const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
+  const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
+  const isInApp = isInstagram || isFacebook;
+
+  if (!isInApp || dismissed) return null;
+
+  const dismiss = () => {
+    sessionStorage.setItem('iab_dismissed', '1');
+    setDismissed(true);
+  };
+
+  return (
+    <AnimatePresence>
+      {!dismissed && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
+            onClick={dismiss}
+          />
+          {/* Bottom sheet */}
+          <motion.div
+            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+            className="fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 pb-10 shadow-2xl"
+          >
+            {/* Pill handle */}
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+
+            {/* Icon */}
+            <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 overflow-hidden p-1">
+              <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain" />
+            </div>
+
+            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Open in your browser</h2>
+            <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
+              For the best experience, open this in Safari or Chrome — not the Instagram browser.
+            </p>
+
+            {/* Step instruction */}
+            <div className="bg-gray-50 rounded-2xl p-4 mb-5 flex items-start gap-3">
+              <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">1</div>
+              <div>
+                <p className="font-bold text-sm text-gray-800">Tap the <span className="font-black">···</span> menu</p>
+                <p className="text-xs text-gray-500 mt-0.5">Top right corner of this screen</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex items-start gap-3">
+              <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">2</div>
+              <div>
+                <p className="font-bold text-sm text-gray-800">Tap <span className="italic">"Open in external browser"</span></p>
+                <p className="text-xs text-gray-500 mt-0.5">Safari or Chrome opens automatically</p>
+              </div>
+            </div>
+
+            <button
+              onClick={dismiss}
+              className="w-full py-4 bg-black text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform"
+            >
+              I'll do it later
+            </button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/';
@@ -607,18 +682,26 @@ export default function App() {
 
   if (showHomepage) {
     return (
-      <AnimatePresence>
-        <motion.div
-          key="homepage"
-          initial={{ opacity: 1 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.4 }}
-        >
-          <HomePage onEnterApp={enterApp} onViewExperiences={enterAppWithPreview} />
-        </motion.div>
-      </AnimatePresence>
+      <>
+        <InAppBrowserNudge />
+        <AnimatePresence>
+          <motion.div
+            key="homepage"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
+          >
+            <HomePage onEnterApp={enterApp} onViewExperiences={enterAppWithPreview} />
+          </motion.div>
+        </AnimatePresence>
+      </>
     );
   }
 
-  return <AppFlow />;
+  return (
+    <>
+      <InAppBrowserNudge />
+      <AppFlow />
+    </>
+  );
 }
