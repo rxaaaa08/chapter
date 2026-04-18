@@ -341,10 +341,15 @@ export default function App() {
 
   useEffect(() => {
     fetchEvents().then((data) => { if (data.length > 0) setEvents(data); });
+
+    // Timeout ensures the chat starts even if Supabase hangs (no error, no resolve)
+    const msgsTimeout = setTimeout(() => setMsgsReady(true), 4000);
     fetchChatMessages().then((data) => {
+      clearTimeout(msgsTimeout);
       if (Object.keys(data).length > 0) setMsgs(data);
       setMsgsReady(true);
     });
+    return () => clearTimeout(msgsTimeout);
   }, []);
 
   useEffect(() => {
@@ -493,9 +498,17 @@ export default function App() {
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean);
+  // Fallback: pull live announcements from fetched events instead of stale hardcoded strings
+  const eventDerivedAnnouncements = events
+    .filter(e => !e.inviteOnly)
+    .flatMap(e => e.announcements ?? [])
+    .filter(Boolean)
+    .slice(0, 8);
   const globalAnnouncements = parsedGeneralAnnouncements.length > 0
     ? parsedGeneralAnnouncements
-    : GENERAL_ANNOUNCEMENTS;
+    : eventDerivedAnnouncements.length > 0
+      ? eventDerivedAnnouncements
+      : GENERAL_ANNOUNCEMENTS;
 
   // Determine which announcements to show
   const isAfterTripInfo = step === 'ASK_DOUBTS' || step === 'SHOW_FAQ' || step === 'DONE';
