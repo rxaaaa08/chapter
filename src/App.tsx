@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, Send } from 'lucide-react';
+import { ChevronRight, Send } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -595,13 +595,13 @@ function InAppBrowserNudge() {
       <motion.div
         initial={{ y: '100%' }} animate={{ y: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-        className={`fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 ${isAndroid ? 'pb-6' : 'pb-10'} shadow-2xl`}
+        className={`fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-7 ${isAndroid ? 'pb-10' : 'pb-10'} shadow-2xl`}
       >
         {isAndroid ? (
           /* ── Android: one-tap button ── */
           <>
-            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
-            <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
+            <h2 className="text-center font-black text-lg text-gray-900 mb-2">Wait a minute!</h2>
+            <p className="text-center text-sm text-gray-500 leading-relaxed mb-8">
               Instagram's browser doesn't fully support this site
             </p>
             <button
@@ -616,7 +616,7 @@ function InAppBrowserNudge() {
               />
               <span className="relative z-10 inline-flex items-center justify-center gap-2">
                 Open in Browser
-                <ArrowRight size={18} strokeWidth={2.6} />
+                <ChevronRight size={18} strokeWidth={2.8} />
               </span>
             </button>
           </>
