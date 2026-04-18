@@ -632,7 +632,7 @@ function InAppBrowserNudge() {
               <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">1</div>
               <div>
                 <p className="font-bold text-sm text-gray-800">Tap the <span className="font-black">···</span> menu</p>
-                <p className="text-xs text-gray-500 mt-0.5">Top right of this screen</p>
+                <p className="text-xs text-gray-500 mt-0.5">See top right of your screen</p>
               </div>
             </div>
             <div className="bg-gray-50 rounded-2xl p-4 flex items-start gap-3">
