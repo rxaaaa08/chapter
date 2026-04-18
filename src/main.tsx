@@ -12,6 +12,9 @@ Sentry.init({
   sendDefaultPii: true,
 });
 
+// TEST ONLY — remove after confirming Sentry receives this
+Sentry.captureMessage('Sentry connection test — chaptera.in');
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
