@@ -338,7 +338,7 @@ export default function App() {
   const [loadingSlow, setLoadingSlow] = useState(false);
   const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [msgsReady, setMsgsReady] = useState(false);
-  const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
+  const isPreviewMode = typeof window !== 'undefined' && !!(new URLSearchParams(window.location.search).get('preview_event') || new URLSearchParams(window.location.search).get('event'));
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
 
   useEffect(() => {
@@ -363,7 +363,7 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const previewEvent = params.get('preview_event');
+    const previewEvent = params.get('preview_event') || params.get('event');
     if (!previewEvent) return;
     fetchEventByIdOrSlug(previewEvent).then((event) => {
       if (!event) { setPreviewLoading(false); return; }
@@ -376,6 +376,16 @@ export default function App() {
       setPreviewLoading(false);
     });
   }, []);
+
+  // Keep URL in sync — when user is on event details, add ?event= so refresh restores the same page
+  useEffect(() => {
+    if (showDetails && selectedEvent) {
+      window.history.replaceState({}, '', `/?event=${selectedEvent.id}`);
+    } else if (!showDetails) {
+      const hasPreviewParam = new URLSearchParams(window.location.search).get('preview_event');
+      if (!hasPreviewParam) window.history.replaceState({}, '', '/');
+    }
+  }, [showDetails, selectedEvent?.id]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
