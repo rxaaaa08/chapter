@@ -625,7 +625,7 @@ function InAppBrowserNudge() {
           <>
             <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
             <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
-              Instagram's browser doesn't fully support our site — follow the steps below to continue.
+              Instagram's browser doesn't fully support our website, follow steps to continue.
             </p>
 
             <div className="bg-gray-50 rounded-2xl p-4 mb-3 flex items-start gap-3">
@@ -635,8 +635,8 @@ function InAppBrowserNudge() {
                 <p className="text-xs text-gray-500 mt-0.5">See top right of your screen</p>
               </div>
             </div>
-            <div className="bg-gray-50 rounded-2xl p-4 flex items-start gap-3">
-              <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">2</div>
+            <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">2</div>
               <div>
                 <p className="font-bold text-sm text-gray-800">Tap <span className="italic">"Open in external browser"</span></p>
               </div>
