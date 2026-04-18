@@ -2972,17 +2972,12 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
 
             <motion.div
               key="video-modal"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0, y: 32, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
-              transition={{ duration: 0.25 }}
+              transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
-              style={{
-                opacity: videoReady ? 1 : 0,
-                transform: videoReady ? 'translateY(0) scale(1)' : 'translateY(28px) scale(0.95)',
-                transition: videoReady ? 'opacity 0.45s ease, transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none',
-                pointerEvents: videoReady ? 'auto' : 'none',
-              }}
+              style={{ opacity: videoReady ? 1 : 0, pointerEvents: videoReady ? 'auto' : 'none' }}
               onClick={() => { setActiveVideo(null); setVideoReady(false); }}
             >
               <div className="relative w-[88%] max-w-[320px] overflow-visible" onClick={(e) => e.stopPropagation()}>
