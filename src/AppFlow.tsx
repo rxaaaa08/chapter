@@ -1940,6 +1940,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
   const [switcherCity, setSwitcherCity] = useState(selectedCity);
+  const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2224,7 +2225,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
           <div className="absolute top-4 left-4">
             <div
               className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 transition-transform duration-200 active:scale-95 cursor-pointer"
-              onClick={() => { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); }}
+              onClick={() => { if (isPreviewLink) { window.location.href = 'https://chaptera.in/aboutus'; } else { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); } }}
             >
               <ChevronLeft size={15} className="text-white ml-[-1px]" strokeWidth={2.5} />
             </div>
