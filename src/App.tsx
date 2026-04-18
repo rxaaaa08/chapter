@@ -600,13 +600,13 @@ function InAppBrowserNudge() {
         {isAndroid ? (
           /* ── Android: one-tap button ── */
           <>
-            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Open in your browser</h2>
+            <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
             <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
               Instagram's browser doesn't fully support this site
             </p>
             <button
               onClick={openInBrowser}
-              className="w-full py-4 rounded-2xl bg-black text-white font-bold text-base active:opacity-80 transition-opacity"
+              className="w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity"
             >
               Open in Browser
             </button>
