@@ -2018,6 +2018,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   const [heroKey, setHeroKey] = useState(0); // bump to force image reload
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
@@ -2084,7 +2085,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
     const onMessage = (event: MessageEvent) => {
       if (!event.origin.includes('vimeo.com')) return;
       const payload = typeof event.data === 'string' ? (() => { try { return JSON.parse(event.data); } catch { return null; } })() : event.data;
-      if (payload?.event === 'ended') setActiveVideo(null);
+      if (payload?.event === 'ended') { setActiveVideo(null); setVideoReady(false); }
     };
 
     window.addEventListener('message', onMessage);
@@ -2959,7 +2960,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-[210] bg-black/70"
-              onClick={() => setActiveVideo(null)}
+              onClick={() => { setActiveVideo(null); setVideoReady(false); }}
             />
             <motion.div
               key="video-modal"
@@ -2968,12 +2969,13 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               exit={{ opacity: 0, y: 20, scale: 0.98 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="absolute inset-0 z-[211] flex items-center justify-center p-4"
-              onClick={() => setActiveVideo(null)}
+              onClick={() => { setActiveVideo(null); setVideoReady(false); }}
             >
               <div className="relative w-[88%] max-w-[320px] overflow-visible" onClick={(e) => e.stopPropagation()}>
                 <button
-                  onClick={() => setActiveVideo(null)}
+                  onClick={() => { setActiveVideo(null); setVideoReady(false); }}
                   className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 z-10 w-10 h-10 rounded-full bg-[#FFD700] text-black flex items-center justify-center hover:bg-[#e6c200] transition-colors shadow-lg"
+                  style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 0.3s ease' }}
                   aria-label="Close video"
                 >
                   <X size={20} strokeWidth={3} />
@@ -3001,6 +3003,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                         allow="autoplay; fullscreen; picture-in-picture"
                         onLoad={(e) => {
                           e.currentTarget.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
+                          setVideoReady(true);
                         }}
                         allowFullScreen
                       />
