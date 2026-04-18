@@ -334,13 +334,14 @@ const GENERAL_ANNOUNCEMENTS = [
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
   const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [msgsReady, setMsgsReady] = useState(false);
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
 
   useEffect(() => {
-    fetchEvents().then((data) => { if (data.length > 0) setEvents(data); });
+    fetchEvents().then((data) => { if (data.length > 0) setEvents(data); setEventsLoaded(true); });
 
     // Timeout ensures the chat starts even if Supabase hangs (no error, no resolve)
     const msgsTimeout = setTimeout(() => setMsgsReady(true), 4000);
@@ -1066,7 +1067,7 @@ export default function App() {
               <CheckCircle2 size={16} className="text-blue-500 fill-blue-50" />
             </div>
             <div className="h-[14px] overflow-hidden relative mt-0.5">
-              {!showDetails && (
+              {!showDetails && eventsLoaded && (
                 <AnimatePresence mode="wait">
                   <motion.p
                     key={announcementIndex + (isAfterTripInfo ? '-event' : '-general')}
@@ -2353,13 +2354,14 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                     exit={{ height: 0 }}
                     className="overflow-hidden bg-gray-50"
                   >
-                    <div className="p-4 pt-0 space-y-2 pl-8">
-                      {event.notIncluded?.map((item, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <span className="text-[10px] text-gray-400 mt-1">•</span>
-                          <span className="text-[11px] text-gray-600/80">{item}</span>
-                        </div>
-                      ))}
+                    <div className="p-4 pt-0">
+                      <ul className="list-disc pl-5 space-y-1.5">
+                        {event.notIncluded?.map((item, i) => (
+                          <li key={i} className="text-[12px] leading-5 text-gray-600/85 marker:text-gray-400">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </motion.div>
                 )}
