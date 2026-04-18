@@ -2959,6 +2959,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
               className="absolute inset-0 z-[210] bg-black/70 flex items-center justify-center"
               onClick={() => { setActiveVideo(null); }}
             >
