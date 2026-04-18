@@ -625,7 +625,7 @@ function InAppBrowserNudge() {
           <>
             <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
             <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
-              Instagram's browser doesn't fully support this site — follow the steps below to continue.
+              Instagram's browser doesn't fully support our site — follow the steps below to continue.
             </p>
 
             <div className="bg-gray-50 rounded-2xl p-4 mb-3 flex items-start gap-3">
