@@ -597,9 +597,6 @@ function InAppBrowserNudge() {
         transition={{ type: 'spring', damping: 28, stiffness: 280 }}
         className="fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-5 pb-10 shadow-2xl"
       >
-        {/* Pill handle */}
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-
         {isAndroid ? (
           /* ── Android: one-tap button ── */
           <>
