@@ -403,36 +403,42 @@ export default function AdminPanel() {
     eventRows.forEach(r => { eventCounts[r.event_title] = (eventCounts[r.event_title] || 0) + 1; });
     const eventTotal = eventRows.length || 1;
 
-    // Pricing conversion — deduped by (session_id + event_title) so each unique
-    // user counts once per event, no matter how many times they tap the CTA.
+    // Funnel metrics — all deduped by (session_id + event_title) so each unique
+    // user counts once per event, no matter how many times they tap.
+    const calendarRows = rows.filter(r => r.event_type === 'calendar_opened' && r.event_title && r.session_id);
+    const dateRows = rows.filter(r => r.event_type === 'date_selected' && r.event_title && r.session_id);
     const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title && r.session_id);
     const convertedRows = rows.filter(r => r.event_type === 'pricing_cta_clicked' && r.event_title && r.session_id);
     const redirectRows = rows.filter(r => r.event_type === 'external_redirect_initiated' && r.event_title && r.session_id);
+    const calendarKeys = new Set(calendarRows.map(r => `${r.session_id}::${r.event_title}`));
+    const dateKeys = new Set(dateRows.map(r => `${r.session_id}::${r.event_title}`));
     const reachedKeys = new Set(reachedRows.map(r => `${r.session_id}::${r.event_title}`));
     const convertedKeys = new Set(convertedRows.map(r => `${r.session_id}::${r.event_title}`));
     const redirectKeys = new Set(redirectRows.map(r => `${r.session_id}::${r.event_title}`));
+    const calendarOpenedByEvent: Record<string, number> = {};
+    const datePickedByEvent: Record<string, number> = {};
     const reachedByEvent: Record<string, number> = {};
     const convertedByEvent: Record<string, number> = {};
     const redirectedByEvent: Record<string, number> = {};
-    reachedKeys.forEach(key => {
+    const bumpCount = (map: Record<string, number>) => (key: string) => {
       const title = key.split('::').slice(1).join('::');
-      reachedByEvent[title] = (reachedByEvent[title] || 0) + 1;
-    });
-    convertedKeys.forEach(key => {
-      const title = key.split('::').slice(1).join('::');
-      convertedByEvent[title] = (convertedByEvent[title] || 0) + 1;
-    });
-    redirectKeys.forEach(key => {
-      const title = key.split('::').slice(1).join('::');
-      redirectedByEvent[title] = (redirectedByEvent[title] || 0) + 1;
-    });
+      map[title] = (map[title] || 0) + 1;
+    };
+    calendarKeys.forEach(bumpCount(calendarOpenedByEvent));
+    dateKeys.forEach(bumpCount(datePickedByEvent));
+    reachedKeys.forEach(bumpCount(reachedByEvent));
+    convertedKeys.forEach(bumpCount(convertedByEvent));
+    redirectKeys.forEach(bumpCount(redirectedByEvent));
 
+    const totalCalendar = calendarKeys.size;
+    const totalDate = dateKeys.size;
     const totalReached = reachedKeys.size;
     const totalConverted = convertedKeys.size;
     const totalRedirected = redirectKeys.size;
+    const overallDatePickPct = totalCalendar > 0 ? Math.round((totalDate / totalCalendar) * 100) : 0;
     const overallConvPct = totalReached > 0 ? Math.round((totalConverted / totalReached) * 100) : 0;
     const overallHandoffPct = totalReached > 0 ? Math.round((totalRedirected / totalReached) * 100) : 0;
-    return { visitors, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent, redirectedByEvent };
+    return { visitors, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent };
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -1941,10 +1947,11 @@ export default function AdminPanel() {
           const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
           const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
-          const { visitors, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData);
+          const { visitors, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData);
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
           const sortedEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]);
+          const allCalendarEvents = Array.from(new Set([...Object.keys(calendarOpenedByEvent), ...Object.keys(datePickedByEvent)]));
           const allDropoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
           const allHandoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(redirectedByEvent)]));
 
@@ -2004,6 +2011,7 @@ export default function AdminPanel() {
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Visitors</div>
                   <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
                     <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
+                    <StatCard label="Date Pick Rate" value={`${overallDatePickPct}%`} sub="picked a date after opening calendar" />
                     <StatCard label="Pricing Conversion" value={`${overallConvPct}%`} sub="continued booking after seeing price" />
                     <StatCard label="Payment Handoff" value={`${overallHandoffPct}%`} sub="reached external payment / waitlist" />
                   </div>
@@ -2106,6 +2114,40 @@ export default function AdminPanel() {
                         </div>
                       );
                     })()}
+                  </div>
+
+                  {/* Calendar Drop-off — opened calendar vs picked a date */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Date Pick Rate</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
+                    Of users who opened the calendar, how many picked a date. A low rate may mean the available dates don't suit users — consider adding more.
+                  </div>
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                    {allCalendarEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {allCalendarEvents.map((title, idx) => {
+                      const opened = calendarOpenedByEvent[title] || 0;
+                      const picked = datePickedByEvent[title] || 0;
+                      const dropped = Math.max(opened - picked, 0);
+                      const pct = opened > 0 ? Math.round((picked / opened) * 100) : 0;
+                      return (
+                        <div key={title} style={{ marginBottom: idx < allCalendarEvents.length - 1 ? 14 : 0, paddingBottom: idx < allCalendarEvents.length - 1 ? 14 : 0, borderBottom: idx < allCalendarEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                            {picked} of {opened} who opened the calendar picked a date
+                            {dropped > 0 && opened > 0 && (
+                              <span style={{ marginLeft: 4, color: '#d4b483' }}>· {dropped} closed without picking</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Drop-off */}

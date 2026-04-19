@@ -2206,7 +2206,12 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
         <motion.button
           key={i}
           disabled={isUnavailable}
-          onClick={() => { setSelectedDate(dateStr); }}
+          onClick={() => {
+            if (!selectedDate) {
+              trackEvent('date_selected', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+            }
+            setSelectedDate(dateStr);
+          }}
           className={`h-10 ${shapeClass} flex items-center justify-center relative overflow-hidden bg-white ${textBorderClass} ${tripDate && tripDate.status !== 'sold_out' && !isSelectedStart ? 'hover:scale-102 active:scale-98' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]`}
         >
           {/* Background colour overlay — fades IN after stagger */}
@@ -2697,7 +2702,10 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
         {/* Bottom Action Button (End of scroll) */}
         <div className="px-4 pt-4 pb-12">
           <button
-            onClick={() => setShowCalendar(true)}
+            onClick={() => {
+              trackEvent('calendar_opened', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+              setShowCalendar(true);
+            }}
             className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
           >
             <motion.div
