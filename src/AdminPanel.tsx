@@ -403,16 +403,26 @@ export default function AdminPanel() {
     eventRows.forEach(r => { eventCounts[r.event_title] = (eventCounts[r.event_title] || 0) + 1; });
     const eventTotal = eventRows.length || 1;
 
-    const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title);
-    const convertedRows = rows.filter(r => (r.event_type === 'book_clicked' || r.event_type === 'contact_clicked') && r.event_title);
+    // Pricing conversion — deduped by (session_id + event_title) so each unique
+    // user counts once per event, no matter how many times they tap the CTA.
+    const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title && r.session_id);
+    const convertedRows = rows.filter(r => r.event_type === 'pricing_cta_clicked' && r.event_title && r.session_id);
+    const reachedKeys = new Set(reachedRows.map(r => `${r.session_id}::${r.event_title}`));
+    const convertedKeys = new Set(convertedRows.map(r => `${r.session_id}::${r.event_title}`));
     const reachedByEvent: Record<string, number> = {};
     const convertedByEvent: Record<string, number> = {};
-    reachedRows.forEach(r => { reachedByEvent[r.event_title] = (reachedByEvent[r.event_title] || 0) + 1; });
-    convertedRows.forEach(r => { convertedByEvent[r.event_title] = (convertedByEvent[r.event_title] || 0) + 1; });
+    reachedKeys.forEach(key => {
+      const title = key.split('::').slice(1).join('::');
+      reachedByEvent[title] = (reachedByEvent[title] || 0) + 1;
+    });
+    convertedKeys.forEach(key => {
+      const title = key.split('::').slice(1).join('::');
+      convertedByEvent[title] = (convertedByEvent[title] || 0) + 1;
+    });
 
-    const totalReached = reachedRows.length;
-    const totalConverted = convertedRows.length;
-    const overallConvPct = totalReached > 0 ? Math.min(Math.round((totalConverted / totalReached) * 100), 100) : 0;
+    const totalReached = reachedKeys.size;
+    const totalConverted = convertedKeys.size;
+    const overallConvPct = totalReached > 0 ? Math.round((totalConverted / totalReached) * 100) : 0;
     return { visitors, overallConvPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent };
   };
 
@@ -2094,15 +2104,13 @@ export default function AdminPanel() {
                     {allDropoffEvents.map((title, idx) => {
                       const reached = reachedByEvent[title] || 0;
                       const converted = convertedByEvent[title] || 0;
-                      const rawPct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
-                      const pct = Math.min(rawPct, 100);
-                      const isSkewed = rawPct > 100;
+                      const pct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
                       return (
                         <div key={title} style={{ marginBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < allDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
-                              {pct}%{isSkewed && <span style={{ fontSize: 11, fontWeight: 500, color: '#bbb', marginLeft: 4 }}>*</span>}
+                              {pct}%
                             </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
@@ -2110,7 +2118,6 @@ export default function AdminPanel() {
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
                             {converted} of {reached} who saw the price continued booking
-                            {isSkewed && <span style={{ marginLeft: 4, color: '#d4b483' }}>* more clicks than price views — clear old data for accuracy</span>}
                           </div>
                         </div>
                       );

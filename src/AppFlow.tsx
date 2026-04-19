@@ -2914,7 +2914,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
 
                               <div className="grid grid-cols-2 gap-3">
                                 <button
-                                  onClick={() => { setShowCalendar(false); onAction('contact', selectedDate || undefined, selectedMeetingPoint); }}
+                                  onClick={() => {
+                                    trackEvent('pricing_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+                                    setShowCalendar(false);
+                                    onAction('contact', selectedDate || undefined, selectedMeetingPoint);
+                                  }}
                                   className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFF3BF] text-[#b38200] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#ffe58f] transition-colors border border-[#FFD700]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
                                 >
                                   <MessageCircle size={15} />
@@ -2922,6 +2926,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                                 </button>
                                 <button
                                   onClick={() => {
+                                    trackEvent('pricing_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
                                     setShowCalendar(false);
                                     onAction('book', selectedDate || undefined, selectedMeetingPoint);
                                   }}
