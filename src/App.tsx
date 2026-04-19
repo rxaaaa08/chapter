@@ -562,6 +562,34 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
   );
 }
 
+// ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
+function LandscapeBlocker() {
+  const [isLandscape, setIsLandscape] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsLandscape(window.innerWidth > window.innerHeight && window.innerWidth < 1024);
+    check();
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
+    };
+  }, []);
+
+  if (!isLandscape) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center gap-4 px-8">
+      <div className="text-5xl">📱</div>
+      <h2 className="text-white font-black text-xl text-center">Rotate your phone</h2>
+      <p className="text-gray-400 text-sm text-center leading-relaxed">
+        chapter அ is designed for portrait mode
+      </p>
+    </div>
+  );
+}
+
 // ─── IN-APP BROWSER NUDGE ──────────────────────────────────────────────────────
 function InAppBrowserNudge() {
   const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
@@ -694,6 +722,7 @@ export default function App() {
   if (showHomepage) {
     return (
       <>
+        <LandscapeBlocker />
         <InAppBrowserNudge />
         <AnimatePresence>
           <motion.div
@@ -711,6 +740,7 @@ export default function App() {
 
   return (
     <>
+      <LandscapeBlocker />
       <InAppBrowserNudge />
       <AppFlow />
     </>
