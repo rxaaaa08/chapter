@@ -580,10 +580,10 @@ function LandscapeBlocker() {
   if (!isLandscape) return null;
 
   return (
-    <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center gap-4 px-8">
-      <RotateCcw size={52} color="white" strokeWidth={1.5} />
-      <h2 className="text-white font-black text-xl text-center">Rotate your phone</h2>
-      <p className="text-gray-400 text-sm text-center leading-relaxed">
+    <div className="fixed inset-0 bg-white z-[99999] flex flex-col items-center justify-center gap-4 px-8">
+      <RotateCcw size={52} color="#1C1C1C" strokeWidth={1.5} />
+      <h2 className="text-gray-900 font-black text-xl text-center">Rotate your phone</h2>
+      <p className="text-gray-500 text-sm text-center leading-relaxed">
         Our website is designed for portrait mode
       </p>
     </div>
