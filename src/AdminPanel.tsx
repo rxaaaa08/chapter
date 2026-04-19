@@ -1954,7 +1954,7 @@ export default function AdminPanel() {
           const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
           const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
-          const { visitors, overallJoinPlanPct, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, detailsOpenedByEvent, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData);
+          const { visitors, overallJoinPlanPct, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal } = computeAnalytics(filteredData);
           const liveEvents = trips.filter(t => t.is_active && t.id);
           const liveEventCount = liveEvents.length;
           const liveById = new Set(liveEvents.map(t => t.id as string));
@@ -2037,18 +2037,56 @@ export default function AdminPanel() {
             : overallHandoffPct;
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
-          const sortedEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]);
+          const tripById = new Map(
+            trips.filter(t => !!t.id).map(t => [t.id as string, t])
+          );
+          const eventLabelById = (eventId: string, fallbackTitle?: string) => {
+            const trip = tripById.get(eventId);
+            const title = trip?.title ?? fallbackTitle ?? 'Unknown Plan';
+            const cities = trip?.cities ?? [];
+            const primaryCity = cities.find(c => (c ?? '').trim().toLowerCase() !== 'other') ?? cities[0] ?? 'Unknown City';
+            return `${title} (${primaryCity})`;
+          };
+          const eventSelectedRows = filteredData.filter((r: any) => r.event_type === 'event_selected' && r.event_id);
+          const eventCountsById: Record<string, number> = {};
+          eventSelectedRows.forEach((r: any) => {
+            const id = r.event_id as string;
+            eventCountsById[id] = (eventCountsById[id] || 0) + 1;
+          });
+          const sortedEvents = Object.entries(eventCountsById).sort((a, b) => b[1] - a[1]);
+          const eventTotal = eventSelectedRows.length || 1;
+
+          const buildEventMetricMap = (eventType: string) => {
+            const keys = new Set<string>();
+            filteredData.forEach((row: any) => {
+              if (row?.event_type !== eventType || !row?.event_id || !row?.session_id) return;
+              keys.add(`${row.session_id}::${row.event_id}`);
+            });
+            const map: Record<string, number> = {};
+            keys.forEach((key) => {
+              const eventId = key.split('::')[1];
+              map[eventId] = (map[eventId] || 0) + 1;
+            });
+            return map;
+          };
+          const detailsOpenedByEvent = buildEventMetricMap('event_selected');
+          const calendarOpenedByEvent = buildEventMetricMap('calendar_opened');
+          const datePickedByEvent = buildEventMetricMap('date_selected');
+          const reachedByEvent = buildEventMetricMap('reached_pricing');
+          const convertedByEvent = buildEventMetricMap('pricing_cta_clicked');
+          const redirectedByEvent = buildEventMetricMap('external_redirect_initiated');
+
           const allJoinPlanEvents = Array.from(new Set([...Object.keys(detailsOpenedByEvent), ...Object.keys(calendarOpenedByEvent)]));
           const allCalendarEvents = Array.from(new Set([...Object.keys(calendarOpenedByEvent), ...Object.keys(datePickedByEvent)]));
           const allDropoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
           const allHandoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(redirectedByEvent)]));
           const allFunnelEventOptions = Array.from(
             new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allHandoffEvents])
-          ).sort((a, b) => a.localeCompare(b));
-          const filterFunnelEvents = (titles: string[]) =>
+          ).sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
+          const filterFunnelEvents = (eventIds: string[]) =>
             analyticsFunnelEventFilter === 'all'
-              ? titles
-              : titles.filter(title => title === analyticsFunnelEventFilter);
+              ? eventIds
+              : eventIds.filter(eventId => eventId === analyticsFunnelEventFilter);
           const visibleJoinPlanEvents = filterFunnelEvents(allJoinPlanEvents);
           const visibleCalendarEvents = filterFunnelEvents(allCalendarEvents);
           const visibleDropoffEvents = filterFunnelEvents(allDropoffEvents);
@@ -2181,7 +2219,7 @@ export default function AdminPanel() {
                       if (sortedEvents.length === 0) return <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>;
                       const R = 72, CX = 82, CY = 82;
                       let cum = -Math.PI / 2;
-                      const slices = sortedEvents.map(([label, count], idx) => {
+                      const slices = sortedEvents.map(([eventId, count], idx) => {
                         const angle = (count / (eventTotal || 1)) * 2 * Math.PI;
                         const x1 = CX + R * Math.cos(cum);
                         const y1 = CY + R * Math.sin(cum);
@@ -2189,7 +2227,7 @@ export default function AdminPanel() {
                         const x2 = CX + R * Math.cos(cum);
                         const y2 = CY + R * Math.sin(cum);
                         const d = `M${CX},${CY} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${angle > Math.PI ? 1 : 0} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
-                        return { label, count, d, color: PASTEL[idx % PASTEL.length] };
+                        return { label: eventLabelById(eventId), count, d, color: PASTEL[idx % PASTEL.length] };
                       });
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
@@ -2225,8 +2263,8 @@ export default function AdminPanel() {
                         style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', width: '100%' }}
                       >
                         <option value="all">All Events</option>
-                        {allFunnelEventOptions.map((title) => (
-                          <option key={title} value={title}>{title}</option>
+                        {allFunnelEventOptions.map((eventId) => (
+                          <option key={eventId} value={eventId}>{eventLabelById(eventId)}</option>
                         ))}
                       </select>
                       <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
@@ -2238,15 +2276,15 @@ export default function AdminPanel() {
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleJoinPlanEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {visibleJoinPlanEvents.map((title, idx) => {
-                      const viewed = detailsOpenedByEvent[title] || 0;
-                      const opened = calendarOpenedByEvent[title] || 0;
+                    {visibleJoinPlanEvents.map((eventId, idx) => {
+                      const viewed = detailsOpenedByEvent[eventId] || 0;
+                      const opened = calendarOpenedByEvent[eventId] || 0;
                       const dropped = Math.max(viewed - opened, 0);
                       const pct = viewed > 0 ? Math.round((opened / viewed) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < visibleJoinPlanEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleJoinPlanEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleJoinPlanEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={eventId} style={{ marginBottom: idx < visibleJoinPlanEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleJoinPlanEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleJoinPlanEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
                               {pct}%
                             </span>
@@ -2272,15 +2310,15 @@ export default function AdminPanel() {
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleCalendarEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {visibleCalendarEvents.map((title, idx) => {
-                      const opened = calendarOpenedByEvent[title] || 0;
-                      const picked = datePickedByEvent[title] || 0;
+                    {visibleCalendarEvents.map((eventId, idx) => {
+                      const opened = calendarOpenedByEvent[eventId] || 0;
+                      const picked = datePickedByEvent[eventId] || 0;
                       const dropped = Math.max(opened - picked, 0);
                       const pct = opened > 0 ? Math.round((picked / opened) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < visibleCalendarEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleCalendarEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleCalendarEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={eventId} style={{ marginBottom: idx < visibleCalendarEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleCalendarEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleCalendarEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
                               {pct}%
                             </span>
@@ -2306,14 +2344,14 @@ export default function AdminPanel() {
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {visibleDropoffEvents.map((title, idx) => {
-                      const reached = reachedByEvent[title] || 0;
-                      const converted = convertedByEvent[title] || 0;
+                    {visibleDropoffEvents.map((eventId, idx) => {
+                      const reached = reachedByEvent[eventId] || 0;
+                      const converted = convertedByEvent[eventId] || 0;
                       const pct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={eventId} style={{ marginBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
                               {pct}%
                             </span>
@@ -2336,14 +2374,14 @@ export default function AdminPanel() {
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleHandoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {visibleHandoffEvents.map((title, idx) => {
-                      const reached = reachedByEvent[title] || 0;
-                      const redirected = redirectedByEvent[title] || 0;
+                    {visibleHandoffEvents.map((eventId, idx) => {
+                      const reached = reachedByEvent[eventId] || 0;
+                      const redirected = redirectedByEvent[eventId] || 0;
                       const pct = reached > 0 ? Math.round((redirected / reached) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={eventId} style={{ marginBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
                               {pct}%
                             </span>
