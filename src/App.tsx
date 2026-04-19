@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, Send } from 'lucide-react';
+import { ChevronRight, Send, RotateCcw } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -581,10 +581,10 @@ function LandscapeBlocker() {
 
   return (
     <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center gap-4 px-8">
-      <div className="text-5xl">📱</div>
+      <RotateCcw size={52} color="white" strokeWidth={1.5} />
       <h2 className="text-white font-black text-xl text-center">Rotate your phone</h2>
       <p className="text-gray-400 text-sm text-center leading-relaxed">
-        chapter அ is designed for portrait mode
+        Our website is designed for portrait mode
       </p>
     </div>
   );
