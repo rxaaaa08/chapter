@@ -165,6 +165,7 @@ export default function AdminPanel() {
   const [analyticsData, setAnalyticsData] = useState<any[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
+  const [analyticsFunnelEventFilter, setAnalyticsFunnelEventFilter] = useState<'all' | string>('all');
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCityFilter, setQnaDoubtCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCategoryFilter, setQnaDoubtCategoryFilter] = useState<'all' | string>('all');
@@ -1954,6 +1955,86 @@ export default function AdminPanel() {
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
           const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
           const { visitors, overallJoinPlanPct, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, detailsOpenedByEvent, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData);
+          const liveEvents = trips.filter(t => t.is_active && t.id);
+          const liveEventCount = liveEvents.length;
+          const liveById = new Set(liveEvents.map(t => t.id as string));
+          const liveIdsByTitle = new Map<string, string[]>();
+          liveEvents.forEach((t) => {
+            const titleKey = (t.title ?? '').trim().toLowerCase();
+            if (!titleKey) return;
+            if (!liveIdsByTitle.has(titleKey)) liveIdsByTitle.set(titleKey, []);
+            liveIdsByTitle.get(titleKey)!.push(t.id as string);
+          });
+          const resolveLiveEventId = (row: any): string | null => {
+            if (row?.event_id && liveById.has(row.event_id)) return row.event_id;
+            const titleKey = (row?.event_title ?? '').trim().toLowerCase();
+            if (!titleKey) return null;
+            const matches = liveIdsByTitle.get(titleKey) ?? [];
+            return matches.length > 0 ? matches[0] : null;
+          };
+          const collectPairs = (eventType: string) => {
+            const keys = new Set<string>();
+            filteredData.forEach((row: any) => {
+              if (row?.event_type !== eventType || !row?.session_id) return;
+              const liveId = resolveLiveEventId(row);
+              if (!liveId) return;
+              keys.add(`${row.session_id}::${liveId}`);
+            });
+            return keys;
+          };
+          const detailsKeysByLive = collectPairs('event_selected');
+          const calendarKeysByLive = collectPairs('calendar_opened');
+          const dateKeysByLive = collectPairs('date_selected');
+          const reachedKeysByLive = collectPairs('reached_pricing');
+          const convertedKeysByLive = collectPairs('pricing_cta_clicked');
+          const redirectedKeysByLive = collectPairs('external_redirect_initiated');
+          const toCountMap = (keys: Set<string>) => {
+            const map: Record<string, number> = {};
+            keys.forEach((key) => {
+              const id = key.split('::')[1];
+              map[id] = (map[id] || 0) + 1;
+            });
+            return map;
+          };
+          const detailsByLiveId = toCountMap(detailsKeysByLive);
+          const calendarByLiveId = toCountMap(calendarKeysByLive);
+          const dateByLiveId = toCountMap(dateKeysByLive);
+          const reachedByLiveId = toCountMap(reachedKeysByLive);
+          const convertedByLiveId = toCountMap(convertedKeysByLive);
+          const redirectedByLiveId = toCountMap(redirectedKeysByLive);
+          const roundAvg = (nums: number[]) => nums.length > 0 ? Math.round(nums.reduce((sum, n) => sum + n, 0) / nums.length) : 0;
+          const avgJoinPlanPct = liveEventCount > 0
+            ? roundAvg(liveEvents.map((t) => {
+                const id = t.id as string;
+                const details = detailsByLiveId[id] || 0;
+                const opened = calendarByLiveId[id] || 0;
+                return details > 0 ? (opened / details) * 100 : 0;
+              }))
+            : overallJoinPlanPct;
+          const avgDatePickPct = liveEventCount > 0
+            ? roundAvg(liveEvents.map((t) => {
+                const id = t.id as string;
+                const opened = calendarByLiveId[id] || 0;
+                const picked = dateByLiveId[id] || 0;
+                return opened > 0 ? (picked / opened) * 100 : 0;
+              }))
+            : overallDatePickPct;
+          const avgPricingConvPct = liveEventCount > 0
+            ? roundAvg(liveEvents.map((t) => {
+                const id = t.id as string;
+                const reached = reachedByLiveId[id] || 0;
+                const converted = convertedByLiveId[id] || 0;
+                return reached > 0 ? (converted / reached) * 100 : 0;
+              }))
+            : overallConvPct;
+          const avgHandoffPct = liveEventCount > 0
+            ? roundAvg(liveEvents.map((t) => {
+                const id = t.id as string;
+                const reached = reachedByLiveId[id] || 0;
+                const redirected = redirectedByLiveId[id] || 0;
+                return reached > 0 ? (redirected / reached) * 100 : 0;
+              }))
+            : overallHandoffPct;
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
           const sortedEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]);
@@ -1961,6 +2042,17 @@ export default function AdminPanel() {
           const allCalendarEvents = Array.from(new Set([...Object.keys(calendarOpenedByEvent), ...Object.keys(datePickedByEvent)]));
           const allDropoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
           const allHandoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(redirectedByEvent)]));
+          const allFunnelEventOptions = Array.from(
+            new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allHandoffEvents])
+          ).sort((a, b) => a.localeCompare(b));
+          const filterFunnelEvents = (titles: string[]) =>
+            analyticsFunnelEventFilter === 'all'
+              ? titles
+              : titles.filter(title => title === analyticsFunnelEventFilter);
+          const visibleJoinPlanEvents = filterFunnelEvents(allJoinPlanEvents);
+          const visibleCalendarEvents = filterFunnelEvents(allCalendarEvents);
+          const visibleDropoffEvents = filterFunnelEvents(allDropoffEvents);
+          const visibleHandoffEvents = filterFunnelEvents(allHandoffEvents);
 
           const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
@@ -2018,10 +2110,10 @@ export default function AdminPanel() {
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Visitors</div>
                   <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
                     <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
-                    <StatCard label="Join Plan Rate" value={`${overallJoinPlanPct}%`} sub="clicked Join Our Plan on the details page" />
-                    <StatCard label="Date Pick Rate" value={`${overallDatePickPct}%`} sub="picked a date after opening calendar" />
-                    <StatCard label="Pricing Conversion" value={`${overallConvPct}%`} sub="continued booking after seeing price" />
-                    <StatCard label="Payment Handoff" value={`${overallHandoffPct}%`} sub="reached external payment / waitlist" />
+                    <StatCard label="Join Plan Rate" value={`${avgJoinPlanPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'clicked Join Our Plan on the details page'} />
+                    <StatCard label="Date Pick Rate" value={`${avgDatePickPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'picked a date after opening calendar'} />
+                    <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'continued booking after seeing price'} />
+                    <StatCard label="Payment Handoff" value={`${avgHandoffPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'reached external payment / waitlist'} />
                   </div>
 
                   {/* City */}
@@ -2125,19 +2217,34 @@ export default function AdminPanel() {
                   </div>
 
                   {/* Join Plan Rate — landed on details vs clicked Join Our Plan */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                    <div style={{ position: 'relative', minWidth: 220 }}>
+                      <select
+                        value={analyticsFunnelEventFilter}
+                        onChange={e => setAnalyticsFunnelEventFilter(e.target.value)}
+                        style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', width: '100%' }}
+                      >
+                        <option value="all">All Events</option>
+                        {allFunnelEventOptions.map((title) => (
+                          <option key={title} value={title}>{title}</option>
+                        ))}
+                      </select>
+                      <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
+                    </div>
+                  </div>
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Join Plan Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
                     Of users who landed on the event details page, how many clicked Join Our Plan. A low rate may mean the details page isn't selling — consider improving copy, photos or reviews.
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
-                    {allJoinPlanEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {allJoinPlanEvents.map((title, idx) => {
+                    {visibleJoinPlanEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {visibleJoinPlanEvents.map((title, idx) => {
                       const viewed = detailsOpenedByEvent[title] || 0;
                       const opened = calendarOpenedByEvent[title] || 0;
                       const dropped = Math.max(viewed - opened, 0);
                       const pct = viewed > 0 ? Math.round((opened / viewed) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < allJoinPlanEvents.length - 1 ? 14 : 0, paddingBottom: idx < allJoinPlanEvents.length - 1 ? 14 : 0, borderBottom: idx < allJoinPlanEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={title} style={{ marginBottom: idx < visibleJoinPlanEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleJoinPlanEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleJoinPlanEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
@@ -2164,14 +2271,14 @@ export default function AdminPanel() {
                     Of users who opened the calendar, how many picked a date. A low rate may mean the available dates don't suit users — consider adding more.
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
-                    {allCalendarEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {allCalendarEvents.map((title, idx) => {
+                    {visibleCalendarEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {visibleCalendarEvents.map((title, idx) => {
                       const opened = calendarOpenedByEvent[title] || 0;
                       const picked = datePickedByEvent[title] || 0;
                       const dropped = Math.max(opened - picked, 0);
                       const pct = opened > 0 ? Math.round((picked / opened) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < allCalendarEvents.length - 1 ? 14 : 0, paddingBottom: idx < allCalendarEvents.length - 1 ? 14 : 0, borderBottom: idx < allCalendarEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={title} style={{ marginBottom: idx < visibleCalendarEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleCalendarEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleCalendarEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
@@ -2198,13 +2305,13 @@ export default function AdminPanel() {
                     Of users who saw the price, how many clicked Apply Now or Contact Us on the calendar sheet.
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
-                    {allDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {allDropoffEvents.map((title, idx) => {
+                    {visibleDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {visibleDropoffEvents.map((title, idx) => {
                       const reached = reachedByEvent[title] || 0;
                       const converted = convertedByEvent[title] || 0;
                       const pct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < allDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < allDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={title} style={{ marginBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
@@ -2228,13 +2335,13 @@ export default function AdminPanel() {
                     Of users who saw the price, how many actually reached the external payment / waitlist page.
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
-                    {allHandoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {allHandoffEvents.map((title, idx) => {
+                    {visibleHandoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {visibleHandoffEvents.map((title, idx) => {
                       const reached = reachedByEvent[title] || 0;
                       const redirected = redirectedByEvent[title] || 0;
                       const pct = reached > 0 ? Math.round((redirected / reached) * 100) : 0;
                       return (
-                        <div key={title} style={{ marginBottom: idx < allHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < allHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < allHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={title} style={{ marginBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
