@@ -1957,7 +1957,12 @@ export default function AdminPanel() {
           const { visitors, overallJoinPlanPct, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal } = computeAnalytics(filteredData);
           const liveEvents = trips.filter(t => t.is_active && t.id);
           const liveEventCount = liveEvents.length;
-          const liveById = new Set(liveEvents.map(t => t.id as string));
+          const liveCanonicalByTrackedId = new Map<string, string>();
+          liveEvents.forEach((t) => {
+            const canonicalId = t.id as string;
+            liveCanonicalByTrackedId.set(canonicalId, canonicalId);
+            if (t.slug) liveCanonicalByTrackedId.set(t.slug, canonicalId);
+          });
           const liveIdsByTitle = new Map<string, string[]>();
           liveEvents.forEach((t) => {
             const titleKey = (t.title ?? '').trim().toLowerCase();
@@ -1966,7 +1971,7 @@ export default function AdminPanel() {
             liveIdsByTitle.get(titleKey)!.push(t.id as string);
           });
           const resolveLiveEventId = (row: any): string | null => {
-            if (row?.event_id && liveById.has(row.event_id)) return row.event_id;
+            if (row?.event_id && liveCanonicalByTrackedId.has(row.event_id)) return liveCanonicalByTrackedId.get(row.event_id)!;
             const titleKey = (row?.event_title ?? '').trim().toLowerCase();
             if (!titleKey) return null;
             const matches = liveIdsByTitle.get(titleKey) ?? [];
@@ -2037,9 +2042,11 @@ export default function AdminPanel() {
             : overallHandoffPct;
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
-          const tripById = new Map(
-            trips.filter(t => !!t.id).map(t => [t.id as string, t])
-          );
+          const tripById = new Map<string, Trip>();
+          trips.forEach((t) => {
+            if (t.id) tripById.set(t.id as string, t);
+            if (t.slug) tripById.set(t.slug, t);
+          });
           const eventLabelById = (eventId: string, fallbackTitle?: string) => {
             const trip = tripById.get(eventId);
             const title = trip?.title ?? fallbackTitle ?? 'Unknown Plan';
