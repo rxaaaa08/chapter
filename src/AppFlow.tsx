@@ -881,6 +881,7 @@ export default function App() {
     } catch (err) {
       // ignore storage errors in restricted environments
     }
+    trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setPaymentContext(ctx);
     setShowDetailsForm(false);
     setPaymentView('checkout');
@@ -1309,7 +1310,10 @@ export default function App() {
                   <div className="px-6 pb-6">
                     {selectedEvent.inviteOnly ? (
                       <button
-                        onClick={() => { window.open(selectedEvent.waitlistUrl, '_blank'); }}
+                        onClick={() => {
+                          trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
+                          window.open(selectedEvent.waitlistUrl, '_blank');
+                        }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
@@ -1332,7 +1336,7 @@ export default function App() {
                       <button
                         onClick={() => {
                           setShowBookingTimeline(false);
-                          trackEvent('book_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
+                          trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
                           if (selectedEvent.bookingUrl) window.open(selectedEvent.bookingUrl, '_blank');
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"

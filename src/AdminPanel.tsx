@@ -407,10 +407,13 @@ export default function AdminPanel() {
     // user counts once per event, no matter how many times they tap the CTA.
     const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title && r.session_id);
     const convertedRows = rows.filter(r => r.event_type === 'pricing_cta_clicked' && r.event_title && r.session_id);
+    const redirectRows = rows.filter(r => r.event_type === 'external_redirect_initiated' && r.event_title && r.session_id);
     const reachedKeys = new Set(reachedRows.map(r => `${r.session_id}::${r.event_title}`));
     const convertedKeys = new Set(convertedRows.map(r => `${r.session_id}::${r.event_title}`));
+    const redirectKeys = new Set(redirectRows.map(r => `${r.session_id}::${r.event_title}`));
     const reachedByEvent: Record<string, number> = {};
     const convertedByEvent: Record<string, number> = {};
+    const redirectedByEvent: Record<string, number> = {};
     reachedKeys.forEach(key => {
       const title = key.split('::').slice(1).join('::');
       reachedByEvent[title] = (reachedByEvent[title] || 0) + 1;
@@ -419,11 +422,17 @@ export default function AdminPanel() {
       const title = key.split('::').slice(1).join('::');
       convertedByEvent[title] = (convertedByEvent[title] || 0) + 1;
     });
+    redirectKeys.forEach(key => {
+      const title = key.split('::').slice(1).join('::');
+      redirectedByEvent[title] = (redirectedByEvent[title] || 0) + 1;
+    });
 
     const totalReached = reachedKeys.size;
     const totalConverted = convertedKeys.size;
+    const totalRedirected = redirectKeys.size;
     const overallConvPct = totalReached > 0 ? Math.round((totalConverted / totalReached) * 100) : 0;
-    return { visitors, overallConvPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent };
+    const overallHandoffPct = totalReached > 0 ? Math.round((totalRedirected / totalReached) * 100) : 0;
+    return { visitors, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent, redirectedByEvent };
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -1932,11 +1941,12 @@ export default function AdminPanel() {
           const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
           const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
-          const { visitors, overallConvPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent } = computeAnalytics(filteredData);
+          const { visitors, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData);
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
           const sortedEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]);
           const allDropoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
+          const allHandoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(redirectedByEvent)]));
 
           const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
@@ -1995,6 +2005,7 @@ export default function AdminPanel() {
                   <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
                     <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
                     <StatCard label="Pricing Conversion" value={`${overallConvPct}%`} sub="continued booking after seeing price" />
+                    <StatCard label="Payment Handoff" value={`${overallHandoffPct}%`} sub="reached external payment / waitlist" />
                   </div>
 
                   {/* City */}
@@ -2118,6 +2129,36 @@ export default function AdminPanel() {
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
                             {converted} of {reached} who saw the price continued booking
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Payment Handoff — % of users who saw price AND got redirected to external payment/waitlist */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Payment Handoff Rate</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
+                    Of users who saw the price, how many actually reached the external payment / waitlist page.
+                  </div>
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                    {allHandoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
+                    {allHandoffEvents.map((title, idx) => {
+                      const reached = reachedByEvent[title] || 0;
+                      const redirected = redirectedByEvent[title] || 0;
+                      const pct = reached > 0 ? Math.round((redirected / reached) * 100) : 0;
+                      return (
+                        <div key={title} style={{ marginBottom: idx < allHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < allHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < allHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{title}</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                            {redirected} of {reached} who saw the price reached payment
                           </div>
                         </div>
                       );
