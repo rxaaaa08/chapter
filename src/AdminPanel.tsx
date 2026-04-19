@@ -165,7 +165,6 @@ export default function AdminPanel() {
   const [analyticsData, setAnalyticsData] = useState<any[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
-  const [analyticsEventFilter, setAnalyticsEventFilter] = useState<'all' | string>('all');
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCityFilter, setQnaDoubtCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCategoryFilter, setQnaDoubtCategoryFilter] = useState<'all' | string>('all');
@@ -384,14 +383,10 @@ export default function AdminPanel() {
     setAnalyticsLoading(false);
   };
 
-  // Compute analytics aggregates from a pre-filtered slice of rows.
-  // When eventFilter is set, scope all funnel metrics to that event — and
-  // redefine "visitors" as unique sessions that engaged with that event
-  // (page_view has no event context, so it's not useful when filtering).
-  const computeAnalytics = (rows: any[], eventFilter: 'all' | string = 'all') => {
-    const visitors = eventFilter === 'all'
-      ? new Set(rows.filter(r => r.event_type === 'page_view').map(r => r.session_id)).size
-      : new Set(rows.filter(r => r.event_title === eventFilter).map(r => r.session_id)).size;
+  // Compute analytics aggregates from a pre-filtered slice of rows
+  const computeAnalytics = (rows: any[]) => {
+    const pageViews = rows.filter(r => r.event_type === 'page_view');
+    const visitors = new Set(pageViews.map(r => r.session_id)).size;
 
     const cityRows = rows.filter(r => r.event_type === 'city_selected' && r.city);
     const cityCounts: Record<string, number> = {};
@@ -410,13 +405,11 @@ export default function AdminPanel() {
 
     // Funnel metrics — all deduped by (session_id + event_title) so each unique
     // user counts once per event, no matter how many times they tap.
-    // When an event filter is set, scope every funnel row to that one event.
-    const matchesEvent = (r: any) => eventFilter === 'all' || r.event_title === eventFilter;
-    const calendarRows = rows.filter(r => r.event_type === 'calendar_opened' && r.event_title && r.session_id && matchesEvent(r));
-    const dateRows = rows.filter(r => r.event_type === 'date_selected' && r.event_title && r.session_id && matchesEvent(r));
-    const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title && r.session_id && matchesEvent(r));
-    const convertedRows = rows.filter(r => r.event_type === 'pricing_cta_clicked' && r.event_title && r.session_id && matchesEvent(r));
-    const redirectRows = rows.filter(r => r.event_type === 'external_redirect_initiated' && r.event_title && r.session_id && matchesEvent(r));
+    const calendarRows = rows.filter(r => r.event_type === 'calendar_opened' && r.event_title && r.session_id);
+    const dateRows = rows.filter(r => r.event_type === 'date_selected' && r.event_title && r.session_id);
+    const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title && r.session_id);
+    const convertedRows = rows.filter(r => r.event_type === 'pricing_cta_clicked' && r.event_title && r.session_id);
+    const redirectRows = rows.filter(r => r.event_type === 'external_redirect_initiated' && r.event_title && r.session_id);
     const calendarKeys = new Set(calendarRows.map(r => `${r.session_id}::${r.event_title}`));
     const dateKeys = new Set(dateRows.map(r => `${r.session_id}::${r.event_title}`));
     const reachedKeys = new Set(reachedRows.map(r => `${r.session_id}::${r.event_title}`));
@@ -1954,9 +1947,7 @@ export default function AdminPanel() {
           const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
           const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
-          const { visitors, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData, analyticsEventFilter);
-          // Available events for the filter dropdown — every unique event_title seen in the window
-          const availableEvents = Array.from(new Set(filteredData.map(r => r.event_title).filter(Boolean) as string[])).sort();
+          const { visitors, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent } = computeAnalytics(filteredData);
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
           const sortedEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]);
@@ -1993,19 +1984,6 @@ export default function AdminPanel() {
                 <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Analytics</div>
                 <div style={{ position: 'relative' }}>
                   <select
-                    value={analyticsEventFilter}
-                    onChange={e => setAnalyticsEventFilter(e.target.value)}
-                    style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', minWidth: 160, maxWidth: 220 }}
-                  >
-                    <option value="all">All Events</option>
-                    {availableEvents.map(title => (
-                      <option key={title} value={title}>{title}</option>
-                    ))}
-                  </select>
-                  <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <select
                     value={analyticsWindow}
                     onChange={e => setAnalyticsWindow(e.target.value as any)}
                     style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', minWidth: 130 }}
@@ -2032,7 +2010,7 @@ export default function AdminPanel() {
                   {/* Visitors */}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Visitors</div>
                   <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                    <StatCard label={windowLabel} value={visitors} sub={analyticsEventFilter === 'all' ? 'unique sessions' : 'sessions engaged with this event'} />
+                    <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
                     <StatCard label="Date Pick Rate" value={`${overallDatePickPct}%`} sub="picked a date after opening calendar" />
                     <StatCard label="Pricing Conversion" value={`${overallConvPct}%`} sub="continued booking after seeing price" />
                     <StatCard label="Payment Handoff" value={`${overallHandoffPct}%`} sub="reached external payment / waitlist" />
@@ -2174,9 +2152,6 @@ export default function AdminPanel() {
 
                   {/* Drop-off */}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Pricing Conversion Rate</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                    Of users who saw the price, how many clicked Apply Now or Contact Us on the calendar sheet.
-                  </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {allDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
                     {allDropoffEvents.map((title, idx) => {
