@@ -8,12 +8,34 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ─── ANALYTICS ───────────────────────────────────────────────────────────────
 function getSessionId(): string {
-  const key = 'ca_session_id';
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    sessionStorage.setItem(key, id);
+  const sessionKey = 'ca_session_id';
+  const visitorKey = 'ca_visitor_id';
+  const normalize = (value: string | null | undefined) => {
+    const trimmed = (value ?? '').trim();
+    return trimmed.length > 0 && trimmed.length <= 120 ? trimmed : null;
+  };
+
+  const params = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search)
+    : null;
+  const fromUrl = normalize(params?.get('vid'));
+  const fromSession = normalize(sessionStorage.getItem(sessionKey));
+  const fromLocal = normalize(localStorage.getItem(visitorKey));
+  let id = fromUrl ?? fromSession ?? fromLocal;
+  if (!id) id = crypto.randomUUID();
+
+  sessionStorage.setItem(sessionKey, id);
+  localStorage.setItem(visitorKey, id);
+
+  // Keep the URL sticky so in-app browser -> external browser preserves identity.
+  if (typeof window !== 'undefined') {
+    const current = new URL(window.location.href);
+    if (current.searchParams.get('vid') !== id) {
+      current.searchParams.set('vid', id);
+      window.history.replaceState({}, '', `${current.pathname}${current.search}${current.hash}`);
+    }
   }
+
   return id;
 }
 

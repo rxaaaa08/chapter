@@ -597,13 +597,46 @@ function InAppBrowserNudge() {
   const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isInApp = isInstagram || isFacebook;
 
+  const getOrCreateVisitorId = () => {
+    const sessionKey = 'ca_session_id';
+    const visitorKey = 'ca_visitor_id';
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = (value ?? '').trim();
+      return trimmed.length > 0 && trimmed.length <= 120 ? trimmed : null;
+    };
+    const current = new URL(window.location.href);
+    const fromUrl = normalize(current.searchParams.get('vid'));
+    const fromSession = normalize(sessionStorage.getItem(sessionKey));
+    const fromLocal = normalize(localStorage.getItem(visitorKey));
+    const id = fromUrl ?? fromSession ?? fromLocal ?? crypto.randomUUID();
+
+    sessionStorage.setItem(sessionKey, id);
+    localStorage.setItem(visitorKey, id);
+
+    if (current.searchParams.get('vid') !== id) {
+      current.searchParams.set('vid', id);
+      window.history.replaceState({}, '', `${current.pathname}${current.search}${current.hash}`);
+    }
+
+    return id;
+  };
+
+  useEffect(() => {
+    if (!isInApp || typeof window === 'undefined') return;
+    getOrCreateVisitorId();
+  }, [isInApp]);
+
   if (!isInApp) return null;
 
   const openInBrowser = () => {
-    const url = window.location.href;
+    const id = getOrCreateVisitorId();
+    const targetUrl = new URL(window.location.href);
+    targetUrl.searchParams.set('vid', id);
+    const url = targetUrl.toString();
+    const intentTarget = `${targetUrl.host}${targetUrl.pathname}${targetUrl.search}`;
     // Android: fire a Chrome intent; falls back to the URL in any browser if Chrome isn't default
     window.location.href =
-      `intent://${window.location.host}${window.location.pathname}${window.location.search}` +
+      `intent://${intentTarget}` +
       `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
   };
 
