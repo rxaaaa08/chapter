@@ -2322,7 +2322,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
           >
             <ChevronLeft size={16} className="text-gray-700 ml-[-1px]" strokeWidth={2.5} />
           </button>
-          <h1 className="flex-1 text-center text-[15px] font-bold text-gray-900 px-3 truncate">{event.title}</h1>
+          <h1 className="flex-1 text-center text-[15px] font-bold text-gray-700 px-3 truncate">{event.title}</h1>
           <div className="w-8 flex-shrink-0" />
         </div>
 
