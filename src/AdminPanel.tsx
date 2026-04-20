@@ -2008,38 +2008,38 @@ export default function AdminPanel() {
           const convertedByLiveId = toCountMap(convertedKeysByLive);
           const redirectedByLiveId = toCountMap(redirectedKeysByLive);
           const roundAvg = (nums: number[]) => nums.length > 0 ? Math.round(nums.reduce((sum, n) => sum + n, 0) / nums.length) : 0;
-          const avgJoinPlanPct = liveEventCount > 0
-            ? roundAvg(liveEvents.map((t) => {
-                const id = t.id as string;
-                const details = detailsByLiveId[id] || 0;
-                const opened = calendarByLiveId[id] || 0;
-                return details > 0 ? (opened / details) * 100 : 0;
-              }))
-            : overallJoinPlanPct;
-          const avgDatePickPct = liveEventCount > 0
-            ? roundAvg(liveEvents.map((t) => {
-                const id = t.id as string;
-                const opened = calendarByLiveId[id] || 0;
-                const picked = dateByLiveId[id] || 0;
-                return opened > 0 ? (picked / opened) * 100 : 0;
-              }))
-            : overallDatePickPct;
-          const avgPricingConvPct = liveEventCount > 0
-            ? roundAvg(liveEvents.map((t) => {
-                const id = t.id as string;
-                const reached = reachedByLiveId[id] || 0;
-                const converted = convertedByLiveId[id] || 0;
-                return reached > 0 ? (converted / reached) * 100 : 0;
-              }))
-            : overallConvPct;
-          const avgHandoffPct = liveEventCount > 0
-            ? roundAvg(liveEvents.map((t) => {
-                const id = t.id as string;
-                const reached = reachedByLiveId[id] || 0;
-                const redirected = redirectedByLiveId[id] || 0;
-                return reached > 0 ? (redirected / reached) * 100 : 0;
-              }))
-            : overallHandoffPct;
+          const joinPlanRates = liveEvents.flatMap((t) => {
+            const id = t.id as string;
+            const details = detailsByLiveId[id] || 0;
+            if (details <= 0) return [];
+            const opened = calendarByLiveId[id] || 0;
+            return [(opened / details) * 100];
+          });
+          const datePickRates = liveEvents.flatMap((t) => {
+            const id = t.id as string;
+            const opened = calendarByLiveId[id] || 0;
+            if (opened <= 0) return [];
+            const picked = dateByLiveId[id] || 0;
+            return [(picked / opened) * 100];
+          });
+          const pricingConvRates = liveEvents.flatMap((t) => {
+            const id = t.id as string;
+            const reached = reachedByLiveId[id] || 0;
+            if (reached <= 0) return [];
+            const converted = convertedByLiveId[id] || 0;
+            return [(converted / reached) * 100];
+          });
+          const handoffRates = liveEvents.flatMap((t) => {
+            const id = t.id as string;
+            const reached = reachedByLiveId[id] || 0;
+            if (reached <= 0) return [];
+            const redirected = redirectedByLiveId[id] || 0;
+            return [(redirected / reached) * 100];
+          });
+          const avgJoinPlanPct = joinPlanRates.length > 0 ? roundAvg(joinPlanRates) : overallJoinPlanPct;
+          const avgDatePickPct = datePickRates.length > 0 ? roundAvg(datePickRates) : overallDatePickPct;
+          const avgPricingConvPct = pricingConvRates.length > 0 ? roundAvg(pricingConvRates) : overallConvPct;
+          const avgHandoffPct = handoffRates.length > 0 ? roundAvg(handoffRates) : overallHandoffPct;
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
           const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
           const tripById = new Map<string, Trip>();
@@ -2155,10 +2155,10 @@ export default function AdminPanel() {
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Visitors</div>
                   <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
                     <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
-                    <StatCard label="Join Plan Rate" value={`${avgJoinPlanPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'clicked Join Our Plan on the details page'} />
-                    <StatCard label="Date Pick Rate" value={`${avgDatePickPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'picked a date after opening calendar'} />
-                    <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'continued booking after seeing price'} />
-                    <StatCard label="Payment Handoff" value={`${avgHandoffPct}%`} sub={liveEventCount > 0 ? `avg across ${liveEventCount} live events` : 'reached external payment / waitlist'} />
+                    <StatCard label="Join Plan Rate" value={`${avgJoinPlanPct}%`} sub={joinPlanRates.length > 0 ? `avg across ${joinPlanRates.length} live events with data` : 'clicked Join Our Plan on the details page'} />
+                    <StatCard label="Date Pick Rate" value={`${avgDatePickPct}%`} sub={datePickRates.length > 0 ? `avg across ${datePickRates.length} live events with data` : 'picked a date after opening calendar'} />
+                    <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={pricingConvRates.length > 0 ? `avg across ${pricingConvRates.length} live events with data` : 'continued booking after seeing price'} />
+                    <StatCard label="Payment Handoff" value={`${avgHandoffPct}%`} sub={handoffRates.length > 0 ? `avg across ${handoffRates.length} live events with data` : 'reached external payment / waitlist'} />
                   </div>
 
                   {/* City */}
