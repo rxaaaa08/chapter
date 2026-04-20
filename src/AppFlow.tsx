@@ -1440,7 +1440,7 @@ export default function App() {
                 <div className="px-6 pt-7 pb-5 space-y-3">
                   <div className="flex items-center justify-center gap-1.5">
                     <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
-                    <span className="text-[12px] text-gray-400">Secure Payments via Paytm</span>
+                    <span className="text-[12px] text-gray-400">Secure Payments via BillDesk</span>
                   </div>
                   <button
                     type="button"
@@ -1515,8 +1515,8 @@ export default function App() {
             >
               <div className="p-6 flex items-center justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400 font-semibold">Mock Paytm</p>
-                  <h2 className="text-2xl font-black mt-1">Redirecting to Paytm</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400 font-semibold">Mock BillDesk</p>
+                  <h2 className="text-2xl font-black mt-1">Redirecting to BillDesk</h2>
                   <p className="text-sm text-gray-400 mt-1">Amount: {formatINR(paymentContext.amount)}</p>
                 </div>
                 <ShieldCheck className="text-emerald-400" size={28} />
@@ -1549,7 +1549,7 @@ export default function App() {
                     </button>
                   </div>
                   <p className="text-[11px] text-gray-400 mt-3">
-                    Use these buttons to mock Paytm response. You'll be redirected back to the site accordingly.
+                    Use these buttons to mock BillDesk response. You'll be redirected back to the site accordingly.
                   </p>
                 </div>
               </div>
