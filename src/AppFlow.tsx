@@ -33,6 +33,7 @@ interface Event {
   isActivity?: boolean;
   showSecretOffer?: boolean;
   title: string;
+  oneLiner?: string;
   timing: string;
   price: string;
   advanceAmount: number;
@@ -642,11 +643,17 @@ export default function App() {
     addUserMessage(cityLabel);
     setSelectedCity(city);
     trackEvent('city_selected', { city: cityLabel });
-    
+
     simulateBotTyping(() => {
-      const categoryKey = city === 'Other' ? 'other_ask_category' : 'ask_category';
-      addBotMessage(fillMsg(msgs, categoryKey, { city: cityLabel }, `Awesome! What would you like to attend in ${cityLabel}?`));
-      setStep('ASK_CATEGORY');
+      const cityEvents = events.filter(e => e.cities.includes(city));
+      if (cityEvents.length > 0) {
+        const msgKey = city === 'Other' ? 'other_select_event' : 'select_event';
+        addBotMessage(fillMsg(msgs, msgKey, { city: cityLabel }, `Here's what we have coming up in ${cityLabel}. What sounds good to you?`));
+        setStep('SELECT_EVENT');
+      } else {
+        addBotMessage(fillMsg(msgs, 'no_events', { city: cityLabel }, `Oops, looks like we don't have anything scheduled in ${cityLabel} right now. Check back later!`));
+        setStep('NO_EVENTS');
+      }
     });
   };
 
@@ -672,7 +679,7 @@ export default function App() {
 
   const handleEventSelect = (event: Event) => {
     setStep('PROCESSING');
-    addUserMessage(event.title);
+    addUserMessage(event.oneLiner || event.title);
     setSelectedEvent(event);
     trackEvent('event_selected', { city: formatCityLabel(selectedCity), category: selectedCategory || event.category, event_id: event.id, event_title: event.title });
 
@@ -1029,13 +1036,13 @@ export default function App() {
           </motion.div>
         );
       case 'SELECT_EVENT': {
-        const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === selectedCategory);
+        const filteredEvents = events.filter(e => e.cities.includes(selectedCity));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {filteredEvents.map((event, i) => (
               <button key={event.id} onClick={() => handleEventSelect(event)} className={`${btnClass} relative overflow-hidden`}>
                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span className="text-left flex-1 mr-2">{event.title}</span> <Send size={16} className="flex-shrink-0" />
+                <span className="text-left flex-1 mr-2">{event.oneLiner || event.title}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
           </motion.div>
@@ -2307,47 +2314,16 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
       className="absolute inset-0 bg-white z-50 flex flex-col h-full overflow-hidden"
     >
       <div className="flex-1 overflow-y-auto pb-0">
-        {/* Header with Hero Image */}
-        <div className="relative h-[45vh] min-h-[300px] w-full flex-shrink-0 bg-gray-200 overflow-hidden">
-          {/* Spinner while loading */}
-          {!heroLoaded && !heroError && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <svg className="animate-spin w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-              </svg>
-            </div>
-          )}
-          {/* Retry button on error */}
-          {heroError && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <p className="text-sm text-gray-400 font-medium">Image failed to load</p>
-              <button
-                onClick={() => { setHeroError(false); setHeroLoaded(false); setHeroKey(k => k + 1); }}
-                className="px-4 py-2 bg-white rounded-full text-sm font-bold text-gray-700 shadow-sm border border-gray-200 active:scale-95 transition-transform"
-              >
-                ↺ Retry
-              </button>
-            </div>
-          )}
-          <img
-            key={heroKey}
-            src={event.heroImage}
-            alt={event.title}
-            className="w-full h-full object-cover object-center transition-opacity duration-300"
-            style={{ opacity: heroLoaded ? 1 : 0 }}
-            onLoad={() => { setHeroLoaded(true); setHeroError(false); }}
-            onError={() => { setHeroLoaded(false); setHeroError(true); }}
-          />
-          {/* Back / plan switcher button */}
-          <div className="absolute top-4 left-4">
-            <div
-              className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 transition-transform duration-200 active:scale-95 cursor-pointer"
-              onClick={() => { if (isPreviewLink) { window.location.href = 'https://chaptera.in/aboutus'; } else { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); } }}
-            >
-              <ChevronLeft size={15} className="text-white ml-[-1px]" strokeWidth={2.5} />
-            </div>
-          </div>
+        {/* Minimal nav bar — replaces hero image */}
+        <div className="flex items-center px-4 pt-12 pb-4 border-b border-gray-100">
+          <button
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 active:bg-gray-200 transition-colors flex-shrink-0"
+            onClick={() => { if (isPreviewLink) { window.location.href = 'https://chaptera.in/aboutus'; } else { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); } }}
+          >
+            <ChevronLeft size={16} className="text-gray-700 ml-[-1px]" strokeWidth={2.5} />
+          </button>
+          <h1 className="flex-1 text-center text-[15px] font-bold text-gray-900 px-3 truncate">{event.title}</h1>
+          <div className="w-8 flex-shrink-0" />
         </div>
 
         {/* Quick Info — boarding pass card */}

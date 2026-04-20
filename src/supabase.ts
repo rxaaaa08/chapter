@@ -44,6 +44,7 @@ export function mapDbEventToEvent(row: any): any {
     isActivity: row.is_activity ?? false,
     showSecretOffer: row.show_secret_offer ?? true,
     title: row.title,
+    oneLiner: row.one_liner ?? '',
     timing: row.timing,
     price: `₹${Number(row.price_full).toLocaleString('en-IN')}`,
     advanceAmount: row.price_advance,

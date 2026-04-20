@@ -76,6 +76,7 @@ type Trip = {
   id?: string;
   slug: string;
   title: string;
+  one_liner?: string;
   timing: string;
   price_full: number;
   price_advance: number;
@@ -822,7 +823,7 @@ export default function AdminPanel() {
                   <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
               </div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: true, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', one_liner: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: true, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -2557,7 +2558,18 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
       <CollapsibleSection title="Basic Info">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{ gridColumn: '1/-1' }}>{field('Title', 'title')}</div>
+          <div style={{ gridColumn: '1/-1' }}>{field('Title (internal, e.g. Sunrise at Kovalam)', 'title')}</div>
+          <div style={{ gridColumn: '1/-1' }}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={s.label}>One-liner <span style={{ fontWeight: 400, color: '#aaa' }}>(shown to users in chat, e.g. "Catch a sunrise at Kovalam")</span></label>
+              <input
+                style={s.input}
+                placeholder="e.g. Catch a sunrise at Kovalam"
+                value={trip.one_liner ?? ''}
+                onChange={e => set('one_liner', e.target.value)}
+              />
+            </div>
+          </div>
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
           {field('Category', 'category')}
           {field('Full Price (₹)', 'price_full', 'number')}
