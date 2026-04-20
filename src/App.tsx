@@ -681,7 +681,8 @@ export default function App() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/';
   const isAdmin = path === '/admin';
   const isAboutPage = path === '/aboutus';
-  const [showHomepage, setShowHomepage] = useState(isAboutPage);
+  const hasPreviewParam = typeof window !== 'undefined' && window.location.search.includes('preview_event');
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
