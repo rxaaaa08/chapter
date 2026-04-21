@@ -85,7 +85,7 @@ interface Event {
   announcements?: string[];
   inviteOnly?: boolean;
   waitlistUrl?: string;
-  bookingSteps?: Array<{ label: string; value: string; daysBefore: number }>;
+  bookingSteps?: Array<{ label: string; value: string; date: string }>;
 }
 
 // Fallback data used only if Supabase is unavailable
