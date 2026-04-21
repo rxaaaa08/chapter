@@ -94,6 +94,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
+type HistoryLayer = 'event-details' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -105,6 +106,15 @@ const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
 ];
 
 const GROUPCHAT_AVATAR_COLORS = ['#5B8DEF', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#F97316'];
+const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
+  'event-details': 1,
+  'booking-timeline': 2,
+  'details-form': 3,
+  'payment-checkout': 4,
+  'payment-success': 5,
+  'payment-failure': 5,
+  'tc-modal': 6,
+};
 
 const getGroupchatColor = (name: string) => {
   const hash = Array.from(name).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -365,8 +375,10 @@ export default function App() {
   const [msgsReady, setMsgsReady] = useState(false);
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const isPlansPath = typeof window !== 'undefined' && window.location.pathname === '/plans';
+  const isPlansHistoryManaged = isPlansPath && !isPreviewMode;
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
-  const detailsHistoryPushedRef = useRef(false);
+  const historyLayerRef = useRef<HistoryLayer | null>(null);
+  const handlingPopStateRef = useRef(false);
 
   useEffect(() => {
     // After 5s without events, show a "connection slow" retry screen instead of
@@ -449,17 +461,25 @@ export default function App() {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
+  const activeHistoryLayer: HistoryLayer | null =
+    showTcModal ? 'tc-modal'
+    : paymentView === 'failure' ? 'payment-failure'
+    : paymentView === 'success' ? 'payment-success'
+    : paymentView === 'checkout' ? 'payment-checkout'
+    : showDetailsForm ? 'details-form'
+    : showBookingTimeline ? 'booking-timeline'
+    : showDetails ? 'event-details'
+    : null;
   const closeEventDetails = useCallback((viaHistory = false) => {
-    if (!viaHistory && typeof window !== 'undefined' && detailsHistoryPushedRef.current) {
+    if (!viaHistory && typeof window !== 'undefined' && isPlansHistoryManaged && activeHistoryLayer === 'event-details') {
       window.history.back();
       return;
     }
-    detailsHistoryPushedRef.current = false;
     setShowDetails(false);
     setShowTransition(false);
     setDetailsReady(false);
     setStep('SELECT_EVENT');
-  }, []);
+  }, [isPlansHistoryManaged, activeHistoryLayer]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
   const doubtFormWebhookUrl = (msgs.doubt_form_webhook_url || '').trim();
@@ -595,22 +615,53 @@ export default function App() {
   }, [detailsReady, showTransition]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!showDetails || isPreviewMode || !isPlansPath || detailsHistoryPushedRef.current) return;
-    window.history.pushState({ chapteraOverlay: 'plan-details' }, '', window.location.href);
-    detailsHistoryPushedRef.current = true;
-  }, [showDetails, isPreviewMode, isPlansPath, selectedEvent?.id]);
+    if (typeof window === 'undefined' || !isPlansHistoryManaged) return;
+    const previousLayer = historyLayerRef.current;
+    const nextLayer = activeHistoryLayer;
+
+    if (!nextLayer) {
+      historyLayerRef.current = null;
+      return;
+    }
+    if (handlingPopStateRef.current) {
+      historyLayerRef.current = nextLayer;
+      return;
+    }
+    if (previousLayer === nextLayer) return;
+
+    const shouldPush = !previousLayer || HISTORY_LAYER_DEPTH[nextLayer] >= HISTORY_LAYER_DEPTH[previousLayer];
+    if (shouldPush) {
+      window.history.pushState({ chapteraLayer: nextLayer }, '', window.location.href);
+    }
+    historyLayerRef.current = nextLayer;
+  }, [activeHistoryLayer, isPlansHistoryManaged]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !isPlansHistoryManaged) return;
     const onPopState = () => {
-      if (showDetails && detailsHistoryPushedRef.current) {
+      if (!activeHistoryLayer) return;
+      handlingPopStateRef.current = true;
+      if (activeHistoryLayer === 'tc-modal') {
+        setShowTcModal(false);
+      } else if (activeHistoryLayer === 'payment-failure' || activeHistoryLayer === 'payment-success') {
+        setPaymentView('checkout');
+      } else if (activeHistoryLayer === 'payment-checkout') {
+        setPaymentView('idle');
+        setShowDetailsForm(true);
+      } else if (activeHistoryLayer === 'details-form') {
+        setShowDetailsForm(false);
+        setShowBookingTimeline(true);
+      } else if (activeHistoryLayer === 'booking-timeline') {
+        setShowBookingTimeline(false);
+        setShowChat(true);
+      } else if (activeHistoryLayer === 'event-details') {
         closeEventDetails(true);
       }
+      setTimeout(() => { handlingPopStateRef.current = false; }, 0);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [showDetails, closeEventDetails]);
+  }, [activeHistoryLayer, isPlansHistoryManaged, closeEventDetails]);
 
   // Reset announcement index when switching contexts
   useEffect(() => {
