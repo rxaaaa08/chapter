@@ -2305,7 +2305,7 @@ export default function AdminPanel() {
                   {/* Drop-off */}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Pricing Conversion Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                    Of users who reached the pricing screen, how many tapped a CTA — split by <strong>Join Our Plan</strong> (ready to pay) vs <strong>Contact Us</strong> (needs more info).
+                    Of users who reached the pricing screen, how many tapped a CTA — split by <strong>Book Now</strong> (ready to pay) vs <strong>Contact Us</strong> (needs more info).
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
@@ -2329,7 +2329,7 @@ export default function AdminPanel() {
                             <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#aaa', flexWrap: 'wrap' }}>
-                            <span>✅ <strong style={{ color: '#111' }}>{booked}</strong> tapped Join Our Plan ({bookPct}%)</span>
+                            <span>✅ <strong style={{ color: '#111' }}>{booked}</strong> tapped Book Now ({bookPct}%)</span>
                             <span>💬 <strong style={{ color: '#111' }}>{contacted}</strong> tapped Contact Us ({contactPct}%)</span>
                             {reached - totalCta > 0 && (
                               <span style={{ color: '#d4b483' }}>· {reached - totalCta} saw the price but tapped nothing</span>
