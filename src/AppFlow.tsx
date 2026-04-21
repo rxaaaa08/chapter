@@ -94,7 +94,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
-type HistoryLayer = 'event-details' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
+type HistoryLayer = 'event-details' | 'details-calendar' | 'post-details-chat' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -108,12 +108,14 @@ const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
 const GROUPCHAT_AVATAR_COLORS = ['#5B8DEF', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#F97316'];
 const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   'event-details': 1,
-  'booking-timeline': 2,
-  'details-form': 3,
-  'payment-checkout': 4,
-  'payment-success': 5,
-  'payment-failure': 5,
-  'tc-modal': 6,
+  'details-calendar': 2,
+  'post-details-chat': 3,
+  'booking-timeline': 4,
+  'details-form': 5,
+  'payment-checkout': 6,
+  'payment-success': 7,
+  'payment-failure': 7,
+  'tc-modal': 8,
 };
 
 const getGroupchatColor = (name: string) => {
@@ -433,6 +435,8 @@ export default function App() {
   const [showBookingTimeline, setShowBookingTimeline] = useState(false);
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
+  const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
+  const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -461,6 +465,16 @@ export default function App() {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
+  const isPostDetailsChatLayer =
+    !!journeyCardData &&
+    !!selectedEvent &&
+    showChat &&
+    !showDetails &&
+    !showTransition &&
+    !showBookingTimeline &&
+    !showDetailsForm &&
+    paymentView === 'idle' &&
+    !showTcModal;
   const activeHistoryLayer: HistoryLayer | null =
     showTcModal ? 'tc-modal'
     : paymentView === 'failure' ? 'payment-failure'
@@ -468,6 +482,8 @@ export default function App() {
     : paymentView === 'checkout' ? 'payment-checkout'
     : showDetailsForm ? 'details-form'
     : showBookingTimeline ? 'booking-timeline'
+    : isPostDetailsChatLayer ? 'post-details-chat'
+    : (showDetails && detailsCalendarOpen) ? 'details-calendar'
     : showDetails ? 'event-details'
     : null;
   const closeEventDetails = useCallback((viaHistory = false) => {
@@ -653,7 +669,14 @@ export default function App() {
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
-        setShowChat(true);
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
+      } else if (activeHistoryLayer === 'post-details-chat') {
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
+      } else if (activeHistoryLayer === 'details-calendar') {
+        setCloseDetailsCalendarSignal(prev => prev + 1);
+        setDetailsCalendarOpen(false);
       } else if (activeHistoryLayer === 'event-details') {
         closeEventDetails(true);
       }
@@ -1326,6 +1349,8 @@ export default function App() {
             event={selectedEvent}
             selectedCity={selectedCity}
             allEvents={events.filter(e => !e.inviteOnly)}
+            closeCalendarSignal={closeDetailsCalendarSignal}
+            onCalendarVisibilityChange={setDetailsCalendarOpen}
             onSwitchEvent={(e, city) => {
               setSelectedEvent(e);
               setSelectedCategory(e.category);
@@ -2107,7 +2132,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSignal, onCalendarVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -2172,6 +2197,19 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
   useEffect(() => {
     setCurrentMonth(nearestEventMonth());
   }, [event.id]);
+
+  useEffect(() => {
+    onCalendarVisibilityChange?.(showCalendar);
+  }, [showCalendar, onCalendarVisibilityChange]);
+
+  useEffect(() => {
+    if (!showCalendar) return;
+    setShowCalendar(false);
+  }, [closeCalendarSignal]);
+
+  useEffect(() => {
+    return () => onCalendarVisibilityChange?.(false);
+  }, [onCalendarVisibilityChange]);
 
   useEffect(() => {
     if (!showCalendar || !selectedDate) return;
