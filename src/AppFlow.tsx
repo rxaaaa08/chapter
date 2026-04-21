@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
@@ -364,7 +364,9 @@ export default function App() {
   const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [msgsReady, setMsgsReady] = useState(false);
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
+  const isPlansPath = typeof window !== 'undefined' && window.location.pathname === '/plans';
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
+  const detailsHistoryPushedRef = useRef(false);
 
   useEffect(() => {
     // After 5s without events, show a "connection slow" retry screen instead of
@@ -447,6 +449,17 @@ export default function App() {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
+  const closeEventDetails = useCallback((viaHistory = false) => {
+    if (!viaHistory && typeof window !== 'undefined' && detailsHistoryPushedRef.current) {
+      window.history.back();
+      return;
+    }
+    detailsHistoryPushedRef.current = false;
+    setShowDetails(false);
+    setShowTransition(false);
+    setDetailsReady(false);
+    setStep('SELECT_EVENT');
+  }, []);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
   const doubtFormWebhookUrl = (msgs.doubt_form_webhook_url || '').trim();
@@ -580,6 +593,24 @@ export default function App() {
     }, 200);
     return () => clearTimeout(exitTimer);
   }, [detailsReady, showTransition]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!showDetails || isPreviewMode || !isPlansPath || detailsHistoryPushedRef.current) return;
+    window.history.pushState({ chapteraOverlay: 'plan-details' }, '', window.location.href);
+    detailsHistoryPushedRef.current = true;
+  }, [showDetails, isPreviewMode, isPlansPath, selectedEvent?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPopState = () => {
+      if (showDetails && detailsHistoryPushedRef.current) {
+        closeEventDetails(true);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [showDetails, closeEventDetails]);
 
   // Reset announcement index when switching contexts
   useEffect(() => {
@@ -1250,8 +1281,7 @@ export default function App() {
               setSelectedCity(city);
             }}
             onClose={() => {
-              setShowDetails(false);
-              setStep('SELECT_EVENT');
+              closeEventDetails();
             }}
             onAction={handleDetailsAction}
           />
