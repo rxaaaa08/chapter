@@ -17,10 +17,21 @@ function getSessionId(): string {
   return id;
 }
 
+// Instagram / Facebook in-app browsers fire a page_view, then our popup
+// forces the user to re-open the site in an external browser (which fires
+// a second page_view under a new session). That inflates every metric ~2x.
+// These in-app sessions never convert, so we skip tracking from them entirely.
+function isInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Instagram|FBAN|FBAV/i.test(ua);
+}
+
 export async function trackEvent(
-  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'external_redirect_initiated',
+  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated',
   meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
 ) {
+  if (isInAppBrowser()) return;
   try {
     await supabase.from('flow_analytics').insert({
       event_type,

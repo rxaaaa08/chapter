@@ -2903,7 +2903,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                               <div className="grid grid-cols-2 gap-3">
                                 <button
                                   onClick={() => {
-                                    trackEvent('pricing_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+                                    trackEvent('contact_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
                                     setShowCalendar(false);
                                     onAction('contact', selectedDate || undefined, selectedMeetingPoint);
                                   }}
@@ -2914,7 +2914,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                                 </button>
                                 <button
                                   onClick={() => {
-                                    trackEvent('pricing_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+                                    trackEvent('book_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
                                     setShowCalendar(false);
                                     onAction('book', selectedDate || undefined, selectedMeetingPoint);
                                   }}

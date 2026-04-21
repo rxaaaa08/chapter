@@ -385,7 +385,9 @@ export default function AdminPanel() {
     setAnalyticsLoading(false);
   };
 
-  // Compute analytics aggregates from a pre-filtered slice of rows
+  // Compute top-level analytics aggregates from a pre-filtered slice of rows.
+  // Per-event funnel rates are computed separately in the analytics tab, keyed
+  // by live event ID — so this function only handles visitor count + city split.
   const computeAnalytics = (rows: any[]) => {
     const pageViews = rows.filter(r => r.event_type === 'page_view');
     const visitors = new Set(pageViews.map(r => r.session_id)).size;
@@ -395,58 +397,7 @@ export default function AdminPanel() {
     cityRows.forEach(r => { cityCounts[r.city] = (cityCounts[r.city] || 0) + 1; });
     const cityTotal = cityRows.length || 1;
 
-    const catRows = rows.filter(r => r.event_type === 'category_selected' && r.category);
-    const catCounts: Record<string, number> = {};
-    catRows.forEach(r => { catCounts[r.category] = (catCounts[r.category] || 0) + 1; });
-    const catTotal = catRows.length || 1;
-
-    const eventRows = rows.filter(r => r.event_type === 'event_selected' && r.event_title);
-    const eventCounts: Record<string, number> = {};
-    eventRows.forEach(r => { eventCounts[r.event_title] = (eventCounts[r.event_title] || 0) + 1; });
-    const eventTotal = eventRows.length || 1;
-
-    // Funnel metrics — all deduped by (session_id + event_title) so each unique
-    // user counts once per event, no matter how many times they tap.
-    const detailsRows = rows.filter(r => r.event_type === 'event_selected' && r.event_title && r.session_id);
-    const calendarRows = rows.filter(r => r.event_type === 'calendar_opened' && r.event_title && r.session_id);
-    const dateRows = rows.filter(r => r.event_type === 'date_selected' && r.event_title && r.session_id);
-    const reachedRows = rows.filter(r => r.event_type === 'reached_pricing' && r.event_title && r.session_id);
-    const convertedRows = rows.filter(r => r.event_type === 'pricing_cta_clicked' && r.event_title && r.session_id);
-    const redirectRows = rows.filter(r => r.event_type === 'external_redirect_initiated' && r.event_title && r.session_id);
-    const detailsKeys = new Set(detailsRows.map(r => `${r.session_id}::${r.event_title}`));
-    const calendarKeys = new Set(calendarRows.map(r => `${r.session_id}::${r.event_title}`));
-    const dateKeys = new Set(dateRows.map(r => `${r.session_id}::${r.event_title}`));
-    const reachedKeys = new Set(reachedRows.map(r => `${r.session_id}::${r.event_title}`));
-    const convertedKeys = new Set(convertedRows.map(r => `${r.session_id}::${r.event_title}`));
-    const redirectKeys = new Set(redirectRows.map(r => `${r.session_id}::${r.event_title}`));
-    const detailsOpenedByEvent: Record<string, number> = {};
-    const calendarOpenedByEvent: Record<string, number> = {};
-    const datePickedByEvent: Record<string, number> = {};
-    const reachedByEvent: Record<string, number> = {};
-    const convertedByEvent: Record<string, number> = {};
-    const redirectedByEvent: Record<string, number> = {};
-    const bumpCount = (map: Record<string, number>) => (key: string) => {
-      const title = key.split('::').slice(1).join('::');
-      map[title] = (map[title] || 0) + 1;
-    };
-    detailsKeys.forEach(bumpCount(detailsOpenedByEvent));
-    calendarKeys.forEach(bumpCount(calendarOpenedByEvent));
-    dateKeys.forEach(bumpCount(datePickedByEvent));
-    reachedKeys.forEach(bumpCount(reachedByEvent));
-    convertedKeys.forEach(bumpCount(convertedByEvent));
-    redirectKeys.forEach(bumpCount(redirectedByEvent));
-
-    const totalDetails = detailsKeys.size;
-    const totalCalendar = calendarKeys.size;
-    const totalDate = dateKeys.size;
-    const totalReached = reachedKeys.size;
-    const totalConverted = convertedKeys.size;
-    const totalRedirected = redirectKeys.size;
-    const overallJoinPlanPct = totalDetails > 0 ? Math.round((totalCalendar / totalDetails) * 100) : 0;
-    const overallDatePickPct = totalCalendar > 0 ? Math.round((totalDate / totalCalendar) * 100) : 0;
-    const overallConvPct = totalReached > 0 ? Math.round((totalConverted / totalReached) * 100) : 0;
-    const overallHandoffPct = totalReached > 0 ? Math.round((totalRedirected / totalReached) * 100) : 0;
-    return { visitors, overallJoinPlanPct, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal, eventCounts, eventTotal, detailsOpenedByEvent, calendarOpenedByEvent, datePickedByEvent, reachedByEvent, convertedByEvent, redirectedByEvent };
+    return { visitors, cityCounts, cityTotal };
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -1955,7 +1906,7 @@ export default function AdminPanel() {
           const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
           const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
-          const { visitors, overallJoinPlanPct, overallDatePickPct, overallConvPct, overallHandoffPct, cityCounts, cityTotal, catCounts, catTotal } = computeAnalytics(filteredData);
+          const { visitors, cityCounts, cityTotal } = computeAnalytics(filteredData);
           const liveEvents = trips.filter(t => t.is_active && t.id);
           const liveEventCount = liveEvents.length;
           const liveCanonicalByTrackedId = new Map<string, string>();
@@ -1992,7 +1943,13 @@ export default function AdminPanel() {
           const calendarKeysByLive = collectPairs('calendar_opened');
           const dateKeysByLive = collectPairs('date_selected');
           const reachedKeysByLive = collectPairs('reached_pricing');
-          const convertedKeysByLive = collectPairs('pricing_cta_clicked');
+          // Union old pricing_cta_clicked (historical) + new split events so
+          // the overview card stays accurate across the migration boundary.
+          const convertedKeysByLive = new Set<string>([
+            ...collectPairs('pricing_cta_clicked'),
+            ...collectPairs('book_cta_clicked'),
+            ...collectPairs('contact_cta_clicked'),
+          ]);
           const redirectedKeysByLive = collectPairs('external_redirect_initiated');
           const toCountMap = (keys: Set<string>) => {
             const map: Record<string, number> = {};
@@ -2037,12 +1994,14 @@ export default function AdminPanel() {
             const redirected = redirectedByLiveId[id] || 0;
             return [(redirected / reached) * 100];
           });
-          const avgJoinPlanPct = joinPlanRates.length > 0 ? roundAvg(joinPlanRates) : overallJoinPlanPct;
-          const avgDatePickPct = datePickRates.length > 0 ? roundAvg(datePickRates) : overallDatePickPct;
-          const avgPricingConvPct = pricingConvRates.length > 0 ? roundAvg(pricingConvRates) : overallConvPct;
-          const avgHandoffPct = handoffRates.length > 0 ? roundAvg(handoffRates) : overallHandoffPct;
+          // Unweighted averages across per-event rates — fallback is 0, not a
+          // weighted total, so the cards honestly reflect "no data yet" instead
+          // of showing a misleading aggregate.
+          const avgJoinPlanPct = roundAvg(joinPlanRates);
+          const avgDatePickPct = roundAvg(datePickRates);
+          const avgPricingConvPct = roundAvg(pricingConvRates);
+          const avgHandoffPct = roundAvg(handoffRates);
           const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
-          const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
           const tripById = new Map<string, Trip>();
           trips.forEach((t) => {
             if (t.id) tripById.set(t.id as string, t);
@@ -2067,8 +2026,13 @@ export default function AdminPanel() {
           const buildEventMetricMap = (eventType: string) => {
             const keys = new Set<string>();
             filteredData.forEach((row: any) => {
-              if (row?.event_type !== eventType || !row?.event_id || !row?.session_id) return;
-              keys.add(`${row.session_id}::${row.event_id}`);
+              if (row?.event_type !== eventType || !row?.session_id) return;
+              // Use the same ID normalization as the overview cards so that
+              // slug changes / title changes don't create phantom split rows
+              // (e.g. "2 of 0 who landed on details" impossible state).
+              const liveId = resolveLiveEventId(row);
+              if (!liveId) return;
+              keys.add(`${row.session_id}::${liveId}`);
             });
             const map: Record<string, number> = {};
             keys.forEach((key) => {
@@ -2081,7 +2045,20 @@ export default function AdminPanel() {
           const calendarOpenedByEvent = buildEventMetricMap('calendar_opened');
           const datePickedByEvent = buildEventMetricMap('date_selected');
           const reachedByEvent = buildEventMetricMap('reached_pricing');
-          const convertedByEvent = buildEventMetricMap('pricing_cta_clicked');
+          // Split CTA tracking: Contact Us vs Join Our Plan (book).
+          // Also keep legacy pricing_cta_clicked so historical rows still count.
+          const bookCtaByEvent = buildEventMetricMap('book_cta_clicked');
+          const contactCtaByEvent = buildEventMetricMap('contact_cta_clicked');
+          const legacyCtaByEvent = buildEventMetricMap('pricing_cta_clicked');
+          // Combined for Payment Handoff denominator parity
+          const convertedByEvent = (() => {
+            const allIds = new Set([...Object.keys(bookCtaByEvent), ...Object.keys(contactCtaByEvent), ...Object.keys(legacyCtaByEvent)]);
+            const map: Record<string, number> = {};
+            allIds.forEach(id => {
+              map[id] = (bookCtaByEvent[id] || 0) + (contactCtaByEvent[id] || 0) + (legacyCtaByEvent[id] || 0);
+            });
+            return map;
+          })();
           const redirectedByEvent = buildEventMetricMap('external_redirect_initiated');
 
           const allJoinPlanEvents = Array.from(new Set([...Object.keys(detailsOpenedByEvent), ...Object.keys(calendarOpenedByEvent)]));
@@ -2107,21 +2084,6 @@ export default function AdminPanel() {
               {sub && <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>{sub}</div>}
             </div>
           );
-
-          const BarRow = ({ label, count, total, color = '#FFD700' }: { label: string; count: number; total: number; color?: string }) => {
-            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-            return (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: '#222', marginBottom: 4 }}>
-                  <span>{label}</span>
-                  <span style={{ color: '#666' }}>{count} <span style={{ color: '#aaa', fontWeight: 400 }}>({pct}%)</span></span>
-                </div>
-                <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.4s' }} />
-                </div>
-              </div>
-            );
-          };
 
           return (
             <div>
@@ -2209,11 +2171,6 @@ export default function AdminPanel() {
                         <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Chosen City</div>
                         <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
                           <PieChart entries={sortedCities} total={cityTotal} />
-                        </div>
-
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Chosen Category</div>
-                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
-                          <PieChart entries={sortedCats} total={catTotal} />
                         </div>
                       </>
                     );
@@ -2348,14 +2305,18 @@ export default function AdminPanel() {
                   {/* Drop-off */}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Pricing Conversion Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                    Of users who saw the price, how many clicked Apply Now or Contact Us on the calendar sheet.
+                    Of users who reached the pricing screen, how many tapped a CTA — split by <strong>Join Our Plan</strong> (ready to pay) vs <strong>Contact Us</strong> (needs more info).
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
                     {visibleDropoffEvents.map((eventId, idx) => {
                       const reached = reachedByEvent[eventId] || 0;
-                      const converted = convertedByEvent[eventId] || 0;
-                      const pct = reached > 0 ? Math.round((converted / reached) * 100) : 0;
+                      const booked = (bookCtaByEvent[eventId] || 0) + (legacyCtaByEvent[eventId] || 0);
+                      const contacted = contactCtaByEvent[eventId] || 0;
+                      const totalCta = booked + contacted;
+                      const pct = reached > 0 ? Math.round((totalCta / reached) * 100) : 0;
+                      const bookPct = reached > 0 ? Math.round((booked / reached) * 100) : 0;
+                      const contactPct = reached > 0 ? Math.round((contacted / reached) * 100) : 0;
                       return (
                         <div key={eventId} style={{ marginBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
@@ -2364,11 +2325,16 @@ export default function AdminPanel() {
                               {pct}%
                             </span>
                           </div>
-                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden', marginBottom: 6 }}>
                             <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
-                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
-                            {converted} of {reached} who saw the price continued booking
+                          <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#aaa', flexWrap: 'wrap' }}>
+                            <span>✅ <strong style={{ color: '#111' }}>{booked}</strong> tapped Join Our Plan ({bookPct}%)</span>
+                            <span>💬 <strong style={{ color: '#111' }}>{contacted}</strong> tapped Contact Us ({contactPct}%)</span>
+                            {reached - totalCta > 0 && (
+                              <span style={{ color: '#d4b483' }}>· {reached - totalCta} saw the price but tapped nothing</span>
+                            )}
+                            <span style={{ marginLeft: 'auto', color: '#ccc' }}>{reached} saw the price</span>
                           </div>
                         </div>
                       );
@@ -2378,13 +2344,14 @@ export default function AdminPanel() {
                   {/* Payment Handoff — % of users who saw price AND got redirected to external payment/waitlist */}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Payment Handoff Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                    Of users who saw the price, how many actually reached the external payment / waitlist page.
+                    Of users who reached the pricing screen, how many were actually redirected to BillDesk or the waitlist link (i.e. physically left our site to pay). The gap vs Pricing Conversion = people who tapped the CTA but didn't complete the redirect.
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleHandoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
                     {visibleHandoffEvents.map((eventId, idx) => {
                       const reached = reachedByEvent[eventId] || 0;
                       const redirected = redirectedByEvent[eventId] || 0;
+                      const ctaTapped = convertedByEvent[eventId] || 0;
                       const pct = reached > 0 ? Math.round((redirected / reached) * 100) : 0;
                       return (
                         <div key={eventId} style={{ marginBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
@@ -2398,7 +2365,10 @@ export default function AdminPanel() {
                             <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
-                            {redirected} of {reached} who saw the price reached payment
+                            {redirected} of {reached} who reached pricing were redirected to BillDesk / waitlist
+                            {ctaTapped > redirected && (
+                              <span style={{ marginLeft: 4, color: '#d4b483' }}>· {ctaTapped - redirected} tapped CTA but didn't complete redirect</span>
+                            )}
                           </div>
                         </div>
                       );
