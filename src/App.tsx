@@ -565,8 +565,8 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
   return (
-    <div className="h-[100dvh] bg-[#F5F2ED] flex items-stretch sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white bg-[#F5F2ED] overflow-hidden">
+    <div className="h-[100dvh] bg-white flex items-stretch sm:items-center justify-center p-0 sm:p-4">
+      <div className="w-full h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white bg-white overflow-hidden">
         <div
           style={{
             height: '100%',
@@ -582,9 +582,10 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           <div
             style={{
               width: '100%',
-              border: '1.5px dashed #c9c9c9',
+              border: '1.5px dashed #595959',
               borderRadius: 24,
-              padding: 'clamp(18px, 3.5vw, 30px)',
+              background: '#f9fafb',
+              padding: 'clamp(18px, 3.5vw, 30px) clamp(18px, 3.5vw, 30px) clamp(10px, 2vw, 14px)',
             }}
           >
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
@@ -593,7 +594,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               alt="chapter அ"
               style={{ width: 70, height: 70, margin: '0 auto', marginBottom: -8, display: 'block', objectFit: 'contain' }}
             />
-            <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>chapter அ</p>
+            <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>what's chapter அ?</p>
           </div>
           <p
             style={{
@@ -605,7 +606,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               marginBottom: 14,
             }}
           >
-            to new & old members,
+            to new ppl & our regulars,
           </p>
 
           <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
@@ -629,46 +630,48 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               letterSpacing: '-0.008em',
               lineHeight: 1.34,
               textAlign: 'left',
-              marginBottom: 18,
+              marginBottom: 8,
             }}
           >
             — the founder
           </p>
 
-          <button
-            type="button"
-            onClick={onContinue}
-            style={{
-              width: '100%',
-              border: 'none',
-              borderRadius: 16,
-              background: '#ffd700',
-              color: '#111',
-              padding: '14px 16px',
-              fontSize: 16,
-              fontWeight: 800,
-              cursor: 'pointer',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <motion.span
-              aria-hidden="true"
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={onContinue}
               style={{
-                position: 'absolute',
-                inset: 0,
-                transform: 'skewX(-12deg)',
-                background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
-                width: '50%',
+                width: '100%',
+                border: 'none',
+                borderRadius: 16,
+                background: '#ffd700',
+                color: '#111',
+                padding: '14px 16px',
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
               }}
-              animate={{ x: ['-100%', '300%'] }}
-              transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
-            />
-            <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              Continue
-              <ArrowRight size={18} strokeWidth={2.5} />
-            </span>
-          </button>
+            >
+              <motion.span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  transform: 'skewX(-12deg)',
+                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
+                  width: '50%',
+                }}
+                animate={{ x: ['-100%', '300%'] }}
+                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
+              />
+              <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                Enter
+                <ArrowRight size={18} strokeWidth={2.5} />
+              </span>
+            </button>
           </div>
         </div>
       </div>
