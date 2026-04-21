@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, Send, RotateCcw } from 'lucide-react';
+import { ArrowRight, Send, RotateCcw } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
+import joinLetterLogo from './assets/join-letter-logo.png';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
 import { trackEvent } from './supabase';
@@ -562,6 +563,119 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
   );
 }
 
+function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
+  return (
+    <div className="h-[100dvh] bg-[#F5F2ED] flex items-stretch sm:items-center justify-center p-0 sm:p-4">
+      <div className="w-full h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white bg-[#F5F2ED] overflow-hidden">
+        <div
+          style={{
+            height: '100%',
+            overflowY: 'auto',
+            color: '#232323',
+            fontFamily: "'DM Sans', sans-serif",
+            padding: 'clamp(24px, 5vw, 32px) clamp(16px, 4vw, 24px) calc(40px + env(safe-area-inset-bottom))',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              border: '1.5px dashed #c9c9c9',
+              borderRadius: 24,
+              padding: 'clamp(18px, 3.5vw, 30px)',
+            }}
+          >
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <img
+              src={joinLetterLogo}
+              alt="chapter அ"
+              style={{ width: 70, height: 70, margin: '0 auto', marginBottom: -8, display: 'block', objectFit: 'contain' }}
+            />
+            <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>chapter அ</p>
+          </div>
+          <p
+            style={{
+              fontSize: 'clamp(14px, 2vw, 17px)',
+              fontWeight: 650,
+              letterSpacing: '-0.015em',
+              lineHeight: 1.28,
+              color: '#232323',
+              marginBottom: 14,
+            }}
+          >
+            to new & old members,
+          </p>
+
+          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
+            chapter அ is a lifestyle club for people who never say never.
+          </p>
+          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
+            we didn’t start by hosting events — we started by crashing a wedding.
+          </p>
+          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
+            since then, i'm grateful for being able to bring people together to do (crazy) things they’ve always dreamed of doing.
+          </p>
+          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 16 }}>
+            be it crashing a wedding or surfing in sri lanka, i hope our plans let you live your dreams & find belonging.
+          </p>
+
+          <p
+            style={{
+              fontSize: 'clamp(14px, 2vw, 17px)',
+              fontWeight: 450,
+              color: '#232323',
+              letterSpacing: '-0.008em',
+              lineHeight: 1.34,
+              textAlign: 'left',
+              marginBottom: 18,
+            }}
+          >
+            — the founder
+          </p>
+
+          <button
+            type="button"
+            onClick={onContinue}
+            style={{
+              width: '100%',
+              border: 'none',
+              borderRadius: 16,
+              background: '#ffd700',
+              color: '#111',
+              padding: '14px 16px',
+              fontSize: 16,
+              fontWeight: 800,
+              cursor: 'pointer',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <motion.span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                transform: 'skewX(-12deg)',
+                background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
+                width: '50%',
+              }}
+              animate={{ x: ['-100%', '300%'] }}
+              transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
+            />
+            <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              Continue
+              <ArrowRight size={18} strokeWidth={2.5} />
+            </span>
+          </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
 function LandscapeBlocker() {
   const [isLandscape, setIsLandscape] = useState(false);
@@ -644,7 +758,7 @@ function InAppBrowserNudge() {
               />
               <span className="relative z-10 inline-flex items-center justify-center gap-2">
                 Open in Browser
-                <ChevronRight size={18} strokeWidth={2.8} />
+                <ArrowRight size={18} strokeWidth={2.8} />
               </span>
             </button>
           </>
@@ -678,22 +792,39 @@ function InAppBrowserNudge() {
 
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
-  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const isAdmin = path === '/admin';
-  const isAboutPage = path === '/aboutus';
-  const isPlansPage = path === '/plans';
-  const hasPreviewParam = typeof window !== 'undefined' && window.location.search.includes('preview_event');
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage);
+  const [routePath, setRoutePath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/');
+  const [routeSearch, setRouteSearch] = useState(typeof window !== 'undefined' ? window.location.search : '');
+  const isAdmin = routePath === '/admin';
+  const isPlansPage = routePath === '/plans';
+  const isJoinPage = routePath === '/join' || routePath === '/';
+  const hasPreviewParam = routeSearch.includes('preview_event');
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isJoinPage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isAdmin) trackEvent('page_view');
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncRoute = () => {
+      setRoutePath(window.location.pathname);
+      setRouteSearch(window.location.search);
+    };
+    window.addEventListener('popstate', syncRoute);
+    if (window.location.pathname === '/' && !window.location.search.includes('preview_event')) {
+      window.history.replaceState({}, '', '/join');
+      syncRoute();
+    }
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, []);
+
   const enterApp = () => {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       window.history.pushState({}, '', '/');
+      setRoutePath('/');
+      setRouteSearch('');
     }
     setShowHomepage(false);
   };
@@ -704,12 +835,30 @@ export default function App() {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       window.history.pushState({}, '', '/?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61');
+      setRoutePath('/');
+      setRouteSearch('?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61');
+    }
+    setShowHomepage(false);
+  };
+
+  const continueFromJoin = () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.history.pushState({}, '', '/plans');
+      setRoutePath('/plans');
+      setRouteSearch('');
     }
     setShowHomepage(false);
   };
 
   useEffect(() => {
-    if (typeof document === 'undefined' || isAdmin || showHomepage) return;
+    if (typeof document === 'undefined') return;
+    const isLetterPage = isJoinPage && !hasPreviewParam;
+    if (isAdmin || showHomepage || isLetterPage) {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      return;
+    }
     // AppFlow is a fixed-height mobile UI — lock body scroll so only internal containers scroll
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
@@ -717,9 +866,19 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isAdmin]);
+  }, [showHomepage, isAdmin, isJoinPage, hasPreviewParam]);
 
   if (isAdmin) return <AdminPanel />;
+
+  if (isJoinPage && !hasPreviewParam) {
+    return (
+      <>
+        <LandscapeBlocker />
+        <InAppBrowserNudge />
+        <JoinLetterPage onContinue={continueFromJoin} />
+      </>
+    );
+  }
 
   if (showHomepage) {
     return (
