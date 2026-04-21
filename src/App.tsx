@@ -594,7 +594,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               alt="chapter அ"
               style={{ width: 70, height: 70, margin: '0 auto', marginBottom: -8, display: 'block', objectFit: 'contain' }}
             />
-            <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>what's chapter அ?</p>
+            <p style={{ marginTop: 0, fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>what's chapter அ?</p>
           </div>
           <p
             style={{
