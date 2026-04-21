@@ -1037,30 +1037,60 @@ export default function AdminPanel() {
                               </div>
 
                               <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                  <label style={{ ...s.label, marginBottom: 0 }}>Groupchat Messages</label>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <label style={{ ...s.label, marginBottom: 0 }}>Google Reviews</label>
                                   <button
                                     type="button"
                                     style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
                                     onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), { name: '', rating: 5, review_text: '', review_count: 0, date_label: '' }] }))}
                                   >
-                                    + Add Message
+                                    + Add Review
                                   </button>
                                 </div>
-                                <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
-                                  Write these as casual post-trip group chat messages between participants — not reviews. e.g. "Does anyone have that video of me falling off the surfboard 😭" or "Had such a fun time, tell me when the next one is!"
-                                </div>
-                                {(reviews ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No messages yet.</div>}
+                                {(reviews ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No reviews yet.</div>}
                                 {reviews.map((review, i) => (
                                   <div key={i} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 140px auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                                       <input
                                         style={s.input}
-                                        placeholder="Person's name (e.g. Priya)"
+                                        placeholder="Reviewer name"
                                         value={review.name}
                                         onChange={e => updateTripInList(trip.id!, t => {
                                           const next = [...(t.event_reviews ?? [])];
                                           next[i] = { ...next[i], name: e.target.value };
+                                          return { ...t, event_reviews: next };
+                                        })}
+                                      />
+                                      <select
+                                        style={s.input}
+                                        value={review.rating ?? 5}
+                                        onChange={e => updateTripInList(trip.id!, t => {
+                                          const next = [...(t.event_reviews ?? [])];
+                                          next[i] = { ...next[i], rating: Number(e.target.value) };
+                                          return { ...t, event_reviews: next };
+                                        })}
+                                      >
+                                        {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
+                                      </select>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        style={s.input}
+                                        placeholder="13"
+                                        value={review.review_count ?? 0}
+                                        onChange={e => updateTripInList(trip.id!, t => {
+                                          const next = [...(t.event_reviews ?? [])];
+                                          next[i] = { ...next[i], review_count: Number(e.target.value) || 0 };
+                                          return { ...t, event_reviews: next };
+                                        })}
+                                      />
+                                      <input
+                                        style={s.input}
+                                        placeholder="e.g. 1 week ago"
+                                        value={review.date_label ?? ''}
+                                        onChange={e => updateTripInList(trip.id!, t => {
+                                          const next = [...(t.event_reviews ?? [])];
+                                          next[i] = { ...next[i], date_label: e.target.value };
                                           return { ...t, event_reviews: next };
                                         })}
                                       />
@@ -1077,7 +1107,7 @@ export default function AdminPanel() {
                                     </div>
                                     <textarea
                                       style={s.textarea}
-                                      placeholder="What they said in the group chat after the trip..."
+                                      placeholder="Review text"
                                       value={review.review_text}
                                       onChange={e => updateTripInList(trip.id!, t => {
                                         const next = [...(t.event_reviews ?? [])];
