@@ -93,6 +93,29 @@ interface Event {
   bookingSteps?: Array<{ label: string; value: string; date: string }>;
 }
 
+type GroupChatMessage = { name: string; text: string };
+
+const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
+  { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
+  { name: 'Nivi', text: 'Does someone have that video of me falling from the surf board? haha' },
+  { name: 'Bish', text: 'Bro that sunrise hit different. Still not over that vibe.' },
+  { name: 'Kavi', text: 'I came for the trip, left with 4 new people on my speed dial.' },
+  { name: 'Reshma', text: 'Can we do a random no-plan food run this weekend too?' },
+  { name: 'Jagannath', text: 'Next one I am bringing cards. Post-dinner game table was chaos.' },
+];
+
+const GROUPCHAT_AVATAR_COLORS = ['#5B8DEF', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#F97316'];
+
+const getGroupchatColor = (name: string) => {
+  const hash = Array.from(name).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return GROUPCHAT_AVATAR_COLORS[Math.abs(hash) % GROUPCHAT_AVATAR_COLORS.length];
+};
+
+const getGroupchatInitial = (name: string) => {
+  const first = (name ?? '').trim().charAt(0);
+  return first ? first.toUpperCase() : '?';
+};
+
 // Fallback data used only if Supabase is unavailable
 const FALLBACK_EVENTS: Event[] = [
   {
@@ -332,6 +355,7 @@ const GENERAL_ANNOUNCEMENTS = [
   "Pondicherry Weekend Escape bookings are live",
   "Kolukkumalai Sunrise Trail now taking bookings"
 ];
+
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
@@ -2387,7 +2411,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
         {/* What's Included */}
         <div className="p-6 border-b border-gray-100">
           <h3 className="text-xl font-black mb-4">What's Included</h3>
-          <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
+          <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
             <div className="p-4 space-y-3">
               {event.included?.map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
@@ -2445,11 +2469,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
         </div>
 
         {/* The Plan */}
-        <div className="p-6 border-b border-gray-100" ref={itineraryRef}>
+        <div className="p-6" ref={itineraryRef}>
           <h3 className="text-xl font-black mb-4">You'll Experience</h3>
           <div className="space-y-3">
             {event.itinerary?.map((day, i) => (
-              <div key={i} className="rounded-xl border-2 border-gray-200 overflow-hidden bg-gray-50">
+              <div key={i} className="rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
                 <button 
                   onClick={() => setExpandedItinerary(expandedItinerary === i ? null : i)}
                   className="w-full px-4 py-3 flex items-center justify-between text-left bg-gray-50 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
@@ -2501,7 +2525,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
 
         {/* Where We Stay */}
         {event.showAccommodation && (
-          <div className="p-6 border-b border-gray-100">
+          <div className="p-6">
             <h3 className="text-xl font-black mb-4">Where We Stay</h3>
             {(() => {
               const accommodation = event.accommodation ?? {};
@@ -2513,7 +2537,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
                     features: [0, 1, 2].map(i => accommodation.features?.[i] ?? '').filter(Boolean),
                   }];
               return (
-                <div className="bg-gray-50 rounded-2xl border-2 border-gray-200 overflow-hidden">
+                <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
                   {stays.map((stay, stayIndex) => (
                     <div key={stayIndex} className={stayIndex > 0 ? 'border-t border-gray-200' : ''}>
                       <div className="relative w-full aspect-[4/3]">
@@ -2582,64 +2606,63 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, onSwitchEvent, on
           </div>
         )}
 
-        {/* Reviews */}
-        {!event.isActivity && (event.reviews?.length ?? 0) > 0 && (
-          <div className="pt-5 pb-2">
-            <div className="px-6 mb-2">
-              <h3 className="text-xl font-black">Fellow Lifemaxxers Said</h3>
-            </div>
-            <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4 pt-1">
-              {event.reviews?.map((review, i) => {
-                const colors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'];
-                const colorIndex = review.name.length % colors.length;
-                const avatarColor = colors[colorIndex];
-                const initial = review.name.charAt(0).toUpperCase();
-                
+        {/* Our Plan's Group Chat */}
+        {(() => {
+          const eventGroupchatMessages: GroupChatMessage[] = (event.reviews ?? [])
+            .map(review => ({
+              name: (review.name ?? '').trim(),
+              text: (review.text ?? '').trim(),
+            }))
+            .filter(msg => msg.name.length > 0 && msg.text.length > 0);
+          const groupchatMessagesToRender = eventGroupchatMessages.length > 0 ? eventGroupchatMessages : GROUPCHAT_MESSAGES;
+          return (
+        <div className="px-6 pt-6 pb-4">
+          <h3 className="text-xl font-black text-gray-900 mb-3">Our Plan's Group Chat</h3>
+          <div className="relative h-56 overflow-hidden rounded-2xl border border-gray-200 bg-white/90 px-2 py-2">
+            <motion.div
+              className="flex flex-col items-start"
+              style={{ willChange: 'transform' }}
+              animate={{ y: ['0%', '-50%'] }}
+              transition={{ duration: 48, ease: 'linear', repeat: Infinity }}
+            >
+              {[...groupchatMessagesToRender, ...groupchatMessagesToRender].map((msg, idx) => {
+                const color = getGroupchatColor(msg.name);
                 return (
-                  <div key={i} className="w-72 flex-shrink-0 snap-center bg-gray-50 p-4 rounded-xl border-2 border-gray-200 flex flex-col gap-3">
-                    {/* Reviewer Info */}
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-lg ${avatarColor}`}>
-                        {initial}
+                  <div key={`${msg.name}-${idx}`} className="flex items-end gap-2.5 mb-3">
+                    <div
+                      className="w-7 h-7 rounded-full text-white text-[11px] font-black flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: color }}
+                    >
+                      {getGroupchatInitial(msg.name)}
+                    </div>
+                    <div className="max-w-[66%]">
+                      <div className="text-[11px] font-bold mb-1.5" style={{ color }}>
+                        {msg.name}
                       </div>
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-sm text-gray-900">{review.name}</span>
-                        <span className="text-xs text-gray-500">Local Guide · {review.reviewCount ?? (review.name.length * 2 + 5)} reviews</span>
-                      </div>
-                      {/* Google G Logo SVG */}
-                      <div className="ml-auto opacity-70">
-                        <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                        </svg>
+                      <div
+                        className="text-[14px] leading-[1.4] text-gray-900 px-3 py-2.5"
+                        style={{
+                          background: '#e9e9eb',
+                          borderRadius: '18px 18px 18px 4px',
+                        }}
+                      >
+                        {msg.text}
                       </div>
                     </div>
-
-                    {/* Rating & Time */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex text-[#fbbc04]">
-                        {[...Array(5)].map((_, j) => (
-                          <Star key={j} size={14} fill={j < review.rating ? "currentColor" : "none"} className={j < review.rating ? "" : "text-gray-300"} />
-                        ))}
-                      </div>
-                      <span className="text-xs text-gray-500">{review.dateLabel || `${(i * 2) + 1} months ago`}</span>
-                    </div>
-
-                    {/* Review Text */}
-                    <p className="text-sm text-gray-700 leading-relaxed line-clamp-4">{review.text}</p>
-
                   </div>
                 );
               })}
-            </div>
+            </motion.div>
+            <div className="pointer-events-none absolute left-0 right-0 top-0 h-5 bg-gradient-to-b from-white/80 via-white/35 to-transparent" />
+            <div className="pointer-events-none absolute left-0 right-0 bottom-0 h-5 bg-gradient-to-t from-white/80 via-white/35 to-transparent" />
           </div>
-        )}
+        </div>
+          );
+        })()}
 
         {/* Video Carousel */}
         {!event.isActivity && !!event.videos?.length && (
-          <div className="pt-4 pb-6">
+          <div className="pt-3 pb-6">
             <div className="px-6 mb-3 flex items-center justify-between">
               <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
             </div>
