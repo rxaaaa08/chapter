@@ -94,7 +94,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
-type HistoryLayer = 'event-details' | 'details-calendar' | 'post-details-chat' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
+type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'doubt-popup' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -109,13 +109,15 @@ const GROUPCHAT_AVATAR_COLORS = ['#5B8DEF', '#F59E0B', '#10B981', '#EF4444', '#8
 const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   'event-details': 1,
   'details-calendar': 2,
+  'details-plan-switcher': 2,
   'post-details-chat': 3,
-  'booking-timeline': 4,
-  'details-form': 5,
-  'payment-checkout': 6,
-  'payment-success': 7,
-  'payment-failure': 7,
-  'tc-modal': 8,
+  'doubt-popup': 4,
+  'booking-timeline': 5,
+  'details-form': 6,
+  'payment-checkout': 7,
+  'payment-success': 8,
+  'payment-failure': 8,
+  'tc-modal': 9,
 };
 
 const getGroupchatColor = (name: string) => {
@@ -437,6 +439,9 @@ export default function App() {
   const [showDetailsForm, setShowDetailsForm] = useState(false);
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
+  const [detailsPlanSwitcherOpen, setDetailsPlanSwitcherOpen] = useState(false);
+  const [openDetailsPlanSwitcherSignal, setOpenDetailsPlanSwitcherSignal] = useState(0);
+  const [closeDetailsPlanSwitcherSignal, setCloseDetailsPlanSwitcherSignal] = useState(0);
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -477,12 +482,14 @@ export default function App() {
     !showTcModal;
   const activeHistoryLayer: HistoryLayer | null =
     showTcModal ? 'tc-modal'
+    : showDoubtPopup ? 'doubt-popup'
     : paymentView === 'failure' ? 'payment-failure'
     : paymentView === 'success' ? 'payment-success'
     : paymentView === 'checkout' ? 'payment-checkout'
     : showDetailsForm ? 'details-form'
     : showBookingTimeline ? 'booking-timeline'
     : isPostDetailsChatLayer ? 'post-details-chat'
+    : (showDetails && detailsPlanSwitcherOpen) ? 'details-plan-switcher'
     : (showDetails && detailsCalendarOpen) ? 'details-calendar'
     : showDetails ? 'event-details'
     : null;
@@ -659,6 +666,8 @@ export default function App() {
       handlingPopStateRef.current = true;
       if (activeHistoryLayer === 'tc-modal') {
         setShowTcModal(false);
+      } else if (activeHistoryLayer === 'doubt-popup') {
+        setShowDoubtPopup(false);
       } else if (activeHistoryLayer === 'payment-failure' || activeHistoryLayer === 'payment-success') {
         setPaymentView('checkout');
       } else if (activeHistoryLayer === 'payment-checkout') {
@@ -674,11 +683,15 @@ export default function App() {
       } else if (activeHistoryLayer === 'post-details-chat') {
         setShowDetails(true);
         setStep('EVENT_SELECTED');
+      } else if (activeHistoryLayer === 'details-plan-switcher') {
+        setCloseDetailsPlanSwitcherSignal(prev => prev + 1);
+        setDetailsPlanSwitcherOpen(false);
       } else if (activeHistoryLayer === 'details-calendar') {
         setCloseDetailsCalendarSignal(prev => prev + 1);
         setDetailsCalendarOpen(false);
       } else if (activeHistoryLayer === 'event-details') {
-        closeEventDetails(true);
+        setOpenDetailsPlanSwitcherSignal(prev => prev + 1);
+        setDetailsPlanSwitcherOpen(true);
       }
       setTimeout(() => { handlingPopStateRef.current = false; }, 0);
     };
@@ -1351,6 +1364,9 @@ export default function App() {
             allEvents={events.filter(e => !e.inviteOnly)}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
+            openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
+            closePlanSwitcherSignal={closeDetailsPlanSwitcherSignal}
+            onPlanSwitcherVisibilityChange={setDetailsPlanSwitcherOpen}
             onSwitchEvent={(e, city) => {
               setSelectedEvent(e);
               setSelectedCategory(e.category);
@@ -1905,9 +1921,17 @@ export default function App() {
                 transition={{ duration: 0.32, ease: 'easeOut' }}
                 className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-[60] flex flex-col"
               >
-                {/* Handle + Header */}
-                <div className="px-6 pt-4 pb-4">
-                  <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
+                <button
+                  type="button"
+                  onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', message: '' }); }}
+                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                  aria-label="Close doubt form"
+                >
+                  <X size={14} />
+                </button>
+
+                {/* Header */}
+                <div className="relative px-6 pt-4 pb-4">
                   <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
                 </div>
 
@@ -2132,7 +2156,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSignal, onCalendarVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -2163,6 +2187,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
+  const lastHandledOpenPlanSwitcherSignalRef = useRef(openPlanSwitcherSignal ?? 0);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cityDateOffset = React.useMemo(() => {
     if (!event.transportPlan) return 0;
@@ -2210,6 +2235,27 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
   useEffect(() => {
     return () => onCalendarVisibilityChange?.(false);
   }, [onCalendarVisibilityChange]);
+
+  useEffect(() => {
+    onPlanSwitcherVisibilityChange?.(showPlanSwitcher);
+  }, [showPlanSwitcher, onPlanSwitcherVisibilityChange]);
+
+  useEffect(() => {
+    if (!showPlanSwitcher) return;
+    setShowPlanSwitcher(false);
+  }, [closePlanSwitcherSignal]);
+
+  useEffect(() => {
+    if (!openPlanSwitcherSignal) return;
+    if (openPlanSwitcherSignal <= lastHandledOpenPlanSwitcherSignalRef.current) return;
+    lastHandledOpenPlanSwitcherSignalRef.current = openPlanSwitcherSignal;
+    setSwitcherCity(selectedCity);
+    setShowPlanSwitcher(true);
+  }, [openPlanSwitcherSignal, selectedCity]);
+
+  useEffect(() => {
+    return () => onPlanSwitcherVisibilityChange?.(false);
+  }, [onPlanSwitcherVisibilityChange]);
 
   useEffect(() => {
     if (!showCalendar || !selectedDate) return;
@@ -2929,10 +2975,19 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] z-50 flex flex-col max-h-[95%] overflow-hidden shadow-2xl"
+              className="absolute bottom-0 left-0 right-0 z-50"
             >
-              <div className="p-4 pb-0 bg-white sticky top-0 z-10 cursor-pointer" onClick={() => setShowCalendar(false)}>
-                <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
+              <button
+                type="button"
+                onClick={() => setShowCalendar(false)}
+                className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                aria-label="Close calendar"
+              >
+                <X size={14} />
+              </button>
+              <div className="bg-white rounded-t-[2rem] flex flex-col max-h-[95%] overflow-hidden shadow-2xl">
+              <div className="relative p-4 pb-0 bg-white sticky top-0 z-10">
+                <div className="h-[11px]" aria-hidden="true" />
               </div>
               <div className="p-4 overflow-y-auto pb-safe">
                 {renderCalendar()}
@@ -3079,6 +3134,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </div>
               </div>
             </motion.div>
           </>
@@ -3272,8 +3328,14 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
               className="absolute bottom-0 left-0 right-0 z-[201] bg-white rounded-t-[2rem] flex flex-col max-h-[85%]"
             >
-              {/* Handle */}
-              <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+              <button
+                type="button"
+                onClick={() => setShowPlanSwitcher(false)}
+                className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                aria-label="Close plan switcher"
+              >
+                <X size={14} />
+              </button>
               {/* City switcher — same style as month switcher in calendar */}
               {(() => {
                 const cityOrder: string[] = [];
@@ -3286,7 +3348,10 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
 
                 return (
                   <>
-                    <div className="flex flex-col items-center gap-3 px-6 pt-5 pb-5 border-b border-gray-100 flex-shrink-0">
+                    <div className="flex flex-col items-center gap-3 px-6 pt-7 pb-5 border-b border-gray-100 flex-shrink-0">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                        CHANGE CITY
+                      </span>
                       <div className="flex items-center gap-6">
                         <button
                           onClick={() => setSwitcherCity(cityOrder[(cityIdx - 1 + cityOrder.length) % cityOrder.length])}
@@ -3309,7 +3374,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                         const catEvents = cityEvents.filter(e => e.category === cat);
                         return (
                           <div key={cat} className="mb-5">
-                            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3 px-1">{cat}</div>
+                            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3 text-center">CHANGE PLAN</div>
                             {catEvents.map(e => {
                               const isActive = e.id === event.id && switcherCity === selectedCity;
                               return (
@@ -3319,7 +3384,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                                   className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
                                 >
                                   <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
-                                  {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Selected</span>}
+                                  {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Viewing</span>}
                                 </button>
                               );
                             })}
