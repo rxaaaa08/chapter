@@ -665,6 +665,20 @@ export default function App() {
     const onPopState = () => {
       if (!activeHistoryLayer) return;
       handlingPopStateRef.current = true;
+      if (
+        isPlansHistoryManaged &&
+        (activeHistoryLayer === 'event-details' || activeHistoryLayer === 'details-plan-switcher')
+      ) {
+        // Keep browser back trapped inside details: always surface the plan switcher.
+        setOpenDetailsPlanSwitcherSignal(prev => prev + 1);
+        setDetailsPlanSwitcherOpen(true);
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
+        window.history.pushState({ chapteraLayer: 'details-plan-switcher' }, '', window.location.href);
+        historyLayerRef.current = 'details-plan-switcher';
+        setTimeout(() => { handlingPopStateRef.current = false; }, 0);
+        return;
+      }
       if (isPreviewMode && activeHistoryLayer === 'details-calendar') {
         setCloseDetailsCalendarSignal(prev => prev + 1);
         setDetailsCalendarOpen(false);
@@ -736,7 +750,7 @@ export default function App() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, closeEventDetails]);
+  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails]);
 
   // Reset announcement index when switching contexts
   useEffect(() => {

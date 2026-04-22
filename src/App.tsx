@@ -657,7 +657,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               type="button"
               onClick={onContinue}
               style={{
-                width: '100%',
+                width: '92%',
+                margin: '0 auto',
                 border: 'none',
                 borderRadius: 16,
                 background: '#FFD700',
