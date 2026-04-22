@@ -819,9 +819,10 @@ export default function App() {
   const [routeSearch, setRouteSearch] = useState(typeof window !== 'undefined' ? window.location.search : '');
   const isAdmin = routePath === '/admin';
   const isPlansPage = routePath === '/plans';
-  const isJoinPage = routePath === '/join';
+  const isLegacyJoinPage = routePath === '/join';
+  const isLifestylePage = routePath === '/lifestyle' || isLegacyJoinPage;
   const hasPreviewParam = routeSearch.includes('preview_event');
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isJoinPage);
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -831,10 +832,23 @@ export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const syncRoute = () => {
+      if (window.location.pathname === '/join') {
+        const nextSearch = window.location.search || '';
+        window.history.replaceState({}, '', `/lifestyle${nextSearch}`);
+        setRoutePath('/lifestyle');
+        setRouteSearch(nextSearch);
+        return;
+      }
       setRoutePath(window.location.pathname);
       setRouteSearch(window.location.search);
     };
     window.addEventListener('popstate', syncRoute);
+    if (window.location.pathname === '/join') {
+      const nextSearch = window.location.search || '';
+      window.history.replaceState({}, '', `/lifestyle${nextSearch}`);
+      syncRoute();
+      return () => window.removeEventListener('popstate', syncRoute);
+    }
     if (window.location.pathname === '/' && !window.location.search.includes('preview_event')) {
       window.history.replaceState({}, '', '/aboutus');
       syncRoute();
@@ -872,7 +886,7 @@ export default function App() {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const isLetterPage = isJoinPage && !hasPreviewParam;
+    const isLetterPage = isLifestylePage && !hasPreviewParam;
     if (isAdmin || showHomepage || isLetterPage) {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
@@ -885,11 +899,11 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isAdmin, isJoinPage, hasPreviewParam]);
+  }, [showHomepage, isAdmin, isLifestylePage, hasPreviewParam]);
 
   if (isAdmin) return <AdminPanel />;
 
-  if (isJoinPage && !hasPreviewParam) {
+  if (isLifestylePage && !hasPreviewParam) {
     return (
       <>
         <LandscapeBlocker />
