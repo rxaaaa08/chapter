@@ -380,6 +380,7 @@ export default function App() {
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const isPlansPath = typeof window !== 'undefined' && window.location.pathname === '/plans';
   const isPlansHistoryManaged = isPlansPath && !isPreviewMode;
+  const isDetailsHistoryManaged = isPlansHistoryManaged || isPreviewMode;
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
   const historyLayerRef = useRef<HistoryLayer | null>(null);
   const handlingPopStateRef = useRef(false);
@@ -638,7 +639,7 @@ export default function App() {
   }, [detailsReady, showTransition]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !isPlansHistoryManaged) return;
+    if (typeof window === 'undefined' || !isDetailsHistoryManaged) return;
     const previousLayer = historyLayerRef.current;
     const nextLayer = activeHistoryLayer;
 
@@ -657,13 +658,51 @@ export default function App() {
       window.history.pushState({ chapteraLayer: nextLayer }, '', window.location.href);
     }
     historyLayerRef.current = nextLayer;
-  }, [activeHistoryLayer, isPlansHistoryManaged]);
+  }, [activeHistoryLayer, isDetailsHistoryManaged]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !isPlansHistoryManaged) return;
+    if (typeof window === 'undefined' || !isDetailsHistoryManaged) return;
     const onPopState = () => {
       if (!activeHistoryLayer) return;
       handlingPopStateRef.current = true;
+      if (isPreviewMode && activeHistoryLayer === 'details-calendar') {
+        setCloseDetailsCalendarSignal(prev => prev + 1);
+        setDetailsCalendarOpen(false);
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
+        setTimeout(() => { handlingPopStateRef.current = false; }, 0);
+        return;
+      }
+      if (isPreviewMode && activeHistoryLayer === 'details-plan-switcher') {
+        setCloseDetailsPlanSwitcherSignal(prev => prev + 1);
+        setDetailsPlanSwitcherOpen(false);
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
+        setTimeout(() => { handlingPopStateRef.current = false; }, 0);
+        return;
+      }
+      if (isPreviewMode && activeHistoryLayer !== 'event-details') {
+        setShowTcModal(false);
+        setShowDoubtPopup(false);
+        setPaymentView('idle');
+        setShowDetailsForm(false);
+        setShowBookingTimeline(false);
+        setShowWaitlistForm(false);
+        setDetailsPlanSwitcherOpen(false);
+        setDetailsCalendarOpen(false);
+        setShowChat(false);
+        setShowTransition(false);
+        setDetailsReady(true);
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
+        setTimeout(() => { handlingPopStateRef.current = false; }, 0);
+        return;
+      }
+      if (isPreviewMode && activeHistoryLayer === 'event-details') {
+        window.location.assign('/aboutus');
+        setTimeout(() => { handlingPopStateRef.current = false; }, 0);
+        return;
+      }
       if (activeHistoryLayer === 'tc-modal') {
         setShowTcModal(false);
       } else if (activeHistoryLayer === 'doubt-popup') {
@@ -697,7 +736,7 @@ export default function App() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeHistoryLayer, isPlansHistoryManaged, closeEventDetails]);
+  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, closeEventDetails]);
 
   // Reset announcement index when switching contexts
   useEffect(() => {

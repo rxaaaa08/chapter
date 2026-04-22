@@ -397,38 +397,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
           <p>We organise and facilitate social experiences, community events, activities and group trips for young adults. Our experiences are designed to help individuals and groups discover new places, meet new people and participate in well-managed experiences in a comfortable setting.</p>
           <p>Each experience is published with relevant information such as date, inclusions, exclusions, pricing, advance payment terms, fulfilment details and support information so customers can review the details before booking.</p>
           <p>Customers can reserve spots through our website by paying an advance amount online. Where applicable, the remaining balance is collected before the experience date, and confirmed participants receive updates, reminders and logistical details through WhatsApp or email.</p>
-          <p>Legal Entity Name: <strong>CHAPTER</strong><br />MSME Registration: <strong>UDYAM-TN-02-0414270</strong><br />Registered Business Address: <strong>16/45, Dharmaraja Koil Street, Kilpauk Garden Colony, Chennai - 600010</strong></p>
-        </div>
-      </section>
-
-      {/* Experiences / Offerings */}
-      <section className="hp-offerings hp-section" id="experiences">
-        <div className="hp-container">
-          <span className="hp-section-label">How It Works</span>
-          <h2>What we offer</h2>
-          <div className="hp-offerings-grid">
-            <div className="hp-offering-card">
-              <div className="hp-offering-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              </div>
-              <h3>Social Events</h3>
-              <p>Curated gatherings, themed meet-ups and community experiences designed for comfortable social participation.</p>
-            </div>
-            <div className="hp-offering-card">
-              <div className="hp-offering-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-              </div>
-              <h3>Group Trips</h3>
-              <p>Short trips and travel experiences with pre-shared logistics, inclusions and payment structure.</p>
-            </div>
-            <div className="hp-offering-card">
-              <div className="hp-offering-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-              </div>
-              <h3>Managed Experience Flow</h3>
-              <p>Clear pre-booking information, customer communication and post-booking coordination for each experience.</p>
-            </div>
-          </div>
+          <p>Legal Entity Name: <strong>CHAPTER</strong><br />Proprietor's Name: <strong>Krutesh S.K</strong><br />MSME Registration: <strong>UDYAM-TN-02-0414270</strong><br />Registered Business Address: <strong>16/45, Dharmaraja Koil Street, Kilpauk Garden Colony, Chennai - 600010</strong></p>
         </div>
       </section>
 
@@ -462,26 +431,12 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
         </div>
       </section>
 
-      {/* Refund Policy */}
-      <section className="hp-policy hp-section" id="policies">
+      {/* Online Payments */}
+      <section className="hp-policy hp-section" style={{ paddingTop: '2rem' }}>
         <div className="hp-container">
-          <span className="hp-section-label">Refund & Cancellation Policy</span>
-          <h2>Our refund policy</h2>
-          <p style={{ fontSize: 12, color: '#999', marginBottom: '1.25rem', fontStyle: 'italic' }}>Note: The term "experience" includes trips, activities, workshops, events and community gatherings published by chapter அ.</p>
-          <div className="hp-policy-grid">
-            {[
-              ['1. Advance Payment', 'An advance amount may be required to reserve a spot for an experience. The applicable advance amount is shown on the booking page. The booking is confirmed only after successful payment.'],
-              ['2. Balance Payment', 'For experiences with partial payment options, the remaining balance must be paid by the communicated due date before participation. Reminder messages may be sent through WhatsApp or email.'],
-              ['3. Cancellation by Customer', 'Unless otherwise stated on the specific booking page, advance payments are non-refundable because reservations and third-party arrangements may be made in advance on behalf of the customer.'],
-              ['4. Cancellation by chapter அ', 'If chapter அ cancels an experience, the customer will receive a refund of the amount paid for that booking, unless an alternative date or replacement experience is accepted by the customer.'],
-              ['5. Refund Support', 'For cancellation or refund-related queries, customers can contact us on WhatsApp at +91 8838111564 or by email at chapteraaa.official@gmail.com.'],
-            ].map(([title, body]) => (
-              <div className="hp-policy-card" key={title}>
-                <div className="hp-policy-dot" />
-                <div><h3>{title}</h3><p>{body}</p></div>
-              </div>
-            ))}
-          </div>
+          <span className="hp-section-label">Online Payments</span>
+          <h2>Online payments</h2>
+          <p>This online payment system is provided by CHAPTER. CHAPTER may update these terms from time to time and any changes will be effective immediately on being set out here. Please ensure you are aware of the current terms. The country of domicile for CHAPTER is India.</p>
         </div>
       </section>
 
@@ -509,6 +464,29 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
         </div>
       </section>
 
+      {/* Refund Policy */}
+      <section className="hp-policy hp-section" id="policies">
+        <div className="hp-container">
+          <span className="hp-section-label">Refund & Cancellation Policy</span>
+          <h2>Our refund policy</h2>
+          <p style={{ fontSize: 12, color: '#999', marginBottom: '1.25rem', fontStyle: 'italic' }}>Note: The term "experience" includes trips, activities, workshops, events and community gatherings published by chapter அ.</p>
+          <div className="hp-policy-grid">
+            {[
+              ['1. Advance Payment', 'An advance amount may be required to reserve a spot for an experience. The applicable advance amount is shown on the booking page. The booking is confirmed only after successful payment.'],
+              ['2. Balance Payment', 'For experiences with partial payment options, the remaining balance must be paid by the communicated due date before participation. Reminder messages may be sent through WhatsApp or email.'],
+              ['3. Cancellation by Customer', 'Unless otherwise stated on the specific booking page, advance payments are non-refundable because reservations and third-party arrangements may be made in advance on behalf of the customer.'],
+              ['4. Cancellation by chapter அ', 'If chapter அ cancels an experience, the customer will receive a refund of the amount paid for that booking, unless an alternative date or replacement experience is accepted by the customer.'],
+              ['5. Refund Support', 'For cancellation or refund-related queries, customers can contact us on WhatsApp at +91 8838111564 or by email at chapteraaa.official@gmail.com.'],
+            ].map(([title, body]) => (
+              <div className="hp-policy-card" key={title}>
+                <div className="hp-policy-dot" />
+                <div><h3>{title}</h3><p>{body}</p></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Privacy */}
       <section className="hp-privacy hp-section">
         <div className="hp-container">
@@ -527,6 +505,21 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
               </div>
             ))}
           </div>
+          <div className="hp-privacy-grid" style={{ marginTop: '1.25rem' }}>
+            <div className="hp-privacy-card" style={{ gridColumn: '1 / -1' }}>
+              <h3>Changes to our Privacy Policy</h3>
+              <p>CHAPTER reserves the entire right to modify/amend/remove this privacy statement anytime and without any reason. Nothing contained herein creates or is intended to create a contract/agreement between CHAPTER and any user visiting the CHAPTER website or providing identifying information of any kind.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* DND Policy */}
+      <section className="hp-policy hp-section">
+        <div className="hp-container">
+          <span className="hp-section-label">DND Policy</span>
+          <h2>DND policy</h2>
+          <p>If you wish to stop any further sms/email alerts/contacts from our side, all you need to do is to send an email:-chapteraaa.official@gmail.com with your mobile numbers and you will be excluded from the alerts list.</p>
         </div>
       </section>
 
@@ -554,6 +547,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
         </div>
         <div style={{ marginTop: 10, textAlign: 'right' }}>
           <p style={{ color: 'rgba(255,255,255,0.6)' }}>Operated by <strong>CHAPTER</strong></p>
+          <p style={{ color: 'rgba(255,255,255,0.4)' }}>Proprietor's Name: Krutesh S.K</p>
           <p style={{ color: 'rgba(255,255,255,0.4)' }}>Registered Address: 16/45, Dharmaraja Koil Street, Kilpauk Garden Colony, Chennai - 600010</p>
           <p style={{ color: 'rgba(255,255,255,0.4)' }}>MSME Registration: UDYAM-TN-02-0414270</p>
           <p style={{ marginTop: 4 }}>© 2025 chapter அ. All rights reserved.</p>
