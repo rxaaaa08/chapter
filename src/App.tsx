@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Send, RotateCcw } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
-import joinLetterLogo from './assets/join-letter-logo.png';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
 import { trackEvent } from './supabase';
@@ -558,9 +557,8 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 }
 
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
-  const [posterMissing, setPosterMissing] = useState(false);
+  const posterUrl = '/join-poster-founder.png';
   const [posterLoaded, setPosterLoaded] = useState(false);
-  const posterUrl = '/join-poster.png';
 
   return (
     <div className="h-[100dvh] bg-white flex items-stretch sm:items-center justify-center p-0 sm:p-4">
@@ -568,187 +566,93 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
         <div
           style={{
             height: '100%',
-            overflowY: 'auto',
+            overflow: 'hidden',
             color: '#232323',
             fontFamily: "'DM Sans', sans-serif",
             padding: 'clamp(10px, 2.6vw, 20px) clamp(6px, 2vw, 16px) calc(18px + env(safe-area-inset-bottom))',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
+            alignItems: 'center',
             position: 'relative',
           }}
         >
-          {!posterLoaded && !posterMissing && (
+          {!posterLoaded && (
             <div
               style={{
                 position: 'absolute',
                 inset: 0,
                 background: '#fff',
+                zIndex: 20,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 12,
-                zIndex: 20,
+                gap: 24,
               }}
             >
               <motion.div
-                aria-hidden="true"
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 999,
-                  border: '3px solid rgba(229,196,73,0.28)',
-                  borderTopColor: '#E5C449',
-                }}
-                animate={{ rotate: 360 }}
-                transition={{ duration: 0.9, ease: 'linear', repeat: Infinity }}
-              />
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#4a4a4a' }}>Loading poster...</p>
-            </div>
-          )}
-          {!posterMissing ? (
-            <div
-              style={{
-                width: '100%',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  width: 'fit-content',
-                  margin: '0 auto',
-                  maxWidth: '100%',
-                }}
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                style={{ position: 'relative' }}
               >
+                <motion.div
+                  animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: 16,
+                    background: '#FFD700',
+                    filter: 'blur(10px)',
+                  }}
+                />
                 <div
                   style={{
-                    borderRadius: 18,
+                    position: 'relative',
+                    width: 64,
+                    height: 64,
+                    borderRadius: 16,
+                    background: '#000',
+                    boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
                     overflow: 'hidden',
+                    padding: 6,
                   }}
                 >
                   <img
-                    src={posterUrl}
-                    alt="Chapter A join poster"
-                    onLoad={() => setPosterLoaded(true)}
-                    onError={() => {
-                      setPosterMissing(true);
-                      setPosterLoaded(true);
-                    }}
-                    style={{
-                      width: 'auto',
-                      maxWidth: 'min(96vw, 560px)',
-                      maxHeight: 'min(78vh, calc(100dvh - 140px))',
-                      height: 'auto',
-                      margin: '0 auto',
-                      display: 'block',
-                      objectFit: 'contain',
-                      borderRadius: 18,
-                    }}
+                    src={chatProfile}
+                    alt="chapter அ"
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scale(1.02) translateY(2px)' }}
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={onContinue}
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    borderRadius: 18,
-                    background: '#FFD700',
-                    color: '#111',
-                    padding: '16px 18px',
-                    fontSize: 18,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                  }}
-                >
-                  <motion.span
-                    aria-hidden="true"
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      transform: 'skewX(-12deg)',
-                      background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
-                      width: '50%',
-                    }}
-                    animate={{ x: ['-100%', '300%'] }}
-                    transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
-                  />
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    Enter
-                    <ArrowRight size={20} strokeWidth={2.8} />
-                  </span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                width: '100%',
-                border: '1.5px dashed #595959',
-                borderRadius: 24,
-                background: '#f9fafb',
-                padding: 'clamp(18px, 3.5vw, 30px) clamp(18px, 3.5vw, 30px) clamp(10px, 2vw, 14px)',
-              }}
-            >
-              <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <img
-                  src={joinLetterLogo}
-                  alt="chapter அ"
-                  style={{ width: 70, height: 70, margin: '0 auto', marginBottom: -8, display: 'block', objectFit: 'contain' }}
-                />
-                <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>what's chapter அ?</p>
-              </div>
-              <p
-                style={{
-                  fontSize: 'clamp(14px, 2vw, 17px)',
-                  fontWeight: 650,
-                  letterSpacing: '-0.015em',
-                  lineHeight: 1.28,
-                  color: '#232323',
-                  marginBottom: 14,
-                }}
-              >
-                to new ppl & our regulars,
-              </p>
-
-              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
-                chapter அ is a lifestyle club for people who never say never.
-              </p>
-              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
-                we didn’t start by hosting events — we started by crashing a wedding.
-              </p>
-              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
-                since then, i'm grateful for being able to bring people together to do (crazy) things they’ve always dreamed of doing.
-              </p>
-              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 16 }}>
-                be it crashing a wedding or surfing in sri lanka, i hope our plans let you live your dreams & find belonging.
-              </p>
-
-              <p
-                style={{
-                  fontSize: 'clamp(14px, 2vw, 17px)',
-                  fontWeight: 450,
-                  color: '#232323',
-                  letterSpacing: '-0.008em',
-                  lineHeight: 1.34,
-                  textAlign: 'left',
-                  marginBottom: 8,
-                }}
-              >
-                — the founder
-              </p>
+              </motion.div>
             </div>
           )}
-          {posterMissing && <div style={{ marginTop: 12 }}>
+          <div
+            style={{
+              width: 'min(100%, 560px)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+            }}
+          >
+            <img
+              src={posterUrl}
+              alt="Chapter A founder poster"
+              onLoad={() => setPosterLoaded(true)}
+              onError={() => setPosterLoaded(true)}
+              style={{
+                width: '100%',
+                maxWidth: '100%',
+                maxHeight: 'calc(100dvh - 170px - env(safe-area-inset-bottom))',
+                height: 'auto',
+                margin: '0 auto',
+                display: 'block',
+                objectFit: 'contain',
+                borderRadius: 18,
+              }}
+            />
             <button
               type="button"
               onClick={onContinue}
@@ -787,7 +691,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 <ArrowRight size={20} strokeWidth={2.8} />
               </span>
             </button>
-          </div>}
+          </div>
         </div>
       </div>
     </div>
