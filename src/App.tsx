@@ -561,19 +561,14 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
   const [posterLoaded, setPosterLoaded] = useState(false);
 
   return (
-    <div className="h-[100dvh] bg-white flex items-stretch sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white bg-white overflow-hidden">
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         <div
           style={{
             height: '100%',
             overflow: 'hidden',
             color: '#232323',
             fontFamily: "'DM Sans', sans-serif",
-            padding: 'clamp(10px, 2.6vw, 20px) clamp(6px, 2vw, 16px) calc(18px + env(safe-area-inset-bottom))',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
             position: 'relative',
           }}
         >
@@ -631,10 +626,9 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           )}
           <div
             style={{
-              width: 'min(100%, 560px)',
+              height: '100%',
               display: 'flex',
               flexDirection: 'column',
-              gap: 12,
             }}
           >
             <img
@@ -644,52 +638,67 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               onError={() => setPosterLoaded(true)}
               style={{
                 width: '100%',
-                maxWidth: '100%',
-                maxHeight: 'calc(100dvh - 170px - env(safe-area-inset-bottom))',
                 height: 'auto',
-                margin: '0 auto',
                 display: 'block',
-                objectFit: 'contain',
-                borderRadius: 18,
+                flexShrink: 0,
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
               }}
             />
             <button
               type="button"
+              aria-label="Enter chapter plans"
               onClick={onContinue}
               style={{
-                width: '96%',
-                margin: '0 auto',
+                flex: 1,
+                width: '100%',
                 border: 'none',
-                borderRadius: 16,
                 background: '#FFD700',
                 color: '#111',
-                padding: '16px 18px',
-                fontSize: 18,
-                fontWeight: 800,
                 cursor: 'pointer',
-                position: 'relative',
                 overflow: 'hidden',
+                position: 'relative',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+                transition: 'transform 160ms ease',
               }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
+              onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
+              onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
             >
               <motion.span
                 aria-hidden="true"
                 style={{
                   position: 'absolute',
                   inset: 0,
-                  transform: 'skewX(-12deg)',
-                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
-                  width: '50%',
+                  transform: 'skewX(-14deg)',
+                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)',
+                  width: '34%',
                 }}
-                animate={{ x: ['-100%', '300%'] }}
-                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
+                animate={{ x: ['-120%', '330%'] }}
+                transition={{ duration: 0.86, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.8 }}
               />
-              <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                Enter
-                <ArrowRight size={20} strokeWidth={2.8} />
+              <span
+                style={{
+                  position: 'relative',
+                  zIndex: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  fontSize: 'clamp(18px, 3.2vw, 24px)',
+                  fontWeight: 900,
+                  letterSpacing: '0',
+                  lineHeight: 1,
+                }}
+              >
+                Tap to Enter
+                <ArrowRight size={26} strokeWidth={3} />
               </span>
             </button>
           </div>
