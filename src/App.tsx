@@ -571,7 +571,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
             overflowY: 'auto',
             color: '#232323',
             fontFamily: "'DM Sans', sans-serif",
-            padding: 'clamp(12px, 3.5vw, 24px) clamp(10px, 3vw, 20px) calc(20px + env(safe-area-inset-bottom))',
+            padding: 'clamp(10px, 2.6vw, 20px) clamp(6px, 2vw, 16px) calc(18px + env(safe-area-inset-bottom))',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
@@ -617,7 +617,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 10,
+                  gap: 12,
                   width: 'fit-content',
                   margin: '0 auto',
                   maxWidth: '100%',
@@ -639,8 +639,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                     }}
                     style={{
                       width: 'auto',
-                      maxWidth: 'min(100%, 440px)',
-                      maxHeight: 'min(72vh, calc(100dvh - 190px))',
+                      maxWidth: 'min(96vw, 560px)',
+                      maxHeight: 'min(78vh, calc(100dvh - 140px))',
                       height: 'auto',
                       margin: '0 auto',
                       display: 'block',
@@ -658,8 +658,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                     borderRadius: 18,
                     background: '#FFD700',
                     color: '#111',
-                    padding: '14px 16px',
-                    fontSize: 16,
+                    padding: '16px 18px',
+                    fontSize: 18,
                     fontWeight: 800,
                     cursor: 'pointer',
                     position: 'relative',
@@ -667,7 +667,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: 8,
+                    gap: 10,
                   }}
                 >
                   <motion.span
@@ -684,7 +684,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   />
                   <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                     Enter
-                    <ArrowRight size={18} strokeWidth={2.5} />
+                    <ArrowRight size={20} strokeWidth={2.8} />
                   </span>
                 </button>
               </div>
@@ -758,8 +758,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 borderRadius: 16,
                 background: '#FFD700',
                 color: '#111',
-                padding: '14px 16px',
-                fontSize: 16,
+                padding: '16px 18px',
+                fontSize: 18,
                 fontWeight: 800,
                 cursor: 'pointer',
                 position: 'relative',
@@ -767,7 +767,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 8,
+                gap: 10,
               }}
             >
               <motion.span
@@ -784,7 +784,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               />
               <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 Enter
-                <ArrowRight size={18} strokeWidth={2.5} />
+                <ArrowRight size={20} strokeWidth={2.8} />
               </span>
             </button>
           </div>}
