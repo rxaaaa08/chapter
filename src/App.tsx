@@ -571,7 +571,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
             overflowY: 'auto',
             color: '#232323',
             fontFamily: "'DM Sans', sans-serif",
-            padding: 'clamp(24px, 5vw, 32px) clamp(16px, 4vw, 24px) calc(40px + env(safe-area-inset-bottom))',
+            padding: 'clamp(12px, 3.5vw, 24px) clamp(10px, 3vw, 20px) calc(20px + env(safe-area-inset-bottom))',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
@@ -611,17 +611,13 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
             <div
               style={{
                 width: '100%',
-                borderRadius: 24,
-                overflow: 'hidden',
-                background: '#f8f8f8',
-                boxShadow: '0 10px 34px rgba(0,0,0,0.08)',
               }}
             >
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 12,
+                  gap: 10,
                   width: 'fit-content',
                   margin: '0 auto',
                   maxWidth: '100%',
@@ -643,8 +639,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                     }}
                     style={{
                       width: 'auto',
-                      maxWidth: '100%',
-                      maxHeight: '64vh',
+                      maxWidth: 'min(100%, 440px)',
+                      maxHeight: 'min(72vh, calc(100dvh - 190px))',
                       height: 'auto',
                       margin: '0 auto',
                       display: 'block',
