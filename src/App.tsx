@@ -799,7 +799,7 @@ export default function App() {
   const [routeSearch, setRouteSearch] = useState(typeof window !== 'undefined' ? window.location.search : '');
   const isAdmin = routePath === '/admin';
   const isPlansPage = routePath === '/plans';
-  const isJoinPage = routePath === '/join' || routePath === '/';
+  const isJoinPage = routePath === '/join';
   const hasPreviewParam = routeSearch.includes('preview_event');
   const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isJoinPage);
 
@@ -816,7 +816,7 @@ export default function App() {
     };
     window.addEventListener('popstate', syncRoute);
     if (window.location.pathname === '/' && !window.location.search.includes('preview_event')) {
-      window.history.replaceState({}, '', '/join');
+      window.history.replaceState({}, '', '/aboutus');
       syncRoute();
     }
     return () => window.removeEventListener('popstate', syncRoute);
