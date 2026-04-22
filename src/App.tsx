@@ -558,6 +558,10 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 }
 
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
+  const [posterMissing, setPosterMissing] = useState(false);
+  const [posterLoaded, setPosterLoaded] = useState(false);
+  const posterUrl = '/join-poster.png';
+
   return (
     <div className="h-[100dvh] bg-white flex items-stretch sm:items-center justify-center p-0 sm:p-4">
       <div className="w-full h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white bg-white overflow-hidden">
@@ -571,67 +575,184 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
+            position: 'relative',
           }}
         >
-          <div
-            style={{
-              width: '100%',
-              border: '1.5px dashed #595959',
-              borderRadius: 24,
-              background: '#f9fafb',
-              padding: 'clamp(18px, 3.5vw, 30px) clamp(18px, 3.5vw, 30px) clamp(10px, 2vw, 14px)',
-            }}
-          >
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <img
-              src={joinLetterLogo}
-              alt="chapter அ"
-              style={{ width: 70, height: 70, margin: '0 auto', marginBottom: -8, display: 'block', objectFit: 'contain' }}
-            />
-            <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>what's chapter அ?</p>
-          </div>
-          <p
-            style={{
-              fontSize: 'clamp(14px, 2vw, 17px)',
-              fontWeight: 650,
-              letterSpacing: '-0.015em',
-              lineHeight: 1.28,
-              color: '#232323',
-              marginBottom: 14,
-            }}
-          >
-            to new ppl & our regulars,
-          </p>
+          {!posterLoaded && !posterMissing && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: '#fff',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                zIndex: 20,
+              }}
+            >
+              <motion.div
+                aria-hidden="true"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 999,
+                  border: '3px solid rgba(229,196,73,0.28)',
+                  borderTopColor: '#E5C449',
+                }}
+                animate={{ rotate: 360 }}
+                transition={{ duration: 0.9, ease: 'linear', repeat: Infinity }}
+              />
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#4a4a4a' }}>Loading poster...</p>
+            </div>
+          )}
+          {!posterMissing ? (
+            <div
+              style={{
+                width: '100%',
+                borderRadius: 24,
+                overflow: 'hidden',
+                background: '#f8f8f8',
+                boxShadow: '0 10px 34px rgba(0,0,0,0.08)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                  width: 'fit-content',
+                  margin: '0 auto',
+                  maxWidth: '100%',
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: 18,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <img
+                    src={posterUrl}
+                    alt="Chapter A join poster"
+                    onLoad={() => setPosterLoaded(true)}
+                    onError={() => {
+                      setPosterMissing(true);
+                      setPosterLoaded(true);
+                    }}
+                    style={{
+                      width: 'auto',
+                      maxWidth: '100%',
+                      maxHeight: '64vh',
+                      height: 'auto',
+                      margin: '0 auto',
+                      display: 'block',
+                      objectFit: 'contain',
+                      borderRadius: 18,
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onContinue}
+                  style={{
+                    width: '100%',
+                    border: 'none',
+                    borderRadius: 18,
+                    background: '#FFD700',
+                    color: '#111',
+                    padding: '14px 16px',
+                    fontSize: 16,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <motion.span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      transform: 'skewX(-12deg)',
+                      background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
+                      width: '50%',
+                    }}
+                    animate={{ x: ['-100%', '300%'] }}
+                    transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
+                  />
+                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    Enter
+                    <ArrowRight size={18} strokeWidth={2.5} />
+                  </span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                width: '100%',
+                border: '1.5px dashed #595959',
+                borderRadius: 24,
+                background: '#f9fafb',
+                padding: 'clamp(18px, 3.5vw, 30px) clamp(18px, 3.5vw, 30px) clamp(10px, 2vw, 14px)',
+              }}
+            >
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <img
+                  src={joinLetterLogo}
+                  alt="chapter அ"
+                  style={{ width: 70, height: 70, margin: '0 auto', marginBottom: -8, display: 'block', objectFit: 'contain' }}
+                />
+                <p style={{ marginTop: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(-8px)', color: '#232323' }}>what's chapter அ?</p>
+              </div>
+              <p
+                style={{
+                  fontSize: 'clamp(14px, 2vw, 17px)',
+                  fontWeight: 650,
+                  letterSpacing: '-0.015em',
+                  lineHeight: 1.28,
+                  color: '#232323',
+                  marginBottom: 14,
+                }}
+              >
+                to new ppl & our regulars,
+              </p>
 
-          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
-            chapter அ is a lifestyle club for people who never say never.
-          </p>
-          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
-            we didn’t start by hosting events — we started by crashing a wedding.
-          </p>
-          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
-            since then, i'm grateful for being able to bring people together to do (crazy) things they’ve always dreamed of doing.
-          </p>
-          <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 16 }}>
-            be it crashing a wedding or surfing in sri lanka, i hope our plans let you live your dreams & find belonging.
-          </p>
+              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
+                chapter அ is a lifestyle club for people who never say never.
+              </p>
+              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
+                we didn’t start by hosting events — we started by crashing a wedding.
+              </p>
+              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 12 }}>
+                since then, i'm grateful for being able to bring people together to do (crazy) things they’ve always dreamed of doing.
+              </p>
+              <p style={{ fontSize: 'clamp(14px, 2vw, 17px)', lineHeight: 1.34, letterSpacing: '-0.008em', fontWeight: 450, color: '#232323', marginBottom: 16 }}>
+                be it crashing a wedding or surfing in sri lanka, i hope our plans let you live your dreams & find belonging.
+              </p>
 
-          <p
-            style={{
-              fontSize: 'clamp(14px, 2vw, 17px)',
-              fontWeight: 450,
-              color: '#232323',
-              letterSpacing: '-0.008em',
-              lineHeight: 1.34,
-              textAlign: 'left',
-              marginBottom: 8,
-            }}
-          >
-            — the founder
-          </p>
-
-          </div>
-          <div style={{ marginTop: 12 }}>
+              <p
+                style={{
+                  fontSize: 'clamp(14px, 2vw, 17px)',
+                  fontWeight: 450,
+                  color: '#232323',
+                  letterSpacing: '-0.008em',
+                  lineHeight: 1.34,
+                  textAlign: 'left',
+                  marginBottom: 8,
+                }}
+              >
+                — the founder
+              </p>
+            </div>
+          )}
+          {posterMissing && <div style={{ marginTop: 12 }}>
             <button
               type="button"
               onClick={onContinue}
@@ -639,7 +760,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 width: '100%',
                 border: 'none',
                 borderRadius: 16,
-                background: '#ffd700',
+                background: '#FFD700',
                 color: '#111',
                 padding: '14px 16px',
                 fontSize: 16,
@@ -647,6 +768,10 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 cursor: 'pointer',
                 position: 'relative',
                 overflow: 'hidden',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
               }}
             >
               <motion.span
@@ -666,7 +791,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 <ArrowRight size={18} strokeWidth={2.5} />
               </span>
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     </div>
@@ -840,12 +965,8 @@ export default function App() {
 
   const continueFromJoin = () => {
     if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      window.history.pushState({}, '', '/plans');
-      setRoutePath('/plans');
-      setRouteSearch('');
+      window.location.href = 'https://chaptera.in/plans';
     }
-    setShowHomepage(false);
   };
 
   useEffect(() => {
