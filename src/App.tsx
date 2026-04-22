@@ -557,7 +557,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 }
 
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
-  const posterUrl = '/join-poster-founder.png';
+  const posterUrl = '/join-poster-founder.png?v=20260423-1';
   const [posterLoaded, setPosterLoaded] = useState(false);
 
   return (
@@ -629,28 +629,41 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               height: '100%',
               display: 'flex',
               flexDirection: 'column',
+              overflow: 'hidden',
             }}
           >
-            <img
-              src={posterUrl}
-              alt="Chapter A founder poster"
-              onLoad={() => setPosterLoaded(true)}
-              onError={() => setPosterLoaded(true)}
+            <div
               style={{
-                width: '100%',
-                height: 'auto',
-                display: 'block',
-                flexShrink: 0,
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
+                flex: '0 1 auto',
+                minHeight: 0,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'flex-end',
               }}
-            />
+            >
+              <img
+                src={posterUrl}
+                alt="Chapter A founder poster"
+                onLoad={() => setPosterLoaded(true)}
+                onError={() => setPosterLoaded(true)}
+                style={{
+                  width: '100%',
+                  height: 'auto',
+                  display: 'block',
+                  flexShrink: 0,
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                }}
+              />
+            </div>
             <button
               type="button"
               aria-label="Enter chapter plans"
               onClick={onContinue}
               style={{
-                flex: 1,
+                flex: '1 1 0',
+                minHeight: 84,
                 width: '100%',
                 border: 'none',
                 background: '#FFD700',
@@ -690,15 +703,15 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 8,
-                  fontSize: 'clamp(18px, 3.2vw, 24px)',
+                  gap: 6,
+                  fontSize: 'clamp(16px, 2.8vw, 20px)',
                   fontWeight: 900,
                   letterSpacing: '0',
                   lineHeight: 1,
                 }}
               >
                 Tap to Enter
-                <ArrowRight size={26} strokeWidth={3} />
+                <ArrowRight size={22} strokeWidth={3} />
               </span>
             </button>
           </div>
