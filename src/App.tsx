@@ -704,14 +704,14 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 6,
-                  fontSize: 'clamp(16px, 2.8vw, 20px)',
+                  fontSize: 'clamp(18px, 3vw, 22px)',
                   fontWeight: 900,
                   letterSpacing: '0',
                   lineHeight: 1,
                 }}
               >
-                Enter
-                <ArrowRight size={22} strokeWidth={3} />
+                Tap to Enter
+                <ArrowRight size={24} strokeWidth={3} />
               </span>
             </button>
           </div>
