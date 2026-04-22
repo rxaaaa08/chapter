@@ -385,7 +385,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
       <section className="hp-hero">
         <h1>Curated experiences <br /><em>for people who want to step out and connect</em></h1>
         <p>chapter அ is a Chennai-based social experiences brand that curates group trips, social gatherings, activities and community-led events. Participants can browse upcoming experiences, view event details and make bookings online.</p>
-        <button type="button" className="hp-btn-primary" onClick={handleViewExperiences}>View Experiences</button>
+        <button type="button" className="hp-btn-primary" onClick={handleViewExperiences}>View Upcoming Experience</button>
       </section>
 
       {/* About */}
