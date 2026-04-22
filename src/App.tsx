@@ -690,7 +690,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   position: 'absolute',
                   inset: 0,
                   transform: 'skewX(-14deg)',
-                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)',
+                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.26) 50%, transparent 100%)',
                   width: '34%',
                 }}
                 animate={{ x: ['-120%', '330%'] }}
@@ -710,7 +710,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   lineHeight: 1,
                 }}
               >
-                Tap to Enter
+                Enter
                 <ArrowRight size={22} strokeWidth={3} />
               </span>
             </button>
