@@ -572,7 +572,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               color: '#232323',
               fontFamily: "'DM Sans', sans-serif",
               position: 'relative',
-              borderRadius: '2rem',
+              borderRadius: '0 0 2rem 2rem',
               boxShadow: '0 24px 70px rgba(0,0,0,0.16)',
               border: 'none',
               background: '#fff',
@@ -746,7 +746,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                     position: 'absolute',
                     inset: '0 auto 0 -50%',
                     width: '50%',
-                    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.34) 50%, transparent 100%)',
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
                     transform: 'skewX(-14deg)',
                     filter: 'blur(1.4px)',
                   }}
@@ -784,7 +784,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   color: '#111',
                 }}
               >
-                <span>Tap to Enter</span>
+                <span>Enter</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                   <ArrowRight size={24} strokeWidth={3} />
                 </span>
