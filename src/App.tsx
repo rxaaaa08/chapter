@@ -634,7 +634,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           >
             <div
               style={{
-                flex: '0 1 auto',
+                flex: 1,
                 minHeight: 0,
                 overflow: 'hidden',
                 display: 'flex',
@@ -649,9 +649,11 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 onError={() => setPosterLoaded(true)}
                 style={{
                   width: '100%',
-                  height: 'auto',
+                  height: '100%',
                   display: 'block',
                   flexShrink: 0,
+                  objectFit: 'cover',
+                  objectPosition: 'bottom center',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
                 }}
@@ -662,9 +664,10 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               aria-label="Enter chapter plans"
               onClick={onContinue}
               style={{
-                flex: '1 1 0',
-                minHeight: 84,
+                flexShrink: 0,
                 width: '100%',
+                height: 'calc(68px + env(safe-area-inset-bottom))',
+                maxHeight: 'calc(68px + env(safe-area-inset-bottom))',
                 border: 'none',
                 background: '#FFD700',
                 color: '#111',
@@ -675,7 +678,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
-                paddingBottom: 'env(safe-area-inset-bottom)',
                 transition: 'transform 160ms ease',
               }}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
