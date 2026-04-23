@@ -559,9 +559,72 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
   const posterUrl = '/join-poster-founder.png?v=20260423-1';
   const [posterLoaded, setPosterLoaded] = useState(false);
+  useEffect(() => {
+    setPosterLoaded(false);
+    const img = new Image();
+    const markLoaded = () => setPosterLoaded(true);
+    img.onload = markLoaded;
+    img.onerror = markLoaded;
+    img.src = posterUrl;
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [posterUrl]);
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
+    <div className={`h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center font-sans ${posterLoaded ? 'p-0 sm:p-4' : 'p-0'}`}>
+      {!posterLoaded ? (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: '#fff',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 24,
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            style={{ position: 'relative' }}
+          >
+            <motion.div
+              animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 16,
+                background: '#FFD700',
+                filter: 'blur(10px)',
+              }}
+            />
+            <div
+              style={{
+                position: 'relative',
+                width: 64,
+                height: 64,
+                borderRadius: 16,
+                background: '#000',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
+                overflow: 'hidden',
+                padding: 6,
+              }}
+            >
+              <img
+                src={chatProfile}
+                alt="chapter அ"
+                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scale(1.02) translateY(2px)' }}
+              />
+            </div>
+          </motion.div>
+        </div>
+      ) : (
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div
@@ -578,58 +641,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               background: '#fff',
             }}
           >
-          {!posterLoaded && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: '#fff',
-                zIndex: 20,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 24,
-              }}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.35, ease: 'easeOut' }}
-                style={{ position: 'relative' }}
-              >
-                <motion.div
-                  animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
-                  transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: 16,
-                    background: '#FFD700',
-                    filter: 'blur(10px)',
-                  }}
-                />
-                <div
-                  style={{
-                    position: 'relative',
-                    width: 64,
-                    height: 64,
-                    borderRadius: 16,
-                    background: '#000',
-                    boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
-                    overflow: 'hidden',
-                    padding: 6,
-                  }}
-                >
-                  <img
-                    src={chatProfile}
-                    alt="chapter அ"
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scale(1.02) translateY(2px)' }}
-                  />
-                </div>
-              </motion.div>
-            </div>
-          )}
           <div
             style={{
               height: '100%',
@@ -794,6 +805,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
