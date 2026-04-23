@@ -692,11 +692,11 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   position: 'absolute',
                   inset: 0,
                   transform: 'skewX(-14deg)',
-                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.26) 50%, transparent 100%)',
-                  width: '34%',
+                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
+                  width: '50%',
                 }}
                 animate={{ x: ['-120%', '330%'] }}
-                transition={{ duration: 0.86, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.8 }}
+                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
               />
               <span
                 style={{
