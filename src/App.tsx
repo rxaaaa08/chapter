@@ -572,6 +572,12 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
     };
   }, [posterUrl]);
 
+  const handleCardPress = () => onContinue();
+  const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    handleCardPress();
+  };
+
   return (
     <div className={`h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center font-sans ${posterLoaded ? 'p-0 sm:p-4' : 'p-0'}`}>
       {!posterLoaded ? (
@@ -625,7 +631,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           </motion.div>
         </div>
       ) : (
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:border-4 sm:border-white">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:border-4 sm:border-white" onClick={handleCardClick} style={{ cursor: 'pointer' }}>
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div
             style={{
@@ -708,7 +714,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
             <button
               type="button"
               aria-label="Enter chapter plans"
-              onClick={onContinue}
+              onClick={(e) => { e.stopPropagation(); onContinue(); }}
               style={{
                 flexShrink: 0,
                 width: '100%',
@@ -726,7 +732,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
-                boxShadow: 'none',
+                boxShadow: '0 -2px 10px rgba(255,215,0,0.78)',
                 transition: 'transform 160ms ease',
               }}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
