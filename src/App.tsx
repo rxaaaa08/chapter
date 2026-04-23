@@ -653,12 +653,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   objectPosition: 'bottom center',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
-                  WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 94%, rgba(0,0,0,0.72) 97%, rgba(0,0,0,0.34) 99%, rgba(0,0,0,0) 100%)',
-                  WebkitMaskRepeat: 'no-repeat',
-                  WebkitMaskSize: '100% 100%',
-                  maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 94%, rgba(0,0,0,0.72) 97%, rgba(0,0,0,0.34) 99%, rgba(0,0,0,0) 100%)',
-                  maskRepeat: 'no-repeat',
-                  maskSize: '100% 100%',
                 }}
               />
               <div
@@ -668,18 +662,9 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  height: 24,
+                  height: 53,
                   pointerEvents: 'none',
-                  backgroundImage: `url(${posterUrl})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'bottom center',
-                  filter: 'blur(4px)',
-                  WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 58%, rgba(0,0,0,1) 100%)',
-                  WebkitMaskRepeat: 'no-repeat',
-                  WebkitMaskSize: '100% 100%',
-                  maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 58%, rgba(0,0,0,1) 100%)',
-                  maskRepeat: 'no-repeat',
-                  maskSize: '100% 100%',
+                  background: 'linear-gradient(to bottom, rgba(255,215,0,0) 0%, rgba(255,215,0,0.08) 28%, rgba(255,215,0,0.22) 52%, rgba(255,215,0,0.45) 74%, rgba(255,215,0,0.7) 90%, rgba(255,215,0,1) 100%)',
                 }}
               />
             </div>
@@ -744,21 +729,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 />
               </span>
               <span
-                aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  height: 8,
-                  transform: 'translateY(-50%)',
-                  zIndex: 1,
-                  pointerEvents: 'none',
-                  background: 'linear-gradient(to bottom, rgba(255,215,0,1) 0%, rgba(255,215,0,1) 62%, rgba(255,215,0,0) 100%)',
-                  filter: 'blur(3px)',
-                }}
-              />
-              <span
                 style={{
                   position: 'relative',
                   zIndex: 2,
@@ -766,7 +736,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 6,
-                  fontSize: 'clamp(16px, 2.6vw, 20px)',
+                  fontSize: 'clamp(24px, 3.9vw, 30px)',
                   fontWeight: 900,
                   letterSpacing: '0',
                   lineHeight: 1,
@@ -775,7 +745,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               >
                 <span>Tap to Enter</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  <ArrowRight size={20} strokeWidth={3} />
+                  <ArrowRight size={30} strokeWidth={3} />
                 </span>
               </span>
             </button>
