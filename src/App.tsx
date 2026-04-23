@@ -611,7 +611,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           <div
             style={{
               width: 'min(90vw, 360px)',
-              aspectRatio: '874 / 1330',
               overflow: 'hidden',
               color: '#232323',
               fontFamily: "'DM Sans', sans-serif",
@@ -624,7 +623,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           >
           <div
             style={{
-              height: '100%',
+              height: 'auto',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
@@ -632,12 +631,12 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           >
             <div
               style={{
-                flex: 1,
-                minHeight: 0,
+                width: '100%',
+                aspectRatio: '874 / 1330',
                 overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
-                justifyContent: 'flex-end',
+                justifyContent: 'center',
                 position: 'relative',
                 background: '#FFD700',
               }}
