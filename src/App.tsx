@@ -668,7 +668,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  height: 8,
+                  height: 24,
                   pointerEvents: 'none',
                   backgroundImage: `url(${posterUrl})`,
                   backgroundSize: 'cover',
@@ -755,7 +755,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   zIndex: 1,
                   pointerEvents: 'none',
                   background: 'linear-gradient(to bottom, rgba(255,215,0,1) 0%, rgba(255,215,0,1) 62%, rgba(255,215,0,0) 100%)',
-                  filter: 'blur(4px)',
+                  filter: 'blur(3px)',
                 }}
               />
               <span
