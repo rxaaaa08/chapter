@@ -638,7 +638,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 flexDirection: 'column',
                 justifyContent: 'center',
                 position: 'relative',
-                background: '#FFD700',
+                background: '#FFFFFF',
               }}
             >
               <img
