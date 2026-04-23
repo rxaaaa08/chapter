@@ -605,13 +605,13 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
   }
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:border-4 sm:border-white" onClick={handleCardClick} style={{ cursor: 'pointer' }}>
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white" onClick={handleCardClick} style={{ cursor: 'pointer' }}>
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div
             style={{
-              width: 'min(86%, 360px)',
-              height: '86%',
+              width: 'min(90vw, 360px)',
+              aspectRatio: '874 / 1330',
               overflow: 'hidden',
               color: '#232323',
               fontFamily: "'DM Sans', sans-serif",
