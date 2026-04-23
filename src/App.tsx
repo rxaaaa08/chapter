@@ -767,16 +767,16 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 6,
-                  fontSize: 'clamp(18px, 3vw, 22px)',
+                  fontSize: 'clamp(16px, 2.6vw, 20px)',
                   fontWeight: 900,
                   letterSpacing: '0',
                   lineHeight: 1,
                   color: '#111',
                 }}
               >
-                <span>Enter</span>
+                <span>Tap to Enter</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  <ArrowRight size={24} strokeWidth={3} />
+                  <ArrowRight size={20} strokeWidth={3} />
                 </span>
               </span>
             </button>
