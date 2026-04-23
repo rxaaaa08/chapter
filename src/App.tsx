@@ -559,6 +559,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
   const posterUrl = '/join-poster-founder.png?v=20260423-1';
   const [posterLoaded, setPosterLoaded] = useState(false);
+
   useEffect(() => {
     setPosterLoaded(false);
     const img = new Image();
@@ -578,59 +579,33 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
     handleCardPress();
   };
 
-  return (
-    <div className={`h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center font-sans ${posterLoaded ? 'p-0 sm:p-4' : 'p-0'}`}>
-      {!posterLoaded ? (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            background: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 24,
-          }}
+  if (!posterLoaded) {
+    return (
+      <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
+        {/* Logo with gentle glow pulse */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="relative"
         >
+          {/* Glow ring behind logo */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-            style={{ position: 'relative' }}
-          >
-            <motion.div
-              animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
-              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: 16,
-                background: '#FFD700',
-                filter: 'blur(10px)',
-              }}
-            />
-            <div
-              style={{
-                position: 'relative',
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                background: '#000',
-                boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
-                overflow: 'hidden',
-                padding: 6,
-              }}
-            >
-              <img
-                src={chatProfile}
-                alt="chapter அ"
-                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scale(1.02) translateY(2px)' }}
-              />
-            </div>
-          </motion.div>
-        </div>
-      ) : (
+            animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+            transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+            className="absolute inset-0 rounded-2xl bg-[#FFD700]"
+            style={{ filter: 'blur(10px)' }}
+          />
+          <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
+            <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:border-4 sm:border-white" onClick={handleCardClick} style={{ cursor: 'pointer' }}>
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div
@@ -670,8 +645,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               <img
                 src={posterUrl}
                 alt="Chapter A founder poster"
-                onLoad={() => setPosterLoaded(true)}
-                onError={() => setPosterLoaded(true)}
                 style={{
                   width: '100%',
                   height: '100%',
@@ -768,7 +741,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                     filter: 'blur(1.4px)',
                   }}
                   animate={{ x: ['-100%', '300%'] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 3.0, ease: 'easeInOut' }}
                 />
               </span>
               <span
@@ -811,7 +784,6 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           </div>
         </div>
       </div>
-      )}
     </div>
   );
 }
