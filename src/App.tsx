@@ -625,7 +625,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           </motion.div>
         </div>
       ) : (
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:border-4 sm:border-white">
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div
             style={{
@@ -636,7 +636,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               fontFamily: "'DM Sans', sans-serif",
               position: 'relative',
               borderRadius: '0 0 2rem 2rem',
-              boxShadow: '0 24px 70px rgba(0,0,0,0.16)',
+              boxShadow: 'none',
               border: 'none',
               background: '#fff',
             }}
