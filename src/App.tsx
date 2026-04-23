@@ -297,7 +297,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
         .hp-hero p { font-size: 16px; color: #555; max-width: 620px; margin: 0 auto 2.25rem; line-height: 1.75; }
         @keyframes hp-shimmer { 0% { transform: skewX(-12deg) translateX(-160%); } 100% { transform: skewX(-12deg) translateX(360%); } }
         .hp-btn-primary { display: inline-block; position: relative; overflow: hidden; background: #FFD700; color: #111; font-size: 19px; font-weight: 700; padding: 1.15rem 3rem; border-radius: 50px; text-decoration: none; border: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; letter-spacing: -0.2px; }
-        .hp-btn-primary::after { content: ''; position: absolute; top: 0; left: 0; width: 45%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%); animation: hp-shimmer 1s ease-in-out infinite; animation-delay: 1s; animation-iteration-count: infinite; animation-play-state: running; }
+        .hp-btn-primary::after { content: ''; position: absolute; top: 0; left: 0; width: 45%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%); animation: hp-shimmer 1s ease-in-out infinite; animation-delay: 1s; animation-iteration-count: infinite; animation-play-state: running; filter: blur(2.2px); box-shadow: 0 -4px 16px rgba(255,255,255,0.22); }
         .hp-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
         .hp-about { padding: 5rem 2.5rem; background: #0e0e0e; color: #fff; }
         .hp-about-inner { max-width: 720px; margin: 0 auto; }
@@ -561,17 +561,23 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
   const [posterLoaded, setPosterLoaded] = useState(false);
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-white flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
-        <div
-          style={{
-            height: '100%',
-            overflow: 'hidden',
-            color: '#232323',
-            fontFamily: "'DM Sans', sans-serif",
-            position: 'relative',
-          }}
-        >
+        <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
+          <div
+            style={{
+              width: 'min(86%, 360px)',
+              height: '86%',
+              overflow: 'hidden',
+              color: '#232323',
+              fontFamily: "'DM Sans', sans-serif",
+              position: 'relative',
+              borderRadius: '2rem',
+              boxShadow: '0 24px 70px rgba(0,0,0,0.16)',
+              border: 'none',
+              background: '#fff',
+            }}
+          >
           {!posterLoaded && (
             <div
               style={{
@@ -640,6 +646,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'flex-end',
+                position: 'relative',
+                background: '#FFD700',
               }}
             >
               <img
@@ -656,6 +664,33 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   objectPosition: 'bottom center',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
+                  WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 94%, rgba(0,0,0,0.72) 97%, rgba(0,0,0,0.34) 99%, rgba(0,0,0,0) 100%)',
+                  WebkitMaskRepeat: 'no-repeat',
+                  WebkitMaskSize: '100% 100%',
+                  maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 94%, rgba(0,0,0,0.72) 97%, rgba(0,0,0,0.34) 99%, rgba(0,0,0,0) 100%)',
+                  maskRepeat: 'no-repeat',
+                  maskSize: '100% 100%',
+                }}
+              />
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 8,
+                  pointerEvents: 'none',
+                  backgroundImage: `url(${posterUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'bottom center',
+                  filter: 'blur(4px)',
+                  WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 58%, rgba(0,0,0,1) 100%)',
+                  WebkitMaskRepeat: 'no-repeat',
+                  WebkitMaskSize: '100% 100%',
+                  maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 58%, rgba(0,0,0,1) 100%)',
+                  maskRepeat: 'no-repeat',
+                  maskSize: '100% 100%',
                 }}
               />
             </div>
@@ -666,18 +701,21 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               style={{
                 flexShrink: 0,
                 width: '100%',
-                height: 'calc(68px + env(safe-area-inset-bottom))',
-                maxHeight: 'calc(68px + env(safe-area-inset-bottom))',
+                height: '72px',
+                maxHeight: '72px',
                 border: 'none',
+                borderRadius: '0 0 2rem 2rem',
                 background: '#FFD700',
                 color: '#111',
                 cursor: 'pointer',
-                overflow: 'hidden',
+                overflow: 'visible',
                 position: 'relative',
+                marginTop: '-2px',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
+                boxShadow: 'none',
                 transition: 'transform 160ms ease',
               }}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
@@ -686,22 +724,55 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
               onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
             >
-              <motion.span
+              <span
                 aria-hidden="true"
                 style={{
                   position: 'absolute',
-                  inset: 0,
-                  transform: 'skewX(-14deg)',
-                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
-                  width: '50%',
+                  inset: '-8px 0 0 0',
+                  pointerEvents: 'none',
+                  borderRadius: 'inherit',
+                  overflow: 'visible',
+                  WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.58) 22%, rgba(0,0,0,0.9) 46%, rgba(0,0,0,1) 100%)',
+                  WebkitMaskRepeat: 'no-repeat',
+                  WebkitMaskSize: '100% 100%',
+                  maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.58) 22%, rgba(0,0,0,0.9) 46%, rgba(0,0,0,1) 100%)',
+                  maskRepeat: 'no-repeat',
+                  maskSize: '100% 100%',
                 }}
-                animate={{ x: ['-120%', '330%'] }}
-                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.5 }}
+              >
+                <motion.span
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    inset: '0 auto 0 -50%',
+                    width: '50%',
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.34) 50%, transparent 100%)',
+                    transform: 'skewX(-14deg)',
+                    filter: 'blur(1.4px)',
+                  }}
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                />
+              </span>
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: 8,
+                  transform: 'translateY(-50%)',
+                  zIndex: 1,
+                  pointerEvents: 'none',
+                  background: 'linear-gradient(to bottom, rgba(255,215,0,1) 0%, rgba(255,215,0,1) 62%, rgba(255,215,0,0) 100%)',
+                  filter: 'blur(4px)',
+                }}
               />
               <span
                 style={{
                   position: 'relative',
-                  zIndex: 1,
+                  zIndex: 2,
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -710,12 +781,16 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   fontWeight: 900,
                   letterSpacing: '0',
                   lineHeight: 1,
+                  color: '#111',
                 }}
               >
-                Tap to Enter
-                <ArrowRight size={24} strokeWidth={3} />
+                <span>Tap to Enter</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <ArrowRight size={24} strokeWidth={3} />
+                </span>
               </span>
             </button>
+          </div>
           </div>
         </div>
       </div>
