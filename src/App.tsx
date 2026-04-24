@@ -556,22 +556,98 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
   );
 }
 
+// Layered poster assets — each PNG is 874×1330 with the element pre-positioned
+// on a transparent canvas, so stacking them at inset:0 reproduces the original
+// poster exactly while letting each layer animate independently.
+const POSTER_LAYER_VERSION = 'v=20260424-2';
+const POSTER_LAYER_SRC = {
+  // frame.png now bakes in the letter text — no separate text layer needed.
+  frame: `/poster-layers/frame.png?${POSTER_LAYER_VERSION}`,
+  borderTop: `/poster-layers/border-top.png?${POSTER_LAYER_VERSION}`,
+  borderLeft: `/poster-layers/border-left.png?${POSTER_LAYER_VERSION}`,
+  borderRight: `/poster-layers/border-right.png?${POSTER_LAYER_VERSION}`,
+  flowerLeft: `/poster-layers/flower-left.png?${POSTER_LAYER_VERSION}`,
+  flowerRight: `/poster-layers/flower-right.png?${POSTER_LAYER_VERSION}`,
+  palm: `/poster-layers/palm.png?${POSTER_LAYER_VERSION}`,
+  lighthouse: `/poster-layers/lighthouse.png?${POSTER_LAYER_VERSION}`,
+  beach: `/poster-layers/beach.png?${POSTER_LAYER_VERSION}`,
+} as const;
+
+// Base style that every layer shares — each PNG fills the full poster area.
+// Transforms (rotate / scale / translate) are layered on top per-element.
+const POSTER_LAYER_STYLE: React.CSSProperties = {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  width: '100%',
+  height: '100%',
+  display: 'block',
+  objectFit: 'cover',
+  objectPosition: 'bottom center',
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  pointerEvents: 'none',
+};
+
+// Tuning controls for the soft dark patch that blends the palm root into the
+// beach. Values are percentages of the poster canvas, so they scale cleanly.
+const PALM_ROOT_BLEND = {
+  left: 6.5,
+  top: 91.0,
+  width: 4.2,
+  height: 4.2,
+  opacity: 1.0,
+  blurPx: 3,
+  radius: 35,
+  color: 'rgba(0, 0, 0, 0.86)',
+  featherColor: 'rgba(0, 0, 0, 0.86)',
+};
+
+// Tuning controls for the lighthouse beacon. left/top mark the lamp center.
+const LIGHTHOUSE_LAMP_DOT = {
+  left: 77.0,
+  top: 67.0,
+  spread: 18.9,
+  centerStop: 4,
+  midStop: 35,
+  minOpacity: 0.0,
+  maxOpacity: 1.0,
+  pulseSeconds: 0.5,
+  pauseSeconds: 4.4,
+};
+
+const LIGHTHOUSE_FLOAT = {
+  animate: { y: [-1.5, 1.5, -1.5] },
+  transition: { duration: 7, repeat: Infinity, ease: 'easeInOut' as const },
+};
+
 function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
-  const posterUrl = '/join-poster-founder.png?v=20260423-1';
   const [posterLoaded, setPosterLoaded] = useState(false);
 
   useEffect(() => {
     setPosterLoaded(false);
-    const img = new Image();
-    const markLoaded = () => setPosterLoaded(true);
-    img.onload = markLoaded;
-    img.onerror = markLoaded;
-    img.src = posterUrl;
+    let cancelled = false;
+    // Preload every layer — only reveal the poster once all are cached,
+    // so the scene doesn't "pop in" piece by piece on first render.
+    const loaders = Object.values(POSTER_LAYER_SRC).map(src =>
+      new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+        img.src = src;
+      }),
+    );
+    Promise.all(loaders).then(() => { if (!cancelled) setPosterLoaded(true); });
+    // Safety fallback — if any layer never resolves (slow/hung network),
+    // reveal the page anyway after 6s so the user is never stuck on the loader.
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setPosterLoaded(true);
+    }, 6000);
     return () => {
-      img.onload = null;
-      img.onerror = null;
+      cancelled = true;
+      window.clearTimeout(timeout);
     };
-  }, [posterUrl]);
+  }, []);
 
   const handleCardPress = () => onContinue();
   const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -634,27 +710,189 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 width: '100%',
                 aspectRatio: '874 / 1330',
                 overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
+                display: 'block',
                 position: 'relative',
                 background: '#FFFFFF',
               }}
             >
+              {/* 1. Base frame — arch + paper + letter text, all static. */}
               <img
-                src={posterUrl}
-                alt="Chapter A founder poster"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  display: 'block',
-                  flexShrink: 0,
-                  objectFit: 'cover',
-                  objectPosition: 'bottom center',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
+                src={POSTER_LAYER_SRC.frame}
+                alt="Chapter A founder letter"
+                aria-hidden="false"
+                style={POSTER_LAYER_STYLE}
+              />
+
+              {/* 2. Decorative yellow borders — noticeable opacity breathing,
+                     each offset in phase so the frame feels alive as a whole
+                     but never in a mechanical pulse. */}
+              <motion.img
+                src={POSTER_LAYER_SRC.borderTop}
+                alt=""
+                aria-hidden="true"
+                style={POSTER_LAYER_STYLE}
+                animate={{ opacity: [0.45, 1, 0.45] }}
+                transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <motion.img
+                src={POSTER_LAYER_SRC.borderLeft}
+                alt=""
+                aria-hidden="true"
+                style={POSTER_LAYER_STYLE}
+                animate={{ opacity: [0.45, 1, 0.45] }}
+                transition={{ duration: 4.2, delay: 0.8, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <motion.img
+                src={POSTER_LAYER_SRC.borderRight}
+                alt=""
+                aria-hidden="true"
+                style={POSTER_LAYER_STYLE}
+                animate={{ opacity: [0.45, 1, 0.45] }}
+                transition={{ duration: 4.8, delay: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              />
+
+              {/* 3. Flowers — gentle counter-rotation + soft scale pulse with
+                     a #FFD700 golden drop-shadow glow that sparkles in/out,
+                     pivots at each flower's own center so the motion feels
+                     rooted in the blossom rather than the canvas. */}
+              <motion.img
+                src={POSTER_LAYER_SRC.flowerLeft}
+                alt=""
+                aria-hidden="true"
+                style={{ ...POSTER_LAYER_STYLE, transformOrigin: '18% 11%' }}
+                animate={{
+                  rotate: [-3, 3, -3],
+                  scale: [1, 1.04, 1],
+                  filter: [
+                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+                    'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))',
+                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+                  ],
+                }}
+                transition={{
+                  rotate: { duration: 8, repeat: Infinity, ease: 'easeInOut' },
+                  scale:  { duration: 6, repeat: Infinity, ease: 'easeInOut' },
+                  filter: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' },
                 }}
               />
+              <motion.img
+                src={POSTER_LAYER_SRC.flowerRight}
+                alt=""
+                aria-hidden="true"
+                style={{ ...POSTER_LAYER_STYLE, transformOrigin: '84% 12%' }}
+                animate={{
+                  rotate: [3, -3, 3],
+                  scale: [1, 1.03, 1],
+                  filter: [
+                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+                    'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))',
+                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+                  ],
+                }}
+                transition={{
+                  rotate: { duration: 9, delay: 0.4, repeat: Infinity, ease: 'easeInOut' },
+                  scale:  { duration: 7, delay: 0.4, repeat: Infinity, ease: 'easeInOut' },
+                  filter: { duration: 3.4, delay: 1.7, repeat: Infinity, ease: 'easeInOut' },
+                }}
+              />
+
+              {/* 4. Lighthouse island — sits behind the beach so the waves
+                     read as foreground. Barely-there vertical float for a
+                     hazy-distance feel. */}
+              <motion.img
+                src={POSTER_LAYER_SRC.lighthouse}
+                alt=""
+                aria-hidden="true"
+                style={POSTER_LAYER_STYLE}
+                animate={LIGHTHOUSE_FLOAT.animate}
+                transition={LIGHTHOUSE_FLOAT.transition}
+              />
+
+              {/* 5. Beach — static, rendered above the lighthouse so the
+                     shoreline covers the island's base. */}
+              <img
+                src={POSTER_LAYER_SRC.beach}
+                alt=""
+                aria-hidden="true"
+                style={POSTER_LAYER_STYLE}
+              />
+
+              {/* 6. Lighthouse lamp — a tiny pulsing beacon at the lamp tip. */}
+              <motion.div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: `${LIGHTHOUSE_LAMP_DOT.left}%`,
+                  top: `${LIGHTHOUSE_LAMP_DOT.top}%`,
+                  width: `${LIGHTHOUSE_LAMP_DOT.spread}%`,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '999px',
+                  pointerEvents: 'none',
+                  transform: 'translate(-50%, -50%)',
+                  background:
+                    `radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0.82) ${LIGHTHOUSE_LAMP_DOT.centerStop}%, rgba(255,255,255,0.28) ${LIGHTHOUSE_LAMP_DOT.midStop}%, rgba(255,255,255,0) 100%)`,
+                }}
+                animate={{
+                  ...LIGHTHOUSE_FLOAT.animate,
+                  opacity: [
+                    LIGHTHOUSE_LAMP_DOT.minOpacity,
+                    LIGHTHOUSE_LAMP_DOT.maxOpacity,
+                    LIGHTHOUSE_LAMP_DOT.minOpacity,
+                  ],
+                }}
+                transition={{
+                  y: LIGHTHOUSE_FLOAT.transition,
+                  opacity: {
+                    duration: LIGHTHOUSE_LAMP_DOT.pulseSeconds,
+                    repeat: Infinity,
+                    repeatDelay: LIGHTHOUSE_LAMP_DOT.pauseSeconds,
+                    ease: 'easeInOut',
+                  },
+                }}
+              />
+
+              {/* 7. Lone palm — top of the illustration stack so the trunk
+                     and fronds stand in front of water and island alike.
+                     Slow sway from the trunk base. Bottom ~6% of the layer
+                     fades to transparent so the trunk merges into the sand
+                     behind it instead of terminating in a hard edge. */}
+              <motion.img
+                src={POSTER_LAYER_SRC.palm}
+                alt=""
+                aria-hidden="true"
+                style={{
+                  ...POSTER_LAYER_STYLE,
+                  transformOrigin: '16% 94%',
+                  WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)',
+                  WebkitMaskRepeat: 'no-repeat',
+                  WebkitMaskSize: '100% 100%',
+                  maskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)',
+                  maskRepeat: 'no-repeat',
+                  maskSize: '100% 100%',
+                }}
+                animate={{ rotate: [-1.8, 1.8, -1.8] }}
+                transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+              />
+
+              {/* 8. Palm root blend — tune PALM_ROOT_BLEND above for placement. */}
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: `${PALM_ROOT_BLEND.left}%`,
+                  top: `${PALM_ROOT_BLEND.top}%`,
+                  width: `${PALM_ROOT_BLEND.width}%`,
+                  height: `${PALM_ROOT_BLEND.height}%`,
+                  borderRadius: `${PALM_ROOT_BLEND.radius}%`,
+                  opacity: PALM_ROOT_BLEND.opacity,
+                  pointerEvents: 'none',
+                  background: `radial-gradient(ellipse at center, ${PALM_ROOT_BLEND.color} 0%, rgba(22, 23, 18, 0.48) 34%, ${PALM_ROOT_BLEND.featherColor} 72%)`,
+                  filter: `blur(${PALM_ROOT_BLEND.blurPx}px)`,
+                  mixBlendMode: 'multiply',
+                }}
+              />
+
+              {/* 9. Bottom yellow blend into the CTA — unchanged. */}
               <div
                 aria-hidden="true"
                 style={{
@@ -662,9 +900,10 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  height: 53,
+                  height: 42,
                   pointerEvents: 'none',
-                  background: 'linear-gradient(to bottom, rgba(255,215,0,0) 0%, rgba(255,215,0,0.08) 28%, rgba(255,215,0,0.22) 52%, rgba(255,215,0,0.45) 74%, rgba(255,215,0,0.7) 90%, rgba(255,215,0,1) 100%)',
+                  background:
+                    'linear-gradient(to bottom, rgba(255,215,0,0) 0%, rgba(255,215,0,0.04) 25%, rgba(255,215,0,0.16) 50%, rgba(255,215,0,0.42) 72%, rgba(255,215,0,0.78) 88%, rgba(255,215,0,1) 100%)',
                 }}
               />
             </div>
@@ -684,12 +923,12 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 cursor: 'pointer',
                 overflow: 'visible',
                 position: 'relative',
-                marginTop: '-2px',
+                marginTop: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
-                boxShadow: '0 -2px 10px rgba(255,215,0,0.78)',
+                boxShadow: '0 -22px 36px rgba(255,215,0,0.45), 0 -10px 18px rgba(255,215,0,0.55), 0 -3px 8px rgba(255,215,0,0.8)',
                 transition: 'transform 160ms ease',
               }}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
@@ -937,7 +1176,15 @@ export default function App() {
   };
 
   const continueFromJoin = () => {
-    if (typeof window !== 'undefined') {
+    if (typeof window === 'undefined') return;
+    // On the live domain, stay in the SPA — no full page reload.
+    // In dev/preview/any other host, hard-redirect to the live /plans page.
+    if (window.location.host.includes('chaptera.in')) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.history.pushState({}, '', '/plans');
+      setRoutePath('/plans');
+      setRouteSearch('');
+    } else {
       window.location.href = 'https://chaptera.in/plans';
     }
   };
