@@ -1089,7 +1089,7 @@ function InAppBrowserNudge() {
       {!isAndroid && (
         <motion.div
           className="fixed z-[10001] pointer-events-none flex flex-col items-center"
-          style={{ top: 52, right: 18 }}
+          style={{ top: 32, right: 13 }}
           animate={{ y: [0, -7, 0] }}
           transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
         >
