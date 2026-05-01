@@ -1053,12 +1053,25 @@ function InAppBrowserNudge() {
         }}
       />
 
-      {/* Bottom sheet */}
-      <motion.div
-        initial={{ y: '100%' }} animate={{ y: 0 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-        className={`fixed bottom-0 left-0 right-0 z-[10000] bg-white rounded-t-3xl px-6 pt-7 ${isAndroid ? 'pb-10' : 'pb-10'} shadow-2xl`}
-      >
+      {/* iOS: animated arrow pointing to the ··· button in the top-right */}
+      {!isAndroid && (
+        <motion.div
+          className="fixed z-[10001] pointer-events-none flex flex-col items-center"
+          style={{ top: 52, right: 18 }}
+          animate={{ y: [0, -7, 0] }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          {/* Arrow pointing up */}
+          <svg width="24" height="32" viewBox="0 0 24 32" fill="none">
+            <path d="M12 2 L12 28M12 2 L4 12M12 2 L20 12" stroke="#FFD700" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span className="text-white text-xs font-bold mt-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.7)' }}>tap here</span>
+        </motion.div>
+      )}
+
+      {/* Centered card */}
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center px-6 pointer-events-none">
+      <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-7 pb-8 shadow-2xl pointer-events-auto">
         {isAndroid ? (
           /* ── Android: one-tap button ── */
           <>
@@ -1105,7 +1118,8 @@ function InAppBrowserNudge() {
             </div>
           </>
         )}
-      </motion.div>
+      </div>
+      </div>
     </>
   );
 }
