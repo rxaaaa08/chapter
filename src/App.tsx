@@ -1031,6 +1031,13 @@ function InAppBrowserNudge() {
   const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isInApp = isInstagram || isFacebook;
 
+  useEffect(() => {
+    if (!isInApp) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [isInApp]);
+
   if (!isInApp) return null;
 
   const openInBrowser = () => {
