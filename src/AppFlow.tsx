@@ -1518,7 +1518,7 @@ export default function App() {
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-                          window.open(selectedEvent.waitlistUrl, '_blank');
+                          window.open(selectedEvent.bookingUrl, '_blank');
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
@@ -3423,27 +3423,22 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                     </div>
                     {/* Plans for selected city */}
                     <div className="flex-1 overflow-y-auto px-5 py-5">
-                      {categories.map(cat => {
-                        const catEvents = cityEvents.filter(e => e.category === cat);
-                        return (
-                          <div key={cat} className="mb-5">
-                            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3 text-center">CHANGE PLAN</div>
-                            {catEvents.map(e => {
-                              const isActive = e.id === event.id && switcherCity === selectedCity;
-                              return (
-                                <button
-                                  key={e.id}
-                                  onClick={() => { if (!isActive) onSwitchEvent(e, switcherCity); setShowPlanSwitcher(false); }}
-                                  className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
-                                >
-                                  <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
-                                  {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Viewing</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
+                      <div className="mb-5">
+                        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3 text-center">CHANGE PLAN</div>
+                        {cityEvents.map(e => {
+                          const isActive = e.id === event.id && switcherCity === selectedCity;
+                          return (
+                            <button
+                              key={e.id}
+                              onClick={() => { if (!isActive) onSwitchEvent(e, switcherCity); setShowPlanSwitcher(false); }}
+                              className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
+                            >
+                              <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
+                              {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Viewing</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
                       {cityEvents.length === 0 && (
                         <p className="text-[13px] text-gray-400 text-center py-8">No plans for this city yet.</p>
                       )}
