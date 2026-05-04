@@ -1414,7 +1414,7 @@ export default function App() {
           <EventDetailsOverlay
             event={selectedEvent}
             selectedCity={selectedCity}
-            allEvents={events.filter(e => !e.inviteOnly)}
+            allEvents={events}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
             openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
