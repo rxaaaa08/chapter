@@ -1139,7 +1139,19 @@ function InviteFlow({ slug }: { slug: string }) {
 
         {/* Step 1 — Invitation Card */}
           <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)', pointerEvents: step === 'card' ? 'auto' : 'none' }}>
-            <div style={{ width: 'min(90vw, 360px)', overflow: 'hidden', color: '#232323', fontFamily: "'DM Sans', sans-serif", position: 'relative', borderRadius: '0 0 2rem 2rem', background: '#fff' }}>
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Open invitation booking"
+              onClick={openInviteBooking}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openInviteBooking();
+                }
+              }}
+              style={{ width: 'min(90vw, 360px)', overflow: 'hidden', color: '#232323', fontFamily: "'DM Sans', sans-serif", position: 'relative', borderRadius: '0 0 2rem 2rem', background: '#fff', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+            >
               <div style={{ height: 'auto', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ width: '100%', aspectRatio: '874 / 1330', overflow: 'hidden', display: 'block', position: 'relative', background: '#FFFFFF' }}>
                   {/* Invite frame */}
@@ -1182,7 +1194,7 @@ function InviteFlow({ slug }: { slug: string }) {
                 <button
                   type="button"
                   aria-label="Confirm your spot"
-                  onClick={openInviteBooking}
+                  onClick={(e) => { e.stopPropagation(); openInviteBooking(); }}
                   style={{ flexShrink: 0, width: '100%', height: '72px', maxHeight: '72px', border: 'none', borderRadius: '0 0 2rem 2rem', background: '#FFD700', color: '#111', cursor: 'pointer', overflow: 'visible', position: 'relative', marginTop: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 -22px 36px rgba(255,215,0,0.45), 0 -10px 18px rgba(255,215,0,0.55), 0 -3px 8px rgba(255,215,0,0.8)', transition: 'transform 160ms ease' }}
                   onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.995)'; }}
                   onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
