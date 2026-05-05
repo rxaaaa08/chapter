@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
+import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight, Copy, Check } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 
 // Types
@@ -24,6 +24,14 @@ type FAQ = {
 };
 
 type QuickInfoIcon = 'pin' | 'bus' | 'users' | 'home' | 'clock' | 'ticket' | 'map' | 'heart';
+const GIRLS_ONLY_QUICK_INFO_LABELS = new Set(['galcode event', 'girls only event', "girl's only event", 'girls_only_event']);
+
+const hasGirlsOnlyQuickInfo = (quickInfo?: { label?: string; value?: string }[]) =>
+  Array.isArray(quickInfo) &&
+  quickInfo.some((item) =>
+    GIRLS_ONLY_QUICK_INFO_LABELS.has(String(item.label ?? '').trim().toLowerCase()) &&
+    String(item.value ?? '').trim().toLowerCase() !== 'false'
+  );
 
 interface Event {
   quickInfo?: { icon: QuickInfoIcon; label: string; value: string }[];
@@ -39,6 +47,8 @@ interface Event {
   advanceAmount: number;
   description: string;
   heroImage: string;
+  heroImages?: string[];
+  detailsLandscapeImage?: string;
   startLocation: string;
   pickupPoints?: {
     id: string;
@@ -89,6 +99,7 @@ interface Event {
   ctaLabel?: string;
   announcements?: string[];
   inviteOnly?: boolean;
+  girlsOnly?: boolean;
   waitlistUrl?: string;
   bookingSteps?: Array<{ label: string; value: string; date: string }>;
 }
@@ -371,7 +382,173 @@ const GENERAL_ANNOUNCEMENTS = [
 ];
 
 
-export default function App() {
+// ─── UPI PAYMENT SCREEN ────────────────────────────────────────────────────────
+const UPI_ID = 'chapter.a@ybl';
+const UPI_ID_GIRLS = 'galcode@ybl';
+const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
+
+function UpiPaymentScreen({
+  paymentContext,
+  girlsOnly = false,
+  isBalancePayment = false,
+}: {
+  paymentContext: { eventTitle: string; amount: number; date: string; name: string; phone?: string };
+  girlsOnly?: boolean;
+  isBalancePayment?: boolean;
+}) {
+  const upiId = girlsOnly ? UPI_ID_GIRLS : UPI_ID;
+  const qrSrc = girlsOnly ? '/payment-qr-girls.png' : '/payment-qr.png';
+  const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'failed'>('idle');
+  const copyResetRef = React.useRef<number | null>(null);
+  React.useEffect(() => () => {
+    if (copyResetRef.current) window.clearTimeout(copyResetRef.current);
+  }, []);
+
+  const copyText = async (text: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // Fall through to the textarea fallback below.
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (copyResetRef.current) window.clearTimeout(copyResetRef.current);
+    const didCopy = await copyText(upiId);
+    setCopyStatus(didCopy ? 'copied' : 'failed');
+    copyResetRef.current = window.setTimeout(() => setCopyStatus('idle'), 2200);
+  };
+
+  return (
+    <>
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 z-[65] bg-black/40 backdrop-blur-md"
+      />
+
+      {/* Bottom sheet */}
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+        className="absolute bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[2rem] overflow-hidden"
+      >
+        {/* Drag handle */}
+        <div className="pt-4 flex justify-center">
+          <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
+        </div>
+
+        {/* Hero header */}
+        <div className="px-6 pt-3 pb-4 flex-shrink-0">
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
+            {isBalancePayment ? (
+              <>
+                <span className="text-green-600">✓ Advance Verified</span>
+                <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
+              </>
+            ) : (
+              <span className="text-gray-400">
+                {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}
+              </span>
+            )}
+          </p>
+          <h1 className="text-[24px] font-black text-gray-950 leading-tight tracking-tight">
+            {isBalancePayment ? 'Settle Balance ' : 'Settle Advance '}{formatUpiINR(paymentContext.amount)}
+          </h1>
+        </div>
+
+        {/* QR + UPI card */}
+        <div className="mx-5 flex-shrink-0">
+          <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4">
+
+            {/* QR */}
+            <img
+              src={qrSrc}
+              alt="UPI QR Code"
+              className="w-[176px] h-[176px] object-contain"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex';
+              }}
+            />
+            <div className="hidden w-[176px] h-[176px] flex-col items-center justify-center gap-1.5 text-gray-300 rounded-xl bg-gray-50">
+              <div className="text-3xl">⬛</div>
+              <p className="text-[10px] text-center leading-snug font-mono">public/payment-qr.png</p>
+            </div>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3 w-full">
+              <div className="flex-1 h-px bg-black/8" />
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">or UPI ID</span>
+              <div className="flex-1 h-px bg-black/8" />
+            </div>
+
+            {/* UPI ID row */}
+            <div className="flex items-center gap-3 bg-[#F7F7F8] rounded-2xl px-4 py-3 w-full">
+              <p className="flex-1 font-sans font-semibold text-gray-950 text-[16px] tracking-widest select-text">{upiId}</p>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className={`h-9 px-4 rounded-xl flex items-center gap-1.5 text-[13px] font-black active:scale-95 transition-all ${
+                  copyStatus === 'copied'
+                    ? 'bg-[#34C759] text-white'
+                    : copyStatus === 'failed'
+                      ? 'bg-red-100 text-red-600'
+                      : girlsOnly
+                        ? 'bg-[#FF4FB8] text-white'
+                        : 'bg-[#FFD700] text-black'
+                }`}
+              >
+                {copyStatus === 'copied' ? <Check size={14} strokeWidth={3} /> : <Copy size={14} strokeWidth={2.5} />}
+                {copyStatus === 'copied' ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <div className="h-2 -mt-2 w-full text-center" aria-live="polite">
+              {copyStatus === 'failed' && (
+                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[11px] font-semibold text-red-500">
+                  Couldn't copy — long-press to select manually
+                </motion.p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Reminder */}
+        <p className="mx-5 mt-4 mb-8 text-[12px] text-gray-600 text-center leading-relaxed font-medium">
+          After paying, send payment screenshot to the WhatsApp number you got this invite from.
+        </p>
+      </motion.div>
+    </>
+  );
+}
+
+export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onClose?: () => void } = {}) {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [loadingSlow, setLoadingSlow] = useState(false);
@@ -380,8 +557,9 @@ export default function App() {
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const isPlansPath = typeof window !== 'undefined' && window.location.pathname === '/plans';
   const isPlansHistoryManaged = isPlansPath && !isPreviewMode;
-  const isDetailsHistoryManaged = isPlansHistoryManaged || isPreviewMode;
-  const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
+  const isInviteOverlay = !!inviteSlug;
+  const isDetailsHistoryManaged = isPlansHistoryManaged || isPreviewMode || isInviteOverlay;
+  const [previewLoading, setPreviewLoading] = useState(isPreviewMode || !!inviteSlug);
   const historyLayerRef = useRef<HistoryLayer | null>(null);
   const handlingPopStateRef = useRef(false);
 
@@ -421,6 +599,44 @@ export default function App() {
     });
   }, []);
 
+  const [inviteVerifyError, setInviteVerifyError] = useState('');
+  const [advanceAlreadyPaid, setAdvanceAlreadyPaid] = useState(false);
+
+  // When rendered from the invite flow, auto-fetch and pre-select the event
+  // then open the booking timeline immediately.
+  useEffect(() => {
+    if (!inviteSlug) return;
+    (async () => {
+      const { data } = await supabase
+        .from('events')
+        .select('slug, id')
+        .eq('invite_slug', inviteSlug)
+        .maybeSingle();
+      if (!data) {
+        setPreviewLoading(false);
+        return;
+      }
+      const idOrSlug = (data as any).slug || (data as any).id;
+      const event = await fetchEventByIdOrSlug(idOrSlug);
+      if (!event) {
+        setPreviewLoading(false);
+        return;
+      }
+      setSelectedEvent(event);
+      setSelectedCity(event.cities?.[0] || 'Chennai');
+      setSelectedCategory(event.category || 'Trips');
+      setShowTransition(false);
+      setShowDetails(false);
+      setShowChat(false);
+      setStep('EVENT_SELECTED');
+      setShowBookingTimeline(true);
+      setMessages([]);
+      setIsTyping(false);
+      setPreviewLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteSlug]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
   const [selectedCity, setSelectedCity] = useState('');
@@ -438,6 +654,7 @@ export default function App() {
   const [showBookingTimeline, setShowBookingTimeline] = useState(false);
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
+  const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
   const [detailsPlanSwitcherOpen, setDetailsPlanSwitcherOpen] = useState(false);
@@ -464,10 +681,13 @@ export default function App() {
     shareUrl: string;
     name: string;
     phone: string;
+    girlsOnly?: boolean;
+    isBalancePayment?: boolean;
   } | null>(null);
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [kynTimer, setKynTimer] = useState(15 * 60); // 15 minutes for KYN flow
+  const [slotsLeft, setSlotsLeft] = useState<number | null>(null);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
@@ -505,6 +725,9 @@ export default function App() {
     setStep('SELECT_EVENT');
   }, [isPlansHistoryManaged, activeHistoryLayer]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
+  const isUpiFlow     = selectedEvent?.bookingUrl?.toLowerCase().includes('upi-manual');
+  const isInvitePaymentFlow = !!inviteSlug;
+  const shouldUseManualUpi = isUpiFlow || isInvitePaymentFlow;
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
   const doubtFormWebhookUrl = (msgs.doubt_form_webhook_url || '').trim();
   const getSelectedEventQuickInfoValue = (labels: string[]) =>
@@ -730,9 +953,13 @@ export default function App() {
         setShowDetailsForm(false);
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
-        setShowBookingTimeline(false);
-        setShowDetails(true);
-        setStep('EVENT_SELECTED');
+        if (isInviteOverlay && onClose) {
+          onClose();
+        } else {
+          setShowBookingTimeline(false);
+          setShowDetails(true);
+          setStep('EVENT_SELECTED');
+        }
       } else if (activeHistoryLayer === 'post-details-chat') {
         setShowDetails(true);
         setStep('EVENT_SELECTED');
@@ -788,6 +1015,23 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
 
+  // Fetch slots left for invite-only events
+  const fetchSlotsLeft = async () => {
+    if (!inviteSlug || !selectedEvent?.inviteSpots) return;
+    const { data } = await supabase
+      .from('invite_payment_submissions')
+      .select('phone')
+      .eq('invite_slug', inviteSlug)
+      .eq('status', 'advance_paid');
+    const uniquePhones = new Set((data ?? []).map((r: any) => r.phone));
+    setSlotsLeft(Math.max(0, selectedEvent.inviteSpots - uniquePhones.size));
+  };
+
+  useEffect(() => {
+    if (showBookingTimeline && inviteSlug) fetchSlotsLeft();
+  }, [showBookingTimeline, inviteSlug]);
+
+
   const formatKynTime = (secs: number) => {
     const d = Math.floor(secs / (24 * 3600));
     const h = Math.floor((secs % (24 * 3600)) / 3600);
@@ -796,6 +1040,7 @@ export default function App() {
     return `${String(d).padStart(2, '0')}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
   };
 
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
@@ -803,6 +1048,7 @@ export default function App() {
   // Only start typing after loading screen clears (both events + msgs ready)
   // so users see: loading screen → chat appears → typing dots → first message
   useEffect(() => {
+    if (inviteSlug) return;
     if (!eventsLoaded || !msgsReady) return;
     simulateBotTyping(() => {
       setMessages([{
@@ -812,7 +1058,7 @@ export default function App() {
       }]);
       setStep('ASK_CITY');
     }, 1000);
-  }, [eventsLoaded, msgsReady]);
+  }, [eventsLoaded, msgsReady, inviteSlug]);
 
   const simulateBotTyping = (callback: () => void, delay: number = 800) => {
     setIsTyping(true);
@@ -1051,8 +1297,41 @@ export default function App() {
     }, 1000);
   };
 
-  const handleProceedToPhonePe = () => {
+  const handleProceedToPhonePe = async () => {
     if (!selectedEvent) return;
+
+    // Invite-only verification: check the entered phone against invited_numbers
+    let isBalanceDue = false;
+    if (inviteSlug) {
+      const raw = detailsForm.phone;
+      const tenDigit = raw.replace(/^\+91/, '').replace(/^0/, '');
+      if (!/^\d{10}$/.test(tenDigit)) {
+        setInviteVerifyError('Please enter a valid 10-digit phone number.');
+        return;
+      }
+      const { data: inviteData, error: inviteError } = await supabase
+        .from('invited_numbers')
+        .select('id')
+        .eq('event_slug', inviteSlug)
+        .eq('phone', tenDigit)
+        .maybeSingle();
+      if (inviteError || !inviteData) {
+        setInviteVerifyError('__not_found__');
+        return;
+      }
+      setInviteVerifyError('');
+
+      // Check if advance is already paid and verified for this phone + event
+      const { data: paidRows } = await supabase
+        .from('invite_payment_submissions')
+        .select('id')
+        .eq('invite_slug', inviteSlug)
+        .eq('phone', tenDigit)
+        .eq('status', 'advance_paid')
+        .limit(1);
+      isBalanceDue = (paidRows ?? []).length > 0;
+      setAdvanceAlreadyPaid(isBalanceDue);
+    }
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
     const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
     const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
@@ -1062,20 +1341,23 @@ export default function App() {
     const tripDate = formatDisplayDate(dateStr);
     const totalAmount = pricing.total;
     const advanceAmount = pricing.advance;
+    const balanceAmount = totalAmount - advanceAmount;
     const ctx = {
       eventTitle: selectedEvent.title,
-      amount: advanceAmount,
-      remainingBalance: totalAmount - advanceAmount,
+      amount: isBalanceDue ? balanceAmount : advanceAmount,
+      remainingBalance: isBalanceDue ? 0 : balanceAmount,
+      isBalancePayment: isBalanceDue,
       date: formatDisplayDate(dateStr),
       balanceDue,
       balanceDueRaw,
       pickupDetails,
       tripDate,
       tripDateFull: formatFullDate(dateStr),
-      phonepeUrl: selectedEvent.bookingUrl,
+      phonepeUrl: isInvitePaymentFlow ? 'upi-manual' : selectedEvent.bookingUrl,
       shareUrl: typeof window !== 'undefined' ? window.location.origin : '/',
       name: detailsForm.name.trim(),
-      phone: detailsForm.phone
+      phone: detailsForm.phone,
+      girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo)
     };
     try {
       localStorage.setItem('bookingName', ctx.name);
@@ -1085,6 +1367,57 @@ export default function App() {
     }
     trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setPaymentContext(ctx);
+    if (shouldUseManualUpi) {
+      setDetailsFormStep('instructions');
+    } else {
+      setShowDetailsForm(false);
+      setPaymentView('checkout');
+    }
+  };
+
+  // Called when user taps "Get Payment Details" — inserts submission + refreshes slots
+  const handleGetPaymentDetails = async () => {
+    if (!paymentContext || !selectedEvent) return;
+    const tenDigit = detailsForm.phone.replace(/^\+91/, '').replace(/^0/, '');
+    const submittedAt = new Date().toISOString();
+    const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
+    const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
+    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
+    const { error: submissionError } = await supabase.rpc('upsert_payment_submission', {
+      p_invite_slug: inviteSlug ?? null,
+      p_event_id: selectedEvent.id,
+      p_event_slug: selectedEvent.id,
+      p_event_title: selectedEvent.title,
+      p_selected_date: dateStr,
+      p_name: detailsForm.name.trim(),
+      p_phone: tenDigit,
+      p_amount: pricing.advance,
+      p_submitted_at: submittedAt,
+    });
+    if (submissionError) {
+      try {
+        const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
+        localRows.unshift({
+          id: `local-${Date.now()}`,
+          invite_slug: inviteSlug ?? null,
+          event_id: selectedEvent.id,
+          event_slug: selectedEvent.id,
+          event_title: selectedEvent.title,
+          selected_date: dateStr,
+          name: detailsForm.name.trim(),
+          phone: tenDigit,
+          amount: pricing.advance,
+          status: 'local_pending_manual_verification',
+          submitted_at: submittedAt,
+          source: 'localStorage',
+        });
+        localStorage.setItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY, JSON.stringify(localRows));
+      } catch {
+        // ignore storage errors
+      }
+    }
+    // Refresh slots count after insert (invite-only events only)
+    if (inviteSlug) await fetchSlotsLeft();
     setShowDetailsForm(false);
     setPaymentView('checkout');
   };
@@ -1104,6 +1437,7 @@ export default function App() {
 
     const btnClass = "px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-semibold hover:bg-[#e6c200] transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px]";
     const primaryBtnClass = "px-5 py-3 bg-[#FFD700] text-black rounded-2xl text-sm font-bold hover:bg-[#e6c200] transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px]";
+    const girlsOnlyBtnClass = "px-5 py-3 bg-[#FF4FB8] text-white rounded-2xl text-sm font-bold hover:bg-[#e93ea3] transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px]";
 
     switch (step) {
       case 'ASK_CITY': {
@@ -1234,12 +1568,24 @@ export default function App() {
         const filteredEvents = events.filter(e => e.cities.includes(selectedCity));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {filteredEvents.map((event, i) => (
-              <button key={event.id} onClick={() => handleEventSelect(event)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span className="text-left flex-1 mr-2">{event.oneLiner || event.title}</span> <Send size={16} className="flex-shrink-0" />
-              </button>
-            ))}
+            {filteredEvents.map((event, i) => {
+              const isGirlsOnlyEvent = event.girlsOnly || hasGirlsOnlyQuickInfo(event.quickInfo);
+              const eventBtnClass = isGirlsOnlyEvent ? girlsOnlyBtnClass : btnClass;
+              return (
+                <button key={event.id} onClick={() => handleEventSelect(event)} className={`${eventBtnClass} relative overflow-hidden`}>
+                  <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
+                  <span className="text-left flex-1 mr-2 flex items-center gap-2">
+                    {isGirlsOnlyEvent && (
+                      <span className="rounded-full bg-white/25 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-white ring-1 ring-white/35">
+                        Girls Only
+                      </span>
+                    )}
+                    <span>{event.oneLiner || event.title}</span>
+                  </span>
+                  <Send size={16} className="flex-shrink-0" />
+                </button>
+              );
+            })}
           </motion.div>
         );
       }
@@ -1260,9 +1606,10 @@ export default function App() {
   const isPhoneValid = /^\d{10,}$/.test(detailsForm.phone);
   const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted;
 
-  if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
+  if (previewLoading) return isInviteOverlay ? null : <div className="fixed inset-0 bg-white z-50" />;
 
-  const appReady = eventsLoaded && msgsReady;
+  const appReady = isInviteOverlay ? !!selectedEvent : eventsLoaded && msgsReady;
+  if (!appReady && isInviteOverlay) return null;
   if (!appReady) return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
       {/* Logo with gentle glow pulse */}
@@ -1304,13 +1651,14 @@ export default function App() {
       </AnimatePresence>
     </div>
   );
+  const isSelectedGirlsOnlyEvent = selectedEvent?.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent?.quickInfo);
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+    <div className={isInviteOverlay ? "absolute inset-0 overflow-hidden bg-transparent font-sans" : "h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans"}>
+      <div className={isInviteOverlay ? "absolute inset-0 bg-transparent overflow-hidden" : "w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white"}>
         
         {/* Header */}
-        <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
+        {!isInviteOverlay && <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
               <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
@@ -1339,7 +1687,7 @@ export default function App() {
               )}
             </div>
           </div>
-        </div>
+        </div>}
 
         {showChat && !showDetails && !showTransition && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
@@ -1377,8 +1725,16 @@ export default function App() {
                 opacity: { duration: 0.35, ease: 'easeOut' },
                 scale:   { type: 'spring', damping: 20, stiffness: 120 }
               }}
-              className="absolute inset-0 bg-[#FFD700] z-40 flex flex-col items-center justify-center overflow-hidden"
+              className={`absolute inset-0 z-40 flex flex-col items-center justify-center overflow-hidden ${isSelectedGirlsOnlyEvent ? 'bg-[#FF4FB8]' : 'bg-[#FFD700]'}`}
             >
+              {isSelectedGirlsOnlyEvent && (
+                <motion.div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ background: 'radial-gradient(circle at 50% 44%, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.08) 34%, rgba(255,79,184,0) 68%)' }}
+                  animate={{ opacity: [0.65, 1, 0.65], scale: [0.96, 1.04, 0.96] }}
+                  transition={{ duration: 1.25, ease: 'easeInOut' }}
+                />
+              )}
               <motion.div
                 initial={{ x: -100, y: 100, scale: 0.5, opacity: 0 }}
                 animate={{ x: 0, y: 0, scale: 1, opacity: 1 }}
@@ -1393,7 +1749,7 @@ export default function App() {
                   animate={{ x: 150, y: -150, scale: 0.5, opacity: 0 }}
                   transition={{ delay: 1.35, duration: 0.45, ease: 'easeIn' }}
                 >
-                  <Send size={48} className="text-black" />
+                  <Send size={48} className={isSelectedGirlsOnlyEvent ? 'text-white' : 'text-black'} />
                 </motion.div>
               </motion.div>
               <motion.p
@@ -1401,7 +1757,7 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ delay: 0.15, duration: 0.4 }}
-                className="mt-4 font-bold text-lg text-black tracking-wide absolute top-[55%]"
+                className={`mt-4 font-bold text-lg tracking-wide absolute top-[55%] ${isSelectedGirlsOnlyEvent ? 'text-white' : 'text-black'}`}
               >
                 Sending details...
               </motion.p>
@@ -1441,6 +1797,10 @@ export default function App() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
+                onClick={() => {
+                  if (isInviteOverlay && onClose) { onClose(); }
+                  else { setShowBookingTimeline(false); }
+                }}
               />
               <motion.div
                 initial={{ opacity: 0, scale: 0.92 }}
@@ -1448,8 +1808,12 @@ export default function App() {
                 exit={{ opacity: 0, scale: 0.92 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                 className="absolute inset-0 z-50 flex items-center justify-center px-5"
+                onClick={() => {
+                  if (isInviteOverlay && onClose) { onClose(); }
+                  else { setShowBookingTimeline(false); }
+                }}
               >
-                <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100">
+                <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100" onClick={e => e.stopPropagation()}>
                   <div className="px-6 pt-6 pb-4 flex items-center justify-center">
                     <div className="flex-1 text-center">
                       <h2 className="text-lg font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
@@ -1469,11 +1833,29 @@ export default function App() {
                           .replace(/\{balance\}/gi, balanceStr);
 
                         const selectedDateEntry = selectedEvent.dates.find(d => d.date === bookingDate);
-                        const steps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? [
+                        const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? [
                           { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
+                        const steps = isInvitePaymentFlow ? (() => {
+                          const advanceStepIndex = eventSteps.findIndex(step =>
+                            /advance/i.test(`${step.label} ${step.value}`)
+                          );
+                          const requestStepIndex = eventSteps.findIndex(step =>
+                            /request invitation|sign up|vibe check/i.test(`${step.label} ${step.value}`)
+                          );
+                          const sourceAdvanceStep = eventSteps[advanceStepIndex] ?? eventSteps[requestStepIndex] ?? eventSteps[0];
+                          return [
+                            {
+                              ...sourceAdvanceStep,
+                              label: 'settle advance',
+                              value: '{advance}',
+                              date: sourceAdvanceStep?.date ?? '',
+                            },
+                            ...eventSteps.filter((_, index) => index !== advanceStepIndex && index !== requestStepIndex),
+                          ];
+                        })() : eventSteps;
 
                         return steps.map((step, si) => {
                           const isNowRow = si === 0;
@@ -1489,7 +1871,7 @@ export default function App() {
                               </div>
                               {isNowRow ? (
                                 <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                                  {selectedEvent.inviteOnly ? 'Free' : 'Now'}
+                                  {selectedEvent.inviteOnly && !isInvitePaymentFlow ? 'Free' : 'Now'}
                                 </span>
                               ) : dateLabel ? (
                                 <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -1501,20 +1883,27 @@ export default function App() {
                         });
                       })()}
 
-                      {/* Prize row — event title + date, yellow accented */}
+                      {/* Prize row — event title + date + slots, yellow accented */}
                       <div className="px-5 py-4 flex items-center justify-between bg-[#FFD700]/10">
                         <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
-                        {bookingDate && (
-                          <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                            {new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
+                          {bookingDate && (
+                            <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full">
+                              {new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          )}
+                          {isInvitePaymentFlow && slotsLeft !== null && (
+                            <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">
+                              {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="px-6 pb-6">
-                    {selectedEvent.inviteOnly ? (
+                    {selectedEvent.inviteOnly && !isInvitePaymentFlow ? (
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
@@ -1526,7 +1915,7 @@ export default function App() {
                         {selectedEvent.ctaLabel || 'Request Invitation'}
                         <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
-                    ) : isPhonePeFlow ? (
+                    ) : isPhonePeFlow && !isInvitePaymentFlow ? (
                       <button
                         onClick={() => {
                           setShowBookingTimeline(false);
@@ -1536,6 +1925,18 @@ export default function App() {
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         {selectedEvent.ctaLabel || 'Confirm'}
+                        <ArrowRight size={18} strokeWidth={3.0} />
+                      </button>
+                    ) : shouldUseManualUpi ? (
+                      <button
+                        onClick={() => {
+                          setShowBookingTimeline(false);
+                          setShowDetailsForm(true);
+                        }}
+                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
+                      >
+                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
+                        {isInvitePaymentFlow ? 'Pay Advance' : selectedEvent.ctaLabel || 'Pay Advance'}
                         <ArrowRight size={18} strokeWidth={3.0} />
                       </button>
                     ) : (
@@ -1570,98 +1971,194 @@ export default function App() {
                 className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
                 onClick={() => {
                   setShowDetailsForm(false);
+                  setDetailsFormStep('details');
                   setTimeout(() => setShowBookingTimeline(true), 80);
                 }}
               />
               <motion.div
+                layout
                 initial={{ y: '100%' }}
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem] flex flex-col" style={{ minHeight: 'auto' }}
+                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem] overflow-hidden"
               >
-                {/* Handle + Header */}
-                <div className="px-6 pt-4 pb-4">
-                  <div className="w-8 h-[3px] bg-gray-100 rounded-full mx-auto mb-2" />
-                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight whitespace-nowrap">Let's Lock This In! 🔐</p>
+                {/* Handle — always visible */}
+                <div className="pt-4 flex justify-center">
+                  <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
                 </div>
 
-                {/* Fields */}
-                <div className="px-6 space-y-3">
-                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
-                    <input
-                      type="text"
-                      value={detailsForm.name}
-                      onChange={e => setDetailsForm({ ...detailsForm, name: e.target.value })}
-                      placeholder="What do we call you?"
-                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                    />
-                  </div>
+                <AnimatePresence mode="wait">
 
-                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
-                      {detailsForm.phone.length > 0 && !isPhoneValid && (
-                        <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
-                      )}
-                    </div>
-                    <input
-                      type="tel"
-                      value={detailsForm.phone}
-                      onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') })}
-                      placeholder="Updates & reminders are sent here"
-                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                      inputMode="tel"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3 select-none pt-1">
-                    <div
-                      onClick={() => setTcAccepted(!tcAccepted)}
-                      className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${
-                        tcAccepted ? 'bg-black border-black' : 'bg-white border-gray-300'
-                      }`}
+                  {/* ── Step 1: Details form ── */}
+                  {detailsFormStep === 'details' && (
+                    <motion.div
+                      key="details"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, y: 8 }}
+                      transition={{ duration: 0.18 }}
+                      className="flex flex-col"
                     >
-                      {tcAccepted && (
-                        <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                          <path d="M1 4L4 7L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </div>
-                    <span className="text-[13px] text-gray-500 leading-snug">
-                      I agree to the{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowTcModal(true)}
-                        className="text-gray-900 underline font-medium"
-                      >
-                        Terms & Conditions
-                      </button>
-                    </span>
-                  </div>
-                </div>
+                      <div className="px-6 pt-3 pb-4">
+                        <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">
+                          {isInvitePaymentFlow ? 'Invite Verification 🔐' : "Let's Lock This In! 🔐"}
+                        </p>
+                      </div>
 
-                {/* CTA */}
-                <div className="px-6 pt-7 pb-5 space-y-3">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
-                    <span className="text-[12px] text-gray-400">Secure Payments via BillDesk</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!isDetailsFormValid}
-                    onClick={handleProceedToPhonePe}
-                    className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 whitespace-nowrap ${
-                      isDetailsFormValid
-                        ? 'bg-black text-white active:opacity-80'
-                        : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    <span>Pay Advance</span>
-                    <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
-                  </button>
-                </div>
+                      <div className="px-6 space-y-3">
+                        <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                          <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
+                          <input
+                            type="text"
+                            value={detailsForm.name}
+                            onChange={e => setDetailsForm({ ...detailsForm, name: e.target.value })}
+                            placeholder={isInvitePaymentFlow ? 'Name entered in application form' : 'What do we call you?'}
+                            className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
+                            {detailsForm.phone.length > 0 && !isPhoneValid && (
+                              <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
+                            )}
+                          </div>
+                          <input
+                            type="tel"
+                            value={detailsForm.phone}
+                            onChange={e => { setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') }); setInviteVerifyError(''); }}
+                            placeholder={isInvitePaymentFlow ? 'Number entered in application form' : 'Updates & reminders are sent here'}
+                            className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                            inputMode="tel"
+                          />
+                        </div>
+
+                        {inviteVerifyError && (
+                          <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] text-red-600 leading-relaxed px-1">
+                            {inviteVerifyError === '__not_found__' ? (
+                              <>
+                                <span className="font-semibold">This number isn't on our invite list.</span>
+                                <br />
+                                Re-enter the number you used in the application form.
+                                <br /><br />
+                                Haven't applied yet? →{' '}
+                                <a
+                                  href={selectedEvent?.bookingUrl ?? '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline font-semibold"
+                                >
+                                  Apply Now
+                                </a>
+                              </>
+                            ) : inviteVerifyError}
+                          </motion.p>
+                        )}
+
+                        <div className="flex items-center gap-3 select-none pt-1">
+                          <div
+                            onClick={() => setTcAccepted(!tcAccepted)}
+                            className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${tcAccepted ? 'bg-black border-black' : 'bg-white border-gray-300'}`}
+                          >
+                            {tcAccepted && (
+                              <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
+                                <path d="M1 4L4 7L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </div>
+                          <span className="text-[13px] text-gray-500 leading-snug">
+                            I agree to the{' '}
+                            <button type="button" onClick={() => setShowTcModal(true)} className="text-gray-900 underline font-medium">
+                              Terms & Conditions
+                            </button>
+                          </span>
+                        </div>
+
+                        {isInvitePaymentFlow && (
+                          <div className="flex items-center justify-center gap-1.5 pt-2">
+                            <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
+                            <span className="text-[12px] text-gray-400 font-medium">Only 1 Entry Slot per Phone Number.</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="px-6 pt-6 pb-6">
+                        <button
+                          type="button"
+                          disabled={!isDetailsFormValid}
+                          onClick={handleProceedToPhonePe}
+                          className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 ${
+                            isDetailsFormValid ? 'bg-black text-white active:opacity-80' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <span>{shouldUseManualUpi ? 'Continue' : 'Pay Advance'}</span>
+                          <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* ── Step 2: Payment instructions ── */}
+                  {detailsFormStep === 'instructions' && (
+                    <motion.div
+                      key="instructions"
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.22, ease: 'easeOut' }}
+                      className="flex flex-col"
+                    >
+                      <div className="px-6 pt-3 pb-5">
+                        {paymentContext?.isBalancePayment && (
+                          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
+                            <span className="text-green-600">✓ Advance Verified</span>
+                            <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
+                          </p>
+                        )}
+                        <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">{paymentContext?.isBalancePayment ? 'One last step! 🎉' : 'Almost there! 🤠'}</p>
+                      </div>
+
+                      {/* Step rows */}
+                      <div className="px-6 space-y-3">
+                        {/* Step 1 */}
+                        <div className="flex gap-4 items-start bg-[#F7F7F8] rounded-2xl px-4 py-4">
+                          <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[13px] font-black flex-shrink-0">1</div>
+                          <div>
+                            <p className="text-[15px] font-bold text-gray-900 leading-snug mb-0.5">{paymentContext?.isBalancePayment ? `Settle Balance ${paymentContext ? formatUpiINR(paymentContext.amount) : ''}` : `Pay ${paymentContext ? formatUpiINR(paymentContext.amount) : ''} advance`}</p>
+                            <p className="text-[13px] text-gray-500 leading-relaxed">Scan QR code or copy our UPI ID on the next page.</p>
+                          </div>
+                        </div>
+
+                        {/* Step 2 */}
+                        <div className="flex gap-4 items-start bg-[#F7F7F8] rounded-2xl px-4 py-4">
+                          <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[13px] font-black flex-shrink-0">2</div>
+                          <div>
+                            <p className="text-[15px] font-bold text-gray-900 leading-snug mb-0.5">Send Us Payment Screenshot</p>
+                            <p className="text-[13px] text-gray-500 leading-relaxed">Send payment screenshot to the WhatsApp number you got this invite from.</p>
+                            <p className="text-[13px] text-gray-500 leading-relaxed mt-1">Your payment will be confirmed within 24 hours.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="px-6 pt-6 pb-6">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDetailsFormStep('details');
+                            handleGetPaymentDetails();
+                          }}
+                          className="w-full py-[17px] rounded-2xl text-[17px] font-semibold bg-black text-white active:opacity-80 transition-all inline-flex items-center justify-center gap-2"
+                        >
+                          <span>Get Payment Details</span>
+                          <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                </AnimatePresence>
               </motion.div>
             </>
           )}
@@ -1712,7 +2209,7 @@ export default function App() {
 
         {/* PhonePe Mock Checkout */}
         <AnimatePresence>
-          {paymentView === 'checkout' && paymentContext && (
+          {paymentView === 'checkout' && paymentContext && !paymentContext.phonepeUrl?.includes('upi-manual') && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1760,6 +2257,17 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* UPI Manual Payment */}
+        <AnimatePresence>
+          {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl?.includes('upi-manual') && (
+            <UpiPaymentScreen
+              paymentContext={paymentContext}
+              girlsOnly={paymentContext.girlsOnly}
+              isBalancePayment={paymentContext.isBalancePayment}
+            />
           )}
         </AnimatePresence>
 
@@ -2231,15 +2739,15 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
   const [showPolicyModal, setShowPolicyModal] = useState<'privacy' | 'refund' | 'about' | 'contact' | 'tc' | null>(null);
   const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
   const [switcherCity, setSwitcherCity] = useState(selectedCity);
-  const [heroLoaded, setHeroLoaded] = useState(false);
-  const [heroError, setHeroError] = useState(false);
-  const [heroKey, setHeroKey] = useState(0); // bump to force image reload
+  const [headerImageIndex, setHeaderImageIndex] = useState(0);
+  const [headerCarouselPaused, setHeaderCarouselPaused] = useState(false);
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
+  const headerTouchStartXRef = useRef<number | null>(null);
   const lastHandledOpenPlanSwitcherSignalRef = useRef(openPlanSwitcherSignal ?? 0);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cityDateOffset = React.useMemo(() => {
@@ -2248,6 +2756,16 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
     return leg ? leg.dateOffset : 0;
   }, [event.transportPlan, selectedCity]);
   const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+  const headerImages = React.useMemo(() => {
+    const fromArray = Array.isArray(event.heroImages) ? event.heroImages : [];
+    const merged = [...fromArray, event.heroImage]
+      .map(img => (img || '').trim())
+      .filter(Boolean)
+      .filter((img, idx, arr) => arr.indexOf(img) === idx)
+      .slice(0, 4);
+    return merged;
+  }, [event.heroImages, event.heroImage]);
+  const currentHeaderImage = headerImages[Math.min(headerImageIndex, Math.max(headerImages.length - 1, 0))] || '';
 
   const shiftDateStr = (dateStr: string, offset: number) => {
     const d = new Date(dateStr + 'T00:00:00');
@@ -2266,10 +2784,22 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
 
   useEffect(() => {
     setStayImageIndexes({});
-    setHeroLoaded(false);
-    setHeroError(false);
-    setHeroKey(k => k + 1);
+    setHeaderImageIndex(0);
+    setHeaderCarouselPaused(false);
   }, [event.id]);
+
+  useEffect(() => {
+    if (headerImageIndex >= headerImages.length) setHeaderImageIndex(0);
+  }, [headerImageIndex, headerImages.length]);
+
+  useEffect(() => {
+    if (headerCarouselPaused) return;
+    if (headerImages.length <= 1) return;
+    const timer = setInterval(() => {
+      setHeaderImageIndex(prev => (prev + 1) % headerImages.length);
+    }, 5200);
+    return () => clearInterval(timer);
+  }, [headerImages.length, headerCarouselPaused]);
 
   // Reset calendar to nearest upcoming month whenever the event changes
   useEffect(() => {
@@ -2567,6 +3097,63 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
           <h1 className="flex-1 text-center text-[15px] font-bold text-gray-700 px-3 truncate">{event.title}</h1>
           <div className="w-8 flex-shrink-0" />
         </div>
+
+        {/* Top landscape image slot between header and plan card */}
+        {headerImages.length > 0 && (
+          <div className="px-4 pt-4 pb-1">
+            <div
+              className="mx-3"
+              onTouchStart={(e) => {
+                if (headerImages.length <= 1) return;
+                setHeaderCarouselPaused(true);
+                headerTouchStartXRef.current = e.touches[0]?.clientX ?? null;
+              }}
+              onTouchEnd={(e) => {
+                if (headerImages.length <= 1) return;
+                const startX = headerTouchStartXRef.current;
+                headerTouchStartXRef.current = null;
+                if (startX === null) return;
+                const endX = e.changedTouches[0]?.clientX ?? startX;
+                const deltaX = endX - startX;
+                if (Math.abs(deltaX) < 35) return;
+                setHeaderImageIndex(prev => (
+                  deltaX < 0
+                    ? (prev + 1) % headerImages.length
+                    : (prev - 1 + headerImages.length) % headerImages.length
+                ));
+              }}
+              onTouchCancel={() => {
+                headerTouchStartXRef.current = null;
+              }}
+            >
+              <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white">
+                <img
+                  src={currentHeaderImage}
+                  alt={`${event.title} header landscape`}
+                  className="w-full aspect-[4/3] object-contain bg-gray-50"
+                  onClick={() => setHeaderCarouselPaused(true)}
+                  onTouchStart={() => setHeaderCarouselPaused(true)}
+                />
+              </div>
+            </div>
+            {headerImages.length > 1 && (
+              <div className="flex justify-center gap-1.5 mt-2">
+                {headerImages.map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setHeaderCarouselPaused(true);
+                      setHeaderImageIndex(idx);
+                    }}
+                    className={`w-1.5 h-1.5 rounded-full transition-colors ${idx === headerImageIndex ? 'bg-gray-900' : 'bg-gray-300'}`}
+                    aria-label={`View hero image ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick Info — boarding pass card */}
         {event.quickInfo && event.quickInfo.length > 0 && (() => {
@@ -2882,7 +3469,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
         {!event.isActivity && !!event.videos?.length && (
           <div className="pt-3 pb-6">
             <div className="px-6 mb-3 flex items-center justify-between">
-              <h3 className="text-xl font-black">chapter அ vibes.mp4</h3>
+              <h3 className="text-xl font-black">
+                {event.girlsOnly || hasGirlsOnlyQuickInfo(event.quickInfo) ? 'galcode vibes.mp4' : 'chapter அ vibes.mp4'}
+              </h3>
             </div>
             <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar px-6 gap-4 pb-4">
               {event.videos?.map((vid, i) => {
@@ -2941,9 +3530,13 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
 
           {/* Branding — non-clickable sign-off */}
           <div className="px-5 pt-7 pb-5">
-            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">plans we dream,</span>
+            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">
+              {event.girlsOnly || hasGirlsOnlyQuickInfo(event.quickInfo) ? 'private curated events,' : 'plans we dream,'}
+            </span>
             <br />
-            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">by chapter <span className="text-[18px]">அ</span></span>
+            <span className="text-[18px] font-black text-black/75 leading-snug tracking-tight">
+              {event.girlsOnly || hasGirlsOnlyQuickInfo(event.quickInfo) ? 'by galcode' : <>by chapter <span className="text-[18px]">அ</span></>}
+            </span>
           </div>
 
           {/* Work With Us — single expanding pill */}
@@ -2985,7 +3578,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                       </button>
                     </div>
                     <iframe
-                      src="https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1"
+                      src={(event.girlsOnly || hasGirlsOnlyQuickInfo(event.quickInfo))
+                        ? 'https://tally.so/embed/rj20P5?alignLeft=1&hideTitle=1&transparentBackground=1'
+                        : 'https://tally.so/embed/ZjYeb0?alignLeft=1&hideTitle=1&transparentBackground=1'}
                       width="100%"
                       height="520"
                       style={{ border: 'none', display: 'block' }}
@@ -3134,6 +3729,36 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                                 const displayAdvance = pricing.advance;
                                 const displayTotal = pricing.total;
                                 const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
+
+                                // Girls-only: show full price + countdown to event
+                                if (event.girlsOnly) {
+                                  const eventDateStr = selectedDate || event.dates?.[0]?.date || '';
+                                  const secondsLeft = eventDateStr
+                                    ? Math.max(0, Math.floor((new Date(eventDateStr + 'T00:00:00').getTime() - Date.now()) / 1000))
+                                    : 0;
+                                  const cd_d = Math.floor(secondsLeft / (3600 * 24));
+                                  const cd_h = Math.floor((secondsLeft % (3600 * 24)) / 3600);
+                                  const cd_m = Math.floor((secondsLeft % 3600) / 60);
+                                  const cd_s = secondsLeft % 60;
+                                  const countdownLabel = secondsLeft > 0
+                                    ? `${cd_d}d ${String(cd_h).padStart(2,'0')}h ${String(cd_m).padStart(2,'0')}m ${String(cd_s).padStart(2,'0')}s`
+                                    : 'Starting soon';
+                                  return (
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="flex flex-col gap-0.5 text-[11px] font-semibold text-gray-500">
+                                        <p>Entry</p>
+                                        <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
+                                      </div>
+                                      <div className="flex flex-col items-center gap-0.5">
+                                        <p className="text-[11px] font-semibold text-amber-600">Time left for event</p>
+                                        <span className="text-[13px] font-bold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums leading-tight">
+                                          {countdownLabel}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
                                 return (
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
@@ -3427,14 +4052,29 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                         <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3 text-center">CHANGE PLAN</div>
                         {cityEvents.map(e => {
                           const isActive = e.id === event.id && switcherCity === selectedCity;
+                          const isGirlsOnlyPlan = e.girlsOnly || hasGirlsOnlyQuickInfo(e.quickInfo);
+                          const activePlanClass = isGirlsOnlyPlan
+                            ? 'bg-[#FFF0F8] border-2 border-[#FF4FB8]'
+                            : 'bg-[#FFF9E6] border-2 border-[#FFD700]';
+                          const activeTextClass = isGirlsOnlyPlan ? 'text-[#c0187a]' : 'text-[#b38200]';
+                          const activeBadgeClass = isGirlsOnlyPlan
+                            ? 'text-[#c0187a] bg-[#FF4FB8]/15'
+                            : 'text-[#b38200] bg-[#FFD700]/20';
                           return (
                             <button
                               key={e.id}
                               onClick={() => { if (!isActive) onSwitchEvent(e, switcherCity); setShowPlanSwitcher(false); }}
-                              className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? 'bg-[#FFF9E6] border-2 border-[#FFD700]' : 'bg-gray-50 border border-gray-100'}`}
+                              className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? activePlanClass : 'bg-gray-50 border border-gray-100'}`}
                             >
-                              <div className={`text-[15px] font-bold truncate ${isActive ? 'text-[#b38200]' : 'text-gray-900'}`}>{e.title}</div>
-                              {isActive && <span className="text-[11px] font-bold text-[#b38200] bg-[#FFD700]/20 px-2 py-0.5 rounded-full flex-shrink-0">Viewing</span>}
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <span className={`min-w-0 truncate text-[15px] font-bold ${isActive ? activeTextClass : 'text-gray-900'}`}>{e.title}</span>
+                                {!isActive && isGirlsOnlyPlan && (
+                                  <span className="rounded-full bg-[#FFF3F8] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-[#D36B9E] ring-1 ring-[#F7CFE1] flex-shrink-0">
+                                    Girls Only
+                                  </span>
+                                )}
+                              </div>
+                              {isActive && <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${activeBadgeClass}`}>Viewing</span>}
                             </button>
                           );
                         })}

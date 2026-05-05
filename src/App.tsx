@@ -4,7 +4,7 @@ import { ArrowRight, Send, RotateCcw } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
-import { trackEvent } from './supabase';
+import { trackEvent, supabase } from './supabase';
 
 // Types
 type Message = {
@@ -573,6 +573,57 @@ const POSTER_LAYER_SRC = {
   beach: `/poster-layers/beach.png?${POSTER_LAYER_VERSION}`,
 } as const;
 
+const GALCODE_POSTER_LAYER_VERSION = 'v=20260504-1';
+const GALCODE_POSTER_LAYER_SRC = {
+  frame: `/galcode-poster-layers/frame.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  borderTop: `/galcode-poster-layers/border-top.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  borderLeft: `/galcode-poster-layers/border-left.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  borderRight: `/galcode-poster-layers/border-right.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  flowerLeft: `/galcode-poster-layers/flower-left.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  flowerRight: `/galcode-poster-layers/flower-right.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  palm: `/galcode-poster-layers/palm.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  lighthouse: `/galcode-poster-layers/lighthouse.png?${GALCODE_POSTER_LAYER_VERSION}`,
+  beach: `/galcode-poster-layers/beach.png?${GALCODE_POSTER_LAYER_VERSION}`,
+} as const;
+
+type PosterLayerSrc = typeof POSTER_LAYER_SRC;
+type PosterTheme = {
+  loaderGlow: string;
+  ctaBackground: string;
+  ctaShadow: string;
+  ctaTextColor: string;
+  bottomBlend: string;
+  flowerGlow: {
+    off: string;
+    on: string;
+  };
+  layerFilter?: string;
+};
+
+const LIFESTYLE_POSTER_THEME: PosterTheme = {
+  loaderGlow: '#FFD700',
+  ctaBackground: '#FFD700',
+  ctaShadow: '0 -22px 36px rgba(255,215,0,0.45), 0 -10px 18px rgba(255,215,0,0.55), 0 -3px 8px rgba(255,215,0,0.8)',
+  ctaTextColor: '#111',
+  bottomBlend: 'linear-gradient(to bottom, rgba(255,215,0,0) 0%, rgba(255,215,0,0.04) 25%, rgba(255,215,0,0.16) 50%, rgba(255,215,0,0.42) 72%, rgba(255,215,0,0.78) 88%, rgba(255,215,0,1) 100%)',
+  flowerGlow: {
+    off: 'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+    on: 'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))',
+  },
+};
+
+const GALCODE_POSTER_THEME: PosterTheme = {
+  loaderGlow: '#FF4FB8',
+  ctaBackground: '#FF4FB8',
+  ctaShadow: '0 -22px 36px rgba(255,79,184,0.32), 0 -10px 18px rgba(255,79,184,0.42), 0 -3px 8px rgba(255,79,184,0.62)',
+  ctaTextColor: '#FFFFFF',
+  bottomBlend: 'linear-gradient(to bottom, rgba(255,79,184,0) 0%, rgba(255,79,184,0.04) 25%, rgba(255,79,184,0.16) 50%, rgba(255,79,184,0.42) 72%, rgba(255,79,184,0.78) 88%, rgba(255,79,184,1) 100%)',
+  flowerGlow: {
+    off: 'drop-shadow(0 0 0px rgba(255,79,184,0)) drop-shadow(0 0 0px rgba(255,79,184,0))',
+    on: 'drop-shadow(0 0 6px rgba(255,79,184,0.85)) drop-shadow(0 0 14px rgba(255,79,184,0.55))',
+  },
+};
+
 // Base style that every layer shares — each PNG fills the full poster area.
 // Transforms (rotate / scale / translate) are layered on top per-element.
 const POSTER_LAYER_STYLE: React.CSSProperties = {
@@ -621,7 +672,15 @@ const LIGHTHOUSE_FLOAT = {
   transition: { duration: 7, repeat: Infinity, ease: 'easeInOut' as const },
 };
 
-function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
+function JoinLetterPage({
+  onContinue,
+  layers = POSTER_LAYER_SRC,
+  theme = LIFESTYLE_POSTER_THEME,
+}: {
+  onContinue: () => void;
+  layers?: PosterLayerSrc;
+  theme?: PosterTheme;
+}) {
   const [posterLoaded, setPosterLoaded] = useState(false);
 
   useEffect(() => {
@@ -629,7 +688,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
     let cancelled = false;
     // Preload every layer — only reveal the poster once all are cached,
     // so the scene doesn't "pop in" piece by piece on first render.
-    const loaders = Object.values(POSTER_LAYER_SRC).map(src =>
+    const loaders = Object.values(layers).map(src =>
       new Promise<void>((resolve) => {
         const img = new Image();
         img.onload = () => resolve();
@@ -647,7 +706,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, []);
+  }, [layers]);
 
   const handleCardPress = () => onContinue();
   const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -662,15 +721,15 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
         <motion.div
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.35, ease: 'easeOut' }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
           className="relative"
         >
           {/* Glow ring behind logo */}
           <motion.div
             animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
             transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-            className="absolute inset-0 rounded-2xl bg-[#FFD700]"
-            style={{ filter: 'blur(10px)' }}
+            className="absolute inset-0 rounded-2xl"
+            style={{ background: theme.loaderGlow, filter: 'blur(10px)' }}
           />
           <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
             <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
@@ -717,36 +776,36 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
             >
               {/* 1. Base frame — arch + paper + letter text, all static. */}
               <img
-                src={POSTER_LAYER_SRC.frame}
+                src={layers.frame}
                 alt="Chapter A founder letter"
                 aria-hidden="false"
-                style={POSTER_LAYER_STYLE}
+                style={{ ...POSTER_LAYER_STYLE, filter: theme.layerFilter }}
               />
 
               {/* 2. Decorative yellow borders — noticeable opacity breathing,
                      each offset in phase so the frame feels alive as a whole
                      but never in a mechanical pulse. */}
               <motion.img
-                src={POSTER_LAYER_SRC.borderTop}
+                src={layers.borderTop}
                 alt=""
                 aria-hidden="true"
-                style={POSTER_LAYER_STYLE}
+                style={{ ...POSTER_LAYER_STYLE, filter: theme.layerFilter }}
                 animate={{ opacity: [0.45, 1, 0.45] }}
                 transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
               />
               <motion.img
-                src={POSTER_LAYER_SRC.borderLeft}
+                src={layers.borderLeft}
                 alt=""
                 aria-hidden="true"
-                style={POSTER_LAYER_STYLE}
+                style={{ ...POSTER_LAYER_STYLE, filter: theme.layerFilter }}
                 animate={{ opacity: [0.45, 1, 0.45] }}
                 transition={{ duration: 4.2, delay: 0.8, repeat: Infinity, ease: 'easeInOut' }}
               />
               <motion.img
-                src={POSTER_LAYER_SRC.borderRight}
+                src={layers.borderRight}
                 alt=""
                 aria-hidden="true"
-                style={POSTER_LAYER_STYLE}
+                style={{ ...POSTER_LAYER_STYLE, filter: theme.layerFilter }}
                 animate={{ opacity: [0.45, 1, 0.45] }}
                 transition={{ duration: 4.8, delay: 1.6, repeat: Infinity, ease: 'easeInOut' }}
               />
@@ -756,7 +815,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                      pivots at each flower's own center so the motion feels
                      rooted in the blossom rather than the canvas. */}
               <motion.img
-                src={POSTER_LAYER_SRC.flowerLeft}
+                src={layers.flowerLeft}
                 alt=""
                 aria-hidden="true"
                 style={{ ...POSTER_LAYER_STYLE, transformOrigin: '18% 11%' }}
@@ -764,9 +823,9 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   rotate: [-3, 3, -3],
                   scale: [1, 1.04, 1],
                   filter: [
-                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
-                    'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))',
-                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+                    theme.flowerGlow.off,
+                    theme.flowerGlow.on,
+                    theme.flowerGlow.off,
                   ],
                 }}
                 transition={{
@@ -776,7 +835,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 }}
               />
               <motion.img
-                src={POSTER_LAYER_SRC.flowerRight}
+                src={layers.flowerRight}
                 alt=""
                 aria-hidden="true"
                 style={{ ...POSTER_LAYER_STYLE, transformOrigin: '84% 12%' }}
@@ -784,9 +843,9 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   rotate: [3, -3, 3],
                   scale: [1, 1.03, 1],
                   filter: [
-                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
-                    'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))',
-                    'drop-shadow(0 0 0px rgba(255,215,0,0)) drop-shadow(0 0 0px rgba(255,215,0,0))',
+                    theme.flowerGlow.off,
+                    theme.flowerGlow.on,
+                    theme.flowerGlow.off,
                   ],
                 }}
                 transition={{
@@ -800,10 +859,10 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                      read as foreground. Barely-there vertical float for a
                      hazy-distance feel. */}
               <motion.img
-                src={POSTER_LAYER_SRC.lighthouse}
+                src={layers.lighthouse}
                 alt=""
                 aria-hidden="true"
-                style={POSTER_LAYER_STYLE}
+                style={{ ...POSTER_LAYER_STYLE, filter: theme.layerFilter }}
                 animate={LIGHTHOUSE_FLOAT.animate}
                 transition={LIGHTHOUSE_FLOAT.transition}
               />
@@ -811,10 +870,10 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
               {/* 5. Beach — static, rendered above the lighthouse so the
                      shoreline covers the island's base. */}
               <img
-                src={POSTER_LAYER_SRC.beach}
+                src={layers.beach}
                 alt=""
                 aria-hidden="true"
-                style={POSTER_LAYER_STYLE}
+                style={{ ...POSTER_LAYER_STYLE, filter: theme.layerFilter }}
               />
 
               {/* 6. Lighthouse lamp — a tiny pulsing beacon at the lamp tip. */}
@@ -857,11 +916,12 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                      fades to transparent so the trunk merges into the sand
                      behind it instead of terminating in a hard edge. */}
               <motion.img
-                src={POSTER_LAYER_SRC.palm}
+                src={layers.palm}
                 alt=""
                 aria-hidden="true"
                 style={{
                   ...POSTER_LAYER_STYLE,
+                  filter: theme.layerFilter,
                   transformOrigin: '16% 94%',
                   WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)',
                   WebkitMaskRepeat: 'no-repeat',
@@ -903,7 +963,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   height: 42,
                   pointerEvents: 'none',
                   background:
-                    'linear-gradient(to bottom, rgba(255,215,0,0) 0%, rgba(255,215,0,0.04) 25%, rgba(255,215,0,0.16) 50%, rgba(255,215,0,0.42) 72%, rgba(255,215,0,0.78) 88%, rgba(255,215,0,1) 100%)',
+                    theme.bottomBlend,
                 }}
               />
             </div>
@@ -918,8 +978,8 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 maxHeight: '72px',
                 border: 'none',
                 borderRadius: '0 0 2rem 2rem',
-                background: '#FFD700',
-                color: '#111',
+                background: theme.ctaBackground,
+                color: theme.ctaTextColor,
                 cursor: 'pointer',
                 overflow: 'visible',
                 position: 'relative',
@@ -928,7 +988,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
-                boxShadow: '0 -22px 36px rgba(255,215,0,0.45), 0 -10px 18px rgba(255,215,0,0.55), 0 -3px 8px rgba(255,215,0,0.8)',
+                boxShadow: theme.ctaShadow,
                 transition: 'transform 160ms ease',
               }}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.995)'; }}
@@ -979,7 +1039,7 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
                   fontWeight: 900,
                   letterSpacing: '0',
                   lineHeight: 1,
-                  color: '#111',
+                  color: theme.ctaTextColor,
                 }}
               >
                 <span>Tap to Enter</span>
@@ -991,6 +1051,161 @@ function JoinLetterPage({ onContinue }: { onContinue: () => void }) {
           </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── INVITE FLOW ──────────────────────────────────────────────────────────────
+
+// Reuse the same layer sources and constants from JoinLetterPage
+const INVITE_LAYER_SRC = {
+  frame: `/poster-layers/invite-frame.png?v=1`,
+  borderTop: POSTER_LAYER_SRC.borderTop,
+  borderLeft: POSTER_LAYER_SRC.borderLeft,
+  borderRight: POSTER_LAYER_SRC.borderRight,
+  flowerLeft: POSTER_LAYER_SRC.flowerLeft,
+  flowerRight: POSTER_LAYER_SRC.flowerRight,
+  palm: POSTER_LAYER_SRC.palm,
+  lighthouse: POSTER_LAYER_SRC.lighthouse,
+  beach: POSTER_LAYER_SRC.beach,
+};
+
+type InviteStep = 'card' | 'flow';
+
+function InviteFlow({ slug }: { slug: string }) {
+  const [step, setStep] = useState<InviteStep>('card');
+  const [posterLoaded, setPosterLoaded] = useState(false);
+
+  useEffect(() => {
+    setPosterLoaded(false);
+    let cancelled = false;
+    const loaders = Object.values(INVITE_LAYER_SRC).map(src =>
+      new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+        img.src = src;
+      }),
+    );
+    Promise.all(loaders).then(() => { if (!cancelled) setPosterLoaded(true); });
+    const timeout = window.setTimeout(() => { if (!cancelled) setPosterLoaded(true); }, 6000);
+    return () => { cancelled = true; window.clearTimeout(timeout); };
+  }, []);
+
+  useEffect(() => {
+    const handleInviteBack = (event: PopStateEvent) => {
+      if (event.state?.chapteraLayer) return;
+      setStep('card');
+    };
+    window.addEventListener('popstate', handleInviteBack);
+    return () => window.removeEventListener('popstate', handleInviteBack);
+  }, []);
+
+  const openInviteBooking = () => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ chapteraInviteStep: 'flow' }, '', window.location.href);
+    }
+    setStep('flow');
+  };
+
+  // Loading state
+  if (!posterLoaded) {
+    return (
+      <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="relative"
+        >
+          <motion.div
+            animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+            transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+            className="absolute inset-0 rounded-2xl bg-[#FFD700]"
+            style={{ filter: 'blur(10px)' }}
+          />
+          <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
+            <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+
+        {/* Step 1 — Invitation Card */}
+          <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)', pointerEvents: step === 'card' ? 'auto' : 'none' }}>
+            <div style={{ width: 'min(90vw, 360px)', overflow: 'hidden', color: '#232323', fontFamily: "'DM Sans', sans-serif", position: 'relative', borderRadius: '0 0 2rem 2rem', background: '#fff' }}>
+              <div style={{ height: 'auto', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ width: '100%', aspectRatio: '874 / 1330', overflow: 'hidden', display: 'block', position: 'relative', background: '#FFFFFF' }}>
+                  {/* Invite frame */}
+                  <img src={INVITE_LAYER_SRC.frame} alt="Your invitation" style={POSTER_LAYER_STYLE} />
+
+                  {/* Borders */}
+                  <motion.img src={INVITE_LAYER_SRC.borderTop} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }} />
+                  <motion.img src={INVITE_LAYER_SRC.borderLeft} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 4.2, delay: 0.8, repeat: Infinity, ease: 'easeInOut' }} />
+                  <motion.img src={INVITE_LAYER_SRC.borderRight} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 4.8, delay: 1.6, repeat: Infinity, ease: 'easeInOut' }} />
+
+                  {/* Flowers */}
+                  <motion.img src={INVITE_LAYER_SRC.flowerLeft} alt="" aria-hidden="true" style={{ ...POSTER_LAYER_STYLE, transformOrigin: '18% 11%' }} animate={{ rotate: [-3, 3, -3], scale: [1, 1.04, 1], filter: ['drop-shadow(0 0 0px rgba(255,215,0,0))', 'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))', 'drop-shadow(0 0 0px rgba(255,215,0,0))'] }} transition={{ rotate: { duration: 8, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 6, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } }} />
+                  <motion.img src={INVITE_LAYER_SRC.flowerRight} alt="" aria-hidden="true" style={{ ...POSTER_LAYER_STYLE, transformOrigin: '84% 12%' }} animate={{ rotate: [3, -3, 3], scale: [1, 1.03, 1], filter: ['drop-shadow(0 0 0px rgba(255,215,0,0))', 'drop-shadow(0 0 6px rgba(255,215,0,0.85)) drop-shadow(0 0 14px rgba(255,215,0,0.55))', 'drop-shadow(0 0 0px rgba(255,215,0,0))'] }} transition={{ rotate: { duration: 9, delay: 0.4, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 7, delay: 0.4, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 3.4, delay: 1.7, repeat: Infinity, ease: 'easeInOut' } }} />
+
+                  {/* Lighthouse */}
+                  <motion.img src={INVITE_LAYER_SRC.lighthouse} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={LIGHTHOUSE_FLOAT.animate} transition={LIGHTHOUSE_FLOAT.transition} />
+
+                  {/* Beach */}
+                  <img src={INVITE_LAYER_SRC.beach} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} />
+
+                  {/* Lighthouse lamp */}
+                  <motion.div
+                    aria-hidden="true"
+                    style={{ position: 'absolute', left: `${LIGHTHOUSE_LAMP_DOT.left}%`, top: `${LIGHTHOUSE_LAMP_DOT.top}%`, width: `${LIGHTHOUSE_LAMP_DOT.spread}%`, aspectRatio: '1 / 1', borderRadius: '999px', pointerEvents: 'none', transform: 'translate(-50%, -50%)', background: `radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0.82) ${LIGHTHOUSE_LAMP_DOT.centerStop}%, rgba(255,255,255,0.28) ${LIGHTHOUSE_LAMP_DOT.midStop}%, rgba(255,255,255,0) 100%)` }}
+                    animate={{ ...LIGHTHOUSE_FLOAT.animate, opacity: [LIGHTHOUSE_LAMP_DOT.minOpacity, LIGHTHOUSE_LAMP_DOT.maxOpacity, LIGHTHOUSE_LAMP_DOT.minOpacity] }}
+                    transition={{ y: LIGHTHOUSE_FLOAT.transition, opacity: { duration: LIGHTHOUSE_LAMP_DOT.pulseSeconds, repeat: Infinity, repeatDelay: LIGHTHOUSE_LAMP_DOT.pauseSeconds, ease: 'easeInOut' } }}
+                  />
+
+                  {/* Palm */}
+                  <motion.img src={INVITE_LAYER_SRC.palm} alt="" aria-hidden="true" style={{ ...POSTER_LAYER_STYLE, transformOrigin: '16% 94%', WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)', WebkitMaskRepeat: 'no-repeat', WebkitMaskSize: '100% 100%', maskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)', maskRepeat: 'no-repeat', maskSize: '100% 100%' }} animate={{ rotate: [-1.8, 1.8, -1.8] }} transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }} />
+
+                  {/* Palm root blend */}
+                  <div aria-hidden="true" style={{ position: 'absolute', left: `${PALM_ROOT_BLEND.left}%`, top: `${PALM_ROOT_BLEND.top}%`, width: `${PALM_ROOT_BLEND.width}%`, height: `${PALM_ROOT_BLEND.height}%`, borderRadius: `${PALM_ROOT_BLEND.radius}%`, opacity: PALM_ROOT_BLEND.opacity, pointerEvents: 'none', background: `radial-gradient(ellipse at center, ${PALM_ROOT_BLEND.color} 0%, rgba(22, 23, 18, 0.48) 34%, ${PALM_ROOT_BLEND.featherColor} 72%)`, filter: `blur(${PALM_ROOT_BLEND.blurPx}px)`, mixBlendMode: 'multiply' }} />
+
+                  {/* Bottom gradient */}
+                  <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 42, pointerEvents: 'none', background: 'linear-gradient(to bottom, rgba(255,215,0,0) 0%, rgba(255,215,0,0.04) 25%, rgba(255,215,0,0.16) 50%, rgba(255,215,0,0.42) 72%, rgba(255,215,0,0.78) 88%, rgba(255,215,0,1) 100%)' }} />
+                </div>
+
+                {/* CTA Button */}
+                <button
+                  type="button"
+                  aria-label="Confirm your spot"
+                  onClick={openInviteBooking}
+                  style={{ flexShrink: 0, width: '100%', height: '72px', maxHeight: '72px', border: 'none', borderRadius: '0 0 2rem 2rem', background: '#FFD700', color: '#111', cursor: 'pointer', overflow: 'visible', position: 'relative', marginTop: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 -22px 36px rgba(255,215,0,0.45), 0 -10px 18px rgba(255,215,0,0.55), 0 -3px 8px rgba(255,215,0,0.8)', transition: 'transform 160ms ease' }}
+                  onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.995)'; }}
+                  onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  onTouchStart={e => { e.currentTarget.style.transform = 'scale(0.995)'; }}
+                  onTouchEnd={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                >
+                  <span aria-hidden="true" style={{ position: 'absolute', inset: '-8px 0 0 0', pointerEvents: 'none', borderRadius: 'inherit', overflow: 'visible', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.58) 22%, rgba(0,0,0,0.9) 46%, rgba(0,0,0,1) 100%)', WebkitMaskRepeat: 'no-repeat', WebkitMaskSize: '100% 100%', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.58) 22%, rgba(0,0,0,0.9) 46%, rgba(0,0,0,1) 100%)', maskRepeat: 'no-repeat', maskSize: '100% 100%' }}>
+                    <motion.span aria-hidden="true" style={{ position: 'absolute', inset: '0 auto 0 -50%', width: '50%', background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', transform: 'skewX(-14deg)', filter: 'blur(1.4px)' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 3.0, ease: 'easeInOut' }} />
+                  </span>
+                  <span style={{ position: 'relative', zIndex: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 'clamp(16px, 2.6vw, 20px)', fontWeight: 900, letterSpacing: '0', lineHeight: 1, color: '#111' }}>
+                    <span>Tap to Continue</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      <ArrowRight size={20} strokeWidth={3} />
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+        {step === 'flow' && <AppFlow inviteSlug={slug} onClose={() => setStep('card')} />}
+
       </div>
     </div>
   );
@@ -1164,8 +1379,11 @@ export default function App() {
   const isPlansPage = routePath === '/plans';
   const isLegacyJoinPage = routePath === '/join';
   const isLifestylePage = routePath === '/lifestyle' || isLegacyJoinPage;
+  const isGalcodePage = routePath === '/galcode';
+  const isInvitePage = routePath.startsWith('/invite/');
+  const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage);
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isInvitePage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1223,22 +1441,16 @@ export default function App() {
 
   const continueFromJoin = () => {
     if (typeof window === 'undefined') return;
-    // On the live domain, stay in the SPA — no full page reload.
-    // In dev/preview/any other host, hard-redirect to the live /plans page.
-    if (window.location.host.includes('chaptera.in')) {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      window.history.pushState({}, '', '/plans');
-      setRoutePath('/plans');
-      setRouteSearch('');
-    } else {
-      window.location.href = 'https://chaptera.in/plans';
-    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    window.history.pushState({}, '', '/plans');
+    setRoutePath('/plans');
+    setRouteSearch('');
   };
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const isLetterPage = isLifestylePage && !hasPreviewParam;
-    if (isAdmin || showHomepage || isLetterPage) {
+    const isLetterPage = (isLifestylePage || isGalcodePage) && !hasPreviewParam;
+    if (isAdmin || showHomepage || isLetterPage || isInvitePage) {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
       return;
@@ -1250,9 +1462,19 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isAdmin, isLifestylePage, hasPreviewParam]);
+  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, hasPreviewParam]);
 
   if (isAdmin) return <AdminPanel />;
+
+  if (isInvitePage && inviteSlug) {
+    return (
+      <>
+        <LandscapeBlocker />
+        <InAppBrowserNudge />
+        <InviteFlow slug={inviteSlug} />
+      </>
+    );
+  }
 
   if (isLifestylePage && !hasPreviewParam) {
     return (
@@ -1260,6 +1482,16 @@ export default function App() {
         <LandscapeBlocker />
         <InAppBrowserNudge />
         <JoinLetterPage onContinue={continueFromJoin} />
+      </>
+    );
+  }
+
+  if (isGalcodePage && !hasPreviewParam) {
+    return (
+      <>
+        <LandscapeBlocker />
+        <InAppBrowserNudge />
+        <JoinLetterPage onContinue={continueFromJoin} layers={GALCODE_POSTER_LAYER_SRC} theme={GALCODE_POSTER_THEME} />
       </>
     );
   }

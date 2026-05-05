@@ -35,3 +35,8 @@
 @keyframes shimmer {
   100% { transform: translateX(200%); }
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

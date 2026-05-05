@@ -6,6 +6,29 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'eyJhbGciOiJIU
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+export function parseHeroImages(raw: unknown): string[] {
+  const normalize = (arr: unknown[]) =>
+    arr
+      .map(item => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .slice(0, 4);
+
+  if (Array.isArray(raw)) return normalize(raw);
+  if (typeof raw !== 'string') return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return normalize(parsed);
+    } catch {
+      // fall through to single URL
+    }
+  }
+  return [trimmed];
+}
+
 // ─── ANALYTICS ───────────────────────────────────────────────────────────────
 function getSessionId(): string {
   const key = 'ca_session_id';
@@ -48,6 +71,12 @@ export async function trackEvent(
 
 // Maps a raw Supabase row + related rows to the Event shape used in AppFlow
 export function mapDbEventToEvent(row: any): any {
+  const heroImages = parseHeroImages(row.hero_image);
+  const quickInfo = Array.isArray(row.quick_info) ? row.quick_info : [];
+  const girlsOnlyFromQuickInfo = Array.isArray(quickInfo) && quickInfo.some((item: any) =>
+    ['girls only event', "girl's only event", 'girls_only_event'].includes(String(item.label ?? '').trim().toLowerCase()) &&
+    String(item.value ?? '').trim().toLowerCase() !== 'false'
+  );
   return {
     id: row.slug ?? row.id,
     cities: Array.isArray(row.cities) ? row.cities : (row.cities ?? []),
@@ -60,7 +89,8 @@ export function mapDbEventToEvent(row: any): any {
     price: `₹${Number(row.price_full).toLocaleString('en-IN')}`,
     advanceAmount: row.price_advance,
     description: row.description,
-    heroImage: row.hero_image,
+    heroImage: heroImages[0] ?? '',
+    heroImages,
     startLocation: row.start_location,
     transport: row.transport,
     groupSize: row.group_size,
@@ -73,7 +103,9 @@ export function mapDbEventToEvent(row: any): any {
     ctaLabel: row.cta_label ?? '',
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,
-    quickInfo: row.quick_info ?? [],
+    inviteSlug: row.invite_slug ?? undefined,
+    girlsOnly: Boolean(row.girls_only) || girlsOnlyFromQuickInfo,
+    quickInfo,
     pickupPoints: Array.isArray(row.pickup_points)
       ? row.pickup_points.map((p: any, i: number) => ({
           id: p.id ?? String(i),
@@ -93,6 +125,7 @@ export function mapDbEventToEvent(row: any): any {
     itinerary: row.itinerary ?? [],
     showAccommodation: row.show_accommodation ?? false,
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },
+    inviteSpots: row.invite_spots ?? null,
     bookingSteps: Array.isArray(row.booking_steps) && row.booking_steps.length > 0 ? row.booking_steps : undefined,
     dates: (row.event_dates ?? []).map((d: any) => ({
       date: d.start_date,

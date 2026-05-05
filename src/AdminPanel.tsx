@@ -1,6 +1,6 @@
 // chaptera admin panel
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from './supabase';
+import { supabase, parseHeroImages } from './supabase';
 
 // ─── IMAGE UPLOAD ─────────────────────────────────────────────────────────────
 async function uploadImageToStorage(file: File, folder = 'general'): Promise<string | null> {
@@ -81,7 +81,7 @@ type Trip = {
   price_full: number;
   price_advance: number;
   description: string;
-  hero_image: string;
+  hero_image: string | string[];
   cities: string[];
   category: string;
   quick_info?: Array<{ icon?: string; label: string; value: string }>;
@@ -102,6 +102,9 @@ type Trip = {
   show_secret_offer: boolean;
   accommodation?: { name?: string; images?: string[]; features?: string[]; policy?: string; stays?: AccommodationStay[] };
   booking_steps?: Array<{ label: string; value: string; date: string }>;
+  invite_slug?: string;
+  invite_only?: boolean;
+  invite_spots?: number | null;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type DoubtSubmission = {
@@ -123,10 +126,33 @@ type DoubtSubmission = {
   submitted_at?: string;
   created_at?: string;
 };
+type InvitePaymentSubmission = {
+  id?: string;
+  invite_slug?: string;
+  event_id?: string;
+  event_slug?: string;
+  event_title?: string;
+  selected_date?: string;
+  name?: string;
+  phone?: string;
+  amount?: number;
+  status?: string;
+  submitted_at?: string;
+  source?: string;
+};
+
+const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const statusLabel = { available: 'Available', selling_out: 'Selling Out', sold_out: 'Sold Out' };
 const statusColor = { available: '#16a34a', selling_out: '#d97706', sold_out: '#dc2626' };
+
+function serializeHeroImages(images: string[]): string {
+  const cleaned = images.map(img => img.trim()).filter(Boolean).slice(0, 4);
+  if (cleaned.length === 0) return '';
+  if (cleaned.length === 1) return cleaned[0];
+  return JSON.stringify(cleaned);
+}
 
 function Badge({ status }: { status: TripDate['status'] }) {
   return (
@@ -141,10 +167,14 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'other' | 'messages' | 'analytics'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'other' | 'messages' | 'analytics'>('trips');
+  const [paymentsEventFilter, setPaymentsEventFilter] = useState<'all' | string>('all');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
+  const [invitePaymentSubmissions, setInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
+  const [localInvitePaymentSubmissions, setLocalInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
+  const [refreshingSubmissions, setRefreshingSubmissions] = useState(false);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
@@ -219,6 +249,22 @@ export default function AdminPanel() {
     ),
   ].sort((a, b) => a.localeCompare(b));
 
+  const formatAdminDateTime = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const day = date.getDate();
+    const month = date.toLocaleString('en-IN', { month: 'short' });
+    const time = date.toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s/g, ' ').toUpperCase();
+    return `${day} ${month} at ${time}`;
+  };
+
+  const formatAdminINR = (amount?: number) =>
+    typeof amount === 'number' ? `₹${amount.toLocaleString('en-IN')}` : '-';
+
+  const invitePaymentRows: InvitePaymentSubmission[] = [...localInvitePaymentSubmissions, ...invitePaymentSubmissions]
+    .sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
+
 
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }
@@ -229,11 +275,18 @@ export default function AdminPanel() {
   useEffect(() => {
     if (!authed) return;
     setLoading(true);
+    try {
+      const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
+      setLocalInvitePaymentSubmissions(Array.isArray(localRows) ? localRows : []);
+    } catch {
+      setLocalInvitePaymentSubmissions([]);
+    }
     Promise.all([
       supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
       supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
-    ]).then(([evRes, msgRes, doubtsRes]) => {
+      supabase.from('invite_payment_submissions').select('*').order('submitted_at', { ascending: false }),
+    ]).then(([evRes, msgRes, doubtsRes, invitePaymentsRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
       if (msgRes.data) {
         const allMsgs = msgRes.data as ChatMsg[];
@@ -251,9 +304,26 @@ export default function AdminPanel() {
         setDoubtFormWebhookUrl(webhookMsg?.bot_message || '');
       }
       if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
+      if (invitePaymentsRes.data) setInvitePaymentSubmissions(invitePaymentsRes.data as InvitePaymentSubmission[]);
       setLoading(false);
     });
   }, [authed]);
+
+  const refreshSubmissions = async () => {
+    setRefreshingSubmissions(true);
+    try {
+      const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
+      setLocalInvitePaymentSubmissions(Array.isArray(localRows) ? localRows : []);
+    } catch {
+      setLocalInvitePaymentSubmissions([]);
+    }
+    const { data } = await supabase
+      .from('invite_payment_submissions')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+    if (data) setInvitePaymentSubmissions(data as InvitePaymentSubmission[]);
+    setRefreshingSubmissions(false);
+  };
 
   useEffect(() => {
     if (msgs.length === 0) return;
@@ -272,7 +342,10 @@ export default function AdminPanel() {
   // ─── SAVE TRIP ──────────────────────────────────────────────────────────────
   const saveTrip = async (trip: Trip) => {
     setSaving(trip.id ?? 'new');
-    const { event_dates, event_media, event_reviews, faqs, id, ...fields } = trip;
+    // Auto-generate invite_slug from title if not manually set
+    const autoSlug = trip.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const tripWithSlug = { ...trip, invite_slug: trip.invite_slug || autoSlug };
+    const { event_dates, event_media, event_reviews, faqs, id, ...fields } = tripWithSlug;
 
     let eventId = id;
     if (id) {
@@ -732,13 +805,14 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
         <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
+        <button style={s.tab(tab === 'payments')} onClick={() => setTab('payments')}>Payments</button>
         <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
         <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>
       </div>
 
-      <div style={{ maxWidth: 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: tab === 'payments' ? 1120 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -1593,6 +1667,124 @@ export default function AdminPanel() {
           </>
         )}
 
+        {/* ── INVITES TAB ───────────────────────────────────────────────────── */}
+        {!loading && tab === 'payments' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ fontWeight: 700, fontSize: 20 }}>Payment Submissions</div>
+              <button
+                onClick={refreshSubmissions}
+                disabled={refreshingSubmissions}
+                title="Refresh submissions"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: refreshingSubmissions ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: '#444', opacity: refreshingSubmissions ? 0.55 : 1, transition: 'opacity 0.15s' }}
+              >
+                <svg
+                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ animation: refreshingSubmissions ? 'spin 0.8s linear infinite' : 'none' }}
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                {refreshingSubmissions ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
+              Recorded when a user reaches the manual UPI payment screen — for both invite-only and open events.
+            </div>
+            {/* Event filter */}
+            {invitePaymentRows.length > 0 && (() => {
+              const uniqueEvents = [...new Set(invitePaymentRows.map(r => r.event_title || r.event_slug || '').filter(Boolean))].sort();
+              return (
+                <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Event</label>
+                  <select
+                    value={paymentsEventFilter}
+                    onChange={e => setPaymentsEventFilter(e.target.value)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    <option value="all">All Events</option>
+                    {uniqueEvents.map(ev => <option key={ev} value={ev}>{ev}</option>)}
+                  </select>
+                  {paymentsEventFilter !== 'all' && (
+                    <button onClick={() => setPaymentsEventFilter('all')} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
+                  )}
+                </div>
+              );
+            })()}
+            {(() => {
+              const filtered = paymentsEventFilter === 'all'
+                ? invitePaymentRows
+                : invitePaymentRows.filter(r => (r.event_title || r.event_slug || '') === paymentsEventFilter);
+              return filtered.length === 0 ? (
+                <div style={{ ...s.card, color: '#888' }}>No payment submissions yet.</div>
+              ) : (
+              <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
+                <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                  <colgroup>
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '20%' }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ background: '#fafafa' }}>
+                      {['Payment Time', 'Name', 'Phone', 'Event', 'Trip Date', 'Advance Paid'].map((heading) => (
+                        <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((submission, index) => {
+                      const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
+                      const eventName = submission.event_title || submission.event_slug || submission.invite_slug || '-';
+                      const isPaid = submission.status === 'advance_paid';
+                      const toggleAdvancePaid = async () => {
+                        const newStatus = isPaid ? 'pending' : 'advance_paid';
+                        await supabase
+                          .from('invite_payment_submissions')
+                          .update({ status: newStatus })
+                          .eq('id', submission.id!);
+                        setInvitePaymentSubmissions(prev =>
+                          prev.map(r => r.id === submission.id ? { ...r, status: newStatus } : r)
+                        );
+                        setLocalInvitePaymentSubmissions(prev =>
+                          prev.map(r => r.id === submission.id ? { ...r, status: newStatus } : r)
+                        );
+                      };
+                      return (
+                        <tr key={submission.id ?? `${submission.phone ?? 'invite'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0', background: isPaid ? '#f0fdf4' : 'white' }}>
+                          <td style={{ padding: '10px 12px', fontSize: 13, lineHeight: 1.25, color: '#111', whiteSpace: 'normal', overflowWrap: 'break-word' }}>{formatAdminDateTime(submission.submitted_at)}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{submission.name || '-'}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{phoneDigits || '-'}</td>
+                          <td title={eventName} style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(() => { if (!submission.selected_date) return '-'; const d = new Date(submission.selected_date); return isNaN(d.getTime()) ? submission.selected_date : `${d.getDate()} ${d.toLocaleString('en-IN', { month: 'short' })}`; })()}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <button
+                                onClick={toggleAdvancePaid}
+                                style={{ padding: '4px 12px', borderRadius: 99, border: 'none', background: isPaid ? '#16a34a' : '#e5e7eb', color: isPaid ? '#fff' : '#555', fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}
+                              >
+                                {isPaid ? '✓ Paid' : 'Pending'}
+                              </button>
+                              {submission.amount ? <span style={{ fontSize: 12, color: '#aaa' }}>{formatAdminINR(submission.amount)}</span> : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+            })()}
+          </>
+        )}
+
         {/* ── OTHER TAB ─────────────────────────────────────────────────────── */}
         {!loading && tab === 'other' && (
           <>
@@ -2360,16 +2552,40 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   trip: Trip; onChange: (t: Trip) => void; onSave: () => void; onCancel: () => void; saving: boolean; s: any;
 }) {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
+  const [newCityInput, setNewCityInput] = React.useState('');
+  const heroImages = React.useMemo(() => {
+    const parsed = parseHeroImages(trip.hero_image);
+    return [0, 1, 2, 3].map(i => parsed[i] ?? '');
+  }, [trip.hero_image]);
+  const setHeroImage = (index: number, value: string) => {
+    const next = [...heroImages];
+    next[index] = value;
+    set('hero_image', serializeHeroImages(next));
+  };
   const dates = trip.event_dates ?? [];
   const pickups = trip.pickup_points ?? [];
   const quickInfo = trip.quick_info ?? [];
+  const girlsOnlyQuickInfoLabels = ['girls only event', "girl's only event", 'girls_only_event'];
+  const isGirlsOnlyQuickInfo = (item: { label?: string }) =>
+    girlsOnlyQuickInfoLabels.includes(String(item.label ?? '').trim().toLowerCase());
   const getPlanValue = (labels: string[]) => quickInfo.find(item => labels.includes(item.label))?.value ?? '';
+  const isGirlsOnlyEvent = quickInfo.some(item =>
+    isGirlsOnlyQuickInfo(item) &&
+    String(item.value).toLowerCase() !== 'false'
+  );
   const setPlanValue = (removeLabels: string[], saveLabel: string, value: string, icon: string) => {
     const next = quickInfo.filter(item => !removeLabels.includes(item.label));
     const trimmed = value.trim();
     onChange({
       ...trip,
       quick_info: trimmed ? [...next, { icon, label: saveLabel, value: trimmed }] : next,
+    });
+  };
+  const setGirlsOnlyEvent = (enabled: boolean) => {
+    const next = quickInfo.filter(item => !isGirlsOnlyQuickInfo(item));
+    onChange({
+      ...trip,
+      quick_info: enabled ? [...next, { icon: 'heart', label: 'Girls Only Event', value: 'true' }] : next,
     });
   };
   const meetingSpotValue = getPlanValue(['Meeting Spot']);
@@ -2510,11 +2726,169 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               />
             </div>
           </div>
+          {trip.invite_only && (
+            <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+              <label style={s.label}>Invite Link</label>
+              <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4c1d95', fontFamily: 'monospace' }}>
+                {trip.title ? `chaptera.in/invite/${trip.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}` : <span style={{ color: '#aaa' }}>Fill in the title above to generate the link</span>}
+              </div>
+            </div>
+          )}
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
           {field('Category', 'category')}
           {field('Full Price (₹)', 'price_full', 'number')}
           {field('Advance Amount (₹)', 'price_advance', 'number')}
-          {field('Booking URL', 'booking_url')}
+          {/* Booking URL */}
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Booking Type</label>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 10, border: '1.5px solid #e0e0e0', borderRadius: 10, overflow: 'hidden' }}>
+              {(['external', 'upi-manual'] as const).map(mode => {
+                const active = mode === 'upi-manual'
+                  ? trip.booking_url === 'upi-manual'
+                  : trip.booking_url !== 'upi-manual';
+                const label = mode === 'upi-manual' ? 'Manual UPI (QR Code)' : 'External Link';
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => set('booking_url', mode === 'upi-manual' ? 'upi-manual' : '')}
+                    style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {trip.booking_url !== 'upi-manual' && (
+              <input
+                style={s.input}
+                placeholder="https://tally.so/r/..."
+                value={trip.booking_url}
+                onChange={e => set('booking_url', e.target.value)}
+              />
+            )}
+          </div>
+
+          {/* Cities */}
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Visible In Cities</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              {/* Preset cities */}
+              {['Chennai'].map(city => {
+                const active = (trip.cities ?? []).includes(city);
+                return (
+                  <button
+                    key={city}
+                    type="button"
+                    onClick={() => {
+                      const current = trip.cities ?? [];
+                      set('cities', active ? current.filter(c => c !== city) : Array.from(new Set([...current, city])));
+                    }}
+                    style={{ padding: '5px 14px', borderRadius: 99, border: `1.5px solid ${active ? '#6366f1' : '#ddd'}`, background: active ? '#6366f1' : '#fff', color: active ? '#fff' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                  >
+                    {city}
+                  </button>
+                );
+              })}
+              {/* Custom cities (removable) */}
+              {(trip.cities ?? []).filter(c => !['Chennai', 'Pondy', 'Bangalore', 'Other'].includes(c)).map(city => (
+                <span
+                  key={city}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px 5px 14px', borderRadius: 99, border: '1.5px solid #6366f1', background: '#6366f1', color: '#fff', fontWeight: 600, fontSize: 13 }}
+                >
+                  {city}
+                  <button
+                    type="button"
+                    onClick={() => set('cities', (trip.cities ?? []).filter(c => c !== city))}
+                    style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, opacity: 0.75 }}
+                  >×</button>
+                </span>
+              ))}
+            </div>
+            {/* Add custom city */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                style={{ ...s.input, marginBottom: 0, flex: 1 }}
+                placeholder="Add a city (e.g. Hyderabad)"
+                value={newCityInput}
+                onChange={e => setNewCityInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newCityInput.trim()) {
+                    e.preventDefault();
+                    const name = newCityInput.trim();
+                    set('cities', Array.from(new Set([...(trip.cities ?? []), name])));
+                    setNewCityInput('');
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const name = newCityInput.trim();
+                  if (!name) return;
+                  set('cities', Array.from(new Set([...(trip.cities ?? []), name])));
+                  setNewCityInput('');
+                }}
+                style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {/* Galcode event flag */}
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Galcode Event</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setGirlsOnlyEvent(!isGirlsOnlyEvent)}
+                style={{
+                  padding: '5px 16px',
+                  borderRadius: 99,
+                  border: 'none',
+                  background: isGirlsOnlyEvent ? '#E90D7D' : '#ddd',
+                  color: isGirlsOnlyEvent ? '#fff' : '#555',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                {isGirlsOnlyEvent ? 'ON' : 'OFF'}
+              </button>
+              <span style={{ fontSize: 12, color: '#999' }}>
+                Shows this plan with Galcode styling in the chat UI.
+              </span>
+            </div>
+          </div>
+
+          {/* Invite-only settings */}
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Invite Only</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button
+                type="button"
+                onClick={() => set('invite_only', !trip.invite_only)}
+                style={{ padding: '5px 16px', borderRadius: 99, border: 'none', background: trip.invite_only ? '#16a34a' : '#ddd', color: trip.invite_only ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                {trip.invite_only ? 'ON' : 'OFF'}
+              </button>
+              {trip.invite_only && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ ...s.label, marginBottom: 0 }}>Total Spots</label>
+                  <input
+                    type="number"
+                    min={0}
+                    style={{ ...s.input, width: 90, marginBottom: 0 }}
+                    placeholder="e.g. 35"
+                    value={trip.invite_spots ?? ''}
+                    onChange={e => set('invite_spots', e.target.value === '' ? null : Number(e.target.value))}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
           <div style={{ marginBottom: 14 }}>
             <label style={s.label}>Calendar CTA Text (e.g. Book Now)</label>
             <input
@@ -2524,13 +2898,18 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             />
           </div>
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
-            <label style={s.label}>Hero Image</label>
-            <ImageUploadInput
-              value={trip.hero_image ?? ''}
-              onChange={url => set('hero_image', url)}
-              placeholder="Paste URL or upload image"
-              folder="hero"
-            />
+            <label style={s.label}>Hero Images (up to 4)</label>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {[0, 1, 2, 3].map((idx) => (
+                <ImageUploadInput
+                  key={idx}
+                  value={heroImages[idx] ?? ''}
+                  onChange={url => setHeroImage(idx, url)}
+                  placeholder={`Hero Image ${idx + 1} — paste URL or upload`}
+                  folder="hero"
+                />
+              ))}
+            </div>
           </div>
         </div>
       </CollapsibleSection>
@@ -2863,6 +3242,8 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         <button type="button" onClick={() => addStringListItem('not_included')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
       </CollapsibleSection>
 
+      {trip.id && <InvitedNumbersSection eventSlug={trip.invite_slug || trip.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || trip.slug || trip.id} s={s} />}
+
       <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
         💡 <strong>Media</strong> (videos & reviews), <strong>Timelines</strong> (booking steps), and <strong>Q&A</strong> are managed in their own tabs above.
       </div>
@@ -3069,6 +3450,146 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
         </div>
       )}
     </div>
+  );
+}
+
+// ─── INVITED NUMBERS SECTION ─────────────────────────────────────────────────
+function normalizePhone(raw: string): string {
+  return raw.replace(/\s+/g, '').replace(/^\+91/, '').replace(/^0/, '').trim();
+}
+
+function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) {
+  const [count, setCount] = React.useState<number | null>(null);
+  const [pasteText, setPasteText] = React.useState('');
+  const [pasteStatus, setPasteStatus] = React.useState('');
+  const [csvStatus, setCsvStatus] = React.useState('');
+  const [csvParsed, setCsvParsed] = React.useState<string[]>([]);
+  const [csvFileName, setCsvFileName] = React.useState('');
+  const [clearing, setClearing] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const fetchCount = React.useCallback(async () => {
+    if (!eventSlug) return;
+    const { count: c } = await supabase
+      .from('invited_numbers')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_slug', eventSlug);
+    setCount(c ?? 0);
+  }, [eventSlug]);
+
+  React.useEffect(() => { fetchCount(); }, [fetchCount]);
+
+  const parseNumbers = (text: string): string[] => {
+    const parts = text.split(/[\n,]+/).map(p => normalizePhone(p)).filter(p => p.length >= 10 && /^\d+$/.test(p)).map(p => p.slice(-10));
+    return [...new Set(parts)];
+  };
+
+  const upsertNumbers = async (phones: string[]): Promise<{ saved: number; error: string }> => {
+    if (phones.length === 0) return { saved: 0, error: '' };
+    const rows = phones.map(phone => ({ event_slug: eventSlug, phone }));
+    let saved = 0;
+    let lastError = '';
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { error } = await supabase.from('invited_numbers').upsert(batch, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
+      if (error) { lastError = error.message; }
+      else saved += batch.length;
+    }
+    return { saved, error: lastError };
+  };
+
+  const handleSavePaste = async () => {
+    const phones = parseNumbers(pasteText);
+    if (phones.length === 0) { setPasteStatus('No valid numbers found.'); return; }
+    setPasteStatus('Saving…');
+    const { saved, error } = await upsertNumbers(phones);
+    await fetchCount();
+    setPasteStatus(error ? `Error: ${error}` : `${saved} numbers saved.`);
+  };
+
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string ?? '';
+      const parsed = parseNumbers(text);
+      setCsvParsed(parsed);
+      setCsvStatus(`Found ${parsed.length} valid numbers in file. Click Import to save.`);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleImportCsv = async () => {
+    if (csvParsed.length === 0) { setCsvStatus('No valid numbers to import.'); return; }
+    setCsvStatus('Importing…');
+    const { saved, error } = await upsertNumbers(csvParsed);
+    await fetchCount();
+    setCsvStatus(error ? `Error: ${error}` : `${saved} numbers imported.`);
+    setCsvParsed([]);
+    setCsvFileName('');
+  };
+
+  const handleClearAll = async () => {
+    if (!window.confirm(`Clear ALL invited numbers for "${eventSlug}"? This cannot be undone.`)) return;
+    setClearing(true);
+    await supabase.from('invited_numbers').delete().eq('event_slug', eventSlug);
+    await fetchCount();
+    setClearing(false);
+  };
+
+  return (
+    <CollapsibleSection title="Invited Numbers" badge={count !== null ? `${count} saved` : undefined} badgeColor="#7c3aed">
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#4c1d95' }}>
+          <strong>{count !== null ? count : '…'}</strong> numbers currently on the invite list for slug <code style={{ background: '#ede9fe', padding: '1px 6px', borderRadius: 4 }}>{eventSlug}</code>
+          {count !== null && count > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={clearing}
+              style={{ marginLeft: 12, padding: '3px 10px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+            >
+              {clearing ? 'Clearing…' : 'Clear All'}
+            </button>
+          )}
+        </div>
+
+        <div>
+          <label style={s.label}>Paste Phone Numbers</label>
+          <textarea
+            style={{ ...s.textarea, minHeight: 80 }}
+            placeholder="Paste phone numbers, one per line (or comma separated)"
+            value={pasteText}
+            onChange={e => setPasteText(e.target.value)}
+          />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6 }}>
+            <button type="button" onClick={handleSavePaste} style={{ padding: '7px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              Save Numbers
+            </button>
+            {pasteStatus && <span style={{ fontSize: 13, color: '#555' }}>{pasteStatus}</span>}
+          </div>
+        </div>
+
+        <div>
+          <label style={s.label}>Import from CSV</label>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCsvFile} />
+            <button type="button" onClick={() => fileRef.current?.click()} style={{ padding: '7px 14px', background: '#fff', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              {csvFileName ? csvFileName : 'Choose CSV file'}
+            </button>
+            {csvParsed.length > 0 && (
+              <button type="button" onClick={handleImportCsv} style={{ padding: '7px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                Import {csvParsed.length} numbers
+              </button>
+            )}
+          </div>
+          {csvStatus && <div style={{ fontSize: 13, color: '#555', marginTop: 6 }}>{csvStatus}</div>}
+        </div>
+      </div>
+    </CollapsibleSection>
   );
 }
 
