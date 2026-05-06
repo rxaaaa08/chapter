@@ -1102,7 +1102,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
   useEffect(() => {
     let cancelled = false;
-    const srcs = [...Object.values(POSTER_LAYER_SRC), '/invite-verification-frame.png'];
+    const srcs = [...Object.values(POSTER_LAYER_SRC), '/invite-verification-frame.png', '/tc-agree-text.png', '/tc-link-text.png'];
     const loaders = srcs.map(src => new Promise<void>(resolve => {
       const img = new Image();
       img.onload = () => resolve();
