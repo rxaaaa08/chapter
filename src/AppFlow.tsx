@@ -108,7 +108,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
-type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'doubt-popup' | 'invite-verify' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
+type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'doubt-popup' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -126,7 +126,6 @@ const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   'details-plan-switcher': 2,
   'post-details-chat': 3,
   'doubt-popup': 4,
-  'invite-verify': 4,
   'booking-timeline': 5,
   'details-form': 6,
   'payment-checkout': 7,
@@ -613,9 +612,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
 
   const [inviteVerifyError, setInviteVerifyError] = useState('');
   const [advanceAlreadyPaid, setAdvanceAlreadyPaid] = useState(false);
-  const [showInviteVerify, setShowInviteVerify] = useState(false);
-  const [inviteVerifyForm, setInviteVerifyForm] = useState({ name: '', phone: '' });
-  const [inviteVerifyLoading, setInviteVerifyLoading] = useState(false);
   const [inviteAlreadyVerified, setInviteAlreadyVerified] = useState(false);
 
   // When rendered from the invite flow, auto-fetch and pre-select the event
@@ -647,7 +643,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       setStep('EVENT_SELECTED');
       if (hasExternalInviteVerification) {
         const tenDigit = inviteVerifiedUser.phone.replace(/^\+91/, '').replace(/^0/, '');
-        setInviteVerifyForm({ name: inviteVerifiedUser.name.trim(), phone: tenDigit });
         setDetailsForm({ name: inviteVerifiedUser.name.trim(), phone: tenDigit });
         setInviteAlreadyVerified(true);
         const { data: paidRows } = await supabase
@@ -659,8 +654,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
           .limit(1);
         setAdvanceAlreadyPaid((paidRows ?? []).length > 0);
         setShowBookingTimeline(true);
-      } else {
-        setShowInviteVerify(true);
       }
       setMessages([]);
       setIsTyping(false);
@@ -741,7 +734,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     : paymentView === 'checkout' ? 'payment-checkout'
     : showDetailsForm ? 'details-form'
     : showBookingTimeline ? 'booking-timeline'
-    : showInviteVerify && !hasExternalInviteVerification ? 'invite-verify'
     : isPostDetailsChatLayer ? 'post-details-chat'
     : (showDetails && detailsPlanSwitcherOpen) ? 'details-plan-switcher'
     : (showDetails && detailsCalendarOpen) ? 'details-calendar'
@@ -989,22 +981,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
-        if (isInvitePaymentFlow && !hasExternalInviteVerification && !inviteAlreadyVerified) {
-          setShowInviteVerify(true);
-        } else if (isInviteOverlay && onClose) {
+        if (isInviteOverlay && onClose) {
           window.setTimeout(onClose, 300);
         } else {
           setShowDetails(true);
           setStep('EVENT_SELECTED');
-        }
-      } else if (activeHistoryLayer === 'invite-verify') {
-        setShowInviteVerify(false);
-        if (isInviteOverlay && onClose) {
-          if (hasExternalInviteVerification) {
-            setShowBookingTimeline(true);
-          } else {
-            onClose();
-          }
         }
       } else if (activeHistoryLayer === 'post-details-chat') {
         setShowDetails(true);
@@ -1341,48 +1322,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       addBotMessage(fillMsgForSelectedEvent('contact_success', getTemplateVars({ name, phone, doubt: message }), `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
       setStep('DONE');
     }, 1000);
-  };
-
-  const handleInviteVerify = async () => {
-    if (!selectedEvent || !inviteSlug) return;
-    const raw = inviteVerifyForm.phone;
-    const tenDigit = raw.replace(/^\+91/, '').replace(/^0/, '');
-    if (!/^\d{10}$/.test(tenDigit)) {
-      setInviteVerifyError('Please enter a valid 10-digit phone number.');
-      return;
-    }
-    setInviteVerifyLoading(true);
-    const { data: inviteData } = await supabase
-      .from('invited_numbers')
-      .select('id')
-      .eq('event_slug', inviteSlug)
-      .eq('phone', tenDigit)
-      .maybeSingle();
-    if (!inviteData) {
-      setInviteVerifyError('__not_found__');
-      setInviteVerifyLoading(false);
-      return;
-    }
-    if (slotsLeft === 0) {
-      setInviteVerifyError('__sold_out__');
-      setInviteVerifyLoading(false);
-      return;
-    }
-    setInviteVerifyError('');
-    const { data: paidRows } = await supabase
-      .from('invite_payment_submissions')
-      .select('id')
-      .eq('invite_slug', inviteSlug)
-      .eq('phone', tenDigit)
-      .eq('status', 'advance_paid')
-      .limit(1);
-    const isPaid = (paidRows ?? []).length > 0;
-    setAdvanceAlreadyPaid(isPaid);
-    setInviteAlreadyVerified(true);
-    setDetailsForm({ name: inviteVerifyForm.name.trim(), phone: tenDigit });
-    setInviteVerifyLoading(false);
-    setShowInviteVerify(false);
-    setShowBookingTimeline(true);
   };
 
   const handleProceedToPhonePe = async () => {
@@ -1916,8 +1855,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         type="button"
                         onClick={() => {
                           setShowBookingTimeline(false);
-                          if (isInvitePaymentFlow && !hasExternalInviteVerification && !inviteAlreadyVerified) setShowInviteVerify(true);
-                          else if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
+                          if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
                         }}
                         className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                       >
@@ -2110,138 +2048,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                     )}
                   </div>
                 </div>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* Invite Verify — bottom sheet (step before booking timeline) */}
-        <AnimatePresence>
-          {showInviteVerify && selectedEvent && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
-                onClick={() => { if (isInviteOverlay && onClose) onClose(); }}
-              />
-              <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem]"
-              >
-                <button
-                  type="button"
-                  onClick={() => { setShowInviteVerify(false); if (isInviteOverlay && onClose) onClose(); }}
-                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
-                >
-                  <X size={14} strokeWidth={2.5} />
-                </button>
-                <div className="pt-4 flex justify-center">
-                  <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
-                </div>
-
-                <div className="px-6 pt-3 pb-4">
-                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Invite Verification 🔐</p>
-                </div>
-
-                <div className="px-6 space-y-3">
-                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
-                    <input
-                      type="text"
-                      value={inviteVerifyForm.name}
-                      onChange={e => setInviteVerifyForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="Name entered in application form"
-                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                      autoComplete="name"
-                    />
-                  </div>
-
-                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">WhatsApp Number</label>
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      value={inviteVerifyForm.phone}
-                      onChange={e => { setInviteVerifyForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') })); setInviteVerifyError(''); }}
-                      placeholder="Number entered in application form"
-                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                    />
-                  </div>
-
-                  {inviteVerifyError && (
-                    <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] text-red-600 leading-relaxed px-1">
-                      {inviteVerifyError === '__sold_out__' ? (
-                        <>
-                          <span className="font-semibold">This event is sold out.</span>
-                          <br />
-                          All spots have been filled. Stay tuned for future events.
-                        </>
-                      ) : inviteVerifyError === '__not_found__' ? (
-                        <>
-                          <span className="font-semibold">This number isn't on our invite list.</span>
-                          <br />
-                          Re-enter the number you used in the application form.
-                          <br /><br />
-                          Haven't applied yet? →{' '}
-                          <a href={selectedEvent.bookingUrl ?? '#'} target="_blank" rel="noopener noreferrer" className="underline font-semibold">
-                            Apply Now
-                          </a>
-                        </>
-                      ) : inviteVerifyError}
-                    </motion.p>
-                  )}
-
-                  <div className="flex items-center gap-3 select-none pt-1">
-                    <div
-                      onClick={() => setTcAccepted(!tcAccepted)}
-                      className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${tcAccepted ? 'bg-black border-black' : 'bg-white border-gray-300'}`}
-                    >
-                      {tcAccepted && (
-                        <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                          <path d="M1 4L4 7L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </div>
-                    <span className="text-[13px] text-gray-500 leading-snug">
-                      I agree to the{' '}
-                      <button type="button" onClick={() => setShowTcModal(true)} className="text-gray-900 underline font-medium">
-                        Terms & Conditions
-                      </button>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-1.5 pt-1">
-                    <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
-                    <span className="text-[12px] text-gray-400 font-medium">Only 1 Entry Slot per Phone Number.</span>
-                  </div>
-                </div>
-
-                <div className="px-6 pt-6 pb-8">
-                  <button
-                    type="button"
-                    disabled={!inviteVerifyForm.name.trim() || !/^\d{10,}$/.test(inviteVerifyForm.phone) || !tcAccepted || inviteVerifyLoading}
-                    onClick={handleInviteVerify}
-                    className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 ${
-                      inviteVerifyForm.name.trim() && /^\d{10,}$/.test(inviteVerifyForm.phone) && tcAccepted && !inviteVerifyLoading
-                        ? 'bg-black text-white active:opacity-80'
-                        : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    {inviteVerifyLoading ? (
-                      <span className="inline-block w-5 h-5 border-2 border-white/40 border-t-white rounded-full" style={{ animation: 'spin 0.7s linear infinite' }} />
-                    ) : (
-                      <>
-                        <span>Continue</span>
-                        <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
-                      </>
-                    )}
-                  </button>
                 </div>
               </motion.div>
             </>
