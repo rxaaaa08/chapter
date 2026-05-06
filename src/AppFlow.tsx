@@ -33,6 +33,9 @@ const hasGirlsOnlyQuickInfo = (quickInfo?: { label?: string; value?: string }[])
     String(item.value ?? '').trim().toLowerCase() !== 'false'
   );
 
+const sortGirlsOnlyLast = <T extends { girlsOnly?: boolean; quickInfo?: { label?: string; value?: string }[] }>(events: T[]) =>
+  [...events].sort((a, b) => Number(Boolean(a.girlsOnly || hasGirlsOnlyQuickInfo(a.quickInfo))) - Number(Boolean(b.girlsOnly || hasGirlsOnlyQuickInfo(b.quickInfo))));
+
 interface Event {
   quickInfo?: { icon: QuickInfoIcon; label: string; value: string }[];
   id: string;
@@ -393,10 +396,12 @@ function UpiPaymentScreen({
   paymentContext,
   girlsOnly = false,
   isBalancePayment = false,
+  onClose,
 }: {
   paymentContext: { eventTitle: string; amount: number; date: string; name: string; phone?: string };
   girlsOnly?: boolean;
   isBalancePayment?: boolean;
+  onClose?: () => void;
 }) {
   const upiId = girlsOnly ? UPI_ID_GIRLS : UPI_ID;
   const qrSrc = girlsOnly ? '/payment-qr-girls.png' : '/payment-qr.png';
@@ -458,8 +463,18 @@ function UpiPaymentScreen({
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-        className="absolute bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[2rem] overflow-hidden"
+        className="absolute bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[2rem]"
       >
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+          >
+            <X size={14} strokeWidth={2.5} />
+          </button>
+        )}
+
         {/* Drag handle */}
         <div className="pt-4 flex justify-center">
           <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
@@ -984,10 +999,10 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
-        if (isInvitePaymentFlow && !hasExternalInviteVerification) {
+        if (isInvitePaymentFlow && !hasExternalInviteVerification && !inviteAlreadyVerified) {
           setShowInviteVerify(true);
         } else if (isInviteOverlay && onClose) {
-          onClose();
+          window.setTimeout(onClose, 300);
         } else {
           setShowDetails(true);
           setStep('EVENT_SELECTED');
@@ -1644,7 +1659,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
           </motion.div>
         );
       case 'SELECT_EVENT': {
-        const filteredEvents = events.filter(e => e.cities.includes(selectedCity));
+        const filteredEvents = sortGirlsOnlyLast(events.filter(e => e.cities.includes(selectedCity)));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {filteredEvents.map((event, i) => {
@@ -1874,18 +1889,26 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                exit={{ opacity: 0, transition: { duration: 0.22, ease: 'easeIn' } }}
+                transition={{ duration: 0.2 }}
                 className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
                 onClick={() => {
-                  if (isInviteOverlay && onClose) { onClose(); }
-                  else { setShowBookingTimeline(false); }
+                  setShowBookingTimeline(false);
+                  if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
                 }}
               />
               <motion.div
-                initial={isInvitePaymentFlow ? { y: '100%' } : { opacity: 0, scale: 0.92 }}
-                animate={isInvitePaymentFlow ? { y: 0 } : { opacity: 1, scale: 1 }}
-                exit={isInvitePaymentFlow ? { y: '100%' } : { opacity: 0, scale: 0.92 }}
-                transition={isInvitePaymentFlow ? { type: 'spring', damping: 32, stiffness: 300 } : { type: 'spring', damping: 25, stiffness: 300 }}
+                variants={{
+                  hidden: isInvitePaymentFlow
+                    ? { y: '100%', transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } }
+                    : { opacity: 0, scale: 0.92, transition: { duration: 0.2, ease: 'easeIn' } },
+                  visible: isInvitePaymentFlow
+                    ? { y: 0, transition: { type: 'spring', damping: 32, stiffness: 300 } }
+                    : { opacity: 1, scale: 1, transition: { type: 'spring', damping: 25, stiffness: 300 } },
+                }}
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
                 className={isInvitePaymentFlow ? 'absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[2rem]' : 'absolute inset-0 z-50 flex items-center justify-center px-5 pointer-events-none'}
               >
                 <div
@@ -1898,8 +1921,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         type="button"
                         onClick={() => {
                           setShowBookingTimeline(false);
-                          if (isInvitePaymentFlow && !hasExternalInviteVerification) setShowInviteVerify(true);
-                          else if (isInviteOverlay && onClose) onClose();
+                          if (isInvitePaymentFlow && !hasExternalInviteVerification && !inviteAlreadyVerified) setShowInviteVerify(true);
+                          else if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
                         }}
                         className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                       >
@@ -1986,7 +2009,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                                 </span>
                               ) : isBalancePaidCountdown ? (
                                 <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
-                                  by {buildCountdown(step.date || '')}
+                                  due by {buildCountdown(step.date || '')}
                                 </span>
                               ) : isNowRow ? (
                                 <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -2017,7 +2040,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                             // Paid or non-invite flow — show date
                             const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
                             return dateStr ? (
-                              <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                                isInvitePaymentFlow
+                                  ? 'text-gray-500 bg-gray-100 border border-gray-200'
+                                  : 'text-black bg-[#FFD700] border border-[#d4af37] font-black'
+                              }`}>
                                 {new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                               </span>
                             ) : null;
@@ -2532,6 +2559,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
               paymentContext={paymentContext}
               girlsOnly={paymentContext.girlsOnly}
               isBalancePayment={paymentContext.isBalancePayment}
+              onClose={() => {
+                setPaymentView('idle');
+                setDetailsFormStep('instructions');
+                setShowDetailsForm(true);
+              }}
             />
           )}
         </AnimatePresence>
@@ -4297,7 +4329,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                 allEvents.forEach(e => (e.cities ?? []).forEach(c => { if (!cityOrder.includes(c)) cityOrder.push(c); }));
                 const cityIdx = cityOrder.indexOf(switcherCity);
                 const cityLabel = switcherCity.toLowerCase() === 'other' ? 'Other Cities' : switcherCity.charAt(0).toUpperCase() + switcherCity.slice(1).toLowerCase();
-                const cityEvents = allEvents.filter(e => (e.cities ?? []).includes(switcherCity));
+                const cityEvents = sortGirlsOnlyLast(allEvents.filter(e => (e.cities ?? []).includes(switcherCity)));
                 const categories: string[] = [];
                 cityEvents.forEach(e => { if (!categories.includes(e.category)) categories.push(e.category); });
 

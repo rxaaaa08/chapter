@@ -1079,21 +1079,25 @@ type SharedInviteMatch = {
   dateLabel: string;
 };
 
-function SharedInviteFlow() {
+function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: () => void }) {
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasFailedOnce, setHasFailedOnce] = useState(false);
   const [matches, setMatches] = useState<SharedInviteMatch[]>([]);
-  const [selectedSlug, setSelectedSlug] = useState('');
-  const [wipePhase, setWipePhase] = useState<'idle' | 'wiping' | 'revealed'>('idle');
+  const [wipePhase, setWipePhase] = useState<'idle' | 'wiping' | 'revealed' | 'returning'>('idle');
   const [pendingSlug, setPendingSlug] = useState('');
   const [verifiedSlug, setVerifiedSlug] = useState('');
   const [showInviteBooking, setShowInviteBooking] = useState(false);
+  const [wipingToLifestyle, setWipingToLifestyle] = useState(false);
+  const [tcAccepted, setTcAccepted] = useState(false);
+  const [showTcModal, setShowTcModal] = useState(false);
   const isPhoneReady = /^\d{10}$/.test(form.phone);
-  const isFormReady = form.name.trim().length > 0 && isPhoneReady;
+  const isFormReady = form.name.trim().length > 0 && isPhoneReady && tcAccepted;
   const isInviteRevealed = wipePhase === 'revealed';
+  const isLifestyleRevealed = wipingToLifestyle && isInviteRevealed;
+  const isLifestyleRevealing = wipingToLifestyle && (wipePhase === 'wiping' || wipePhase === 'revealed');
 
   useEffect(() => {
     let cancelled = false;
@@ -1108,6 +1112,24 @@ function SharedInviteFlow() {
     const timeout = window.setTimeout(() => { if (!cancelled) setPosterLoaded(true); }, 6000);
     return () => { cancelled = true; window.clearTimeout(timeout); };
   }, []);
+
+  const triggerWipe = (slug: string) => {
+    setPendingSlug(slug);
+    const loaders = Object.values(INVITE_LAYER_SRC).map(src => new Promise<void>(resolve => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = src;
+    }));
+    Promise.all(loaders).then(() => {
+      setWipePhase('wiping');
+      window.setTimeout(() => {
+        setVerifiedSlug(slug);
+        setWipePhase('revealed');
+        window.history.pushState({ chapteraInviteStep: 'revealed' }, '', window.location.href);
+      }, 760);
+    });
+  };
 
   const findInviteMatches = async () => {
     const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '');
@@ -1174,25 +1196,34 @@ function SharedInviteFlow() {
     }
 
     if (found.length === 1) {
-      const nextSlug = found[0].slug;
-      setPendingSlug(nextSlug);
-      const loaders = Object.values(INVITE_LAYER_SRC).map(src => new Promise<void>(resolve => {
-        const img = new Image();
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-        img.src = src;
-      }));
-      Promise.all(loaders).then(() => {
-        setWipePhase('wiping');
-        window.setTimeout(() => {
-          setVerifiedSlug(nextSlug);
-          setWipePhase('revealed');
-        }, 760);
-      });
+      const slug = found[0].slug;
+      const { data: paidRows } = await supabase
+        .from('invite_payment_submissions')
+        .select('id')
+        .eq('invite_slug', slug)
+        .eq('phone', tenDigit)
+        .eq('status', 'advance_paid')
+        .limit(1);
+      if ((paidRows ?? []).length > 0) {
+        setVerifiedSlug(slug);
+        window.history.pushState({ chapteraInviteStep: 'flow' }, '', window.location.href);
+        setShowInviteBooking(true);
+      } else {
+        triggerWipe(slug);
+      }
       return;
     }
 
     setMatches(found);
+  };
+
+  const wipeToLifestyle = () => {
+    setWipingToLifestyle(true);
+    setWipePhase('wiping');
+    window.setTimeout(() => {
+      setWipePhase('revealed');
+      window.history.pushState({ chapteraInviteStep: 'lifestyle' }, '', window.location.href);
+    }, 760);
   };
 
   const openSharedInviteBooking = () => {
@@ -1203,7 +1234,27 @@ function SharedInviteFlow() {
     setShowInviteBooking(true);
   };
 
-  if (selectedSlug) return <InviteFlow slug={selectedSlug} initialPosterLoaded />;
+  useEffect(() => {
+    const onPop = (event: PopStateEvent) => {
+      if (event.state?.chapteraLayer) return;
+      if (showInviteBooking) {
+        setShowInviteBooking(false);
+        return;
+      }
+      if (wipePhase !== 'idle' && wipePhase !== 'returning') {
+        setWipePhase('returning');
+        window.setTimeout(() => {
+          setWipePhase('idle');
+          setVerifiedSlug('');
+          setPendingSlug('');
+          setMatches([]);
+          setWipingToLifestyle(false);
+        }, 350);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [wipePhase, showInviteBooking]);
 
   if (!posterLoaded) {
     return (
@@ -1234,17 +1285,23 @@ function SharedInviteFlow() {
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div style={{ width: 'min(90vw, 360px)', position: 'relative', borderRadius: '0 0 2rem 2rem', overflow: 'hidden', background: '#fff' }}>
           <div className="relative w-full aspect-[874/1330] bg-white overflow-hidden">
-            {/* Invite frame revealed underneath during wipe */}
+            {/* Frame revealed underneath during wipe — invite frame or lifestyle frame */}
             {wipePhase !== 'idle' && (
-              <img src={INVITE_LAYER_SRC.frame} aria-hidden="true" style={POSTER_LAYER_STYLE} />
+              <img src={wipingToLifestyle ? POSTER_LAYER_SRC.frame : INVITE_LAYER_SRC.frame} aria-hidden="true" style={POSTER_LAYER_STYLE} />
             )}
-            {/* Verification frame — clips away top-down during wipe */}
+            {/* Verification frame — wipes away forward, fades back on return */}
             <motion.img
               src="/invite-verification-frame.png"
               aria-hidden="true"
               style={POSTER_LAYER_STYLE}
-              animate={{ clipPath: wipePhase !== 'idle' ? 'inset(0 0 100% 0)' : 'inset(0% 0 0% 0)' }}
-              transition={{ duration: 0.75, ease: [0.4, 0, 0.2, 1] }}
+              animate={{
+                clipPath: wipePhase === 'idle' || wipePhase === 'returning' ? 'inset(0% 0 0% 0)' : 'inset(0 0 100% 0)',
+                opacity: wipePhase === 'idle' || wipePhase === 'wiping' || wipePhase === 'returning' ? 1 : 0,
+              }}
+              transition={{
+                clipPath: { duration: wipePhase === 'wiping' ? 0.75 : 0, ease: [0.4, 0, 0.2, 1] },
+                opacity: { duration: wipePhase === 'returning' ? 0.3 : 0, ease: 'easeOut' },
+              }}
             />
             <motion.img src={POSTER_LAYER_SRC.borderTop} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }} />
             <motion.img src={POSTER_LAYER_SRC.borderLeft} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 4.2, delay: 0.8, repeat: Infinity, ease: 'easeInOut' }} />
@@ -1331,9 +1388,49 @@ function SharedInviteFlow() {
                 }}
               />
 
+            {/* TC text layers — full-size poster overlays */}
+            <motion.div
+              animate={{ opacity: wipePhase === 'idle' || wipePhase === 'returning' ? 1 : 0 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 11 }}
+            >
+              <img src="/tc-agree-text.png" aria-hidden="true" style={POSTER_LAYER_STYLE} />
+              <img src="/tc-link-text.png" aria-hidden="true" style={POSTER_LAYER_STYLE} />
+            </motion.div>
+            {/* Checkbox aligned to TC text (66% from top, left of "I agree to the" at 18.8%) */}
+            <motion.div
+              animate={{ opacity: wipePhase === 'idle' || wipePhase === 'returning' ? 1 : 0 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              style={{ position: 'absolute', top: '68.9%', left: '11%', transform: 'translateY(-50%)', zIndex: 12, pointerEvents: wipePhase === 'idle' ? 'auto' : 'none' }}
+            >
+              <div
+                onClick={() => setTcAccepted(!tcAccepted)}
+                style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: `1.5px solid ${tcAccepted ? '#2f2c25' : '#c9a84c'}`,
+                  background: tcAccepted ? '#2f2c25' : '#f5f0e8',
+                  cursor: 'pointer', transition: 'all 0.18s ease',
+                }}
+              >
+                {tcAccepted && (
+                  <svg width="9" height="7" viewBox="0 0 11 8" fill="none">
+                    <path d="M1 4L4 7L10 1" stroke="#f5f0e8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </div>
+            </motion.div>
+            {/* Tappable overlay on "Terms & Conditions" text (cols 39.8–69.9%, rows 64.5–67.5%) */}
+            <motion.button
+              type="button"
+              onClick={() => setShowTcModal(true)}
+              animate={{ opacity: 0 }}
+              style={{ position: 'absolute', top: '67.5%', left: '39.5%', width: '31%', height: '3.5%', zIndex: 12, background: 'transparent', border: 'none', cursor: 'pointer', pointerEvents: wipePhase === 'idle' ? 'auto' : 'none' }}
+            />
+
             <motion.div
               className="absolute inset-x-[10%] top-[39%] z-10 space-y-3"
-              animate={{ opacity: wipePhase === 'idle' ? 1 : 0 }}
+              animate={{ opacity: wipePhase === 'idle' || wipePhase === 'returning' ? 1 : 0 }}
               transition={{ duration: 0.16, ease: 'easeOut' }}
               style={{ pointerEvents: wipePhase === 'idle' ? 'auto' : 'none' }}
             >
@@ -1369,6 +1466,7 @@ function SharedInviteFlow() {
                 />
               </div>
 
+
               {matches.length > 1 && (
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
@@ -1380,7 +1478,7 @@ function SharedInviteFlow() {
                     <button
                       key={match.slug}
                       type="button"
-                      onClick={() => setSelectedSlug(match.slug)}
+                      onClick={() => triggerWipe(match.slug)}
                       className="w-full rounded-xl bg-white px-3 py-3 text-left active:scale-[0.99] transition-transform"
                     >
                       <span className="block text-[14px] font-black leading-tight text-[#2f2c25]">{match.title}</span>
@@ -1396,20 +1494,20 @@ function SharedInviteFlow() {
             <motion.button
                   type="button"
                   aria-label={isInviteRevealed ? 'Confirm your spot' : 'Open invitation'}
-                  disabled={loading || !isFormReady || !!error || wipePhase === 'wiping'}
-                  onClick={isInviteRevealed ? openSharedInviteBooking : findInviteMatches}
+                  disabled={!isLifestyleRevealed && (loading || !isFormReady || !!error || wipePhase === 'wiping' || wipePhase === 'returning')}
+                  onClick={isInviteRevealed ? (wipingToLifestyle ? onNavigateToLifestyle : openSharedInviteBooking) : findInviteMatches}
                   animate={{
-                    background: error ? '#fff1f2' : isFormReady ? LIFESTYLE_POSTER_THEME.ctaBackground : '#F2F2F7',
-                    color: error ? '#ef4444' : isFormReady ? LIFESTYLE_POSTER_THEME.ctaTextColor : '#9ca3af',
-                    boxShadow: isFormReady && !error ? LIFESTYLE_POSTER_THEME.ctaShadow : 'none',
+                    background: !isLifestyleRevealing && error ? '#fff1f2' : isLifestyleRevealing || isFormReady ? LIFESTYLE_POSTER_THEME.ctaBackground : '#F2F2F7',
+                    color: !isLifestyleRevealing && error ? '#ef4444' : isLifestyleRevealing || isFormReady ? LIFESTYLE_POSTER_THEME.ctaTextColor : '#9ca3af',
+                    boxShadow: isLifestyleRevealing || (isFormReady && !error) ? LIFESTYLE_POSTER_THEME.ctaShadow : 'none',
                   }}
-                  transition={{ duration: 0.3, ease: 'easeOut' }}
+                  transition={{ duration: isLifestyleRevealing ? 0.75 : 0.3, ease: [0.4, 0, 0.2, 1] }}
                   style={{
-                    pointerEvents: isFormReady && !error && wipePhase !== 'wiping' ? 'auto' : 'none',
+                    pointerEvents: isLifestyleRevealed || (isFormReady && !error && wipePhase !== 'wiping') ? 'auto' : 'none',
                     position: 'absolute',
                     inset: 0,
                     width: '100%',
-                    height: error ? 'auto' : '72px',
+                    height: !isLifestyleRevealing && error ? 'auto' : '72px',
                     minHeight: '72px',
                     border: 'none',
                     borderRadius: '0 0 2rem 2rem',
@@ -1457,55 +1555,42 @@ function SharedInviteFlow() {
                       transition={{ duration: 0.8, repeat: isFormReady ? Infinity : 0, repeatDelay: 3.0, ease: 'easeInOut' }}
                     />
                   </span>
-                  <span
-                    style={{
-                      position: 'relative',
-                      zIndex: 2,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      fontSize: 'clamp(16px, 2.6vw, 20px)',
-                      fontWeight: 900,
-                      letterSpacing: '0',
-                      lineHeight: 1,
-                    }}
-                  >
-                    {loading ? (
-                      <span className="inline-block w-5 h-5 border-2 border-black/20 border-t-black rounded-full" style={{ animation: 'spin 0.7s linear infinite' }} />
-                    ) : error ? (
-                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '14px 16px', textAlign: 'center' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', lineHeight: 1.3 }}>This number isn't on our invite list.</span>
-                        <span style={{ fontSize: 12, fontWeight: 500, color: '#f87171', lineHeight: 1.4 }}>Re-enter the number you used in the application form.</span>
-                      </span>
-                    ) : wipePhase !== 'idle' ? (
-                      <>
-                        <span>Tap to Continue</span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                          <ArrowRight size={20} strokeWidth={3} />
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Open Invitation</span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                          {isFormReady ? <ArrowRight size={20} strokeWidth={3} /> : <LockKeyhole size={16} strokeWidth={2.5} />}
-                        </span>
-                      </>
-                    )}
+                  <span style={{ position: 'relative', zIndex: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 24 }}>
+                    <AnimatePresence mode="wait">
+                      {loading ? (
+                        <motion.span key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                          <span className="inline-block w-5 h-5 border-2 border-black/20 border-t-black rounded-full" style={{ animation: 'spin 0.7s linear infinite' }} />
+                        </motion.span>
+                      ) : !isLifestyleRevealing && error ? (
+                        <motion.span key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '14px 16px', textAlign: 'center' }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', lineHeight: 1.3 }}>This number isn't on our invite list.</span>
+                          <span style={{ fontSize: 12, fontWeight: 500, color: '#f87171', lineHeight: 1.4 }}>Re-enter the number you used in the application form.</span>
+                        </motion.span>
+                      ) : wipePhase === 'wiping' || wipePhase === 'revealed' ? (
+                        <motion.span key="revealed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'clamp(16px, 2.6vw, 20px)', fontWeight: 900, lineHeight: 1 }}>
+                          <span>Tap to Continue</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center' }}><ArrowRight size={20} strokeWidth={3} /></span>
+                        </motion.span>
+                      ) : (
+                        <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'clamp(16px, 2.6vw, 20px)', fontWeight: 900, lineHeight: 1 }}>
+                          <span>Open Invitation</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                            {isFormReady ? <ArrowRight size={20} strokeWidth={3} /> : <LockKeyhole size={16} strokeWidth={2.5} />}
+                          </span>
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
                   </span>
                 </motion.button>
           </div>
-          {hasFailedOnce && (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              style={{ textAlign: 'center', paddingTop: 14, paddingBottom: 4 }}
-            >
-              <span style={{ fontSize: 13, color: '#9ca3af' }}>Haven't applied yet? </span>
-              <a href="/lifestyle" style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', textDecoration: 'underline' }}>Apply Now</a>
-            </motion.div>
-          )}
+          <motion.div
+            animate={{ opacity: hasFailedOnce && wipePhase === 'idle' ? 1 : 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ textAlign: 'center', paddingTop: 14, paddingBottom: 4, pointerEvents: hasFailedOnce && wipePhase === 'idle' ? 'auto' : 'none' }}
+          >
+            <span style={{ fontSize: 13, color: '#9ca3af' }}>Haven't applied yet? </span>
+            <button type="button" onClick={wipeToLifestyle} style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>Apply Now</button>
+          </motion.div>
           </div>
         </div>
         {showInviteBooking && verifiedSlug && (
@@ -1518,6 +1603,47 @@ function SharedInviteFlow() {
             onClose={() => setShowInviteBooking(false)}
           />
         )}
+        <AnimatePresence>
+          {showTcModal && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[75] bg-black"
+                onClick={() => setShowTcModal(false)}
+              />
+              <motion.div
+                initial={{ y: 40, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 40, opacity: 0 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                className="absolute bottom-0 left-0 right-0 z-[80] bg-white rounded-t-[2rem] flex flex-col max-h-[80%]"
+              >
+                <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+                  <h3 className="text-[17px] font-bold text-gray-900">Terms & Conditions</h3>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[14px] text-gray-600 leading-relaxed">
+                  <p className="text-[13px] text-gray-400 italic">Note: The term "Event" refers to all kinds of experiences we curate including trips, activities, workshops & events in this policy agreement.</p>
+                  <p><strong className="text-gray-900">1. Advance Payment</strong><br />The advance payment secures your spot and is non-refundable under any circumstances.</p>
+                  <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance is due on the date shown on the website after you make the advance payment. Further notices and reminders will be sent via WhatsApp. Failure to pay will result in forfeiture of your spot.</p>
+                  <p><strong className="text-gray-900">3. Itinerary Changes</strong><br />chapter அ reserves the right to modify the itinerary due to weather, safety, or unforeseen circumstances.</p>
+                  <p><strong className="text-gray-900">4. Liability</strong><br />chapter அ is not liable for personal injury, loss of belongings, or delays caused by third-party services.</p>
+                  <p><strong className="text-gray-900">5. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
+                  <p><strong className="text-gray-900">6. Age Requirement</strong><br />Certain experiences are strictly 21+. Participants must meet the minimum age requirement specified for each experience. Valid ID proof may be required. Failure to meet the age requirement may result in denial of entry without refund.</p>
+                </div>
+                <div className="px-6 pb-8 pt-3 flex-shrink-0">
+                  <button
+                    onClick={() => { setTcAccepted(true); setShowTcModal(false); }}
+                    className="w-full py-[15px] rounded-2xl bg-black text-white text-[16px] font-semibold active:opacity-80 transition-all"
+                  >
+                    I Agree
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -1908,9 +2034,9 @@ export default function App() {
   const enterAppWithPreview = () => {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      window.history.pushState({}, '', '/?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61');
+      window.history.pushState({}, '', '/?preview_event=502f25f2-a3ab-481a-83b3-f4e2cded9b82');
       setRoutePath('/');
-      setRouteSearch('?preview_event=1a59de1a-8ce4-49f1-a436-96aeaaa0ad61');
+      setRouteSearch('?preview_event=502f25f2-a3ab-481a-83b3-f4e2cded9b82');
     }
     setShowHomepage(false);
   };
@@ -1947,7 +2073,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <SharedInviteFlow />
+        <SharedInviteFlow onNavigateToLifestyle={() => { window.history.replaceState({}, '', '/lifestyle'); setRoutePath('/lifestyle'); }} />
       </>
     );
   }

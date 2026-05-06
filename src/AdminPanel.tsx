@@ -2745,24 +2745,27 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Booking Type</label>
             <div style={{ display: 'flex', gap: 0, marginBottom: 10, border: '1.5px solid #e0e0e0', borderRadius: 10, overflow: 'hidden' }}>
-              {(['external', 'upi-manual'] as const).map(mode => {
-                const active = mode === 'upi-manual'
-                  ? trip.booking_url === 'upi-manual'
-                  : trip.booking_url !== 'upi-manual';
-                const label = mode === 'upi-manual' ? 'Manual UPI (QR Code)' : 'External Link';
+              {([
+                { mode: 'external', label: 'External Link', value: '' },
+                { mode: 'upi-manual', label: 'Manual UPI (QR Code)', value: 'upi-manual' },
+                { mode: 'billdesk-mock', label: 'Mock BillDesk', value: '/phonepe-mock' },
+              ] as const).map(option => {
+                const active = option.mode === 'external'
+                  ? trip.booking_url !== 'upi-manual' && trip.booking_url !== '/phonepe-mock'
+                  : trip.booking_url === option.value;
                 return (
                   <button
-                    key={mode}
+                    key={option.mode}
                     type="button"
-                    onClick={() => set('booking_url', mode === 'upi-manual' ? 'upi-manual' : '')}
+                    onClick={() => set('booking_url', option.value)}
                     style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
                   >
-                    {label}
+                    {option.label}
                   </button>
                 );
               })}
             </div>
-            {trip.booking_url !== 'upi-manual' && (
+            {trip.booking_url !== 'upi-manual' && trip.booking_url !== '/phonepe-mock' && (
               <input
                 style={s.input}
                 placeholder="https://tally.so/r/..."
