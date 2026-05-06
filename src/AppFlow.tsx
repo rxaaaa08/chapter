@@ -448,119 +448,109 @@ function UpiPaymentScreen({
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 z-[65] bg-black/40 backdrop-blur-md"
-      />
+    <motion.div
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+      className="absolute inset-0 z-[70] bg-white flex flex-col rounded-t-[2rem]"
+    >
+      {/* Close button */}
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active:scale-95 transition-all z-10"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      )}
 
-      {/* Bottom sheet */}
-      <motion.div
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-        className="absolute bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[2rem]"
-      >
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
-          >
-            <X size={14} strokeWidth={2.5} />
-          </button>
-        )}
+      {/* Drag handle */}
+      <div className="pt-4 flex justify-center flex-shrink-0">
+        <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
+      </div>
 
-        {/* Drag handle */}
-        <div className="pt-4 flex justify-center">
-          <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
-        </div>
+      {/* Hero header */}
+      <div className="px-6 pt-3 pb-4 flex-shrink-0">
+        <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
+          {isBalancePayment ? (
+            <>
+              <span className="text-green-600">✓ Advance Paid</span>
+              <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
+            </>
+          ) : (
+            <span className="text-gray-400">
+              {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}
+            </span>
+          )}
+        </p>
+        <h1 className="text-[24px] font-black text-gray-950 leading-tight tracking-tight">
+          {isBalancePayment ? 'Settle Balance ' : 'Settle Advance '}{formatUpiINR(paymentContext.amount)}
+        </h1>
+      </div>
 
-        {/* Hero header */}
-        <div className="px-6 pt-3 pb-4 flex-shrink-0">
-          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
-            {isBalancePayment ? (
-              <>
-                <span className="text-green-600">✓ Advance Paid</span>
-                <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
-              </>
-            ) : (
-              <span className="text-gray-400">
-                {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}
-              </span>
+      {/* QR + UPI card — grows to fill available space */}
+      <div className="mx-5 flex-1 flex flex-col min-h-0">
+        <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4 flex-1 justify-center">
+
+          {/* QR — fills available space up to a max */}
+          <img
+            src={qrSrc}
+            alt="UPI QR Code"
+            className="w-full max-w-[280px] aspect-square object-contain"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex';
+            }}
+          />
+          <div className="hidden w-full max-w-[280px] aspect-square flex-col items-center justify-center gap-1.5 text-gray-300 rounded-xl bg-gray-50">
+            <div className="text-3xl">⬛</div>
+            <p className="text-[10px] text-center leading-snug font-mono">public/payment-qr.png</p>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 w-full">
+            <div className="flex-1 h-px bg-black/8" />
+            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">or UPI ID</span>
+            <div className="flex-1 h-px bg-black/8" />
+          </div>
+
+          {/* UPI ID row */}
+          <div className="flex items-center gap-3 bg-[#F7F7F8] rounded-2xl px-4 py-3 w-full">
+            <p className="flex-1 font-sans font-semibold text-gray-950 text-[16px] tracking-widest select-text">{upiId}</p>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className={`h-9 px-4 rounded-xl flex items-center gap-1.5 text-[13px] font-black active:scale-95 transition-all ${
+                copyStatus === 'copied'
+                  ? 'bg-[#34C759] text-white'
+                  : copyStatus === 'failed'
+                    ? 'bg-red-100 text-red-600'
+                    : girlsOnly
+                      ? 'bg-[#FF4FB8] text-white'
+                      : 'bg-[#FFD700] text-black'
+              }`}
+            >
+              {copyStatus === 'copied' ? <Check size={14} strokeWidth={3} /> : <Copy size={14} strokeWidth={2.5} />}
+              {copyStatus === 'copied' ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+          <div className="h-2 -mt-2 w-full text-center" aria-live="polite">
+            {copyStatus === 'failed' && (
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[11px] font-semibold text-red-500">
+                Couldn't copy — long-press to select manually
+              </motion.p>
             )}
-          </p>
-          <h1 className="text-[24px] font-black text-gray-950 leading-tight tracking-tight">
-            {isBalancePayment ? 'Settle Balance ' : 'Settle Advance '}{formatUpiINR(paymentContext.amount)}
-          </h1>
-        </div>
-
-        {/* QR + UPI card */}
-        <div className="mx-5 flex-shrink-0">
-          <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4">
-
-            {/* QR */}
-            <img
-              src={qrSrc}
-              alt="UPI QR Code"
-              className="w-[176px] h-[176px] object-contain"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
-                (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex';
-              }}
-            />
-            <div className="hidden w-[176px] h-[176px] flex-col items-center justify-center gap-1.5 text-gray-300 rounded-xl bg-gray-50">
-              <div className="text-3xl">⬛</div>
-              <p className="text-[10px] text-center leading-snug font-mono">public/payment-qr.png</p>
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 w-full">
-              <div className="flex-1 h-px bg-black/8" />
-              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">or UPI ID</span>
-              <div className="flex-1 h-px bg-black/8" />
-            </div>
-
-            {/* UPI ID row */}
-            <div className="flex items-center gap-3 bg-[#F7F7F8] rounded-2xl px-4 py-3 w-full">
-              <p className="flex-1 font-sans font-semibold text-gray-950 text-[16px] tracking-widest select-text">{upiId}</p>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className={`h-9 px-4 rounded-xl flex items-center gap-1.5 text-[13px] font-black active:scale-95 transition-all ${
-                  copyStatus === 'copied'
-                    ? 'bg-[#34C759] text-white'
-                    : copyStatus === 'failed'
-                      ? 'bg-red-100 text-red-600'
-                      : girlsOnly
-                        ? 'bg-[#FF4FB8] text-white'
-                        : 'bg-[#FFD700] text-black'
-                }`}
-              >
-                {copyStatus === 'copied' ? <Check size={14} strokeWidth={3} /> : <Copy size={14} strokeWidth={2.5} />}
-                {copyStatus === 'copied' ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <div className="h-2 -mt-2 w-full text-center" aria-live="polite">
-              {copyStatus === 'failed' && (
-                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[11px] font-semibold text-red-500">
-                  Couldn't copy — long-press to select manually
-                </motion.p>
-              )}
-            </div>
           </div>
         </div>
+      </div>
 
-        {/* Reminder */}
-        <p className="mx-5 mt-4 mb-8 text-[12px] text-gray-600 text-center leading-relaxed font-medium">
-          After paying, send payment screenshot to the WhatsApp number you got this invite from.
-        </p>
-      </motion.div>
-    </>
+      {/* Reminder */}
+      <p className="mx-5 mt-4 mb-8 text-[12px] text-gray-600 text-center leading-relaxed font-medium flex-shrink-0">
+        After paying, send payment screenshot to the WhatsApp number you got this invite from.
+      </p>
+    </motion.div>
   );
 }
 
