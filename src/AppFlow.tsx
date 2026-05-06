@@ -105,7 +105,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
-type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'doubt-popup' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
+type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'doubt-popup' | 'invite-verify' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -123,6 +123,7 @@ const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   'details-plan-switcher': 2,
   'post-details-chat': 3,
   'doubt-popup': 4,
+  'invite-verify': 4,
   'booking-timeline': 5,
   'details-form': 6,
   'payment-checkout': 7,
@@ -469,7 +470,7 @@ function UpiPaymentScreen({
           <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
             {isBalancePayment ? (
               <>
-                <span className="text-green-600">✓ Advance Verified</span>
+                <span className="text-green-600">✓ Advance Paid</span>
                 <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
               </>
             ) : (
@@ -548,7 +549,12 @@ function UpiPaymentScreen({
   );
 }
 
-export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onClose?: () => void } = {}) {
+type InviteVerifiedUser = {
+  name: string;
+  phone: string;
+};
+
+export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { inviteSlug?: string; inviteVerifiedUser?: InviteVerifiedUser; onClose?: () => void } = {}) {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [loadingSlow, setLoadingSlow] = useState(false);
@@ -558,6 +564,7 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
   const isPlansPath = typeof window !== 'undefined' && window.location.pathname === '/plans';
   const isPlansHistoryManaged = isPlansPath && !isPreviewMode;
   const isInviteOverlay = !!inviteSlug;
+  const hasExternalInviteVerification = !!inviteVerifiedUser?.name?.trim() && /^\d{10}$/.test(inviteVerifiedUser.phone ?? '');
   const isDetailsHistoryManaged = isPlansHistoryManaged || isPreviewMode || isInviteOverlay;
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode || !!inviteSlug);
   const historyLayerRef = useRef<HistoryLayer | null>(null);
@@ -601,6 +608,10 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
 
   const [inviteVerifyError, setInviteVerifyError] = useState('');
   const [advanceAlreadyPaid, setAdvanceAlreadyPaid] = useState(false);
+  const [showInviteVerify, setShowInviteVerify] = useState(false);
+  const [inviteVerifyForm, setInviteVerifyForm] = useState({ name: '', phone: '' });
+  const [inviteVerifyLoading, setInviteVerifyLoading] = useState(false);
+  const [inviteAlreadyVerified, setInviteAlreadyVerified] = useState(false);
 
   // When rendered from the invite flow, auto-fetch and pre-select the event
   // then open the booking timeline immediately.
@@ -629,13 +640,29 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
       setShowDetails(false);
       setShowChat(false);
       setStep('EVENT_SELECTED');
-      setShowBookingTimeline(true);
+      if (hasExternalInviteVerification) {
+        const tenDigit = inviteVerifiedUser.phone.replace(/^\+91/, '').replace(/^0/, '');
+        setInviteVerifyForm({ name: inviteVerifiedUser.name.trim(), phone: tenDigit });
+        setDetailsForm({ name: inviteVerifiedUser.name.trim(), phone: tenDigit });
+        setInviteAlreadyVerified(true);
+        const { data: paidRows } = await supabase
+          .from('invite_payment_submissions')
+          .select('id')
+          .eq('invite_slug', inviteSlug)
+          .eq('phone', tenDigit)
+          .eq('status', 'advance_paid')
+          .limit(1);
+        setAdvanceAlreadyPaid((paidRows ?? []).length > 0);
+        setShowBookingTimeline(true);
+      } else {
+        setShowInviteVerify(true);
+      }
       setMessages([]);
       setIsTyping(false);
       setPreviewLoading(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inviteSlug]);
+  }, [inviteSlug, hasExternalInviteVerification, inviteVerifiedUser?.name, inviteVerifiedUser?.phone]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
@@ -709,6 +736,7 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
     : paymentView === 'checkout' ? 'payment-checkout'
     : showDetailsForm ? 'details-form'
     : showBookingTimeline ? 'booking-timeline'
+    : showInviteVerify && !hasExternalInviteVerification ? 'invite-verify'
     : isPostDetailsChatLayer ? 'post-details-chat'
     : (showDetails && detailsPlanSwitcherOpen) ? 'details-plan-switcher'
     : (showDetails && detailsCalendarOpen) ? 'details-calendar'
@@ -948,17 +976,30 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
         setPaymentView('checkout');
       } else if (activeHistoryLayer === 'payment-checkout') {
         setPaymentView('idle');
+        setDetailsFormStep('instructions');
         setShowDetailsForm(true);
       } else if (activeHistoryLayer === 'details-form') {
         setShowDetailsForm(false);
+        setDetailsFormStep('details');
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
-        if (isInviteOverlay && onClose) {
+        setShowBookingTimeline(false);
+        if (isInvitePaymentFlow && !hasExternalInviteVerification) {
+          setShowInviteVerify(true);
+        } else if (isInviteOverlay && onClose) {
           onClose();
         } else {
-          setShowBookingTimeline(false);
           setShowDetails(true);
           setStep('EVENT_SELECTED');
+        }
+      } else if (activeHistoryLayer === 'invite-verify') {
+        setShowInviteVerify(false);
+        if (isInviteOverlay && onClose) {
+          if (hasExternalInviteVerification) {
+            setShowBookingTimeline(true);
+          } else {
+            onClose();
+          }
         }
       } else if (activeHistoryLayer === 'post-details-chat') {
         setShowDetails(true);
@@ -1297,12 +1338,50 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
     }, 1000);
   };
 
+  const handleInviteVerify = async () => {
+    if (!selectedEvent || !inviteSlug) return;
+    const raw = inviteVerifyForm.phone;
+    const tenDigit = raw.replace(/^\+91/, '').replace(/^0/, '');
+    if (!/^\d{10}$/.test(tenDigit)) {
+      setInviteVerifyError('Please enter a valid 10-digit phone number.');
+      return;
+    }
+    setInviteVerifyLoading(true);
+    const { data: inviteData } = await supabase
+      .from('invited_numbers')
+      .select('id')
+      .eq('event_slug', inviteSlug)
+      .eq('phone', tenDigit)
+      .maybeSingle();
+    if (!inviteData) {
+      setInviteVerifyError('__not_found__');
+      setInviteVerifyLoading(false);
+      return;
+    }
+    setInviteVerifyError('');
+    const { data: paidRows } = await supabase
+      .from('invite_payment_submissions')
+      .select('id')
+      .eq('invite_slug', inviteSlug)
+      .eq('phone', tenDigit)
+      .eq('status', 'advance_paid')
+      .limit(1);
+    const isPaid = (paidRows ?? []).length > 0;
+    setAdvanceAlreadyPaid(isPaid);
+    setInviteAlreadyVerified(true);
+    setDetailsForm({ name: inviteVerifyForm.name.trim(), phone: tenDigit });
+    setInviteVerifyLoading(false);
+    setShowInviteVerify(false);
+    setShowBookingTimeline(true);
+  };
+
   const handleProceedToPhonePe = async () => {
     if (!selectedEvent) return;
 
     // Invite-only verification: check the entered phone against invited_numbers
-    let isBalanceDue = false;
-    if (inviteSlug) {
+    // Skip if already verified via the invite verify step
+    let isBalanceDue = inviteAlreadyVerified ? advanceAlreadyPaid : false;
+    if (inviteSlug && !inviteAlreadyVerified) {
       const raw = detailsForm.phone;
       const tenDigit = raw.replace(/^\+91/, '').replace(/^0/, '');
       if (!/^\d{10}$/.test(tenDigit)) {
@@ -1803,21 +1882,37 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                 }}
               />
               <motion.div
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.92 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="absolute inset-0 z-50 flex items-center justify-center px-5"
-                onClick={() => {
-                  if (isInviteOverlay && onClose) { onClose(); }
-                  else { setShowBookingTimeline(false); }
-                }}
+                initial={isInvitePaymentFlow ? { y: '100%' } : { opacity: 0, scale: 0.92 }}
+                animate={isInvitePaymentFlow ? { y: 0 } : { opacity: 1, scale: 1 }}
+                exit={isInvitePaymentFlow ? { y: '100%' } : { opacity: 0, scale: 0.92 }}
+                transition={isInvitePaymentFlow ? { type: 'spring', damping: 32, stiffness: 300 } : { type: 'spring', damping: 25, stiffness: 300 }}
+                className={isInvitePaymentFlow ? 'absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[2rem]' : 'absolute inset-0 z-50 flex items-center justify-center px-5 pointer-events-none'}
               >
-                <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100" onClick={e => e.stopPropagation()}>
-                  <div className="px-6 pt-6 pb-4 flex items-center justify-center">
-                    <div className="flex-1 text-center">
-                      <h2 className="text-lg font-black text-gray-900 leading-tight text-center">Your Booking Timeline</h2>
-                    </div>
+                <div
+                  className={isInvitePaymentFlow ? '' : 'w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100 pointer-events-auto'}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {isInvitePaymentFlow && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowBookingTimeline(false);
+                          if (isInvitePaymentFlow && !hasExternalInviteVerification) setShowInviteVerify(true);
+                          else if (isInviteOverlay && onClose) onClose();
+                        }}
+                        className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                      >
+                        <X size={14} strokeWidth={2.5} />
+                      </button>
+                      <div className="pt-4 flex justify-center flex-shrink-0">
+                        <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
+                      </div>
+                    </>
+                  )}
+                <div>
+                  <div className={isInvitePaymentFlow ? 'px-6 pt-3 pb-4' : 'px-6 pt-6 pb-4'}>
+                    <p className={isInvitePaymentFlow ? 'text-[24px] font-black text-gray-900 tracking-tight leading-tight text-center' : 'text-lg font-black text-gray-900 leading-tight text-center'}>Your Booking Timeline</p>
                   </div>
 
                   <div className="px-6 pb-6">
@@ -1857,21 +1952,45 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                           ];
                         })() : eventSteps;
 
+                        const buildCountdown = (dateStr: string) => {
+                          const secs = dateStr
+                            ? Math.max(0, Math.floor((new Date(dateStr + 'T00:00:00').getTime() - Date.now()) / 1000))
+                            : 0;
+                          if (secs === 0) return 'Due soon';
+                          const d = Math.floor(secs / (3600 * 24));
+                          const h = Math.floor((secs % (3600 * 24)) / 3600);
+                          const m = Math.floor((secs % 3600) / 60);
+                          const s = secs % 60;
+                          return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+                        };
+                        const isBalanceRow = (si: number, step: any) =>
+                          si > 0 && /balance/i.test(step.label || step.value || '');
+
                         return steps.map((step, si) => {
                           const isNowRow = si === 0;
                           const stepValue = resolveValue(step.value || '');
                           const dateLabel = !isNowRow && step.date
                             ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                             : null;
+                          const isAdvancePaidRow = isInvitePaymentFlow && advanceAlreadyPaid && isNowRow;
+                          const isBalancePaidCountdown = isInvitePaymentFlow && advanceAlreadyPaid && isBalanceRow(si, step);
                           return (
                             <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                               <div>
-                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
+                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">{isAdvancePaidRow ? 'advance' : step.label}</p>
                                 <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
                               </div>
-                              {isNowRow ? (
+                              {isAdvancePaidRow ? (
+                                <span className="text-[11px] font-bold text-white bg-green-500 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                  ✓ Paid
+                                </span>
+                              ) : isBalancePaidCountdown ? (
+                                <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
+                                  by {buildCountdown(step.date || '')}
+                                </span>
+                              ) : isNowRow ? (
                                 <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                                  {selectedEvent.inviteOnly && !isInvitePaymentFlow ? 'Free' : 'Now'}
+                                  Now
                                 </span>
                               ) : dateLabel ? (
                                 <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -1883,20 +2002,26 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                         });
                       })()}
 
-                      {/* Prize row — event title + date + slots, yellow accented */}
-                      <div className="px-5 py-4 flex items-center justify-between bg-[#FFD700]/10">
+                      {/* Prize row — event title + date + slots */}
+                      <div className={`px-5 py-4 flex items-center justify-between ${advanceAlreadyPaid && isInvitePaymentFlow ? '' : 'bg-[#FFD700]/10'}`}>
                         <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
-                          {bookingDate && (
-                            <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full">
-                              {new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </span>
-                          )}
-                          {isInvitePaymentFlow && slotsLeft !== null && (
-                            <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">
-                              {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
-                            </span>
-                          )}
+                          {isInvitePaymentFlow && !advanceAlreadyPaid ? (
+                            // Not yet paid — show spots left only
+                            slotsLeft !== null && (
+                              <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">
+                                {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
+                              </span>
+                            )
+                          ) : (() => {
+                            // Paid or non-invite flow — show date
+                            const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
+                            return dateStr ? (
+                              <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+                                {new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -1929,14 +2054,22 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                       </button>
                     ) : shouldUseManualUpi ? (
                       <button
-                        onClick={() => {
-                          setShowBookingTimeline(false);
-                          setShowDetailsForm(true);
+                        onClick={async () => {
+                          if (isInvitePaymentFlow) {
+                            // Already verified — skip details form, go straight to instructions
+                            setShowBookingTimeline(false);
+                            setShowDetailsForm(true);
+                            await handleProceedToPhonePe();
+                          } else {
+                            setShowBookingTimeline(false);
+                            setShowDetailsForm(true);
+                          }
                         }}
-                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
+                        className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
                       >
-                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                        {isInvitePaymentFlow ? 'Pay Advance' : selectedEvent.ctaLabel || 'Pay Advance'}
+                        {isInvitePaymentFlow
+                          ? (advanceAlreadyPaid ? 'Settle Balance' : 'Pay Advance')
+                          : (selectedEvent.ctaLabel || 'Pay Advance')}
                         <ArrowRight size={18} strokeWidth={3.0} />
                       </button>
                     ) : (
@@ -1954,6 +2087,133 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                       </button>
                     )}
                   </div>
+                </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* Invite Verify — bottom sheet (step before booking timeline) */}
+        <AnimatePresence>
+          {showInviteVerify && selectedEvent && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
+                onClick={() => { if (isInviteOverlay && onClose) onClose(); }}
+              />
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem]"
+              >
+                <button
+                  type="button"
+                  onClick={() => { setShowInviteVerify(false); if (isInviteOverlay && onClose) onClose(); }}
+                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                >
+                  <X size={14} strokeWidth={2.5} />
+                </button>
+                <div className="pt-4 flex justify-center">
+                  <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
+                </div>
+
+                <div className="px-6 pt-3 pb-4">
+                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Invite Verification 🔐</p>
+                </div>
+
+                <div className="px-6 space-y-3">
+                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
+                    <input
+                      type="text"
+                      value={inviteVerifyForm.name}
+                      onChange={e => setInviteVerifyForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="Name entered in application form"
+                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                      autoComplete="name"
+                    />
+                  </div>
+
+                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">WhatsApp Number</label>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      value={inviteVerifyForm.phone}
+                      onChange={e => { setInviteVerifyForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') })); setInviteVerifyError(''); }}
+                      placeholder="Number entered in application form"
+                      className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                    />
+                  </div>
+
+                  {inviteVerifyError && (
+                    <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] text-red-600 leading-relaxed px-1">
+                      {inviteVerifyError === '__not_found__' ? (
+                        <>
+                          <span className="font-semibold">This number isn't on our invite list.</span>
+                          <br />
+                          Re-enter the number you used in the application form.
+                          <br /><br />
+                          Haven't applied yet? →{' '}
+                          <a href={selectedEvent.bookingUrl ?? '#'} target="_blank" rel="noopener noreferrer" className="underline font-semibold">
+                            Apply Now
+                          </a>
+                        </>
+                      ) : inviteVerifyError}
+                    </motion.p>
+                  )}
+
+                  <div className="flex items-center gap-3 select-none pt-1">
+                    <div
+                      onClick={() => setTcAccepted(!tcAccepted)}
+                      className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${tcAccepted ? 'bg-black border-black' : 'bg-white border-gray-300'}`}
+                    >
+                      {tcAccepted && (
+                        <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
+                          <path d="M1 4L4 7L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-[13px] text-gray-500 leading-snug">
+                      I agree to the{' '}
+                      <button type="button" onClick={() => setShowTcModal(true)} className="text-gray-900 underline font-medium">
+                        Terms & Conditions
+                      </button>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-center gap-1.5 pt-1">
+                    <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
+                    <span className="text-[12px] text-gray-400 font-medium">Only 1 Entry Slot per Phone Number.</span>
+                  </div>
+                </div>
+
+                <div className="px-6 pt-6 pb-8">
+                  <button
+                    type="button"
+                    disabled={!inviteVerifyForm.name.trim() || !/^\d{10,}$/.test(inviteVerifyForm.phone) || !tcAccepted || inviteVerifyLoading}
+                    onClick={handleInviteVerify}
+                    className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 ${
+                      inviteVerifyForm.name.trim() && /^\d{10,}$/.test(inviteVerifyForm.phone) && tcAccepted && !inviteVerifyLoading
+                        ? 'bg-black text-white active:opacity-80'
+                        : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {inviteVerifyLoading ? (
+                      <span className="inline-block w-5 h-5 border-2 border-white/40 border-t-white rounded-full" style={{ animation: 'spin 0.7s linear infinite' }} />
+                    ) : (
+                      <>
+                        <span>Continue</span>
+                        <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
+                      </>
+                    )}
+                  </button>
                 </div>
               </motion.div>
             </>
@@ -1981,8 +2241,19 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem] overflow-hidden"
+                className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem]"
               >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDetailsForm(false);
+                    setDetailsFormStep('details');
+                    setTimeout(() => setShowBookingTimeline(true), 80);
+                  }}
+                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                >
+                  <X size={14} strokeWidth={2.5} />
+                </button>
                 {/* Handle — always visible */}
                 <div className="pt-4 flex justify-center">
                   <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
@@ -2111,12 +2382,6 @@ export default function App({ inviteSlug, onClose }: { inviteSlug?: string; onCl
                       className="flex flex-col"
                     >
                       <div className="px-6 pt-3 pb-5">
-                        {paymentContext?.isBalancePayment && (
-                          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
-                            <span className="text-green-600">✓ Advance Verified</span>
-                            <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
-                          </p>
-                        )}
                         <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">{paymentContext?.isBalancePayment ? 'One last step! 🎉' : 'Almost there! 🤠'}</p>
                       </div>
 
@@ -2807,6 +3072,13 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
   }, [event.id]);
 
   useEffect(() => {
+    setSelectedDate(null);
+    setSelectedMeetingPoint('');
+    setShowMeetingPointSwitchBorder(false);
+    setTimeLeft(initialTimeLeft.current);
+  }, [event.id, selectedCity]);
+
+  useEffect(() => {
     onCalendarVisibilityChange?.(showCalendar);
   }, [showCalendar, onCalendarVisibilityChange]);
 
@@ -3331,7 +3603,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
         {/* Where We Stay */}
         {event.showAccommodation && (
           <div className="p-6">
-            <h3 className="text-xl font-black mb-4">Where We Stay</h3>
+            <h3 className="text-xl font-black mb-4">
+              {event.girlsOnly || hasGirlsOnlyQuickInfo(event.quickInfo) ? 'The Spot' : 'Where We Stay'}
+            </h3>
             {(() => {
               const accommodation = event.accommodation ?? {};
               const stays = (accommodation.stays && accommodation.stays.length > 0)
@@ -3733,8 +4007,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                                 // Girls-only: show full price + countdown to event
                                 if (event.girlsOnly) {
                                   const eventDateStr = selectedDate || event.dates?.[0]?.date || '';
-                                  const secondsLeft = eventDateStr
-                                    ? Math.max(0, Math.floor((new Date(eventDateStr + 'T00:00:00').getTime() - Date.now()) / 1000))
+                                  const joinDeadlineMs = eventDateStr
+                                    ? new Date(eventDateStr + 'T00:00:00').getTime() - (2 * 24 * 60 * 60 * 1000)
+                                    : 0;
+                                  const secondsLeft = joinDeadlineMs
+                                    ? Math.max(0, Math.floor((joinDeadlineMs - Date.now()) / 1000))
                                     : 0;
                                   const cd_d = Math.floor(secondsLeft / (3600 * 24));
                                   const cd_h = Math.floor((secondsLeft % (3600 * 24)) / 3600);
@@ -3744,14 +4021,14 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                                     ? `${cd_d}d ${String(cd_h).padStart(2,'0')}h ${String(cd_m).padStart(2,'0')}m ${String(cd_s).padStart(2,'0')}s`
                                     : 'Starting soon';
                                   return (
-                                    <div className="flex items-center justify-between gap-3">
-                                      <div className="flex flex-col gap-0.5 text-[11px] font-semibold text-gray-500">
-                                        <p>Entry</p>
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex flex-col items-start gap-0.5 min-w-0">
+                                        <p className="text-[11px] font-semibold text-gray-500">Entry</p>
                                         <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
                                       </div>
-                                      <div className="flex flex-col items-center gap-0.5">
-                                        <p className="text-[11px] font-semibold text-amber-600">Time left for event</p>
-                                        <span className="text-[13px] font-bold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums leading-tight">
+                                      <div className="flex flex-col items-center gap-1 min-w-0">
+                                        <p className="text-[11px] font-semibold text-gray-500 text-center">Time Left to Join</p>
+                                        <span className="text-[12px] font-bold text-gray-700 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full tabular-nums leading-tight">
                                           {countdownLabel}
                                         </span>
                                       </div>

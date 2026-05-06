@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, Send, RotateCcw } from 'lucide-react';
+import { ArrowRight, Send, RotateCcw, LockKeyhole } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -1049,9 +1049,9 @@ function JoinLetterPage({
               </span>
             </button>
           </div>
-          </div>
-        </div>
       </div>
+      </div>
+    </div>
     </div>
   );
 }
@@ -1073,11 +1073,462 @@ const INVITE_LAYER_SRC = {
 
 type InviteStep = 'card' | 'flow';
 
-function InviteFlow({ slug }: { slug: string }) {
-  const [step, setStep] = useState<InviteStep>('card');
+type SharedInviteMatch = {
+  slug: string;
+  title: string;
+  dateLabel: string;
+};
+
+function SharedInviteFlow() {
   const [posterLoaded, setPosterLoaded] = useState(false);
+  const [form, setForm] = useState({ name: '', phone: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [hasFailedOnce, setHasFailedOnce] = useState(false);
+  const [matches, setMatches] = useState<SharedInviteMatch[]>([]);
+  const [selectedSlug, setSelectedSlug] = useState('');
+  const [wipePhase, setWipePhase] = useState<'idle' | 'wiping' | 'revealed'>('idle');
+  const [pendingSlug, setPendingSlug] = useState('');
+  const [verifiedSlug, setVerifiedSlug] = useState('');
+  const [showInviteBooking, setShowInviteBooking] = useState(false);
+  const isPhoneReady = /^\d{10}$/.test(form.phone);
+  const isFormReady = form.name.trim().length > 0 && isPhoneReady;
+  const isInviteRevealed = wipePhase === 'revealed';
 
   useEffect(() => {
+    let cancelled = false;
+    const srcs = [...Object.values(POSTER_LAYER_SRC), '/invite-verification-frame.png'];
+    const loaders = srcs.map(src => new Promise<void>(resolve => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = src;
+    }));
+    Promise.all(loaders).then(() => { if (!cancelled) setPosterLoaded(true); });
+    const timeout = window.setTimeout(() => { if (!cancelled) setPosterLoaded(true); }, 6000);
+    return () => { cancelled = true; window.clearTimeout(timeout); };
+  }, []);
+
+  const findInviteMatches = async () => {
+    const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '');
+    if (!form.name.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
+    if (!/^\d{10}$/.test(tenDigit)) {
+      setError('Please enter a valid 10-digit WhatsApp number.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setMatches([]);
+
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('events')
+      .select('title, invite_slug, event_dates(start_date, status)')
+      .eq('is_active', true)
+      .not('invite_slug', 'is', null);
+
+    if (eventsError || !eventsData) {
+      setError('Could not check invites right now. Please try again.');
+      setLoading(false);
+      return;
+    }
+
+    const inviteEvents = (eventsData as any[])
+      .filter(event => String(event.invite_slug ?? '').trim())
+      .map(event => ({
+        title: String(event.title ?? 'chapter அ invite'),
+        slug: String(event.invite_slug ?? '').trim(),
+        dates: Array.isArray(event.event_dates) ? event.event_dates : [],
+      }));
+
+    const checks = await Promise.all(inviteEvents.map(async (event) => {
+      const { data } = await supabase
+        .from('invited_numbers')
+        .select('id')
+        .eq('event_slug', event.slug)
+        .eq('phone', tenDigit)
+        .maybeSingle();
+
+      if (!data) return null;
+      const upcomingDates = event.dates
+        .map((date: any) => String(date.start_date ?? ''))
+        .filter(Boolean)
+        .sort();
+      const firstDate = upcomingDates[0] ?? '';
+      const dateLabel = firstDate
+        ? new Date(`${firstDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : 'Invite';
+      return { slug: event.slug, title: event.title, dateLabel };
+    }));
+
+    const found = checks.filter(Boolean) as SharedInviteMatch[];
+    setLoading(false);
+
+    if (found.length === 0) {
+      setError("not_found");
+      setHasFailedOnce(true);
+      return;
+    }
+
+    if (found.length === 1) {
+      const nextSlug = found[0].slug;
+      setPendingSlug(nextSlug);
+      const loaders = Object.values(INVITE_LAYER_SRC).map(src => new Promise<void>(resolve => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+        img.src = src;
+      }));
+      Promise.all(loaders).then(() => {
+        setWipePhase('wiping');
+        window.setTimeout(() => {
+          setVerifiedSlug(nextSlug);
+          setWipePhase('revealed');
+        }, 760);
+      });
+      return;
+    }
+
+    setMatches(found);
+  };
+
+  const openSharedInviteBooking = () => {
+    if (!verifiedSlug) return;
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ chapteraInviteStep: 'flow' }, '', window.location.href);
+    }
+    setShowInviteBooking(true);
+  };
+
+  if (selectedSlug) return <InviteFlow slug={selectedSlug} initialPosterLoaded />;
+
+  if (!posterLoaded) {
+    return (
+      <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="relative"
+        >
+          <motion.div
+            animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+            transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+            className="absolute inset-0 rounded-2xl"
+            style={{ background: LIFESTYLE_POSTER_THEME.loaderGlow, filter: 'blur(10px)' }}
+          />
+          <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
+            <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+        <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
+          <div style={{ width: 'min(90vw, 360px)', position: 'relative', borderRadius: '0 0 2rem 2rem', overflow: 'hidden', background: '#fff' }}>
+          <div className="relative w-full aspect-[874/1330] bg-white overflow-hidden">
+            {/* Invite frame revealed underneath during wipe */}
+            {wipePhase !== 'idle' && (
+              <img src={INVITE_LAYER_SRC.frame} aria-hidden="true" style={POSTER_LAYER_STYLE} />
+            )}
+            {/* Verification frame — clips away top-down during wipe */}
+            <motion.img
+              src="/invite-verification-frame.png"
+              aria-hidden="true"
+              style={POSTER_LAYER_STYLE}
+              animate={{ clipPath: wipePhase !== 'idle' ? 'inset(0 0 100% 0)' : 'inset(0% 0 0% 0)' }}
+              transition={{ duration: 0.75, ease: [0.4, 0, 0.2, 1] }}
+            />
+            <motion.img src={POSTER_LAYER_SRC.borderTop} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }} />
+            <motion.img src={POSTER_LAYER_SRC.borderLeft} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 4.2, delay: 0.8, repeat: Infinity, ease: 'easeInOut' }} />
+            <motion.img src={POSTER_LAYER_SRC.borderRight} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={{ opacity: [0.45, 1, 0.45] }} transition={{ duration: 4.8, delay: 1.6, repeat: Infinity, ease: 'easeInOut' }} />
+            <motion.img
+              src={POSTER_LAYER_SRC.flowerLeft}
+              alt=""
+              aria-hidden="true"
+              style={{ ...POSTER_LAYER_STYLE, transformOrigin: '18% 11%' }}
+              animate={{ rotate: [-3, 3, -3], scale: [1, 1.04, 1], filter: [LIFESTYLE_POSTER_THEME.flowerGlow.off, LIFESTYLE_POSTER_THEME.flowerGlow.on, LIFESTYLE_POSTER_THEME.flowerGlow.off] }}
+              transition={{ rotate: { duration: 8, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 6, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } }}
+            />
+            <motion.img
+              src={POSTER_LAYER_SRC.flowerRight}
+              alt=""
+              aria-hidden="true"
+              style={{ ...POSTER_LAYER_STYLE, transformOrigin: '84% 12%' }}
+              animate={{ rotate: [3, -3, 3], scale: [1, 1.03, 1], filter: [LIFESTYLE_POSTER_THEME.flowerGlow.off, LIFESTYLE_POSTER_THEME.flowerGlow.on, LIFESTYLE_POSTER_THEME.flowerGlow.off] }}
+              transition={{ rotate: { duration: 9, delay: 0.4, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 7, delay: 0.4, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 3.4, delay: 1.7, repeat: Infinity, ease: 'easeInOut' } }}
+            />
+            <motion.img src={POSTER_LAYER_SRC.lighthouse} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} animate={LIGHTHOUSE_FLOAT.animate} transition={LIGHTHOUSE_FLOAT.transition} />
+            <img src={POSTER_LAYER_SRC.beach} alt="" aria-hidden="true" style={POSTER_LAYER_STYLE} />
+            <motion.div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: `${LIGHTHOUSE_LAMP_DOT.left}%`,
+                top: `${LIGHTHOUSE_LAMP_DOT.top}%`,
+                width: `${LIGHTHOUSE_LAMP_DOT.spread}%`,
+                aspectRatio: '1 / 1',
+                borderRadius: '999px',
+                pointerEvents: 'none',
+                transform: 'translate(-50%, -50%)',
+                background: `radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0.82) ${LIGHTHOUSE_LAMP_DOT.centerStop}%, rgba(255,255,255,0.28) ${LIGHTHOUSE_LAMP_DOT.midStop}%, rgba(255,255,255,0) 100%)`,
+              }}
+              animate={{ ...LIGHTHOUSE_FLOAT.animate, opacity: [LIGHTHOUSE_LAMP_DOT.minOpacity, LIGHTHOUSE_LAMP_DOT.maxOpacity, LIGHTHOUSE_LAMP_DOT.minOpacity] }}
+              transition={{ y: LIGHTHOUSE_FLOAT.transition, opacity: { duration: LIGHTHOUSE_LAMP_DOT.pulseSeconds, repeat: Infinity, repeatDelay: LIGHTHOUSE_LAMP_DOT.pauseSeconds, ease: 'easeInOut' } }}
+            />
+            <motion.img
+              src={POSTER_LAYER_SRC.palm}
+              alt=""
+              aria-hidden="true"
+              style={{
+                ...POSTER_LAYER_STYLE,
+                transformOrigin: '16% 94%',
+                WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)',
+                WebkitMaskRepeat: 'no-repeat',
+                WebkitMaskSize: '100% 100%',
+                maskImage: 'linear-gradient(to bottom, black 0%, black 90%, rgba(0,0,0,0.55) 94%, rgba(0,0,0,0.18) 97%, transparent 100%)',
+                maskRepeat: 'no-repeat',
+                maskSize: '100% 100%',
+              }}
+              animate={{ rotate: [-1.8, 1.8, -1.8] }}
+              transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: `${PALM_ROOT_BLEND.left}%`,
+                top: `${PALM_ROOT_BLEND.top}%`,
+                width: `${PALM_ROOT_BLEND.width}%`,
+                height: `${PALM_ROOT_BLEND.height}%`,
+                borderRadius: `${PALM_ROOT_BLEND.radius}%`,
+                opacity: PALM_ROOT_BLEND.opacity,
+                pointerEvents: 'none',
+                background: `radial-gradient(ellipse at center, ${PALM_ROOT_BLEND.color} 0%, rgba(22, 23, 18, 0.48) 34%, ${PALM_ROOT_BLEND.featherColor} 72%)`,
+                filter: `blur(${PALM_ROOT_BLEND.blurPx}px)`,
+                mixBlendMode: 'multiply',
+              }}
+            />
+            <motion.div
+                aria-hidden="true"
+                animate={{ opacity: isFormReady && !error ? 1 : 0 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 42,
+                  pointerEvents: 'none',
+                  background: LIFESTYLE_POSTER_THEME.bottomBlend,
+                }}
+              />
+
+            <motion.div
+              className="absolute inset-x-[10%] top-[39%] z-10 space-y-3"
+              animate={{ opacity: wipePhase === 'idle' ? 1 : 0 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              style={{ pointerEvents: wipePhase === 'idle' ? 'auto' : 'none' }}
+            >
+              <div className="bg-[#f5f0e8] border border-[#c9a84c] rounded-xl px-4 pt-2 pb-2 shadow-[0_6px_20px_rgba(71,60,34,0.08)]">
+                <label className="block text-[11px] uppercase tracking-[0.18em] font-semibold text-[#8a7b43] mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={event => setForm(current => ({ ...current, name: event.target.value }))}
+                  placeholder="Name used in application"
+                  autoComplete="name"
+                  className="w-full bg-transparent text-[13px] font-medium text-[#2f2c25] placeholder:text-[#b5a882] placeholder:font-normal focus:outline-none"
+                />
+              </div>
+
+              <div className="bg-[#f5f0e8] border border-[#c9a84c] rounded-xl px-4 pt-2 pb-2 shadow-[0_6px_20px_rgba(71,60,34,0.08)]">
+                <label className="block text-[11px] uppercase tracking-[0.18em] font-semibold text-[#8a7b43] mb-1">WhatsApp Number</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={form.phone}
+                  onChange={event => {
+                    const digits = event.target.value.replace(/\D/g, '');
+                    const phone = digits.startsWith('91') && digits.length > 10
+                      ? digits.slice(2, 12)
+                      : digits.slice(0, 10);
+                    setForm(current => ({ ...current, phone }));
+                    setError('');
+                    setMatches([]);
+                  }}
+                  placeholder="Number used in application"
+                  className="w-full bg-transparent text-[13px] font-medium text-[#2f2c25] placeholder:text-[#b5a882] placeholder:font-normal focus:outline-none"
+                />
+              </div>
+
+              {matches.length > 1 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-2 rounded-2xl bg-white/72 border border-[#d8cfae] p-2 shadow-[0_6px_20px_rgba(71,60,34,0.08)] backdrop-blur-sm"
+                >
+                  <p className="px-2 pt-1 text-left text-[11px] uppercase tracking-[0.16em] font-black text-[#8a7b43]">Choose Invite</p>
+                  {matches.map(match => (
+                    <button
+                      key={match.slug}
+                      type="button"
+                      onClick={() => setSelectedSlug(match.slug)}
+                      className="w-full rounded-xl bg-white px-3 py-3 text-left active:scale-[0.99] transition-transform"
+                    >
+                      <span className="block text-[14px] font-black leading-tight text-[#2f2c25]">{match.title}</span>
+                      <span className="mt-1 block text-[11px] font-bold text-[#8f876e]">{match.dateLabel}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+
+            </motion.div>
+          </div>
+          <div style={{ minHeight: 72, height: error ? 'auto' : 72, position: 'relative', flexShrink: 0 }}>
+            <motion.button
+                  type="button"
+                  aria-label={isInviteRevealed ? 'Confirm your spot' : 'Open invitation'}
+                  disabled={loading || !isFormReady || !!error || wipePhase === 'wiping'}
+                  onClick={isInviteRevealed ? openSharedInviteBooking : findInviteMatches}
+                  animate={{
+                    background: error ? '#fff1f2' : isFormReady ? LIFESTYLE_POSTER_THEME.ctaBackground : '#F2F2F7',
+                    color: error ? '#ef4444' : isFormReady ? LIFESTYLE_POSTER_THEME.ctaTextColor : '#9ca3af',
+                    boxShadow: isFormReady && !error ? LIFESTYLE_POSTER_THEME.ctaShadow : 'none',
+                  }}
+                  transition={{ duration: 0.3, ease: 'easeOut' }}
+                  style={{
+                    pointerEvents: isFormReady && !error && wipePhase !== 'wiping' ? 'auto' : 'none',
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: error ? 'auto' : '72px',
+                    minHeight: '72px',
+                    border: 'none',
+                    borderRadius: '0 0 2rem 2rem',
+                    cursor: loading ? 'wait' : 'pointer',
+                    overflow: 'hidden',
+                    marginTop: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                  }}
+                  onMouseDown={e => { if (!loading) e.currentTarget.style.transform = 'scale(0.995)'; }}
+                  onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  onTouchStart={e => { if (!loading) e.currentTarget.style.transform = 'scale(0.995)'; }}
+                  onTouchEnd={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      inset: '-8px 0 0 0',
+                      pointerEvents: 'none',
+                      borderRadius: 'inherit',
+                      overflow: 'visible',
+                      WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.58) 22%, rgba(0,0,0,0.9) 46%, rgba(0,0,0,1) 100%)',
+                      WebkitMaskRepeat: 'no-repeat',
+                      WebkitMaskSize: '100% 100%',
+                      maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.58) 22%, rgba(0,0,0,0.9) 46%, rgba(0,0,0,1) 100%)',
+                      maskRepeat: 'no-repeat',
+                      maskSize: '100% 100%',
+                    }}
+                  >
+                    <motion.span
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        inset: '0 auto 0 -50%',
+                        width: '50%',
+                        background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)',
+                        transform: 'skewX(-14deg)',
+                        filter: 'blur(1.4px)',
+                      }}
+                      animate={isFormReady ? { x: ['-100%', '300%'] } : { x: '-100%' }}
+                      transition={{ duration: 0.8, repeat: isFormReady ? Infinity : 0, repeatDelay: 3.0, ease: 'easeInOut' }}
+                    />
+                  </span>
+                  <span
+                    style={{
+                      position: 'relative',
+                      zIndex: 2,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      fontSize: 'clamp(16px, 2.6vw, 20px)',
+                      fontWeight: 900,
+                      letterSpacing: '0',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {loading ? (
+                      <span className="inline-block w-5 h-5 border-2 border-black/20 border-t-black rounded-full" style={{ animation: 'spin 0.7s linear infinite' }} />
+                    ) : error ? (
+                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '14px 16px', textAlign: 'center' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', lineHeight: 1.3 }}>This number isn't on our invite list.</span>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: '#f87171', lineHeight: 1.4 }}>Re-enter the number you used in the application form.</span>
+                      </span>
+                    ) : wipePhase !== 'idle' ? (
+                      <>
+                        <span>Tap to Continue</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                          <ArrowRight size={20} strokeWidth={3} />
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Open Invitation</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                          {isFormReady ? <ArrowRight size={20} strokeWidth={3} /> : <LockKeyhole size={16} strokeWidth={2.5} />}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </motion.button>
+          </div>
+          {hasFailedOnce && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ textAlign: 'center', paddingTop: 14, paddingBottom: 4 }}
+            >
+              <span style={{ fontSize: 13, color: '#9ca3af' }}>Haven't applied yet? </span>
+              <a href="/lifestyle" style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', textDecoration: 'underline' }}>Apply Now</a>
+            </motion.div>
+          )}
+          </div>
+        </div>
+        {showInviteBooking && verifiedSlug && (
+          <AppFlow
+            inviteSlug={verifiedSlug}
+            inviteVerifiedUser={{
+              name: form.name.trim(),
+              phone: form.phone,
+            }}
+            onClose={() => setShowInviteBooking(false)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initialPosterLoaded?: boolean }) {
+  const [step, setStep] = useState<InviteStep>('card');
+  const [posterLoaded, setPosterLoaded] = useState(initialPosterLoaded);
+
+  useEffect(() => {
+    if (initialPosterLoaded) return;
     setPosterLoaded(false);
     let cancelled = false;
     const loaders = Object.values(INVITE_LAYER_SRC).map(src =>
@@ -1091,7 +1542,7 @@ function InviteFlow({ slug }: { slug: string }) {
     Promise.all(loaders).then(() => { if (!cancelled) setPosterLoaded(true); });
     const timeout = window.setTimeout(() => { if (!cancelled) setPosterLoaded(true); }, 6000);
     return () => { cancelled = true; window.clearTimeout(timeout); };
-  }, []);
+  }, [initialPosterLoaded]);
 
   useEffect(() => {
     const handleInviteBack = (event: PopStateEvent) => {
@@ -1150,7 +1601,19 @@ function InviteFlow({ slug }: { slug: string }) {
                   openInviteBooking();
                 }
               }}
-              style={{ width: 'min(90vw, 360px)', overflow: 'hidden', color: '#232323', fontFamily: "'DM Sans', sans-serif", position: 'relative', borderRadius: '0 0 2rem 2rem', background: '#fff', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+              style={{
+                width: 'min(90vw, 360px)',
+                maxHeight: '100%',
+                overflow: 'visible',
+                color: '#232323',
+                fontFamily: "'DM Sans', sans-serif",
+                position: 'relative',
+                borderRadius: '0 0 2rem 2rem',
+                background: 'transparent',
+                cursor: 'pointer',
+                filter: 'drop-shadow(0 24px 34px rgba(0,0,0,0.14))',
+                WebkitTapHighlightColor: 'transparent',
+              }}
             >
               <div style={{ height: 'auto', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ width: '100%', aspectRatio: '874 / 1330', overflow: 'hidden', display: 'block', position: 'relative', background: '#FFFFFF' }}>
@@ -1392,10 +1855,11 @@ export default function App() {
   const isLegacyJoinPage = routePath === '/join';
   const isLifestylePage = routePath === '/lifestyle' || isLegacyJoinPage;
   const isGalcodePage = routePath === '/galcode';
+  const isSharedInvitePage = routePath === '/invite';
   const isInvitePage = routePath.startsWith('/invite/');
   const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isInvitePage);
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1462,7 +1926,7 @@ export default function App() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const isLetterPage = (isLifestylePage || isGalcodePage) && !hasPreviewParam;
-    if (isAdmin || showHomepage || isLetterPage || isInvitePage) {
+    if (isAdmin || showHomepage || isLetterPage || isSharedInvitePage || isInvitePage) {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
       return;
@@ -1474,9 +1938,19 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, hasPreviewParam]);
+  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
 
   if (isAdmin) return <AdminPanel />;
+
+  if (isSharedInvitePage) {
+    return (
+      <>
+        <LandscapeBlocker />
+        <InAppBrowserNudge />
+        <SharedInviteFlow />
+      </>
+    );
+  }
 
   if (isInvitePage && inviteSlug) {
     return (

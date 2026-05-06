@@ -2728,9 +2728,12 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           </div>
           {trip.invite_only && (
             <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
-              <label style={s.label}>Invite Link</label>
+              <label style={s.label}>Shared Invite Link</label>
               <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4c1d95', fontFamily: 'monospace' }}>
-                {trip.title ? `chaptera.in/invite/${trip.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}` : <span style={{ color: '#aaa' }}>Fill in the title above to generate the link</span>}
+                chaptera.in/invite
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, color: '#7c3aed', lineHeight: 1.45 }}>
+                Guests enter their phone number here; we route them to this event if their number is saved under this event's invite slug.
               </div>
             </div>
           )}
@@ -3466,6 +3469,9 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
   const [csvParsed, setCsvParsed] = React.useState<string[]>([]);
   const [csvFileName, setCsvFileName] = React.useState('');
   const [clearing, setClearing] = React.useState(false);
+  const [showNumbers, setShowNumbers] = React.useState(false);
+  const [savedNumbers, setSavedNumbers] = React.useState<string[]>([]);
+  const [loadingNumbers, setLoadingNumbers] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   const fetchCount = React.useCallback(async () => {
@@ -3476,6 +3482,23 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
       .eq('event_slug', eventSlug);
     setCount(c ?? 0);
   }, [eventSlug]);
+
+  const fetchNumbers = React.useCallback(async () => {
+    if (!eventSlug) return;
+    setLoadingNumbers(true);
+    const { data } = await supabase
+      .from('invited_numbers')
+      .select('phone')
+      .eq('event_slug', eventSlug)
+      .order('phone', { ascending: true });
+    setSavedNumbers((data ?? []).map((r: any) => r.phone));
+    setLoadingNumbers(false);
+  }, [eventSlug]);
+
+  const handleToggleNumbers = () => {
+    if (!showNumbers) fetchNumbers();
+    setShowNumbers(v => !v);
+  };
 
   React.useEffect(() => { fetchCount(); }, [fetchCount]);
 
@@ -3544,16 +3567,47 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
     <CollapsibleSection title="Invited Numbers" badge={count !== null ? `${count} saved` : undefined} badgeColor="#7c3aed">
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#4c1d95' }}>
-          <strong>{count !== null ? count : '…'}</strong> numbers currently on the invite list for slug <code style={{ background: '#ede9fe', padding: '1px 6px', borderRadius: 4 }}>{eventSlug}</code>
-          {count !== null && count > 0 && (
-            <button
-              type="button"
-              onClick={handleClearAll}
-              disabled={clearing}
-              style={{ marginLeft: 12, padding: '3px 10px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
-            >
-              {clearing ? 'Clearing…' : 'Clear All'}
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <span>
+              <strong>{count !== null ? count : '…'}</strong> numbers currently on the invite list for slug <code style={{ background: '#ede9fe', padding: '1px 6px', borderRadius: 4 }}>{eventSlug}</code>
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {count !== null && count > 0 && (
+                <button
+                  type="button"
+                  onClick={handleToggleNumbers}
+                  style={{ padding: '3px 10px', borderRadius: 6, border: '1.5px solid #c4b5fd', background: '#ede9fe', color: '#6d28d9', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+                >
+                  {showNumbers ? 'Hide Numbers ▲' : 'View Numbers ▼'}
+                </button>
+              )}
+              {count !== null && count > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  disabled={clearing}
+                  style={{ padding: '3px 10px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+                >
+                  {clearing ? 'Clearing…' : 'Clear All'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {showNumbers && (
+            <div style={{ marginTop: 10, borderTop: '1px solid #ddd6fe', paddingTop: 10 }}>
+              {loadingNumbers ? (
+                <p style={{ fontSize: 12, color: '#7c3aed', margin: 0 }}>Loading…</p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '4px 12px', maxHeight: 200, overflowY: 'auto' }}>
+                  {savedNumbers.map((phone, i) => (
+                    <span key={phone} style={{ fontSize: 12, fontFamily: 'monospace', color: '#4c1d95', padding: '2px 0' }}>
+                      {i + 1}. {phone}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
