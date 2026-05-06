@@ -453,7 +453,7 @@ function UpiPaymentScreen({
       animate={{ y: 0 }}
       exit={{ y: '100%' }}
       transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-      className="absolute inset-0 z-[70] bg-white flex flex-col rounded-t-[2rem]"
+      className="absolute inset-0 z-[70] bg-white flex flex-col rounded-t-[2rem] overflow-hidden"
     >
       {/* Close button */}
       {onClose && (
