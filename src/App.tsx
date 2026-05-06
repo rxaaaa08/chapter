@@ -1308,7 +1308,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         <div style={{ height: '100%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(12px, 2.2vh, 20px)' }}>
           <div style={{ width: 'min(90vw, 360px)', position: 'relative', borderRadius: '0 0 2rem 2rem', overflow: 'hidden', background: '#fff' }}>
-          <div className="relative w-full aspect-[874/1330] bg-white overflow-hidden">
+          <div
+            className="relative w-full aspect-[874/1330] bg-white overflow-hidden"
+            onClick={() => {
+              if (isFormReady && !error && wipePhase === 'idle' && !loading) findInviteMatches();
+              else if (isInviteRevealed) wipingToLifestyle ? onNavigateToLifestyle() : openSharedInviteBooking();
+            }}
+            style={{ cursor: (isFormReady && wipePhase === 'idle') || isInviteRevealed ? 'pointer' : 'default' }}
+          >
             {/* Frame revealed underneath during wipe — invite frame or lifestyle frame */}
             {wipePhase !== 'idle' && (
               <img src={wipingToLifestyle ? POSTER_LAYER_SRC.frame : INVITE_LAYER_SRC.frame} aria-hidden="true" style={POSTER_LAYER_STYLE} />
@@ -1471,7 +1478,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               </div>
 
               <div className="bg-[#f5f0e8] border border-[#c9a84c] rounded-xl px-4 pt-2 pb-2 shadow-[0_6px_20px_rgba(71,60,34,0.08)]">
-                <label className="block text-[11px] uppercase tracking-[0.18em] font-semibold text-[#8a7b43] mb-1">WhatsApp Number</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] uppercase tracking-[0.18em] font-semibold text-[#8a7b43]">WhatsApp Number</label>
+                  {form.phone.length > 0 && !isPhoneReady && (
+                    <span className="text-[10px] font-semibold text-amber-500 tracking-wide">Invalid</span>
+                  )}
+                </div>
                 <input
                   type="tel"
                   inputMode="tel"
@@ -1601,7 +1613,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                         </motion.span>
                       ) : wipePhase === 'wiping' || wipePhase === 'revealed' ? (
                         <motion.span key="revealed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'clamp(16px, 2.6vw, 20px)', fontWeight: 900, lineHeight: 1 }}>
-                          <span>Tap to Continue</span>
+                          <span>{wipingToLifestyle ? 'Tap to Enter' : 'Tap to Continue'}</span>
                           <span style={{ display: 'inline-flex', alignItems: 'center' }}><ArrowRight size={20} strokeWidth={3} /></span>
                         </motion.span>
                       ) : (
@@ -2106,7 +2118,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <SharedInviteFlow onNavigateToLifestyle={() => { window.history.replaceState({}, '', '/lifestyle'); setRoutePath('/lifestyle'); }} />
+        <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
     );
   }
