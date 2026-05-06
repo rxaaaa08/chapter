@@ -3706,12 +3706,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                       </div>
                     </div>
                   ))}
-                  <div className="p-4 pt-0">
-                    <div className="bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
-                      <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                      <span>Rooms are same-gender — so everyone's comfortable</span>
-                    </div>
-                  </div>
                 </div>
               );
             })()}

@@ -1123,6 +1123,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       img.src = src;
     }));
     Promise.all(loaders).then(() => {
+      setLoading(false);
       setWipePhase('wiping');
       window.setTimeout(() => {
         setVerifiedSlug(slug);
@@ -1189,11 +1190,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }));
 
     const found = checks.filter(Boolean) as SharedInviteMatch[];
-    setLoading(false);
 
     if (found.length === 0) {
       setError("not_found");
       setHasFailedOnce(true);
+      setLoading(false);
       return;
     }
 
@@ -1212,16 +1213,18 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       const userAlreadyPaid = (paidRows ?? []).length > 0;
 
       if (userAlreadyPaid) {
+        setLoading(false);
         setVerifiedSlug(slug);
         window.history.pushState({ chapteraInviteStep: 'flow' }, '', window.location.href);
         setShowInviteBooking(true);
       } else {
         setPendingInviteSpots(inviteSpots);
-        triggerWipe(slug);
+        triggerWipe(slug); // spinner stays on until wipe fires
       }
       return;
     }
 
+    setLoading(false);
     setMatches(found);
   };
 
