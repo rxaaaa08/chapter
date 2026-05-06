@@ -1694,7 +1694,7 @@ export default function AdminPanel() {
             </div>
             {/* Event filter */}
             {invitePaymentRows.length > 0 && (() => {
-              const uniqueEvents = [...new Set(invitePaymentRows.map(r => r.event_title || r.event_slug || '').filter(Boolean))].sort();
+              const uniqueEvents = [...new Set(invitePaymentRows.map(r => r.event_title || '').filter(Boolean))].sort();
               return (
                 <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Event</label>
@@ -1715,7 +1715,7 @@ export default function AdminPanel() {
             {(() => {
               const filtered = paymentsEventFilter === 'all'
                 ? invitePaymentRows
-                : invitePaymentRows.filter(r => (r.event_title || r.event_slug || '') === paymentsEventFilter);
+                : invitePaymentRows.filter(r => (r.event_title || '') === paymentsEventFilter);
               return filtered.length === 0 ? (
                 <div style={{ ...s.card, color: '#888' }}>No payment submissions yet.</div>
               ) : (
@@ -1741,7 +1741,7 @@ export default function AdminPanel() {
                   <tbody>
                     {filtered.map((submission, index) => {
                       const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
-                      const eventName = submission.event_title || submission.event_slug || submission.invite_slug || '-';
+                      const eventName = submission.event_title || '-';
                       const isPaid = submission.status === 'advance_paid';
                       const toggleAdvancePaid = async () => {
                         const newStatus = isPaid ? 'pending' : 'advance_paid';

@@ -1373,6 +1373,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       setInviteVerifyLoading(false);
       return;
     }
+    if (slotsLeft === 0) {
+      setInviteVerifyError('__sold_out__');
+      setInviteVerifyLoading(false);
+      return;
+    }
     setInviteVerifyError('');
     const { data: paidRows } = await supabase
       .from('invite_payment_submissions')
@@ -1998,7 +2003,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           const isAdvancePaidRow = isInvitePaymentFlow && advanceAlreadyPaid && isNowRow;
                           const isBalancePaidCountdown = isInvitePaymentFlow && advanceAlreadyPaid && isBalanceRow(si, step);
                           return (
-                            <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
+                            <div key={si} className={`px-5 py-3 flex items-center justify-between border-b border-black/5 ${isBalancePaidCountdown ? 'bg-[#FFD700]/10' : ''}`}>
                               <div>
                                 <p className="text-[11px] text-gray-400 font-medium mb-0.5">{isAdvancePaidRow ? 'advance' : step.label}</p>
                                 <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
@@ -2181,7 +2186,13 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
 
                   {inviteVerifyError && (
                     <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] text-red-600 leading-relaxed px-1">
-                      {inviteVerifyError === '__not_found__' ? (
+                      {inviteVerifyError === '__sold_out__' ? (
+                        <>
+                          <span className="font-semibold">This event is sold out.</span>
+                          <br />
+                          All spots have been filled. Stay tuned for future events.
+                        </>
+                      ) : inviteVerifyError === '__not_found__' ? (
                         <>
                           <span className="font-semibold">This number isn't on our invite list.</span>
                           <br />

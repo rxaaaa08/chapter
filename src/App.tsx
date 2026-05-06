@@ -1089,6 +1089,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [wipePhase, setWipePhase] = useState<'idle' | 'wiping' | 'revealed' | 'returning'>('idle');
   const [pendingSlug, setPendingSlug] = useState('');
   const [verifiedSlug, setVerifiedSlug] = useState('');
+  const [pendingInviteSpots, setPendingInviteSpots] = useState<number | null>(null);
   const [showInviteBooking, setShowInviteBooking] = useState(false);
   const [wipingToLifestyle, setWipingToLifestyle] = useState(false);
   const [tcAccepted, setTcAccepted] = useState(false);
@@ -1148,7 +1149,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
-      .select('title, invite_slug, event_dates(start_date, status)')
+      .select('title, invite_slug, invite_spots, event_dates(start_date, status)')
       .eq('is_active', true)
       .not('invite_slug', 'is', null);
 
@@ -1163,6 +1164,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       .map(event => ({
         title: String(event.title ?? 'chapter அ invite'),
         slug: String(event.invite_slug ?? '').trim(),
+        inviteSpots: event.invite_spots ?? null,
         dates: Array.isArray(event.event_dates) ? event.event_dates : [],
       }));
 
@@ -1183,7 +1185,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       const dateLabel = firstDate
         ? new Date(`${firstDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : 'Invite';
-      return { slug: event.slug, title: event.title, dateLabel };
+      return { slug: event.slug, title: event.title, dateLabel, inviteSpots: event.inviteSpots };
     }));
 
     const found = checks.filter(Boolean) as SharedInviteMatch[];
@@ -1197,6 +1199,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
     if (found.length === 1) {
       const slug = found[0].slug;
+      const inviteSpots = found[0].inviteSpots;
+
+      // Check if this user already paid advance (always let them through to the flow directly)
       const { data: paidRows } = await supabase
         .from('invite_payment_submissions')
         .select('id')
@@ -1204,11 +1209,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
         .eq('phone', tenDigit)
         .eq('status', 'advance_paid')
         .limit(1);
-      if ((paidRows ?? []).length > 0) {
+      const userAlreadyPaid = (paidRows ?? []).length > 0;
+
+      if (userAlreadyPaid) {
         setVerifiedSlug(slug);
         window.history.pushState({ chapteraInviteStep: 'flow' }, '', window.location.href);
         setShowInviteBooking(true);
       } else {
+        setPendingInviteSpots(inviteSpots);
         triggerWipe(slug);
       }
       return;
@@ -1226,8 +1234,24 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }, 760);
   };
 
-  const openSharedInviteBooking = () => {
+  const openSharedInviteBooking = async () => {
     if (!verifiedSlug) return;
+
+    // Check if sold out at the moment user taps "Tap to Continue"
+    if (pendingInviteSpots !== null) {
+      const { data: allPaidRows } = await supabase
+        .from('invite_payment_submissions')
+        .select('phone')
+        .eq('invite_slug', verifiedSlug)
+        .eq('status', 'advance_paid');
+      const uniquePaidPhones = new Set((allPaidRows ?? []).map((r: any) => r.phone));
+      if (uniquePaidPhones.size >= pendingInviteSpots) {
+        setError('sold_out');
+        setHasFailedOnce(true);
+        return;
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.history.pushState({ chapteraInviteStep: 'flow' }, '', window.location.href);
     }
@@ -1563,8 +1587,17 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                         </motion.span>
                       ) : !isLifestyleRevealing && error ? (
                         <motion.span key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '14px 16px', textAlign: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', lineHeight: 1.3 }}>This number isn't on our invite list.</span>
-                          <span style={{ fontSize: 12, fontWeight: 500, color: '#f87171', lineHeight: 1.4 }}>Re-enter the number you used in the application form.</span>
+                          {error === 'sold_out' ? (
+                            <>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', lineHeight: 1.3 }}>Sold Out</span>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: '#f87171', lineHeight: 1.4 }}>All spots have been filled.</span>
+                            </>
+                          ) : (
+                            <>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', lineHeight: 1.3 }}>This number isn't on our invite list.</span>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: '#f87171', lineHeight: 1.4 }}>Re-enter the number you used in the application form.</span>
+                            </>
+                          )}
                         </motion.span>
                       ) : wipePhase === 'wiping' || wipePhase === 'revealed' ? (
                         <motion.span key="revealed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'clamp(16px, 2.6vw, 20px)', fontWeight: 900, lineHeight: 1 }}>
