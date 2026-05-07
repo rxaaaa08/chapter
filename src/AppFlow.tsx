@@ -499,19 +499,35 @@ function UpiPaymentScreen({
         <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4 flex-1 justify-center">
 
           {/* QR — fills available space up to a max */}
-          <img
-            src={qrSrc}
-            alt="UPI QR Code"
-            className="w-full max-w-[280px] aspect-square object-contain"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
-              (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex';
-            }}
-          />
-          <div className="hidden w-full max-w-[280px] aspect-square flex-col items-center justify-center gap-1.5 text-gray-300 rounded-xl bg-gray-50">
-            <div className="text-3xl">⬛</div>
-            <p className="text-[10px] text-center leading-snug font-mono">public/payment-qr.png</p>
-          </div>
+          {(() => {
+            const [qrLoaded, setQrLoaded] = React.useState(false);
+            const [qrError, setQrError] = React.useState(false);
+            // Reset states whenever the src changes
+            React.useEffect(() => { setQrLoaded(false); setQrError(false); }, [qrSrc]);
+            return (
+              <div className="relative w-full max-w-[280px] aspect-square">
+                {/* Shimmer skeleton */}
+                {!qrLoaded && !qrError && (
+                  <div className="absolute inset-0 rounded-xl bg-gray-100 overflow-hidden">
+                    <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.4s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                  </div>
+                )}
+                <img
+                  src={qrSrc}
+                  alt="UPI QR Code"
+                  className={`w-full h-full object-contain transition-opacity duration-300 ${qrLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setQrLoaded(true)}
+                  onError={() => { setQrError(true); setQrLoaded(false); }}
+                />
+                {qrError && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-gray-300 rounded-xl bg-gray-50">
+                    <div className="text-3xl">⬛</div>
+                    <p className="text-[10px] text-center leading-snug font-mono">QR unavailable</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Divider */}
           <div className="flex items-center gap-3 w-full">
