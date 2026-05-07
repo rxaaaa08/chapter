@@ -105,6 +105,8 @@ type Trip = {
   invite_slug?: string;
   invite_only?: boolean;
   invite_spots?: number | null;
+  advance_qr_url?: string | null;
+  balance_qr_url?: string | null;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type DoubtSubmission = {

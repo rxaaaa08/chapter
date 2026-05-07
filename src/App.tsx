@@ -1077,6 +1077,9 @@ type SharedInviteMatch = {
   slug: string;
   title: string;
   dateLabel: string;
+  inviteSpots?: number | null;
+  advanceQrUrl?: string | null;
+  balanceQrUrl?: string | null;
 };
 
 function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: () => void }) {
@@ -1090,6 +1093,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [pendingSlug, setPendingSlug] = useState('');
   const [verifiedSlug, setVerifiedSlug] = useState('');
   const [pendingInviteSpots, setPendingInviteSpots] = useState<number | null>(null);
+  const [pendingQrUrls, setPendingQrUrls] = useState<{ advance?: string | null; balance?: string | null }>({});
   const [showInviteBooking, setShowInviteBooking] = useState(false);
   const [wipingToLifestyle, setWipingToLifestyle] = useState(false);
   const [tcAccepted, setTcAccepted] = useState(false);
@@ -1113,6 +1117,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const timeout = window.setTimeout(() => { if (!cancelled) setPosterLoaded(true); }, 6000);
     return () => { cancelled = true; window.clearTimeout(timeout); };
   }, []);
+
+  const preloadEventQrs = (advanceQrUrl?: string | null, balanceQrUrl?: string | null) => {
+    setPendingQrUrls({ advance: advanceQrUrl, balance: balanceQrUrl });
+    [advanceQrUrl, balanceQrUrl].filter(Boolean).forEach(url => {
+      const img = new window.Image();
+      img.src = url as string;
+    });
+  };
 
   const triggerWipe = (slug: string) => {
     setPendingSlug(slug);
@@ -1150,7 +1162,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
     const { data: eventsData, error: eventsError } = await supabase
       .from('events')
-      .select('title, invite_slug, invite_spots, event_dates(start_date, status)')
+      .select('title, invite_slug, invite_spots, advance_qr_url, balance_qr_url, event_dates(start_date, status)')
       .eq('is_active', true)
       .not('invite_slug', 'is', null);
 
@@ -1166,6 +1178,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
         title: String(event.title ?? 'chapter அ invite'),
         slug: String(event.invite_slug ?? '').trim(),
         inviteSpots: event.invite_spots ?? null,
+        advanceQrUrl: event.advance_qr_url ?? null,
+        balanceQrUrl: event.balance_qr_url ?? null,
         dates: Array.isArray(event.event_dates) ? event.event_dates : [],
       }));
 
@@ -1186,7 +1200,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       const dateLabel = firstDate
         ? new Date(`${firstDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : 'Invite';
-      return { slug: event.slug, title: event.title, dateLabel, inviteSpots: event.inviteSpots };
+      return { slug: event.slug, title: event.title, dateLabel, inviteSpots: event.inviteSpots, advanceQrUrl: event.advanceQrUrl, balanceQrUrl: event.balanceQrUrl };
     }));
 
     const found = checks.filter(Boolean) as SharedInviteMatch[];
@@ -1212,6 +1226,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
         .limit(1);
       const userAlreadyPaid = (paidRows ?? []).length > 0;
 
+      preloadEventQrs(found[0].advanceQrUrl, found[0].balanceQrUrl);
       if (userAlreadyPaid) {
         setLoading(false);
         setVerifiedSlug(slug);
