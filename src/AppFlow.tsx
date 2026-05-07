@@ -392,6 +392,13 @@ const UPI_ID = 'chapter.a@ybl';
 const UPI_ID_GIRLS = 'galcode@ybl';
 const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
+const preloadQrImages = (...urls: Array<string | null | undefined>) => {
+  if (typeof window === 'undefined') return;
+  urls.filter(Boolean).forEach(url => {
+    const img = new window.Image();
+    img.src = url as string;
+  });
+};
 
 function QrImage({ src }: { src: string }) {
   const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>('loading');
@@ -669,6 +676,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         setPreviewLoading(false);
         return;
       }
+      preloadQrImages(event.advanceQrUrl, event.balanceQrUrl);
       setSelectedEvent(event);
       setSelectedCity(event.cities?.[0] || 'Chennai');
       setSelectedCategory(event.category || 'Trips');
@@ -1099,8 +1107,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   // so they're in the browser cache by the time the payment screen appears
   useEffect(() => {
     if (!showBookingTimeline || !selectedEvent) return;
-    const urls = [selectedEvent.advanceQrUrl, selectedEvent.balanceQrUrl].filter(Boolean) as string[];
-    urls.forEach(url => { const img = new window.Image(); img.src = url; });
+    preloadQrImages(selectedEvent.advanceQrUrl, selectedEvent.balanceQrUrl);
   }, [showBookingTimeline, selectedEvent?.advanceQrUrl, selectedEvent?.balanceQrUrl]);
 
 
