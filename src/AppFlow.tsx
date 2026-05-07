@@ -520,10 +520,11 @@ function UpiPaymentScreen({
                   onError={() => { setQrError(true); setQrLoaded(false); }}
                 />
                 {qrError && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-gray-300 rounded-xl bg-gray-50">
-                    <div className="text-3xl">⬛</div>
-                    <p className="text-[10px] text-center leading-snug font-mono">QR unavailable</p>
-                  </div>
+                  <img
+                    src="/payment-qr.png"
+                    alt="UPI QR Code"
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
                 )}
               </div>
             );
