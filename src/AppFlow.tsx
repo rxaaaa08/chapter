@@ -393,6 +393,48 @@ const UPI_ID_GIRLS = 'galcode@ybl';
 const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
+function QrImage({ src }: { src: string }) {
+  const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>('loading');
+  const timerRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    setStatus('loading');
+    // Timeout: if image hasn't loaded in 8 seconds, treat as error → show fallback
+    timerRef.current = window.setTimeout(() => setStatus('error'), 8000);
+    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
+  }, [src]);
+
+  const clearTimer = () => { if (timerRef.current) { window.clearTimeout(timerRef.current); timerRef.current = null; } };
+
+  return (
+    <div className="relative w-full max-w-[280px] aspect-square flex items-center justify-center">
+      {/* Spinner while loading */}
+      {status === 'loading' && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <svg className="w-10 h-10 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+        </div>
+      )}
+      {/* Actual QR — hidden until loaded */}
+      {status !== 'error' && (
+        <img
+          src={src}
+          alt="UPI QR Code"
+          className={`w-full h-full object-contain transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => { clearTimer(); setStatus('loaded'); }}
+          onError={() => { clearTimer(); setStatus('error'); }}
+        />
+      )}
+      {/* Fallback QR on error */}
+      {status === 'error' && (
+        <img src="/payment-qr.png" alt="UPI QR Code" className="w-full h-full object-contain" />
+      )}
+    </div>
+  );
+}
+
 function UpiPaymentScreen({
   paymentContext,
   girlsOnly = false,
@@ -499,36 +541,7 @@ function UpiPaymentScreen({
         <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4 flex-1 justify-center">
 
           {/* QR — fills available space up to a max */}
-          {(() => {
-            const [qrLoaded, setQrLoaded] = React.useState(false);
-            const [qrError, setQrError] = React.useState(false);
-            // Reset states whenever the src changes
-            React.useEffect(() => { setQrLoaded(false); setQrError(false); }, [qrSrc]);
-            return (
-              <div className="relative w-full max-w-[280px] aspect-square">
-                {/* Shimmer skeleton */}
-                {!qrLoaded && !qrError && (
-                  <div className="absolute inset-0 rounded-xl bg-gray-100 overflow-hidden">
-                    <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.4s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-                  </div>
-                )}
-                <img
-                  src={qrSrc}
-                  alt="UPI QR Code"
-                  className={`w-full h-full object-contain transition-opacity duration-300 ${qrLoaded ? 'opacity-100' : 'opacity-0'}`}
-                  onLoad={() => setQrLoaded(true)}
-                  onError={() => { setQrError(true); setQrLoaded(false); }}
-                />
-                {qrError && (
-                  <img
-                    src="/payment-qr.png"
-                    alt="UPI QR Code"
-                    className="absolute inset-0 w-full h-full object-contain"
-                  />
-                )}
-              </div>
-            );
-          })()}
+          <QrImage src={qrSrc} />
 
           {/* Divider */}
           <div className="flex items-center gap-3 w-full">
