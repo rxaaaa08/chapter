@@ -105,6 +105,8 @@ interface Event {
   girlsOnly?: boolean;
   waitlistUrl?: string;
   bookingSteps?: Array<{ label: string; value: string; date: string }>;
+  advanceQrUrl?: string | null;
+  balanceQrUrl?: string | null;
 }
 
 type GroupChatMessage = { name: string; text: string };
@@ -397,13 +399,16 @@ function UpiPaymentScreen({
   isBalancePayment = false,
   onClose,
 }: {
-  paymentContext: { eventTitle: string; amount: number; date: string; name: string; phone?: string };
+  paymentContext: { eventTitle: string; amount: number; date: string; name: string; phone?: string; advanceQrUrl?: string | null; balanceQrUrl?: string | null };
   girlsOnly?: boolean;
   isBalancePayment?: boolean;
   onClose?: () => void;
 }) {
   const upiId = girlsOnly ? UPI_ID_GIRLS : UPI_ID;
-  const qrSrc = girlsOnly ? '/payment-qr-girls.png' : '/payment-qr.png';
+  const fallbackQr = girlsOnly ? '/payment-qr-girls.png' : '/payment-qr.png';
+  const qrSrc = isBalancePayment
+    ? (paymentContext.balanceQrUrl || fallbackQr)
+    : (paymentContext.advanceQrUrl || fallbackQr);
   const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'failed'>('idle');
   const copyResetRef = React.useRef<number | null>(null);
   React.useEffect(() => () => {
@@ -708,6 +713,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     phone: string;
     girlsOnly?: boolean;
     isBalancePayment?: boolean;
+    advanceQrUrl?: string | null;
+    balanceQrUrl?: string | null;
   } | null>(null);
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
@@ -1385,7 +1392,9 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       shareUrl: typeof window !== 'undefined' ? window.location.origin : '/',
       name: detailsForm.name.trim(),
       phone: detailsForm.phone,
-      girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo)
+      girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
+      advanceQrUrl: selectedEvent.advanceQrUrl ?? null,
+      balanceQrUrl: selectedEvent.balanceQrUrl ?? null,
     };
     try {
       localStorage.setItem('bookingName', ctx.name);

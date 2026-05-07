@@ -126,6 +126,8 @@ export function mapDbEventToEvent(row: any): any {
     showAccommodation: row.show_accommodation ?? false,
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },
     inviteSpots: row.invite_spots ?? null,
+    advanceQrUrl: row.advance_qr_url ?? null,
+    balanceQrUrl: row.balance_qr_url ?? null,
     bookingSteps: Array.isArray(row.booking_steps) && row.booking_steps.length > 0 ? row.booking_steps : undefined,
     dates: (row.event_dates ?? []).map((d: any) => ({
       date: d.start_date,

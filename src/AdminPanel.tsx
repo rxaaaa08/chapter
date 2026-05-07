@@ -2896,6 +2896,25 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           </div>
 
           <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>Advance Payment QR URL</label>
+            <input
+              style={s.input}
+              placeholder="Paste Cloudinary URL for advance QR"
+              value={trip.advance_qr_url ?? ''}
+              onChange={e => set('advance_qr_url', e.target.value || null)}
+            />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>Balance Payment QR URL</label>
+            <input
+              style={s.input}
+              placeholder="Paste Cloudinary URL for balance QR"
+              value={trip.balance_qr_url ?? ''}
+              onChange={e => set('balance_qr_url', e.target.value || null)}
+            />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
             <label style={s.label}>Calendar CTA Text (e.g. Book Now)</label>
             <input
               style={s.input}
