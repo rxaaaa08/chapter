@@ -1095,6 +1095,14 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     if (showBookingTimeline && inviteSlug) fetchSlotsLeft();
   }, [showBookingTimeline, inviteSlug]);
 
+  // Preload per-event QR images as soon as the booking timeline opens
+  // so they're in the browser cache by the time the payment screen appears
+  useEffect(() => {
+    if (!showBookingTimeline || !selectedEvent) return;
+    const urls = [selectedEvent.advanceQrUrl, selectedEvent.balanceQrUrl].filter(Boolean) as string[];
+    urls.forEach(url => { const img = new window.Image(); img.src = url; });
+  }, [showBookingTimeline, selectedEvent?.advanceQrUrl, selectedEvent?.balanceQrUrl]);
+
 
   const formatKynTime = (secs: number) => {
     const d = Math.floor(secs / (24 * 3600));
