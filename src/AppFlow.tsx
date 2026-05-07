@@ -392,22 +392,25 @@ const UPI_ID = 'chapter.a@ybl';
 const UPI_ID_GIRLS = 'galcode@ybl';
 const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
+const PRELOADED_QR_URLS = new Set<string>();
 const preloadQrImages = (...urls: Array<string | null | undefined>) => {
   if (typeof window === 'undefined') return;
   urls.filter(Boolean).forEach(url => {
+    const src = url as string;
+    if (PRELOADED_QR_URLS.has(src)) return;
     const img = new window.Image();
-    img.src = url as string;
+    img.onload = () => PRELOADED_QR_URLS.add(src);
+    img.src = src;
   });
 };
 
-function QrImage({ src }: { src: string }) {
-  const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>('loading');
+function QrImage({ src, fallbackSrc }: { src: string; fallbackSrc: string }) {
+  const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>(() => PRELOADED_QR_URLS.has(src) ? 'loaded' : 'loading');
   const timerRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    setStatus('loading');
-    // Timeout: if image hasn't loaded in 8 seconds, treat as error → show fallback
-    timerRef.current = window.setTimeout(() => setStatus('error'), 3000);
+    setStatus(PRELOADED_QR_URLS.has(src) ? 'loaded' : 'loading');
+    timerRef.current = window.setTimeout(() => setStatus(prev => prev === 'loaded' ? prev : 'error'), 8000);
     return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
   }, [src]);
 
@@ -430,13 +433,13 @@ function QrImage({ src }: { src: string }) {
           src={src}
           alt="UPI QR Code"
           className={`w-full h-full object-contain transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={() => { clearTimer(); setStatus('loaded'); }}
+          onLoad={() => { PRELOADED_QR_URLS.add(src); clearTimer(); setStatus('loaded'); }}
           onError={() => { clearTimer(); setStatus('error'); }}
         />
       )}
       {/* Fallback QR on error */}
       {status === 'error' && (
-        <img src="/payment-qr.png" alt="UPI QR Code" className="w-full h-full object-contain" />
+        <img src={fallbackSrc} alt="UPI QR Code" className="w-full h-full object-contain" />
       )}
     </div>
   );
@@ -548,7 +551,7 @@ function UpiPaymentScreen({
         <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4 flex-1 justify-center">
 
           {/* QR — fills available space up to a max */}
-          <QrImage src={qrSrc} />
+          <QrImage src={qrSrc} fallbackSrc={fallbackQr} />
 
           {/* Divider */}
           <div className="flex items-center gap-3 w-full">
