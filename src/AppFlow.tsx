@@ -400,7 +400,7 @@ function QrImage({ src }: { src: string }) {
   React.useEffect(() => {
     setStatus('loading');
     // Timeout: if image hasn't loaded in 8 seconds, treat as error → show fallback
-    timerRef.current = window.setTimeout(() => setStatus('error'), 8000);
+    timerRef.current = window.setTimeout(() => setStatus('error'), 3000);
     return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
   }, [src]);
 
