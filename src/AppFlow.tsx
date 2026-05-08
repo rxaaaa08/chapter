@@ -107,6 +107,7 @@ interface Event {
   bookingSteps?: Array<{ label: string; value: string; date: string }>;
   advanceQrUrl?: string | null;
   balanceQrUrl?: string | null;
+  kynPaymentUrl?: string | null;
 }
 
 type GroupChatMessage = { name: string; text: string };
@@ -2072,8 +2073,10 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                     ) : shouldUseManualUpi ? (
                       <button
                         onClick={async () => {
-                          if (isInvitePaymentFlow) {
-                            // Already verified — skip details form, go straight to instructions
+                          if (isInvitePaymentFlow && selectedEvent.kynPaymentUrl) {
+                            trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
+                            window.open(selectedEvent.kynPaymentUrl, '_blank');
+                          } else if (isInvitePaymentFlow) {
                             setShowBookingTimeline(false);
                             setShowDetailsForm(true);
                             await handleProceedToPhonePe();

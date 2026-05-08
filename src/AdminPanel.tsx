@@ -90,6 +90,7 @@ type Trip = {
   not_included: string[];
   announcements?: string[];
   booking_url: string;
+  kyn_payment_url?: string | null;
   cta_label: string;
   is_active: boolean;
   pickup_points?: PickupPoint[];
@@ -850,7 +851,7 @@ export default function AdminPanel() {
                   <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
               </div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', one_liner: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: true, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', one_liner: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', kyn_payment_url: null, cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: true, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
                 + Add Plan
               </button>
             </div>
@@ -2894,6 +2895,19 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   />
                 </div>
               )}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>KYN Payment Link</label>
+            <input
+              style={s.input}
+              placeholder="Paste KYN event checkout link"
+              value={trip.kyn_payment_url ?? ''}
+              onChange={e => set('kyn_payment_url', e.target.value || null)}
+            />
+            <div style={{ marginTop: 6, fontSize: 12, color: '#888', lineHeight: 1.45 }}>
+              Used by the invite payment flow. Keep advance / balance branching on the website, then send users to this KYN event link.
             </div>
           </div>
 
