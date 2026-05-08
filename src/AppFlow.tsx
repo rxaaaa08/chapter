@@ -753,6 +753,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     shareUrl: string;
     name: string;
     phone: string;
+    receiptId?: string;
+    issuedAt?: string;
     girlsOnly?: boolean;
     isBalancePayment?: boolean;
     advanceQrUrl?: string | null;
@@ -1441,6 +1443,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       shareUrl: typeof window !== 'undefined' ? window.location.origin : '/',
       name: detailsForm.name.trim(),
       phone: detailsForm.phone,
+      receiptId: `CA-${Date.now().toString(36).toUpperCase()}`,
+      issuedAt: new Date().toISOString(),
       girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
       advanceQrUrl: selectedEvent.advanceQrUrl ?? null,
       balanceQrUrl: selectedEvent.balanceQrUrl ?? null,
@@ -2458,33 +2462,79 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                 <h2 className="text-[24px] font-bold text-gray-900 tracking-tight">Your Spot is Reserved, {paymentContext.name}!</h2>
               </div>
 
-              {/* Card 1 — Booking Receipt */}
-              <div className="mx-6 bg-[#F2F2F7] rounded-3xl overflow-hidden flex-shrink-0 mb-5">
-                {/* Event title */}
-                <div className="px-5 py-3 border-b border-black/5">
-                  <p className="text-[15px] font-bold text-gray-900">
-                    {paymentContext.eventTitle} · {paymentContext.tripDateFull}
+              {/* Card 1 — Payment Receipt */}
+              <div className="mx-6 bg-white rounded-3xl overflow-hidden flex-shrink-0 mb-5 border border-gray-200 shadow-sm">
+                <div className="px-5 py-4 border-b border-black/5 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-gray-400">Issued by CHAPTER</p>
+                    <p className="mt-1 text-[15px] font-black text-gray-950 leading-tight">Payment Receipt</p>
+                  </div>
+                  <span className="text-[11px] font-bold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0">
+                    Successful
+                  </span>
+                </div>
+
+                <div className="px-5 py-4 grid grid-cols-2 gap-x-4 gap-y-3 border-b border-black/5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Receipt No.</p>
+                    <p className="mt-0.5 text-[13px] font-black text-gray-900 break-words">{paymentContext.receiptId}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Paid On</p>
+                    <p className="mt-0.5 text-[13px] font-bold text-gray-900">
+                      {paymentContext.issuedAt ? new Date(paymentContext.issuedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Just now'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Customer</p>
+                    <p className="mt-0.5 text-[13px] font-bold text-gray-900">{paymentContext.name}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Contact</p>
+                    <p className="mt-0.5 text-[13px] font-bold text-gray-900">{paymentContext.phone}</p>
+                  </div>
+                </div>
+
+                <div className="px-5 py-4 border-b border-black/5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Event</p>
+                  <p className="mt-1 text-[15px] font-black text-gray-900 leading-tight">{paymentContext.eventTitle}</p>
+                  <p className="mt-1 text-[12px] font-semibold text-gray-500">{paymentContext.tripDateFull}</p>
+                </div>
+
+                <div className="px-5 py-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Payment For</p>
+                      <p className="mt-0.5 text-[14px] font-black text-gray-900">{paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance Booking'}</p>
+                    </div>
+                    <p className="text-[22px] font-black text-gray-950 leading-none">{formatINR(paymentContext.amount)}</p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F7F7F8] px-4 py-3">
+                    <p className="text-[12px] font-semibold text-gray-500">Payment Mode</p>
+                    <p className="text-[12px] font-black text-gray-900">Mock BillDesk Gateway</p>
+                  </div>
+                  <div className="flex items-start justify-between gap-3 border-t border-black/5 pt-3">
+                    <p className="text-[12px] font-semibold text-gray-500">Balance Due</p>
+                    <div className="text-right">
+                      <p className="text-[13px] font-bold text-gray-800">{formatINR(paymentContext.remainingBalance)}</p>
+                      {paymentContext.remainingBalance > 0 && (
+                        <p className="mt-0.5 text-[10px] font-semibold text-gray-400">due by {paymentContext.balanceDue}</p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    This receipt confirms successful payment toward the event booking listed above.
                   </p>
                 </div>
 
-                {/* Advance paid row */}
-                <div className="px-7 pt-3 pb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">Advance</p>
-                    <p className="text-[20px] font-black text-gray-900 leading-none">{formatINR(paymentContext.amount)}</p>
-                  </div>
-                  <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full">Paid</span>
-                </div>
-
-                {/* Remaining balance row */}
-                <div className="px-7 pb-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">Remaining Balance</p>
-                    <p className="text-[20px] font-black text-gray-900 leading-none">{formatINR(paymentContext.remainingBalance)}</p>
-                  </div>
-                  {balanceCountdown && (
-                    <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">due in {balanceCountdown}</span>
-                  )}
+                <div className="px-5 pb-5">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all"
+                  >
+                    Print / Save Receipt
+                  </button>
                 </div>
               </div>
 
