@@ -143,6 +143,23 @@ type InvitePaymentSubmission = {
   submitted_at?: string;
   source?: string;
 };
+type MockPaymentReceipt = {
+  id?: string;
+  receipt_no?: string;
+  event_id?: string;
+  event_title?: string;
+  event_date?: string;
+  customer_name?: string;
+  contact?: string;
+  amount_paid?: number;
+  payment_for?: string;
+  payment_mode?: string;
+  status?: string;
+  paid_on?: string;
+  remaining_balance?: number;
+  balance_due?: string;
+  created_at?: string;
+};
 
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
@@ -170,14 +187,17 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'other' | 'messages' | 'analytics'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'receipts' | 'other' | 'messages' | 'analytics'>('trips');
   const [paymentsEventFilter, setPaymentsEventFilter] = useState<'all' | string>('all');
+  const [receiptsEventFilter, setReceiptsEventFilter] = useState<'all' | string>('all');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [invitePaymentSubmissions, setInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
+  const [mockPaymentReceipts, setMockPaymentReceipts] = useState<MockPaymentReceipt[]>([]);
   const [localInvitePaymentSubmissions, setLocalInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
   const [refreshingSubmissions, setRefreshingSubmissions] = useState(false);
+  const [refreshingReceipts, setRefreshingReceipts] = useState(false);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
@@ -268,6 +288,9 @@ export default function AdminPanel() {
   const invitePaymentRows: InvitePaymentSubmission[] = [...localInvitePaymentSubmissions, ...invitePaymentSubmissions]
     .sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
 
+  const mockReceiptRows: MockPaymentReceipt[] = [...mockPaymentReceipts]
+    .sort((a, b) => new Date(b.paid_on || b.created_at || 0).getTime() - new Date(a.paid_on || a.created_at || 0).getTime());
+
 
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }
@@ -289,7 +312,8 @@ export default function AdminPanel() {
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
       supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
       supabase.from('invite_payment_submissions').select('*').order('submitted_at', { ascending: false }),
-    ]).then(([evRes, msgRes, doubtsRes, invitePaymentsRes]) => {
+      supabase.from('mock_payment_receipts').select('*').order('paid_on', { ascending: false }),
+    ]).then(([evRes, msgRes, doubtsRes, invitePaymentsRes, mockReceiptsRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
       if (msgRes.data) {
         const allMsgs = msgRes.data as ChatMsg[];
@@ -308,6 +332,7 @@ export default function AdminPanel() {
       }
       if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
       if (invitePaymentsRes.data) setInvitePaymentSubmissions(invitePaymentsRes.data as InvitePaymentSubmission[]);
+      if (mockReceiptsRes.data) setMockPaymentReceipts(mockReceiptsRes.data as MockPaymentReceipt[]);
       setLoading(false);
     });
   }, [authed]);
@@ -326,6 +351,16 @@ export default function AdminPanel() {
       .order('submitted_at', { ascending: false });
     if (data) setInvitePaymentSubmissions(data as InvitePaymentSubmission[]);
     setRefreshingSubmissions(false);
+  };
+
+  const refreshMockReceipts = async () => {
+    setRefreshingReceipts(true);
+    const { data } = await supabase
+      .from('mock_payment_receipts')
+      .select('*')
+      .order('paid_on', { ascending: false });
+    if (data) setMockPaymentReceipts(data as MockPaymentReceipt[]);
+    setRefreshingReceipts(false);
   };
 
   useEffect(() => {
@@ -809,13 +844,14 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
         <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
         <button style={s.tab(tab === 'payments')} onClick={() => setTab('payments')}>Payments</button>
+        <button style={s.tab(tab === 'receipts')} onClick={() => setTab('receipts')}>Receipts</button>
         <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
         <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>
       </div>
 
-      <div style={{ maxWidth: tab === 'payments' ? 1120 : 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: tab === 'payments' || tab === 'receipts' ? 1120 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -1784,6 +1820,106 @@ export default function AdminPanel() {
                 </table>
               </div>
             );
+            })()}
+          </>
+        )}
+
+        {/* ── MOCK RECEIPTS TAB ─────────────────────────────────────────────── */}
+        {!loading && tab === 'receipts' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ fontWeight: 700, fontSize: 20 }}>Payment Receipts</div>
+              <button
+                onClick={refreshMockReceipts}
+                disabled={refreshingReceipts}
+                title="Refresh receipts"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: refreshingReceipts ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: '#444', opacity: refreshingReceipts ? 0.55 : 1, transition: 'opacity 0.15s' }}
+              >
+                <svg
+                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ animation: refreshingReceipts ? 'spin 0.8s linear infinite' : 'none' }}
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                {refreshingReceipts ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
+              Successful mock BillDesk payments recorded when the user completes the payment gateway flow.
+            </div>
+            {mockReceiptRows.length > 0 && (() => {
+              const uniqueEvents = [...new Set(mockReceiptRows.map(r => r.event_title || '').filter(Boolean))].sort();
+              return (
+                <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Event</label>
+                  <select
+                    value={receiptsEventFilter}
+                    onChange={e => setReceiptsEventFilter(e.target.value)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    <option value="all">All Events</option>
+                    {uniqueEvents.map(ev => <option key={ev} value={ev}>{ev}</option>)}
+                  </select>
+                  {receiptsEventFilter !== 'all' && (
+                    <button onClick={() => setReceiptsEventFilter('all')} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
+                  )}
+                </div>
+              );
+            })()}
+            {(() => {
+              const filtered = receiptsEventFilter === 'all'
+                ? mockReceiptRows
+                : mockReceiptRows.filter(r => (r.event_title || '') === receiptsEventFilter);
+              return filtered.length === 0 ? (
+                <div style={{ ...s.card, color: '#888' }}>No successful mock payment receipts yet.</div>
+              ) : (
+                <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
+                  <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                    <colgroup>
+                      <col style={{ width: '18%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '12%' }} />
+                      <col style={{ width: '13%' }} />
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '11%' }} />
+                      <col style={{ width: '12%' }} />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ background: '#fafafa' }}>
+                        {['Paid On', 'Receipt No.', 'Customer', 'Contact', 'Event', 'Paid', 'Balance Due'].map((heading) => (
+                          <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((receipt, index) => (
+                        <tr key={receipt.id ?? receipt.receipt_no ?? index} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '10px 12px', fontSize: 13, lineHeight: 1.25, color: '#111', whiteSpace: 'normal', overflowWrap: 'break-word' }}>{formatAdminDateTime(receipt.paid_on || receipt.created_at)}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{receipt.receipt_no || '-'}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{receipt.customer_name || '-'}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{receipt.contact || '-'}</td>
+                          <td title={receipt.event_title || ''} style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {receipt.event_title || '-'}
+                            {receipt.event_date ? <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{receipt.event_date}</div> : null}
+                          </td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontWeight: 700 }}>{formatAdminINR(receipt.amount_paid)}</div>
+                            <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{receipt.payment_for || '-'}</div>
+                          </td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontWeight: 700 }}>{formatAdminINR(receipt.remaining_balance)}</div>
+                            <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{receipt.balance_due ? `by ${receipt.balance_due}` : '-'}</div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
             })()}
           </>
         )}

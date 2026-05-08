@@ -740,6 +740,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const [showTcModal, setShowTcModal] = useState(false);
   const [paymentView, setPaymentView] = useState<'idle' | 'checkout' | 'success' | 'failure'>('idle');
   const [paymentContext, setPaymentContext] = useState<{
+    eventId: string;
     eventTitle: string;
     amount: number;
     remainingBalance: number;
@@ -1429,6 +1430,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     const advanceAmount = pricing.advance;
     const balanceAmount = totalAmount - advanceAmount;
     const ctx = {
+      eventId: selectedEvent.id,
       eventTitle: selectedEvent.title,
       amount: isBalanceDue ? balanceAmount : advanceAmount,
       remainingBalance: isBalanceDue ? 0 : balanceAmount,
@@ -1463,6 +1465,28 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       setShowDetailsForm(false);
       setPaymentView('checkout');
     }
+  };
+
+  const handleMockPaymentComplete = async () => {
+    if (!paymentContext) return;
+    await supabase
+      .from('mock_payment_receipts')
+      .upsert({
+        receipt_no: paymentContext.receiptId,
+        event_id: paymentContext.eventId,
+        event_title: paymentContext.eventTitle,
+        event_date: paymentContext.tripDateFull,
+        customer_name: paymentContext.name,
+        contact: paymentContext.phone,
+        amount_paid: paymentContext.amount,
+        payment_for: paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance Booking',
+        payment_mode: 'Mock BillDesk Gateway',
+        status: 'successful',
+        paid_on: paymentContext.issuedAt,
+        remaining_balance: paymentContext.remainingBalance,
+        balance_due: paymentContext.balanceDue,
+      }, { onConflict: 'receipt_no' });
+    setPaymentView('success');
   };
 
   // Called when user taps "Get Payment Details" — inserts submission + refreshes slots
@@ -2402,7 +2426,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
-                      onClick={() => setPaymentView('success')}
+                      onClick={handleMockPaymentComplete}
                       className="w-full py-4 rounded-xl bg-emerald-500 text-black font-black text-base shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
                     >
                       Payment complete
