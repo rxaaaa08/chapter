@@ -699,7 +699,18 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
           .eq('phone', tenDigit)
           .eq('status', 'advance_paid')
           .limit(1);
-        setAdvanceAlreadyPaid((paidRows ?? []).length > 0);
+        const isAdvancePaid = (paidRows ?? []).length > 0;
+        setAdvanceAlreadyPaid(isAdvancePaid);
+        if (!isAdvancePaid) {
+          const city = event.cities?.[0] || 'Chennai';
+          const pricing = getMeetingPointPricing(event, '', city);
+          await recordPaymentSubmission(pricing.advance, {
+            event,
+            name: inviteVerifiedUser.name.trim(),
+            phone: tenDigit,
+            dateStr: event.dates?.[0]?.date || '',
+          });
+        }
         setShowBookingTimeline(true);
       }
       setMessages([]);
@@ -1489,23 +1500,25 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     setPaymentView('success');
   };
 
-  // Called when user taps "Get Payment Details" — inserts submission + refreshes slots
-  const handleGetPaymentDetails = async () => {
-    if (!paymentContext || !selectedEvent) return;
-    const tenDigit = detailsForm.phone.replace(/^\+91/, '').replace(/^0/, '');
+  const recordPaymentSubmission = async (
+    amount: number,
+    options: { event?: Event; name?: string; phone?: string; dateStr?: string } = {}
+  ) => {
+    const eventForSubmission = options.event ?? selectedEvent;
+    if (!eventForSubmission) return;
+    const tenDigit = (options.phone ?? detailsForm.phone).replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
     const submittedAt = new Date().toISOString();
-    const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
-    const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
-    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
+    const dateStr = options.dateStr ?? (bookingDate || eventForSubmission.dates?.[0]?.date || '');
+    const name = options.name ?? detailsForm.name.trim();
     const { error: submissionError } = await supabase.rpc('upsert_payment_submission', {
       p_invite_slug: inviteSlug ?? null,
-      p_event_id: selectedEvent.id,
-      p_event_slug: selectedEvent.id,
-      p_event_title: selectedEvent.title,
+      p_event_id: eventForSubmission.id,
+      p_event_slug: eventForSubmission.id,
+      p_event_title: eventForSubmission.title,
       p_selected_date: dateStr,
-      p_name: detailsForm.name.trim(),
+      p_name: name,
       p_phone: tenDigit,
-      p_amount: pricing.advance,
+      p_amount: amount,
       p_submitted_at: submittedAt,
     });
     if (submissionError) {
@@ -1514,13 +1527,13 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         localRows.unshift({
           id: `local-${Date.now()}`,
           invite_slug: inviteSlug ?? null,
-          event_id: selectedEvent.id,
-          event_slug: selectedEvent.id,
-          event_title: selectedEvent.title,
+          event_id: eventForSubmission.id,
+          event_slug: eventForSubmission.id,
+          event_title: eventForSubmission.title,
           selected_date: dateStr,
-          name: detailsForm.name.trim(),
+          name,
           phone: tenDigit,
-          amount: pricing.advance,
+          amount,
           status: 'local_pending_manual_verification',
           submitted_at: submittedAt,
           source: 'localStorage',
@@ -1532,6 +1545,14 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     }
     // Refresh slots count after insert (invite-only events only)
     if (inviteSlug) await fetchSlotsLeft();
+  };
+
+  // Called when user taps "Get Payment Details" — inserts submission + refreshes slots
+  const handleGetPaymentDetails = async () => {
+    if (!paymentContext || !selectedEvent) return;
+    const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
+    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
+    await recordPaymentSubmission(pricing.advance);
     setShowDetailsForm(false);
     setPaymentView('checkout');
   };

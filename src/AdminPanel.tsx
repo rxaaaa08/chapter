@@ -190,6 +190,7 @@ export default function AdminPanel() {
   const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'receipts' | 'other' | 'messages' | 'analytics'>('trips');
   const [paymentsEventFilter, setPaymentsEventFilter] = useState<'all' | string>('all');
   const [receiptsEventFilter, setReceiptsEventFilter] = useState<'all' | string>('all');
+  const [manualPaymentForm, setManualPaymentForm] = useState({ eventId: '', selectedDate: '', name: '', phone: '', amount: '' });
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
@@ -198,6 +199,7 @@ export default function AdminPanel() {
   const [localInvitePaymentSubmissions, setLocalInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
   const [refreshingSubmissions, setRefreshingSubmissions] = useState(false);
   const [refreshingReceipts, setRefreshingReceipts] = useState(false);
+  const [addingManualPayment, setAddingManualPayment] = useState(false);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
@@ -291,6 +293,8 @@ export default function AdminPanel() {
   const mockReceiptRows: MockPaymentReceipt[] = [...mockPaymentReceipts]
     .sort((a, b) => new Date(b.paid_on || b.created_at || 0).getTime() - new Date(a.paid_on || a.created_at || 0).getTime());
 
+  const inviteEligibleTrips = trips.filter(t => t.invite_slug || t.invite_only);
+  const selectedManualPaymentTrip = trips.find(t => t.id === manualPaymentForm.eventId);
 
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }
@@ -361,6 +365,81 @@ export default function AdminPanel() {
       .order('paid_on', { ascending: false });
     if (data) setMockPaymentReceipts(data as MockPaymentReceipt[]);
     setRefreshingReceipts(false);
+  };
+
+  const addManualAdvancePayment = async () => {
+    const trip = selectedManualPaymentTrip;
+    if (!trip) { showToast('Select an event first'); return; }
+    const tenDigit = manualPaymentForm.phone.replace(/\D/g, '').slice(-10);
+    if (!/^\d{10}$/.test(tenDigit)) { showToast('Enter a valid 10-digit phone'); return; }
+    const name = manualPaymentForm.name.trim();
+    if (!name) { showToast('Enter the customer name'); return; }
+
+    setAddingManualPayment(true);
+    const submittedAt = new Date().toISOString();
+    const selectedDate = manualPaymentForm.selectedDate || trip.event_dates?.[0]?.start_date || '';
+    const amount = Number(manualPaymentForm.amount) || Number(trip.price_advance) || 0;
+    const inviteSlug = trip.invite_slug || trip.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || trip.slug || trip.id || null;
+
+    const { error: rpcError } = await supabase.rpc('upsert_payment_submission', {
+      p_invite_slug: inviteSlug,
+      p_event_id: trip.id ?? null,
+      p_event_slug: trip.id ?? trip.slug ?? null,
+      p_event_title: trip.title,
+      p_selected_date: selectedDate,
+      p_name: name,
+      p_phone: tenDigit,
+      p_amount: amount,
+      p_submitted_at: submittedAt,
+    });
+
+    if (rpcError) {
+      const { error: insertError } = await supabase.from('invite_payment_submissions').insert({
+        invite_slug: inviteSlug,
+        event_id: trip.id ?? null,
+        event_slug: trip.id ?? trip.slug ?? null,
+        event_title: trip.title,
+        selected_date: selectedDate,
+        name,
+        phone: tenDigit,
+        amount,
+        status: 'advance_paid',
+        submitted_at: submittedAt,
+      });
+      if (insertError) {
+        setAddingManualPayment(false);
+        showToast('❌ Could not add payment row');
+        return;
+      }
+    } else {
+      let updateQuery = supabase
+        .from('invite_payment_submissions')
+        .update({ status: 'advance_paid', name, amount })
+        .eq('invite_slug', inviteSlug)
+        .eq('phone', tenDigit);
+      if (trip.id) updateQuery = updateQuery.eq('event_id', trip.id);
+      await updateQuery;
+    }
+
+    const newRow: InvitePaymentSubmission = {
+      id: `manual-${Date.now()}`,
+      invite_slug: inviteSlug ?? undefined,
+      event_id: trip.id,
+      event_slug: trip.id ?? trip.slug,
+      event_title: trip.title,
+      selected_date: selectedDate,
+      name,
+      phone: tenDigit,
+      amount,
+      status: 'advance_paid',
+      submitted_at: submittedAt,
+      source: 'manual_admin',
+    };
+    setInvitePaymentSubmissions(prev => [newRow, ...prev]);
+    setManualPaymentForm({ eventId: manualPaymentForm.eventId, selectedDate, name: '', phone: '', amount: String(amount || '') });
+    setAddingManualPayment(false);
+    showToast('Advance payment added');
+    await refreshSubmissions();
   };
 
   useEffect(() => {
@@ -1710,7 +1789,7 @@ export default function AdminPanel() {
         {!loading && tab === 'payments' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>Payment Submissions</div>
+              <div style={{ fontWeight: 700, fontSize: 20 }}>Invite Payment Tracking</div>
               <button
                 onClick={refreshSubmissions}
                 disabled={refreshingSubmissions}
@@ -1729,7 +1808,82 @@ export default function AdminPanel() {
               </button>
             </div>
             <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
-              Recorded when a user reaches the manual UPI payment screen — for both invite-only and open events.
+              Recorded when an invite user enters successfully, reaches manual UPI, or needs KYN payment tracking.
+            </div>
+            <div style={{ ...s.card, marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Add / Mark Advance Paid Manually</div>
+              <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
+                Use this to backfill KYN payments that were missed. This creates an advance-paid row, so returning users see their advance as paid.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 0.7fr auto', gap: 10, alignItems: 'end' }}>
+                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  Event
+                  <select
+                    value={manualPaymentForm.eventId}
+                    onChange={e => {
+                      const trip = trips.find(t => t.id === e.target.value);
+                      const date = trip?.event_dates?.[0]?.start_date || '';
+                      const amount = trip?.price_advance ? String(trip.price_advance) : '';
+                      setManualPaymentForm(prev => ({ ...prev, eventId: e.target.value, selectedDate: date, amount }));
+                    }}
+                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 0 }}
+                  >
+                    <option value="">Select event</option>
+                    {(inviteEligibleTrips.length > 0 ? inviteEligibleTrips : trips).map(trip => (
+                      <option key={trip.id ?? trip.slug} value={trip.id}>{trip.title}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  Date
+                  <select
+                    value={manualPaymentForm.selectedDate}
+                    onChange={e => setManualPaymentForm(prev => ({ ...prev, selectedDate: e.target.value }))}
+                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 0 }}
+                  >
+                    <option value="">No date</option>
+                    {(selectedManualPaymentTrip?.event_dates ?? []).map(date => (
+                      <option key={date.id ?? date.start_date} value={date.start_date}>
+                        {date.start_date ? (() => { const d = new Date(date.start_date); return isNaN(d.getTime()) ? date.start_date : `${d.getDate()} ${d.toLocaleString('en-IN', { month: 'short' })}`; })() : 'No date'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  Name
+                  <input
+                    value={manualPaymentForm.name}
+                    onChange={e => setManualPaymentForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Customer name"
+                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, minWidth: 0 }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  Phone
+                  <input
+                    value={manualPaymentForm.phone}
+                    onChange={e => setManualPaymentForm(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
+                    placeholder="10-digit phone"
+                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, minWidth: 0 }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  Amount
+                  <input
+                    value={manualPaymentForm.amount}
+                    onChange={e => setManualPaymentForm(prev => ({ ...prev, amount: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="2600"
+                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, minWidth: 0 }}
+                  />
+                </label>
+                <button
+                  onClick={addManualAdvancePayment}
+                  disabled={addingManualPayment}
+                  style={{ ...s.btn(addingManualPayment ? '#999' : '#111'), padding: '10px 14px', whiteSpace: 'nowrap' }}
+                >
+                  {addingManualPayment ? 'Adding…' : 'Add Paid'}
+                </button>
+              </div>
             </div>
             {/* Event filter */}
             {invitePaymentRows.length > 0 && (() => {
