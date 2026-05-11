@@ -878,6 +878,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   }, [isPlansHistoryManaged, activeHistoryLayer]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const isUpiFlow     = selectedEvent?.bookingUrl?.toLowerCase().includes('upi-manual');
+  const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
   const isInvitePaymentFlow = !!inviteSlug;
   const shouldUseManualUpi = isUpiFlow || isInvitePaymentFlow;
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
@@ -2204,6 +2205,18 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           ? (advanceAlreadyPaid ? 'Settle Balance' : 'Pay Advance')
                           : (selectedEvent.ctaLabel || 'Pay Advance')}
                         <ArrowRight size={18} strokeWidth={3.0} />
+                      </button>
+                    ) : isPayUFlow ? (
+                      <button
+                        onClick={() => {
+                          setShowBookingTimeline(false);
+                          setShowDetailsForm(true);
+                        }}
+                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
+                      >
+                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
+                        {selectedEvent.ctaLabel || 'Book Now'}
+                        <ArrowRight size={18} strokeWidth={2.5} />
                       </button>
                     ) : (
                       <button
