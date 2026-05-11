@@ -2035,6 +2035,95 @@ function InAppBrowserNudge() {
   );
 }
 
+// ─── PAYU RETURN SCREEN ────────────────────────────────────────────────────────
+function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'failed'; txnid: string; onDone: () => void }) {
+  const [payment, setPayment] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (status !== 'success' || !txnid) { setLoading(false); return; }
+    supabase
+      .from('payu_payments')
+      .select('*')
+      .eq('txnid', txnid)
+      .maybeSingle()
+      .then(({ data }) => { setPayment(data); setLoading(false); });
+  }, [txnid, status]);
+
+  if (status === 'failed') {
+    return (
+      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center gap-5 px-8 text-center z-50">
+        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-xl font-black text-gray-900">Payment Failed</h2>
+          <p className="text-sm text-gray-500 mt-1">Your payment could not be processed. No amount was charged.</p>
+        </div>
+        <button onClick={onDone} className="mt-2 px-6 py-3 rounded-xl bg-black text-white font-bold text-sm active:scale-95 transition-all">Try Again</button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-white flex items-center justify-center z-50">
+        <svg className="w-8 h-8 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-white flex flex-col z-50 overflow-y-auto">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 gap-6 max-w-sm mx-auto w-full">
+        {/* Success icon */}
+        <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div className="text-center">
+          <h2 className="text-2xl font-black text-gray-900">You're Booked! 🎉</h2>
+          {payment?.name && <p className="text-gray-500 mt-1 text-sm">Hey {payment.name.split(' ')[0]}, your spot is confirmed.</p>}
+        </div>
+
+        {/* Invoice card */}
+        {payment && (
+          <div className="w-full border border-black/[0.08] rounded-2xl overflow-hidden">
+            <div className="bg-gray-50 px-5 py-3 border-b border-black/[0.06]">
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Booking Confirmation</p>
+            </div>
+            <div className="divide-y divide-black/[0.05]">
+              {[
+                { label: 'Event', value: payment.event_title },
+                { label: 'Date', value: payment.trip_date || '—' },
+                { label: 'Name', value: payment.name },
+                { label: 'Phone', value: payment.phone },
+                { label: 'Amount Paid', value: `₹${Number(payment.amount).toLocaleString('en-IN')}` },
+                { label: 'Transaction ID', value: payment.txnid },
+              ].map(({ label, value }) => (
+                <div key={label} className="px-5 py-3 flex items-start justify-between gap-4">
+                  <span className="text-xs text-gray-400 font-medium shrink-0">{label}</span>
+                  <span className="text-xs font-semibold text-gray-900 text-right">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button onClick={onDone} className="w-full py-4 rounded-xl bg-black text-white font-bold text-sm active:scale-95 transition-all">
+          Back to chaptera
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
   const [routePath, setRoutePath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/');
@@ -2048,7 +2137,11 @@ export default function App() {
   const isInvitePage = routePath.startsWith('/invite/');
   const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage);
+  const payuParams = new URLSearchParams(routeSearch);
+  const payuStatus = payuParams.get('payment_status') as 'success' | 'failed' | null;
+  const payuTxnid = payuParams.get('txnid') ?? '';
+  const isPayUReturn = !!payuStatus;
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2128,6 +2221,19 @@ export default function App() {
       document.documentElement.style.overflow = '';
     };
   }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
+
+  if (isPayUReturn) return (
+    <PayUReturnScreen
+      status={payuStatus!}
+      txnid={payuTxnid}
+      onDone={() => {
+        window.history.replaceState({}, '', '/');
+        setRoutePath('/');
+        setRouteSearch('');
+        setShowHomepage(false);
+      }}
+    />
+  );
 
   if (isAdmin) return <AdminPanel />;
 

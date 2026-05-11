@@ -160,6 +160,19 @@ type MockPaymentReceipt = {
   balance_due?: string;
   created_at?: string;
 };
+type PayuPayment = {
+  id?: string;
+  txnid?: string;
+  event_id?: string;
+  event_title?: string;
+  amount?: number;
+  name?: string;
+  phone?: string;
+  trip_date?: string;
+  status?: string;
+  mihpayid?: string;
+  created_at?: string;
+};
 
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
@@ -196,6 +209,7 @@ export default function AdminPanel() {
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [invitePaymentSubmissions, setInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
   const [mockPaymentReceipts, setMockPaymentReceipts] = useState<MockPaymentReceipt[]>([]);
+  const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
   const [localInvitePaymentSubmissions, setLocalInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
   const [refreshingSubmissions, setRefreshingSubmissions] = useState(false);
   const [refreshingReceipts, setRefreshingReceipts] = useState(false);
@@ -317,7 +331,8 @@ export default function AdminPanel() {
       supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
       supabase.from('invite_payment_submissions').select('*').order('submitted_at', { ascending: false }),
       supabase.from('mock_payment_receipts').select('*').order('paid_on', { ascending: false }),
-    ]).then(([evRes, msgRes, doubtsRes, invitePaymentsRes, mockReceiptsRes]) => {
+      supabase.from('payu_payments').select('*').order('created_at', { ascending: false }),
+    ]).then(([evRes, msgRes, doubtsRes, invitePaymentsRes, mockReceiptsRes, payuRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
       if (msgRes.data) {
         const allMsgs = msgRes.data as ChatMsg[];
@@ -337,6 +352,7 @@ export default function AdminPanel() {
       if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
       if (invitePaymentsRes.data) setInvitePaymentSubmissions(invitePaymentsRes.data as InvitePaymentSubmission[]);
       if (mockReceiptsRes.data) setMockPaymentReceipts(mockReceiptsRes.data as MockPaymentReceipt[]);
+      if (payuRes.data) setPayuPayments(payuRes.data as PayuPayment[]);
       setLoading(false);
     });
   }, [authed]);
@@ -1978,105 +1994,84 @@ export default function AdminPanel() {
           </>
         )}
 
-        {/* ── MOCK RECEIPTS TAB ─────────────────────────────────────────────── */}
-        {!loading && tab === 'receipts' && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>Payment Receipts</div>
-              <button
-                onClick={refreshMockReceipts}
-                disabled={refreshingReceipts}
-                title="Refresh receipts"
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: refreshingReceipts ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: '#444', opacity: refreshingReceipts ? 0.55 : 1, transition: 'opacity 0.15s' }}
-              >
-                <svg
-                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ animation: refreshingReceipts ? 'spin 0.8s linear infinite' : 'none' }}
+        {/* ── RECEIPTS TAB (PayU Payments) ──────────────────────────────────── */}
+        {!loading && tab === 'receipts' && (() => {
+          const successPayments = payuPayments.filter(p => p.status === 'success');
+          const uniqueEvents = [...new Set(successPayments.map(p => p.event_title || '').filter(Boolean))].sort();
+          const filtered = receiptsEventFilter === 'all'
+            ? successPayments
+            : successPayments.filter(p => (p.event_title || '') === receiptsEventFilter);
+          return (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <div style={{ fontWeight: 700, fontSize: 20 }}>PayU Payments</div>
+                <button
+                  onClick={async () => {
+                    setRefreshingReceipts(true);
+                    const { data } = await supabase.from('payu_payments').select('*').order('created_at', { ascending: false });
+                    if (data) setPayuPayments(data as PayuPayment[]);
+                    setRefreshingReceipts(false);
+                  }}
+                  disabled={refreshingReceipts}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: refreshingReceipts ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: '#444', opacity: refreshingReceipts ? 0.55 : 1, transition: 'opacity 0.15s' }}
                 >
-                  <polyline points="23 4 23 10 17 10" />
-                  <polyline points="1 20 1 14 7 14" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-                {refreshingReceipts ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-            <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
-              Successful mock BillDesk payments recorded when the user completes the payment gateway flow.
-            </div>
-            {mockReceiptRows.length > 0 && (() => {
-              const uniqueEvents = [...new Set(mockReceiptRows.map(r => r.event_title || '').filter(Boolean))].sort();
-              return (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: refreshingReceipts ? 'spin 0.8s linear infinite' : 'none' }}>
+                    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  {refreshingReceipts ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
+                Successful payments processed via PayU. Only confirmed transactions are shown.
+              </div>
+              {uniqueEvents.length > 0 && (
                 <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Event</label>
-                  <select
-                    value={receiptsEventFilter}
-                    onChange={e => setReceiptsEventFilter(e.target.value)}
-                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
-                  >
+                  <select value={receiptsEventFilter} onChange={e => setReceiptsEventFilter(e.target.value)} style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}>
                     <option value="all">All Events</option>
                     {uniqueEvents.map(ev => <option key={ev} value={ev}>{ev}</option>)}
                   </select>
-                  {receiptsEventFilter !== 'all' && (
-                    <button onClick={() => setReceiptsEventFilter('all')} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
-                  )}
+                  {receiptsEventFilter !== 'all' && <button onClick={() => setReceiptsEventFilter('all')} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>}
                 </div>
-              );
-            })()}
-            {(() => {
-              const filtered = receiptsEventFilter === 'all'
-                ? mockReceiptRows
-                : mockReceiptRows.filter(r => (r.event_title || '') === receiptsEventFilter);
-              return filtered.length === 0 ? (
-                <div style={{ ...s.card, color: '#888' }}>No successful mock payment receipts yet.</div>
+              )}
+              {filtered.length === 0 ? (
+                <div style={{ ...s.card, color: '#888' }}>No successful PayU payments yet.</div>
               ) : (
                 <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
                   <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                     <colgroup>
-                      <col style={{ width: '18%' }} />
-                      <col style={{ width: '14%' }} />
-                      <col style={{ width: '12%' }} />
-                      <col style={{ width: '13%' }} />
-                      <col style={{ width: '20%' }} />
-                      <col style={{ width: '11%' }} />
-                      <col style={{ width: '12%' }} />
+                      <col style={{ width: '16%' }} /><col style={{ width: '14%' }} /><col style={{ width: '13%' }} />
+                      <col style={{ width: '22%' }} /><col style={{ width: '12%' }} /><col style={{ width: '23%' }} />
                     </colgroup>
                     <thead>
                       <tr style={{ background: '#fafafa' }}>
-                        {['Paid On', 'Receipt No.', 'Customer', 'Contact', 'Event', 'Paid', 'Balance Due'].map((heading) => (
-                          <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
-                            {heading}
-                          </th>
+                        {['Paid On', 'Name', 'Phone', 'Event', 'Amount', 'Transaction ID'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((receipt, index) => (
-                        <tr key={receipt.id ?? receipt.receipt_no ?? index} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '10px 12px', fontSize: 13, lineHeight: 1.25, color: '#111', whiteSpace: 'normal', overflowWrap: 'break-word' }}>{formatAdminDateTime(receipt.paid_on || receipt.created_at)}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{receipt.receipt_no || '-'}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{receipt.customer_name || '-'}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{receipt.contact || '-'}</td>
-                          <td title={receipt.event_title || ''} style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {receipt.event_title || '-'}
-                            {receipt.event_date ? <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{receipt.event_date}</div> : null}
+                      {filtered.map((p, i) => (
+                        <tr key={p.id ?? i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111' }}>{formatAdminDateTime(p.created_at)}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || '-'}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap' }}>{p.phone || '-'}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.event_title || ''}>
+                            {p.event_title || '-'}
+                            {p.trip_date ? <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{p.trip_date}</div> : null}
                           </td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontWeight: 700 }}>{formatAdminINR(receipt.amount_paid)}</div>
-                            <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{receipt.payment_for || '-'}</div>
-                          </td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontWeight: 700 }}>{formatAdminINR(receipt.remaining_balance)}</div>
-                            <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{receipt.balance_due ? `by ${receipt.balance_due}` : '-'}</div>
-                          </td>
+                          <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: '#111', whiteSpace: 'nowrap' }}>{formatAdminINR(p.amount)}</td>
+                          <td style={{ padding: '10px 12px', fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.txnid || ''}>{p.txnid || '-'}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              );
-            })()}
-          </>
-        )}
+              )}
+            </>
+          );
+        })()}
 
         {/* ── OTHER TAB ─────────────────────────────────────────────────────── */}
         {!loading && tab === 'other' && (
@@ -3041,10 +3036,10 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               {([
                 { mode: 'external', label: 'External Link', value: '' },
                 { mode: 'upi-manual', label: 'Manual UPI (QR Code)', value: 'upi-manual' },
-                { mode: 'billdesk-mock', label: 'Mock BillDesk', value: '/phonepe-mock' },
+                { mode: 'payu', label: 'PayU', value: 'payu-hosted' },
               ] as const).map(option => {
                 const active = option.mode === 'external'
-                  ? trip.booking_url !== 'upi-manual' && trip.booking_url !== '/phonepe-mock'
+                  ? trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted'
                   : trip.booking_url === option.value;
                 return (
                   <button
@@ -3058,7 +3053,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 );
               })}
             </div>
-            {trip.booking_url !== 'upi-manual' && trip.booking_url !== '/phonepe-mock' && (
+            {trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted' && (
               <input
                 style={s.input}
                 placeholder="https://tally.so/r/..."

@@ -446,6 +446,70 @@ function QrImage({ src, fallbackSrc }: { src: string; fallbackSrc: string }) {
   );
 }
 
+const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
+
+function PayUCheckout({ paymentContext, onError }: {
+  paymentContext: { name: string; phone: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string };
+  onError: () => void;
+}) {
+  const formRef = React.useRef<HTMLFormElement>(null);
+  const [fields, setFields] = React.useState<Record<string, string> | null>(null);
+  const [payuUrl, setPayuUrl] = React.useState('');
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    fetch(`${SUPABASE_FUNCTIONS_URL}/create-payu-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: paymentContext.name,
+        phone: paymentContext.phone,
+        amount: paymentContext.amount,
+        event_id: paymentContext.eventId ?? null,
+        event_title: paymentContext.eventTitle,
+        trip_date: paymentContext.tripDateFull,
+      }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        setPayuUrl(data.payu_url);
+        setFields(data.fields);
+      })
+      .catch(() => setError('Could not initiate payment. Please try again.'));
+  }, []);
+
+  React.useEffect(() => {
+    if (fields && formRef.current) formRef.current.submit();
+  }, [fields]);
+
+  return (
+    <div className="absolute inset-0 z-[70] bg-white flex flex-col items-center justify-center gap-4">
+      {error ? (
+        <div className="flex flex-col items-center gap-3 px-8 text-center">
+          <p className="text-red-500 text-sm font-medium">{error}</p>
+          <button onClick={onError} className="text-sm text-gray-500 underline">Go back</button>
+        </div>
+      ) : (
+        <>
+          <svg className="w-10 h-10 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <p className="text-gray-500 text-sm font-medium">Redirecting to PayU...</p>
+        </>
+      )}
+      {fields && payuUrl && (
+        <form ref={formRef} method="POST" action={payuUrl} className="hidden">
+          {Object.entries(fields).map(([key, value]) => (
+            <input key={key} type="hidden" name={key} value={value} />
+          ))}
+        </form>
+      )}
+    </div>
+  );
+}
+
 function UpiPaymentScreen({
   paymentContext,
   girlsOnly = false,
@@ -2415,58 +2479,13 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
           )}
         </AnimatePresence>
 
-        {/* PhonePe Mock Checkout */}
-        <AnimatePresence>
-          {paymentView === 'checkout' && paymentContext && !paymentContext.phonepeUrl?.includes('upi-manual') && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[70] bg-gradient-to-br from-[#111827] via-black to-[#0f172a] text-white flex flex-col"
-            >
-              <div className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400 font-semibold">Mock BillDesk</p>
-                  <h2 className="text-2xl font-black mt-1">Redirecting to BillDesk</h2>
-                  <p className="text-sm text-gray-400 mt-1">Amount: {formatINR(paymentContext.amount)}</p>
-                </div>
-                <ShieldCheck className="text-emerald-400" size={28} />
-              </div>
-
-              <div className="flex-1 px-6">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <p className="text-sm text-gray-300">Paying for</p>
-                      <p className="font-bold text-lg">{paymentContext.eventTitle}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-300">Trip Date</p>
-                      <p className="font-semibold">{paymentContext.date}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <button
-                      onClick={handleMockPaymentComplete}
-                      className="w-full py-4 rounded-xl bg-emerald-500 text-black font-black text-base shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
-                    >
-                      Payment complete
-                    </button>
-                    <button
-                      onClick={() => setPaymentView('failure')}
-                      className="w-full py-4 rounded-xl bg-white/10 text-white font-semibold text-base border border-white/20 hover:bg-white/15 active:scale-95 transition-all"
-                    >
-                      Payment not complete
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-3">
-                    Use these buttons to mock BillDesk response. You'll be redirected back to the site accordingly.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* PayU Hosted Checkout */}
+        {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl === 'payu-hosted' && (
+          <PayUCheckout
+            paymentContext={paymentContext}
+            onError={() => { setPaymentView('idle'); setShowDetailsForm(true); }}
+          />
+        )}
 
         {/* UPI Manual Payment */}
         <AnimatePresence>
