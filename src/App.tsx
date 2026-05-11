@@ -2156,30 +2156,22 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
                 ₹{Number(payment?.amount ?? 0).toLocaleString('en-IN')}
               </p>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F7F7F8] px-4 py-3">
-              <p className="text-[12px] font-semibold text-gray-500">Payment Mode</p>
-              <p className="text-[12px] font-black text-gray-900">PayU Gateway</p>
-            </div>
             <p className="text-[11px] text-gray-400 leading-relaxed">
               This receipt confirms successful payment toward the event booking listed above.
             </p>
           </div>
 
-          {/* Print button */}
+          {/* Download button */}
           <div className="px-5 pb-5">
             <button
               type="button"
               onClick={() => window.print()}
               className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all"
             >
-              Print / Save Receipt
+              Download Receipt
             </button>
           </div>
         </div>
-
-        <button onClick={onDone} className="w-full py-4 rounded-2xl border border-black/10 text-gray-600 font-bold text-sm active:opacity-80 transition-all">
-          Back to chaptera
-        </button>
       </div>
   );
 }
