@@ -2050,9 +2050,17 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
       .then(({ data }) => { setPayment(data); setLoading(false); });
   }, [txnid, status]);
 
+  const phoneFrame = (children: React.ReactNode) => (
+    <div className="h-[100dvh] bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4">
+      <div className="w-full bg-white flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white overflow-y-auto">
+        {children}
+      </div>
+    </div>
+  );
+
   if (status === 'failed') {
-    return (
-      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center gap-5 px-8 text-center z-50">
+    return phoneFrame(
+      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
         <div className="w-[68px] h-[68px] rounded-full bg-red-50 flex items-center justify-center">
           <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
@@ -2068,8 +2076,8 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   }
 
   if (loading) {
-    return (
-      <div className="fixed inset-0 bg-white flex items-center justify-center z-50">
+    return phoneFrame(
+      <div className="flex-1 flex items-center justify-center">
         <svg className="w-8 h-8 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
@@ -2082,9 +2090,8 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     ? new Date(payment.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
     : 'Just now';
 
-  return (
-    <div className="fixed inset-0 bg-white flex flex-col z-50 overflow-y-auto">
-      <div className="flex flex-col px-6 py-10 gap-5 max-w-sm mx-auto w-full">
+  return phoneFrame(
+    <div className="flex flex-col px-6 py-10 gap-5 max-w-sm mx-auto w-full">
 
         {/* Hero */}
         <div className="flex flex-col items-center pt-4 pb-2">
@@ -2174,7 +2181,6 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
           Back to chaptera
         </button>
       </div>
-    </div>
   );
 }
 
