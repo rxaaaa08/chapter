@@ -2053,16 +2053,16 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   if (status === 'failed') {
     return (
       <div className="fixed inset-0 bg-white flex flex-col items-center justify-center gap-5 px-8 text-center z-50">
-        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <div className="w-[68px] h-[68px] rounded-full bg-red-50 flex items-center justify-center">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
           </svg>
         </div>
         <div>
-          <h2 className="text-xl font-black text-gray-900">Payment Failed</h2>
+          <h2 className="text-[24px] font-bold text-gray-900 tracking-tight">Payment Failed</h2>
           <p className="text-sm text-gray-500 mt-1">Your payment could not be processed. No amount was charged.</p>
         </div>
-        <button onClick={onDone} className="mt-2 px-6 py-3 rounded-xl bg-black text-white font-bold text-sm active:scale-95 transition-all">Try Again</button>
+        <button onClick={onDone} className="mt-2 px-8 py-4 rounded-2xl bg-black text-white font-bold text-sm active:opacity-80 transition-all">Try Again</button>
       </div>
     );
   }
@@ -2078,45 +2078,99 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     );
   }
 
+  const paidOn = payment?.created_at
+    ? new Date(payment.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Just now';
+
   return (
     <div className="fixed inset-0 bg-white flex flex-col z-50 overflow-y-auto">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 gap-6 max-w-sm mx-auto w-full">
-        {/* Success icon */}
-        <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </div>
-        <div className="text-center">
-          <h2 className="text-2xl font-black text-gray-900">You're Booked! 🎉</h2>
-          {payment?.name && <p className="text-gray-500 mt-1 text-sm">Hey {payment.name.split(' ')[0]}, your spot is confirmed.</p>}
+      <div className="flex flex-col px-6 py-10 gap-5 max-w-sm mx-auto w-full">
+
+        {/* Hero */}
+        <div className="flex flex-col items-center pt-4 pb-2">
+          <div className="w-[68px] h-[68px] rounded-full bg-[#34C759]/12 flex items-center justify-center mb-4">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <h2 className="text-[24px] font-bold text-gray-900 tracking-tight text-center">
+            Your Spot is Reserved{payment?.name ? `, ${payment.name.trim().split(' ')[0]}` : ''}!
+          </h2>
         </div>
 
         {/* Invoice card */}
-        {payment && (
-          <div className="w-full border border-black/[0.08] rounded-2xl overflow-hidden">
-            <div className="bg-gray-50 px-5 py-3 border-b border-black/[0.06]">
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Booking Confirmation</p>
+        <div className="bg-white rounded-3xl overflow-hidden border border-gray-200 shadow-sm">
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-black/5 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-gray-400">Issued by CHAPTER</p>
+              <p className="mt-1 text-[15px] font-black text-gray-950 leading-tight">Payment Receipt</p>
             </div>
-            <div className="divide-y divide-black/[0.05]">
-              {[
-                { label: 'Event', value: payment.event_title },
-                { label: 'Date', value: payment.trip_date || '—' },
-                { label: 'Name', value: payment.name },
-                { label: 'Phone', value: payment.phone },
-                { label: 'Amount Paid', value: `₹${Number(payment.amount).toLocaleString('en-IN')}` },
-                { label: 'Transaction ID', value: payment.txnid },
-              ].map(({ label, value }) => (
-                <div key={label} className="px-5 py-3 flex items-start justify-between gap-4">
-                  <span className="text-xs text-gray-400 font-medium shrink-0">{label}</span>
-                  <span className="text-xs font-semibold text-gray-900 text-right">{value}</span>
-                </div>
-              ))}
+            <span className="text-[11px] font-bold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0">
+              Successful
+            </span>
+          </div>
+
+          {/* Receipt No + Paid On */}
+          <div className="px-5 py-4 grid grid-cols-2 gap-x-4 gap-y-3 border-b border-black/5">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Receipt No.</p>
+              <p className="mt-0.5 text-[12px] font-black text-gray-900 break-all">{txnid || payment?.txnid || '—'}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Paid On</p>
+              <p className="mt-0.5 text-[13px] font-bold text-gray-900">{paidOn}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Customer</p>
+              <p className="mt-0.5 text-[13px] font-bold text-gray-900">{payment?.name || '—'}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Contact</p>
+              <p className="mt-0.5 text-[13px] font-bold text-gray-900">{payment?.phone || '—'}</p>
             </div>
           </div>
-        )}
 
-        <button onClick={onDone} className="w-full py-4 rounded-xl bg-black text-white font-bold text-sm active:scale-95 transition-all">
+          {/* Event */}
+          <div className="px-5 py-4 border-b border-black/5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Event</p>
+            <p className="mt-1 text-[15px] font-black text-gray-900 leading-tight">{payment?.event_title || '—'}</p>
+            {payment?.trip_date && <p className="mt-1 text-[12px] font-semibold text-gray-500">{payment.trip_date}</p>}
+          </div>
+
+          {/* Amount + Payment Mode */}
+          <div className="px-5 py-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Payment For</p>
+                <p className="mt-0.5 text-[14px] font-black text-gray-900">Full Payment</p>
+              </div>
+              <p className="text-[22px] font-black text-gray-950 leading-none">
+                ₹{Number(payment?.amount ?? 0).toLocaleString('en-IN')}
+              </p>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F7F7F8] px-4 py-3">
+              <p className="text-[12px] font-semibold text-gray-500">Payment Mode</p>
+              <p className="text-[12px] font-black text-gray-900">PayU Gateway</p>
+            </div>
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              This receipt confirms successful payment toward the event booking listed above.
+            </p>
+          </div>
+
+          {/* Print button */}
+          <div className="px-5 pb-5">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all"
+            >
+              Print / Save Receipt
+            </button>
+          </div>
+        </div>
+
+        <button onClick={onDone} className="w-full py-4 rounded-2xl border border-black/10 text-gray-600 font-bold text-sm active:opacity-80 transition-all">
           Back to chaptera
         </button>
       </div>
