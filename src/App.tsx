@@ -2137,10 +2137,16 @@ export default function App() {
   const isInvitePage = routePath.startsWith('/invite/');
   const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
-  const payuParams = new URLSearchParams(routeSearch);
-  const payuStatus = payuParams.get('payment_status') as 'success' | 'failed' | null;
-  const payuTxnid = payuParams.get('txnid') ?? '';
-  const isPayUReturn = !!payuStatus;
+  // Latch PayU return params on mount — must happen before the URL gets replaced by the route sync effect
+  const [payuReturnStatus] = useState<'success' | 'failed' | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('payment_status') as 'success' | 'failed' | null;
+  });
+  const [payuReturnTxnid] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('txnid') ?? '';
+  });
+  const isPayUReturn = !!payuReturnStatus;
   const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn);
 
   useEffect(() => {
@@ -2168,7 +2174,7 @@ export default function App() {
       syncRoute();
       return () => window.removeEventListener('popstate', syncRoute);
     }
-    if (window.location.pathname === '/' && !window.location.search.includes('preview_event')) {
+    if (window.location.pathname === '/' && !window.location.search.includes('preview_event') && !window.location.search.includes('payment_status')) {
       window.history.replaceState({}, '', '/aboutus');
       syncRoute();
     }
@@ -2224,8 +2230,8 @@ export default function App() {
 
   if (isPayUReturn) return (
     <PayUReturnScreen
-      status={payuStatus!}
-      txnid={payuTxnid}
+      status={payuReturnStatus!}
+      txnid={payuReturnTxnid}
       onDone={() => {
         window.history.replaceState({}, '', '/');
         setRoutePath('/');
