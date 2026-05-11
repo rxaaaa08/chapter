@@ -52,7 +52,7 @@ function ImageUploadInput({
 const ADMIN_PASSWORD = 'chaptera2025';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string };
+type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string; whatsapp_group_url?: string };
 type PickupPoint = {
   id: string;
   label: string;
@@ -492,7 +492,7 @@ export default function AdminPanel() {
       await supabase.from('event_dates').delete().eq('event_id', eventId);
       if (event_dates.length > 0) {
         await supabase.from('event_dates').insert(
-          event_dates.map(d => ({ event_id: eventId, start_date: d.start_date, status: d.status, label: d.label }))
+          event_dates.map(d => ({ event_id: eventId, start_date: d.start_date, status: d.status, label: d.label, whatsapp_group_url: d.whatsapp_group_url ?? null }))
         );
       }
     }
@@ -3368,14 +3368,23 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <CollapsibleSection title="Trip Dates" badge={`${dates.length} date${dates.length !== 1 ? 's' : ''}`}>
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
-            <select style={s.input} value={d.status} onChange={e => setDate(i, 'status', e.target.value as TripDate['status'])}>
-              <option value="available">Available</option>
-              <option value="selling_out">Selling Out</option>
-              <option value="sold_out">Sold Out</option>
-            </select>
-            <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, padding: '10px 12px', background: '#f9f9f9', borderRadius: 10, border: '1px solid #eee' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+              <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
+              <select style={s.input} value={d.status} onChange={e => setDate(i, 'status', e.target.value as TripDate['status'])}>
+                <option value="available">Available</option>
+                <option value="selling_out">Selling Out</option>
+                <option value="sold_out">Sold Out</option>
+              </select>
+              <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+            </div>
+            <input
+              type="url"
+              style={{ ...s.input, fontSize: 12 }}
+              placeholder="WhatsApp group link (https://chat.whatsapp.com/...)"
+              value={d.whatsapp_group_url ?? ''}
+              onChange={e => setDate(i, 'whatsapp_group_url', e.target.value)}
+            />
           </div>
         ))}
         <button type="button" onClick={addDate} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Date</button>

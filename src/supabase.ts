@@ -135,6 +135,7 @@ export function mapDbEventToEvent(row: any): any {
       status: d.status,
       label: d.label ?? undefined,
       bookingSteps: Array.isArray(d.booking_steps) && d.booking_steps.length > 0 ? d.booking_steps : undefined,
+      whatsappGroupUrl: d.whatsapp_group_url ?? undefined,
     })),
     videos: (row.event_media ?? []).map((m: any) => ({
       thumbnail: m.thumbnail_url,

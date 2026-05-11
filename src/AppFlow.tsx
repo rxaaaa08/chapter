@@ -449,7 +449,7 @@ function QrImage({ src, fallbackSrc }: { src: string; fallbackSrc: string }) {
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
 function PayUCheckout({ paymentContext, onError }: {
-  paymentContext: { name: string; phone: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string };
+  paymentContext: { name: string; phone: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string; whatsappGroupUrl?: string };
   onError: () => void;
 }) {
   const formRef = React.useRef<HTMLFormElement>(null);
@@ -468,6 +468,7 @@ function PayUCheckout({ paymentContext, onError }: {
         event_id: paymentContext.eventId ?? null,
         event_title: paymentContext.eventTitle,
         trip_date: paymentContext.tripDateFull,
+        whatsapp_group_url: paymentContext.whatsappGroupUrl ?? null,
       }),
     })
       .then(r => r.json())
@@ -835,6 +836,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     isBalancePayment?: boolean;
     advanceQrUrl?: string | null;
     balanceQrUrl?: string | null;
+    whatsappGroupUrl?: string;
   } | null>(null);
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
@@ -1496,6 +1498,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       setAdvanceAlreadyPaid(isBalanceDue);
     }
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
+    const selectedDateEntry = selectedEvent.dates?.find((d: any) => d.date === dateStr);
     const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
     const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
     const balanceDueRaw = shiftDateString(dateStr, -5) || '';
@@ -1526,6 +1529,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
       advanceQrUrl: selectedEvent.advanceQrUrl ?? null,
       balanceQrUrl: selectedEvent.balanceQrUrl ?? null,
+      whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
     };
     try {
       localStorage.setItem('bookingName', ctx.name);
