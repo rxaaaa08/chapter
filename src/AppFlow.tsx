@@ -2151,9 +2151,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
                         const advanceStr = `₹${pricing.advance.toLocaleString('en-IN')}`;
                         const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
+                        const priceStr = `₹${pricing.total.toLocaleString('en-IN')}`;
                         const resolveValue = (v: string) => v
                           .replace(/\{advance\}/gi, advanceStr)
-                          .replace(/\{balance\}/gi, balanceStr);
+                          .replace(/\{balance\}/gi, balanceStr)
+                          .replace(/\{price\}/gi, priceStr);
 
                         const selectedDateEntry = selectedEvent.dates.find(d => d.date === bookingDate);
                         const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? [
