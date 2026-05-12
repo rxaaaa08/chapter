@@ -449,7 +449,7 @@ function QrImage({ src, fallbackSrc }: { src: string; fallbackSrc: string }) {
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
 function PayUCheckout({ paymentContext, onError }: {
-  paymentContext: { name: string; phone: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string; whatsappGroupUrl?: string };
+  paymentContext: { name: string; phone: string; email?: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string; whatsappGroupUrl?: string };
   onError: () => void;
 }) {
   const formRef = React.useRef<HTMLFormElement>(null);
@@ -464,6 +464,7 @@ function PayUCheckout({ paymentContext, onError }: {
       body: JSON.stringify({
         name: paymentContext.name,
         phone: paymentContext.phone,
+        email: paymentContext.email ?? null,
         amount: paymentContext.amount,
         event_id: paymentContext.eventId ?? null,
         event_title: paymentContext.eventTitle,
@@ -709,15 +710,78 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     const params = new URLSearchParams(window.location.search);
     const previewEvent = params.get('preview_event');
     if (!previewEvent) return;
+    const isGauthReturn = params.get('gauth') === '1';
     fetchEventByIdOrSlug(previewEvent).then((event) => {
       if (!event) { setPreviewLoading(false); return; }
       setSelectedEvent(event);
-      setSelectedCity(event.cities?.[0] || 'Chennai');
       setSelectedCategory(event.category || 'Trips');
       setShowTransition(false);
       setShowDetails(true);
       setStep('EVENT_SELECTED');
       setPreviewLoading(false);
+
+      if (isGauthReturn) {
+        // Restore flow state saved before the OAuth redirect
+        let savedCity = event.cities?.[0] || 'Chennai';
+        let savedDate = '';
+        let savedMeetingPoint = '';
+        try {
+          const raw = localStorage.getItem('gauth_return');
+          if (raw) {
+            const state = JSON.parse(raw);
+            localStorage.removeItem('gauth_return');
+            if (state.city) savedCity = state.city;
+            if (state.date) savedDate = state.date;
+            if (state.meetingPoint) savedMeetingPoint = state.meetingPoint;
+          }
+        } catch { /* ignore */ }
+        setSelectedCity(savedCity);
+        if (savedDate) setBookingDate(savedDate);
+        if (savedDate || savedMeetingPoint) {
+          setJourneyCardData({
+            event,
+            city: savedCity,
+            startDate: savedDate || event.dates?.[0]?.date || '',
+            meetingPoint: savedMeetingPoint,
+          });
+        }
+        // Clean gauth param from URL
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('gauth');
+        window.history.replaceState({}, '', cleanUrl.toString());
+        // Pre-fill name from Google session and open details form
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session?.user) return;
+          const fullName =
+            session.user.user_metadata?.full_name ??
+            session.user.user_metadata?.name ??
+            '';
+          const email = session.user.email ?? '';
+          if (fullName) {
+            setGoogleUser({ name: fullName, email });
+            setDetailsForm(f => ({ ...f, name: fullName }));
+          }
+          setShowDetailsForm(true);
+          setShowBookingTimeline(false);
+        });
+      } else {
+        setSelectedCity(event.cities?.[0] || 'Chennai');
+      }
+    });
+  }, []);
+
+  // Check for an existing Google session on mount (skip if this is a gauth return — handled above)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gauth') === '1') return; // handled by preview_event effect
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user) return;
+      const fullName =
+        session.user.user_metadata?.full_name ??
+        session.user.user_metadata?.name ??
+        '';
+      const email = session.user.email ?? '';
+      if (fullName) setGoogleUser({ name: fullName, email });
     });
   }, []);
 
@@ -813,6 +877,15 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [detailsForm, setDetailsForm] = useState({ name: '', phone: '' });
   const [tcAccepted, setTcAccepted] = useState(false);
+  const [googleUser, setGoogleUser] = useState<{ name: string; email: string } | null>(null);
+  const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
+  // Auto-fill name from Google when the details form opens (or when googleUser is set)
+  useEffect(() => {
+    if (showDetailsForm && googleUser) {
+      // Only fill if name is currently empty — don't overwrite user's manual input
+      setDetailsForm(f => (f.name ? f : { ...f, name: googleUser.name }));
+    }
+  }, [showDetailsForm, googleUser]);
   const [showTcModal, setShowTcModal] = useState(false);
   const [paymentView, setPaymentView] = useState<'idle' | 'checkout' | 'success' | 'failure'>('idle');
   const [paymentContext, setPaymentContext] = useState<{
@@ -837,6 +910,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     advanceQrUrl?: string | null;
     balanceQrUrl?: string | null;
     whatsappGroupUrl?: string;
+    email?: string;
   } | null>(null);
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
@@ -1461,6 +1535,27 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     }, 1000);
   };
 
+  const handleGoogleSignIn = async () => {
+    if (!selectedEvent) return;
+    setGoogleSignInLoading(true);
+    try {
+      // Save current flow state so we can restore after OAuth redirect
+      localStorage.setItem('gauth_return', JSON.stringify({
+        city: selectedCity,
+        date: bookingDate || selectedEvent.dates?.[0]?.date || '',
+        meetingPoint: journeyCardData?.meetingPoint || '',
+      }));
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/?gauth=1&preview_event=${selectedEvent.id}`,
+        },
+      });
+    } catch {
+      setGoogleSignInLoading(false);
+    }
+  };
+
   const handleProceedToPhonePe = async () => {
     if (!selectedEvent) return;
 
@@ -1530,6 +1625,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       advanceQrUrl: selectedEvent.advanceQrUrl ?? null,
       balanceQrUrl: selectedEvent.balanceQrUrl ?? null,
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
+      email: googleUser?.email ?? undefined,
     };
     try {
       localStorage.setItem('bookingName', ctx.name);
@@ -1808,7 +1904,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
 
   const isNameValid = detailsForm.name.trim().length >= 1;
   const isPhoneValid = /^\d{10,}$/.test(detailsForm.phone);
-  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted;
+  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && (!isPayUFlow || !!googleUser);
 
   if (previewLoading) return isInviteOverlay ? null : <div className="fixed inset-0 bg-white z-50" />;
 
@@ -2302,33 +2398,100 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                       </div>
 
                       <div className="px-6 space-y-3">
-                        <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                          <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
-                          <input
-                            type="text"
-                            value={detailsForm.name}
-                            onChange={e => setDetailsForm({ ...detailsForm, name: e.target.value })}
-                            placeholder={isInvitePaymentFlow ? 'Name entered in application form' : 'What do we call you?'}
-                            className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                          />
-                        </div>
 
-                        <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                          <div className="flex items-center justify-between mb-0.5">
-                            <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
-                            {detailsForm.phone.length > 0 && !isPhoneValid && (
-                              <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
+                        {/* Google Sign-In — only for non-invite PayU flow */}
+                        {!isInvitePaymentFlow && (
+                          <>
+                            {googleUser ? (
+                              /* Already signed in — show pill with avatar */
+                              <div className="flex items-center gap-3 bg-[#F2F2F7] rounded-2xl px-4 py-3">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0 select-none">
+                                  {googleUser.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[13px] font-semibold text-gray-800 leading-tight truncate">{googleUser.name}</p>
+                                  <p className="text-[11px] text-gray-400 leading-tight truncate">{googleUser.email}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await supabase.auth.signOut();
+                                    setGoogleUser(null);
+                                    setDetailsForm(f => ({ ...f, name: '' }));
+                                  }}
+                                  className="text-[11px] text-gray-400 font-medium flex-shrink-0 active:opacity-60"
+                                >
+                                  Switch
+                                </button>
+                              </div>
+                            ) : (
+                              /* Not signed in — show Google button */
+                              <button
+                                type="button"
+                                onClick={handleGoogleSignIn}
+                                disabled={googleSignInLoading}
+                                className="w-full flex items-center justify-center gap-2.5 bg-white border border-gray-200 rounded-2xl px-4 py-[14px] text-[15px] font-semibold text-gray-800 shadow-sm active:opacity-70 transition-all disabled:opacity-50"
+                              >
+                                {googleSignInLoading ? (
+                                  <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                  </svg>
+                                ) : (
+                                  <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                                    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+                                    <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+                                    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                                  </svg>
+                                )}
+                                <span>{googleSignInLoading ? 'Redirecting…' : 'Continue with Google'}</span>
+                              </button>
                             )}
-                          </div>
-                          <input
-                            type="tel"
-                            value={detailsForm.phone}
-                            onChange={e => { setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') }); setInviteVerifyError(''); }}
-                            placeholder={isInvitePaymentFlow ? 'Number entered in application form' : 'Updates & reminders are sent here'}
-                            className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
-                            inputMode="tel"
-                          />
-                        </div>
+
+                            {/* Divider — only for non-PayU (invite / UPI flows) */}
+                            {!isPayUFlow && (
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-px bg-gray-100" />
+                                <span className="text-[11px] text-gray-300 font-semibold uppercase tracking-wider">or enter manually</span>
+                                <div className="flex-1 h-px bg-gray-100" />
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* Name + phone — shown for non-PayU always, for PayU only after Google sign-in */}
+                        {(!isPayUFlow || googleUser) && (
+                          <>
+                            <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                              <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
+                              <input
+                                type="text"
+                                value={detailsForm.name}
+                                onChange={e => setDetailsForm({ ...detailsForm, name: e.target.value })}
+                                placeholder={isInvitePaymentFlow ? 'Name entered in application form' : 'What do we call you?'}
+                                className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
+                                {detailsForm.phone.length > 0 && !isPhoneValid && (
+                                  <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
+                                )}
+                              </div>
+                              <input
+                                type="tel"
+                                value={detailsForm.phone}
+                                onChange={e => { setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') }); setInviteVerifyError(''); }}
+                                placeholder={isInvitePaymentFlow ? 'Number entered in application form' : 'Updates & reminders are sent here'}
+                                className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                                inputMode="tel"
+                              />
+                            </div>
+                          </>
+                        )}
 
                         {inviteVerifyError && (
                           <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] text-red-600 leading-relaxed px-1">
@@ -3037,6 +3200,20 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
   const [headerImageIndex, setHeaderImageIndex] = useState(0);
   const [headerCarouselPaused, setHeaderCarouselPaused] = useState(false);
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
+  const isPayUFlow = event.bookingUrl === 'payu-hosted';
+  const [openSpotsLeft, setOpenSpotsLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!(event as any).totalCapacity || !isPayUFlow) return;
+    supabase
+      .from('payu_payments')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', event.id)
+      .eq('status', 'success')
+      .then(({ count }) => {
+        const left = Math.max(0, (event as any).totalCapacity - (count ?? 0));
+        setOpenSpotsLeft(left);
+      });
+  }, [event.id, (event as any).totalCapacity, isPayUFlow]);
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
@@ -4060,7 +4237,22 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                                   );
                                 }
 
-                                return (
+                                return isPayUFlow ? (
+                              <div className="flex flex-col gap-2">
+                                {openSpotsLeft !== null && openSpotsLeft < 10 && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${openSpotsLeft <= 3 ? 'bg-red-500' : 'bg-orange-400'}`} />
+                                    <span className={`text-[12px] font-bold ${openSpotsLeft <= 3 ? 'text-red-600' : 'text-orange-500'}`}>
+                                      {openSpotsLeft === 0 ? 'Sold out' : `Only ${openSpotsLeft} spot${openSpotsLeft === 1 ? '' : 's'} left`}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex items-end justify-between gap-3">
+                                  <p className="text-[11px] font-semibold text-gray-500">Total</p>
+                                  <p className="text-2xl font-black text-black leading-tight">{formatINR(pricing.total)}</p>
+                                </div>
+                              </div>
+                                ) : (
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
                                   <p>Lock your spot (Advance)</p>

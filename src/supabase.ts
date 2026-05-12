@@ -126,6 +126,7 @@ export function mapDbEventToEvent(row: any): any {
     showAccommodation: row.show_accommodation ?? false,
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },
     inviteSpots: row.invite_spots ?? null,
+    totalCapacity: row.total_capacity ?? null,
     advanceQrUrl: row.advance_qr_url ?? null,
     balanceQrUrl: row.balance_qr_url ?? null,
     kynPaymentUrl: row.kyn_payment_url ?? null,

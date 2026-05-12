@@ -2114,8 +2114,8 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
             </div>
             <style>{`
               @keyframes wa-shimmer {
-                0% { transform: translateX(-100%) skewX(-12deg); }
-                100% { transform: translateX(250%) skewX(-12deg); }
+                0% { transform: skewX(-12deg) translateX(-160%); }
+                100% { transform: skewX(-12deg) translateX(360%); }
               }
             `}</style>
             <a
@@ -2125,8 +2125,8 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
               className="relative overflow-hidden flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-[#25D366] text-white text-[14px] font-bold active:opacity-80 transition-all"
             >
               <span
-                className="pointer-events-none absolute top-0 left-0 h-full w-1/3"
-                style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)', animation: 'wa-shimmer 2s ease-in-out infinite' }}
+                className="pointer-events-none absolute top-0 left-0 h-full"
+                style={{ width: '45%', background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', animation: 'wa-shimmer 1s ease-in-out 1s infinite', filter: 'blur(2.2px)', boxShadow: '0 -4px 16px rgba(255,255,255,0.22)' }}
               />
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
@@ -2194,28 +2194,393 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
 
           {/* Download button */}
           <div className="px-5 pb-5">
-            <button
-              type="button"
-              onClick={async () => {
-                const el = document.getElementById('payu-receipt-card');
-                if (!el) return;
-                const html2pdf = (await import('html2pdf.js')).default;
-                html2pdf().set({
-                  margin: 0,
-                  filename: `receipt-${payment?.txnid ?? 'chapter'}.pdf`,
-                  image: { type: 'jpeg', quality: 0.98 },
-                  html2canvas: { scale: 2, useCORS: true },
-                  jsPDF: { unit: 'px', format: [el.offsetWidth, el.offsetHeight], orientation: 'portrait' },
-                }).from(el).save();
-              }}
-              className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all"
-            >
-              Download Receipt
-            </button>
+            {(() => {
+              const [dlLoading, setDlLoading] = React.useState(false);
+              return (
+                <button
+                  type="button"
+                  disabled={dlLoading}
+                  onClick={async () => {
+                    const el = document.getElementById('payu-receipt-card');
+                    if (!el) return;
+                    setDlLoading(true);
+                    try {
+                      const html2pdf = (await import('html2pdf.js')).default;
+                      const w = el.scrollWidth || el.offsetWidth || 340;
+                      const h = el.scrollHeight || el.offsetHeight || 500;
+                      await html2pdf().set({
+                        margin: 0,
+                        filename: `chaptera-receipt-${payment?.txnid ?? Date.now()}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+                        jsPDF: { unit: 'px', format: [w, h], orientation: 'portrait' },
+                      }).from(el).save();
+                    } catch (err) {
+                      console.error('PDF download failed:', err);
+                      window.print();
+                    } finally {
+                      setDlLoading(false);
+                    }
+                  }}
+                  className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {dlLoading ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                      </svg>
+                      <span>Generating…</span>
+                    </>
+                  ) : (
+                    <span>Download Receipt</span>
+                  )}
+                </button>
+              );
+            })()}
           </div>
         </div>
 
       </div>
+  );
+}
+
+// ─── PRIVACY SCREEN ────────────────────────────────────────────────────────────
+function PrivacyScreen() {
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
+          <a href="/aboutus" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </a>
+          <div>
+            <p className="text-[17px] font-bold text-gray-900 leading-tight">Privacy Policy</p>
+            <p className="text-[12px] text-gray-400">chapter அ</p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-[#F2F2F7]">
+          <div className="px-4 py-5 flex flex-col gap-3">
+
+            {/* Intro */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] text-gray-500 leading-relaxed">This Privacy Policy describes how chapter அ collects, uses and protects information provided by customers when booking experiences, activities, group trips and social events.</p>
+            </div>
+
+            {/* Privacy items */}
+            {[
+              ['Information We Collect', 'We may collect customer information such as name, phone number, email address and booking details when a customer fills out a form or makes a booking.'],
+              ['How We Use It', 'This information is used to confirm bookings, provide customer support, share logistical details, send payment reminders where applicable and manage the booked experience.'],
+              ['Payment Data', 'Payments are processed through secure third-party payment gateways. chapter அ does not store customer card details, UPI PINs or other sensitive payment credentials.'],
+              ['Limited Sharing', 'Customer information may be shared only where reasonably required to fulfil an experience, such as with transport, accommodation or activity partners, and only to the extent necessary.'],
+              ['Google Sign-In', 'When you sign in with Google, we receive your name and email address to confirm your booking identity. We do not access your Google account beyond these basic profile details.'],
+            ].map(([title, body]) => (
+              <div key={title} className="bg-white rounded-2xl px-4 py-4">
+                <p className="text-[13px] font-bold text-gray-900 mb-1">{title}</p>
+                <p className="text-[13px] text-gray-500 leading-relaxed">{body}</p>
+              </div>
+            ))}
+
+            {/* DND */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">DND / Opt-Out</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">If you wish to stop receiving SMS, email alerts or any other communication from us, send an email to <span className="text-gray-800 font-medium">chapteraaa.official@gmail.com</span> with your mobile number and you will be removed from our alerts list.</p>
+            </div>
+
+            {/* Changes */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Changes to this Policy</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">chapter அ reserves the right to modify this privacy policy at any time. Changes are effective immediately upon being published here.</p>
+            </div>
+
+            {/* Contact */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Contact</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">For privacy-related questions, email us at <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> or WhatsApp us at <a href="https://wa.me/918838111564" className="text-blue-600 underline">+91 8838111564</a>.</p>
+            </div>
+
+            {/* Footer note */}
+            <p className="text-center text-[11px] text-gray-400 pb-4">Last updated: May 2026 · chaptera.in</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TERMS OF SERVICE SCREEN ───────────────────────────────────────────────────
+function TermsScreen() {
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
+          <a href="/aboutus" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </a>
+          <div>
+            <p className="text-[17px] font-bold text-gray-900 leading-tight">Terms of Service</p>
+            <p className="text-[12px] text-gray-400">chapter அ</p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-[#F2F2F7]">
+          <div className="px-4 py-5 flex flex-col gap-3">
+
+            {/* Intro */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] text-gray-500 leading-relaxed">These terms apply to bookings made through chapter அ for experiences, activities, group trips and social events. By completing a booking, you agree to these terms.</p>
+            </div>
+
+            {/* Section label */}
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-1">Terms & Conditions</p>
+
+            {[
+              ['Booking Confirmation', 'A booking is considered confirmed only after successful payment and receipt of confirmation from chapter அ.'],
+              ['Payment Schedule', 'Where a booking is split into advance and balance payment, the balance due date will be communicated on the website or through direct customer communication. Failure to complete payment may result in cancellation of the reservation.'],
+              ['Experience Changes', 'chapter அ may make reasonable changes to schedules, venues, transport plans or itinerary elements due to weather, vendor availability, safety considerations or other operational reasons.'],
+              ['Third-Party Services', 'Some experiences may involve third-party vendors such as transport operators, accommodation partners, activity organisers or venue partners. chapter அ coordinates the experience but may rely on these service providers for fulfilment.'],
+              ['Customer Communication', 'By submitting contact details during booking, the customer agrees to receive booking confirmation, reminders, logistical updates and customer support communication through WhatsApp, phone call or email.'],
+              ['Eligibility', 'Certain experiences may have age limits or participation requirements. These conditions will be specified on the relevant booking page. Customers may be asked to provide valid identification where necessary.'],
+            ].map(([title, body]) => (
+              <div key={title} className="bg-white rounded-2xl px-4 py-4">
+                <p className="text-[13px] font-bold text-gray-900 mb-1">{title}</p>
+                <p className="text-[13px] text-gray-500 leading-relaxed">{body}</p>
+              </div>
+            ))}
+
+            {/* Refund section label */}
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-1 mt-1">Refund & Cancellation</p>
+
+            {[
+              ['Advance Payment', 'An advance amount may be required to reserve a spot for an experience. The applicable advance amount is shown on the booking page. The booking is confirmed only after successful payment.'],
+              ['Balance Payment', 'For experiences with partial payment options, the remaining balance must be paid by the communicated due date before participation. Reminder messages may be sent through WhatsApp or email.'],
+              ['Cancellation by Customer', 'Unless otherwise stated on the specific booking page, advance payments are non-refundable because reservations and third-party arrangements may be made in advance on behalf of the customer.'],
+              ['Cancellation by chapter அ', 'If chapter அ cancels an experience, the customer will receive a refund of the amount paid for that booking, unless an alternative date or replacement experience is accepted by the customer.'],
+              ['Refund Support', 'For cancellation or refund-related queries, contact us on WhatsApp at +91 8838111564 or email chapteraaa.official@gmail.com.'],
+            ].map(([title, body]) => (
+              <div key={title} className="bg-white rounded-2xl px-4 py-4">
+                <p className="text-[13px] font-bold text-gray-900 mb-1">{title}</p>
+                <p className="text-[13px] text-gray-500 leading-relaxed">{body}</p>
+              </div>
+            ))}
+
+            {/* General note */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Governing Terms</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">This online payment system is provided by CHAPTER. CHAPTER may update these terms from time to time and any changes will be effective immediately on being set out here. The country of domicile for CHAPTER is India.</p>
+            </div>
+
+            {/* Footer note */}
+            <p className="text-center text-[11px] text-gray-400 pb-4">Last updated: May 2026 · chaptera.in</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MY BOOKING SCREEN ─────────────────────────────────────────────────────────
+function MyPlansScreen() {
+  const [status, setStatus] = React.useState<'loading' | 'signed-out' | 'no-booking' | 'loaded'>('loading');
+  const [session, setSession] = React.useState<any>(null);
+  const [bookings, setBookings] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user?.email) { setStatus('signed-out'); return; }
+      setSession(session);
+      const { data } = await supabase
+        .from('payu_payments')
+        .select('*')
+        .eq('email', session.user.email)
+        .eq('status', 'success')
+        .order('created_at', { ascending: false });
+      if (!data || data.length === 0) { setStatus('no-booking'); return; }
+      setBookings(data);
+      setStatus('loaded');
+    });
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/myplans` },
+    });
+  };
+
+  const googleSvg = (
+    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+      <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+    </svg>
+  );
+
+  const formatDate = (d: string) => {
+    if (!d) return '';
+    try { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }); }
+    catch { return d; }
+  };
+
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+    <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+    <div className="flex-1 overflow-y-auto bg-[#F2F2F7]">
+
+      {/* ── Loading ── */}
+      {status === 'loading' && (
+        <div className="flex items-center justify-center h-full">
+          <svg className="w-8 h-8 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+          </svg>
+        </div>
+      )}
+
+      {/* ── Signed out ── full-bleed centered */}
+      {status === 'signed-out' && (
+        <div className="flex flex-col h-full px-6 justify-center items-center text-center gap-5">
+          <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center text-3xl shadow-lg">🗓️</div>
+          <div>
+            <p className="text-[22px] font-black text-gray-900 leading-tight mb-2">View Your Booking</p>
+            <p className="text-[14px] text-gray-500 leading-relaxed max-w-[260px] mx-auto">Sign in with the Google account you used when booking to access your plan details.</p>
+          </div>
+          <button
+            onClick={handleGoogleSignIn}
+            className="w-full flex items-center justify-center gap-2.5 bg-white border border-gray-200 rounded-2xl px-4 py-[15px] text-[15px] font-semibold text-gray-800 shadow-sm active:opacity-70 transition-all"
+          >
+            {googleSvg}
+            <span>Continue with Google</span>
+          </button>
+          <p className="text-center text-[14px] text-gray-400">
+            Haven't booked anything?{' '}
+            <a href="/plans" className="text-black font-semibold underline underline-offset-2">
+              Explore plans now!
+            </a>
+          </p>
+        </div>
+      )}
+
+      {/* ── No booking found ── */}
+      {status === 'no-booking' && (
+        <div className="flex flex-col h-full px-6 pt-14 pb-10">
+          <div className="flex-1 flex flex-col justify-center items-center text-center gap-5">
+            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center text-3xl">🤔</div>
+            <div>
+              <p className="text-[22px] font-black text-gray-900 leading-tight mb-2">No booking found</p>
+              <p className="text-[14px] text-gray-500 leading-relaxed max-w-[260px] mx-auto">
+                Nothing under <span className="font-semibold text-gray-700">{session?.user?.email}</span>. Did you book with a different account?
+              </p>
+            </div>
+            <button
+              onClick={async () => { await supabase.auth.signOut(); setStatus('signed-out'); setSession(null); }}
+              className="w-full flex items-center justify-center gap-2.5 bg-white border border-gray-200 rounded-2xl px-4 py-[15px] text-[15px] font-semibold text-gray-800 shadow-sm active:opacity-70 transition-all"
+            >
+              {googleSvg}
+              <span>Try a different account</span>
+            </button>
+            <a href="/plans" className="w-full py-[15px] rounded-2xl bg-black text-white text-[15px] font-semibold text-center active:opacity-80 transition-all">
+              Explore Plans
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bookings loaded ── */}
+      {status === 'loaded' && (
+        <div className="px-4 pt-8 pb-8 space-y-4">
+          {/* Page title */}
+          <div className="px-1 mb-6">
+            <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-widest mb-1">My Booking</p>
+            <h1 className="text-[26px] font-black text-gray-900 leading-tight">Your Plans 🗓️</h1>
+          </div>
+
+          {bookings.map((b) => (
+            <div key={b.txnid} className="bg-white rounded-3xl overflow-hidden shadow-sm">
+              {/* Event header */}
+              <div className="px-5 pt-5 pb-4 border-b border-gray-100">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-0.5">Confirmed Plan</p>
+                    <p className="text-[19px] font-black text-gray-900 leading-tight">{b.event_title}</p>
+                  </div>
+                  <span className="flex-shrink-0 mt-1 bg-emerald-50 text-emerald-600 text-[11px] font-bold px-2.5 py-1 rounded-full">✓ Paid</span>
+                </div>
+                {b.trip_date && (
+                  <p className="text-[13px] text-gray-500 mt-1.5 flex items-center gap-1.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    {b.trip_date}
+                  </p>
+                )}
+              </div>
+
+              {/* Details rows */}
+              <div className="px-5 py-4 space-y-3">
+                {b.meeting_point && (
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Meeting Point</p>
+                      <p className="text-[14px] font-semibold text-gray-900 leading-snug mt-0.5">{b.meeting_point}</p>
+                    </div>
+                  </div>
+                )}
+                {b.pickup_time && (
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Pickup Time</p>
+                      <p className="text-[14px] font-semibold text-gray-900 mt-0.5">{b.pickup_time}</p>
+                    </div>
+                  </div>
+                )}
+                {b.whatsapp_group_url && (
+                  <a href={b.whatsapp_group_url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-3 bg-[#25D366]/10 rounded-2xl px-4 py-3 active:opacity-70 transition-all">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#25D366" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                    </svg>
+                    <div className="flex-1">
+                      <p className="text-[14px] font-bold text-gray-900">Join Plan Group Chat</p>
+                      <p className="text-[12px] text-gray-500">Meeting point updates & coordination</p>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  </a>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 pb-5">
+                <div className="bg-gray-50 rounded-2xl px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-widest">Amount Paid</p>
+                    <p className="text-[17px] font-black text-gray-900">₹{Number(b.amount).toLocaleString('en-IN')}</p>
+                  </div>
+                  <button
+                    onClick={async () => { await supabase.auth.signOut(); setStatus('signed-out'); setSession(null); setBookings([]); }}
+                    className="text-[12px] text-gray-400 font-medium active:opacity-60"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+    </div>
+    </div>
   );
 }
 
@@ -2230,6 +2595,9 @@ export default function App() {
   const isGalcodePage = routePath === '/galcode';
   const isSharedInvitePage = routePath === '/invite';
   const isInvitePage = routePath.startsWith('/invite/');
+  const isMyPlansPage = routePath === '/myplans';
+  const isPrivacyPage = routePath === '/privacy';
+  const isTermsPage = routePath === '/termsofservice';
   const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
   // Latch PayU return params on mount — must happen before the URL gets replaced by the route sync effect
@@ -2242,7 +2610,7 @@ export default function App() {
     return new URLSearchParams(window.location.search).get('txnid') ?? '';
   });
   const isPayUReturn = !!payuReturnStatus;
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn);
+  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isPlansPage && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isMyPlansPage && !isPrivacyPage && !isTermsPage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2335,6 +2703,10 @@ export default function App() {
       }}
     />
   );
+
+  if (isMyPlansPage) return <MyPlansScreen />;
+  if (isPrivacyPage) return <PrivacyScreen />;
+  if (isTermsPage) return <TermsScreen />;
 
   if (isAdmin) return <AdminPanel />;
 
