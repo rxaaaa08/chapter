@@ -550,6 +550,10 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
           <p style={{ color: 'rgba(255,255,255,0.4)' }}>Registered Address: 16/45, Dharmaraja Koil Street, Kilpauk Garden Colony, Chennai - 600010</p>
           <p style={{ color: 'rgba(255,255,255,0.4)' }}>MSME Registration: UDYAM-TN-02-0414270</p>
           <p style={{ marginTop: 4 }}>© 2025 chapter அ. All rights reserved.</p>
+          <p style={{ marginTop: 6 }}>
+            <a href="/privacy" style={{ color: 'rgba(255,255,255,0.4)', textDecoration: 'underline', marginRight: 12 }}>Privacy Policy</a>
+            <a href="/termsofservice" style={{ color: 'rgba(255,255,255,0.4)', textDecoration: 'underline' }}>Terms of Service</a>
+          </p>
         </div>
       </footer>
     </div>
