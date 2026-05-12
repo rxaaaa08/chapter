@@ -2043,6 +2043,7 @@ function InAppBrowserNudge() {
 function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'failed'; txnid: string; onDone: () => void }) {
   const [payment, setPayment] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
+  const [dlLoading, setDlLoading] = React.useState(false);
 
   React.useEffect(() => {
     if (status !== 'success' || !txnid) { setLoading(false); return; }
@@ -2198,50 +2199,45 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
 
           {/* Download button */}
           <div className="px-5 pb-5">
-            {(() => {
-              const [dlLoading, setDlLoading] = React.useState(false);
-              return (
-                <button
-                  type="button"
-                  disabled={dlLoading}
-                  onClick={async () => {
-                    const el = document.getElementById('payu-receipt-card');
-                    if (!el) return;
-                    setDlLoading(true);
-                    try {
-                      const html2pdf = (await import('html2pdf.js')).default;
-                      const w = el.scrollWidth || el.offsetWidth || 340;
-                      const h = el.scrollHeight || el.offsetHeight || 500;
-                      await html2pdf().set({
-                        margin: 0,
-                        filename: `chaptera-receipt-${payment?.txnid ?? Date.now()}.pdf`,
-                        image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
-                        jsPDF: { unit: 'px', format: [w, h], orientation: 'portrait' },
-                      }).from(el).save();
-                    } catch (err) {
-                      console.error('PDF download failed:', err);
-                      window.print();
-                    } finally {
-                      setDlLoading(false);
-                    }
-                  }}
-                  className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {dlLoading ? (
-                    <>
-                      <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-                      </svg>
-                      <span>Generating…</span>
-                    </>
-                  ) : (
-                    <span>Download Receipt</span>
-                  )}
-                </button>
-              );
-            })()}
+            <button
+              type="button"
+              disabled={dlLoading}
+              onClick={async () => {
+                const el = document.getElementById('payu-receipt-card');
+                if (!el) return;
+                setDlLoading(true);
+                try {
+                  const html2pdf = (await import('html2pdf.js')).default;
+                  const w = el.scrollWidth || el.offsetWidth || 340;
+                  const h = el.scrollHeight || el.offsetHeight || 500;
+                  await html2pdf().set({
+                    margin: 0,
+                    filename: `chaptera-receipt-${payment?.txnid ?? Date.now()}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+                    jsPDF: { unit: 'px', format: [w, h], orientation: 'portrait' },
+                  }).from(el).save();
+                } catch (err) {
+                  console.error('PDF download failed:', err);
+                  window.print();
+                } finally {
+                  setDlLoading(false);
+                }
+              }}
+              className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {dlLoading ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                  </svg>
+                  <span>Generating…</span>
+                </>
+              ) : (
+                <span>Download Receipt</span>
+              )}
+            </button>
           </div>
         </div>
 
