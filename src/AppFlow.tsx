@@ -879,13 +879,27 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const [tcAccepted, setTcAccepted] = useState(false);
   const [googleUser, setGoogleUser] = useState<{ name: string; email: string } | null>(null);
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
-  // Auto-fill name from Google when the details form opens (or when googleUser is set)
+  const [existingBooking, setExistingBooking] = useState<any>(null);
+
+  // Auto-fill name + check for existing booking when Google user is set
   useEffect(() => {
     if (showDetailsForm && googleUser) {
-      // Only fill if name is currently empty — don't overwrite user's manual input
       setDetailsForm(f => (f.name ? f : { ...f, name: googleUser.name }));
     }
-  }, [showDetailsForm, googleUser]);
+    // Check if this Google account has already booked this event
+    if (googleUser && selectedEvent && isPayUFlow) {
+      supabase
+        .from('payu_payments')
+        .select('*')
+        .eq('email', googleUser.email)
+        .eq('event_id', selectedEvent.id)
+        .eq('status', 'success')
+        .maybeSingle()
+        .then(({ data }) => setExistingBooking(data ?? null));
+    } else {
+      setExistingBooking(null);
+    }
+  }, [showDetailsForm, googleUser, selectedEvent?.id]);
   const [showTcModal, setShowTcModal] = useState(false);
   const [paymentView, setPaymentView] = useState<'idle' | 'checkout' | 'success' | 'failure'>('idle');
   const [paymentContext, setPaymentContext] = useState<{
@@ -2401,8 +2415,31 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
 
                       <div className="px-6 space-y-3">
 
+                        {/* Already booked — show confirmation instead of form */}
+                        {existingBooking && isPayUFlow && (
+                          <div className="bg-[#34C759]/8 border border-[#34C759]/25 rounded-2xl px-4 py-4 flex flex-col gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-[#34C759]/15 flex items-center justify-center flex-shrink-0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                                </svg>
+                              </div>
+                              <p className="text-[13px] font-bold text-gray-900">You're already booked!</p>
+                            </div>
+                            <p className="text-[12px] text-gray-500 leading-relaxed">
+                              Your spot for <span className="font-semibold text-gray-700">{existingBooking.event_title || selectedEvent?.title}</span> is confirmed under <span className="font-semibold text-gray-700">{googleUser?.email}</span>.
+                            </p>
+                            <a
+                              href="/myplans"
+                              className="w-full text-center py-3 rounded-xl bg-black text-white text-[13px] font-bold active:opacity-80 transition-all"
+                            >
+                              View My Booking →
+                            </a>
+                          </div>
+                        )}
+
                         {/* Google Sign-In — only for non-invite PayU flow */}
-                        {!isInvitePaymentFlow && (
+                        {!isInvitePaymentFlow && !existingBooking && (
                           <>
                             {googleUser ? (
                               /* Already signed in — show pill with avatar */
@@ -2462,8 +2499,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           </>
                         )}
 
-                        {/* Name + phone — shown for non-PayU always, for PayU only after Google sign-in */}
-                        {(!isPayUFlow || googleUser) && (
+                        {/* Name + phone — shown for non-PayU always, for PayU only after Google sign-in (and not if already booked) */}
+                        {(!isPayUFlow || googleUser) && !existingBooking && (
                           <>
                             <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                               <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
@@ -2544,6 +2581,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         )}
                       </div>
 
+                      {!existingBooking && (
                       <div className="px-6 pt-6 pb-6">
                         <button
                           type="button"
@@ -2557,6 +2595,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
                         </button>
                       </div>
+                      )}
                     </motion.div>
                   )}
 
