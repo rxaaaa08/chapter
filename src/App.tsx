@@ -2197,64 +2197,6 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
             </p>
           </div>
 
-          {/* Download button */}
-          <div className="px-5 pb-5">
-            <button
-              type="button"
-              disabled={dlLoading}
-              onClick={async () => {
-                const el = document.getElementById('payu-receipt-card');
-                if (!el) return;
-                setDlLoading(true);
-                try {
-                  const html2canvas = (await import('html2canvas')).default;
-                  const canvas = await html2canvas(el, {
-                    scale: 3,
-                    useCORS: true,
-                    allowTaint: true,
-                    logging: false,
-                    backgroundColor: '#ffffff',
-                  });
-                  const dataUrl = canvas.toDataURL('image/png');
-                  const filename = `chaptera-receipt-${payment?.txnid ?? Date.now()}.png`;
-                  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                  if (isIOS) {
-                    // iOS Safari can't trigger blob downloads — open image in new tab so user can Save to Photos
-                    const w = window.open();
-                    if (w) {
-                      w.document.write(`<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:20px"><img src="${dataUrl}" style="max-width:100%;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.12)"><p style="text-align:center;font-family:sans-serif;color:#666;font-size:13px;margin-top:12px">Press and hold the image → Save to Photos</p></body></html>`);
-                      w.document.close();
-                    }
-                  } else {
-                    const a = document.createElement('a');
-                    a.href = dataUrl;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                  }
-                } catch (err) {
-                  console.error('Receipt download failed:', err);
-                  alert('Could not generate receipt image. Please screenshot this page.');
-                } finally {
-                  setDlLoading(false);
-                }
-              }}
-              className="w-full py-3 rounded-2xl bg-black text-white text-[14px] font-bold active:opacity-80 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {dlLoading ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-                  </svg>
-                  <span>Generating…</span>
-                </>
-              ) : (
-                <span>Download Receipt</span>
-              )}
-            </button>
-          </div>
         </div>
 
       </div>
