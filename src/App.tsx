@@ -2207,31 +2207,35 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
                 if (!el) return;
                 setDlLoading(true);
                 try {
-                  const mod = await import('html2pdf.js');
-                  const html2pdf = (mod.default ?? mod) as any;
-                  const w = el.scrollWidth || el.offsetWidth || 340;
-                  const h = el.scrollHeight || el.offsetHeight || 500;
-                  const filename = `chaptera-receipt-${payment?.txnid ?? Date.now()}.pdf`;
-                  const opt = {
-                    margin: 0,
-                    filename,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
-                    jsPDF: { unit: 'px', format: [w, h], orientation: 'portrait' },
-                  };
-                  // Generate blob, then force-download via <a> so Safari doesn't open print dialog
-                  const blob: Blob = await html2pdf().set(opt).from(el).output('blob');
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = filename;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  setTimeout(() => URL.revokeObjectURL(url), 5000);
+                  const html2canvas = (await import('html2canvas')).default;
+                  const canvas = await html2canvas(el, {
+                    scale: 3,
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false,
+                    backgroundColor: '#ffffff',
+                  });
+                  const dataUrl = canvas.toDataURL('image/png');
+                  const filename = `chaptera-receipt-${payment?.txnid ?? Date.now()}.png`;
+                  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                  if (isIOS) {
+                    // iOS Safari can't trigger blob downloads — open image in new tab so user can Save to Photos
+                    const w = window.open();
+                    if (w) {
+                      w.document.write(`<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:20px"><img src="${dataUrl}" style="max-width:100%;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.12)"><p style="text-align:center;font-family:sans-serif;color:#666;font-size:13px;margin-top:12px">Press and hold the image → Save to Photos</p></body></html>`);
+                      w.document.close();
+                    }
+                  } else {
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }
                 } catch (err) {
-                  console.error('PDF download failed:', err);
-                  alert('Could not generate PDF. Please take a screenshot of your receipt.');
+                  console.error('Receipt download failed:', err);
+                  alert('Could not generate receipt image. Please screenshot this page.');
                 } finally {
                   setDlLoading(false);
                 }
