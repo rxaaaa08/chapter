@@ -880,6 +880,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const [googleUser, setGoogleUser] = useState<{ name: string; email: string } | null>(null);
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
   const [existingBooking, setExistingBooking] = useState<any>(null);
+  const [forceNewBooking, setForceNewBooking] = useState(false);
 
   // Auto-fill name + check for existing booking when Google user is set
   useEffect(() => {
@@ -894,10 +895,19 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         .eq('email', googleUser.email)
         .eq('event_id', selectedEvent.id)
         .eq('status', 'success')
-        .maybeSingle()
-        .then(({ data }) => setExistingBooking(data ?? null));
+        .limit(1)
+        .then(({ data }) => {
+          const booking = data?.[0] ?? null;
+          setExistingBooking(booking);
+          setForceNewBooking(false); // reset whenever booking status refreshes
+          // Pre-fill phone from their last booking so "Book Another Spot" is ready to go
+          if (booking?.phone) {
+            setDetailsForm(f => ({ ...f, phone: f.phone || booking.phone }));
+          }
+        });
     } else {
       setExistingBooking(null);
+      setForceNewBooking(false);
     }
   }, [showDetailsForm, googleUser, selectedEvent?.id]);
   const [showTcModal, setShowTcModal] = useState(false);
@@ -1701,6 +1711,20 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
       p_submitted_at: submittedAt,
     });
     if (submissionError) {
+      // RPC doesn't exist — fall back to direct insert so admin can see submissions
+      await supabase.from('invite_payment_submissions').insert({
+        invite_slug: inviteSlug ?? null,
+        event_id: eventForSubmission.id,
+        event_slug: eventForSubmission.id,
+        event_title: eventForSubmission.title,
+        selected_date: dateStr,
+        name,
+        phone: tenDigit,
+        amount,
+        status: 'pending_verification',
+        submitted_at: submittedAt,
+      });
+      // Also keep a local copy as backup
       try {
         const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
         localRows.unshift({
@@ -1713,7 +1737,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
           name,
           phone: tenDigit,
           amount,
-          status: 'local_pending_manual_verification',
+          status: 'pending_verification',
           submitted_at: submittedAt,
           source: 'localStorage',
         });
@@ -2115,6 +2139,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                 onClick={() => {
                   setShowBookingTimeline(false);
                   if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
+                  else if (selectedEvent) { setShowDetails(true); setShowChat(false); }
                 }}
               />
               <motion.div
@@ -2407,16 +2432,18 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                       transition={{ duration: 0.18 }}
                       className="flex flex-col"
                     >
+                      {(!existingBooking || forceNewBooking) && (
                       <div className="px-6 pt-3 pb-4">
                         <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">
                           {isInvitePaymentFlow ? 'Invite Verification 🔐' : "Let's Lock This In! 🔐"}
                         </p>
                       </div>
+                      )}
 
                       <div className="px-6 space-y-3">
 
-                        {/* Already booked — show confirmation instead of form */}
-                        {existingBooking && isPayUFlow && (
+                        {/* Already booked — show options: view booking or book another */}
+                        {existingBooking && isPayUFlow && !forceNewBooking && (
                           <div className="bg-[#34C759]/8 border border-[#34C759]/25 rounded-2xl px-4 py-4 flex flex-col gap-3">
                             <div className="flex items-center gap-2.5">
                               <div className="w-7 h-7 rounded-full bg-[#34C759]/15 flex items-center justify-center flex-shrink-0">
@@ -2429,17 +2456,40 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                             <p className="text-[12px] text-gray-500 leading-relaxed">
                               Your spot for <span className="font-semibold text-gray-700">{existingBooking.event_title || selectedEvent?.title}</span> is confirmed under <span className="font-semibold text-gray-700">{googleUser?.email}</span>.
                             </p>
+                            <button
+                              type="button"
+                              onClick={() => setForceNewBooking(true)}
+                              className="w-full text-center py-3 rounded-xl bg-[#34C759] text-white text-[13px] font-bold active:opacity-80 transition-all"
+                            >
+                              Book Another Spot
+                            </button>
                             <a
                               href="/myplans"
-                              className="w-full text-center py-3 rounded-xl bg-black text-white text-[13px] font-bold active:opacity-80 transition-all"
+                              className="w-full text-center py-2.5 rounded-xl border border-gray-200 bg-white text-[13px] font-semibold text-gray-600 active:opacity-70 transition-all"
                             >
                               View My Booking →
                             </a>
+                            <p className="text-center text-[12px] text-gray-400">
+                              Want to switch accounts?{' '}
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase.auth.signOut();
+                                  setGoogleUser(null);
+                                  setDetailsForm(f => ({ ...f, name: '' }));
+                                  setExistingBooking(null);
+                                  setForceNewBooking(false);
+                                }}
+                                className="text-gray-600 underline font-medium active:opacity-60"
+                              >
+                                Sign Out
+                              </button>
+                            </p>
                           </div>
                         )}
 
                         {/* Google Sign-In — only for non-invite PayU flow */}
-                        {!isInvitePaymentFlow && !existingBooking && (
+                        {!isInvitePaymentFlow && (!existingBooking || forceNewBooking) && (
                           <>
                             {googleUser ? (
                               /* Already signed in — show pill with avatar */
@@ -2499,8 +2549,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           </>
                         )}
 
-                        {/* Name + phone — shown for non-PayU always, for PayU only after Google sign-in (and not if already booked) */}
-                        {(!isPayUFlow || googleUser) && !existingBooking && (
+                        {/* Name + phone — shown for non-PayU always, for PayU only after Google sign-in (and not if already booked, unless booking another) */}
+                        {(!isPayUFlow || googleUser) && (!existingBooking || forceNewBooking) && (
                           <>
                             <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                               <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
@@ -2554,6 +2604,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           </motion.p>
                         )}
 
+                        {(!existingBooking || forceNewBooking) && (
                         <div className="flex items-center gap-3 select-none pt-1">
                           <div
                             onClick={() => setTcAccepted(!tcAccepted)}
@@ -2572,6 +2623,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                             </button>
                           </span>
                         </div>
+                        )}
 
                         {isInvitePaymentFlow && (
                           <div className="flex items-center justify-center gap-1.5 pt-2">
@@ -2581,7 +2633,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         )}
                       </div>
 
-                      {!existingBooking && (
+                      {(!existingBooking || forceNewBooking) && (
                       <div className="px-6 pt-6 pb-6">
                         <button
                           type="button"

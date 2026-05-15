@@ -2207,19 +2207,31 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
                 if (!el) return;
                 setDlLoading(true);
                 try {
-                  const html2pdf = (await import('html2pdf.js')).default;
+                  const mod = await import('html2pdf.js');
+                  const html2pdf = (mod.default ?? mod) as any;
                   const w = el.scrollWidth || el.offsetWidth || 340;
                   const h = el.scrollHeight || el.offsetHeight || 500;
-                  await html2pdf().set({
+                  const filename = `chaptera-receipt-${payment?.txnid ?? Date.now()}.pdf`;
+                  const opt = {
                     margin: 0,
-                    filename: `chaptera-receipt-${payment?.txnid ?? Date.now()}.pdf`,
+                    filename,
                     image: { type: 'jpeg', quality: 0.98 },
                     html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
                     jsPDF: { unit: 'px', format: [w, h], orientation: 'portrait' },
-                  }).from(el).save();
+                  };
+                  // Generate blob, then force-download via <a> so Safari doesn't open print dialog
+                  const blob: Blob = await html2pdf().set(opt).from(el).output('blob');
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = filename;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  setTimeout(() => URL.revokeObjectURL(url), 5000);
                 } catch (err) {
                   console.error('PDF download failed:', err);
-                  window.print();
+                  alert('Could not generate PDF. Please take a screenshot of your receipt.');
                 } finally {
                   setDlLoading(false);
                 }

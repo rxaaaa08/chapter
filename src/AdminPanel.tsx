@@ -106,6 +106,7 @@ type Trip = {
   invite_slug?: string;
   invite_only?: boolean;
   invite_spots?: number | null;
+  total_capacity?: number | null;
   advance_qr_url?: string | null;
   balance_qr_url?: string | null;
 };
@@ -310,6 +311,17 @@ export default function AdminPanel() {
   const inviteEligibleTrips = trips.filter(t => t.invite_slug || t.invite_only);
   const selectedManualPaymentTrip = trips.find(t => t.id === manualPaymentForm.eventId);
 
+  // Auto-select the first invite-eligible trip once trips load
+  useEffect(() => {
+    if (manualPaymentForm.eventId) return; // already set
+    const list = inviteEligibleTrips.length > 0 ? inviteEligibleTrips : trips;
+    const first = list[0];
+    if (!first) return;
+    const date = first.event_dates?.[0]?.start_date || '';
+    const amount = first.price_advance ? String(first.price_advance) : '';
+    setManualPaymentForm(prev => ({ ...prev, eventId: first.id, selectedDate: date, amount }));
+  }, [trips]);
+
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }
     else setPwError(true);
@@ -325,14 +337,21 @@ export default function AdminPanel() {
     } catch {
       setLocalInvitePaymentSubmissions([]);
     }
+    // Fetch invite_payment_submissions independently so a failure doesn't block other data
+    supabase.from('invite_payment_submissions').select('*').order('submitted_at', { ascending: false })
+      .then(({ data, error }) => {
+        console.log('[AdminPanel] invite_payment_submissions initial load →', { count: data?.length, error });
+        if (error) console.error('invite_payment_submissions fetch error:', error);
+        setInvitePaymentSubmissions((data ?? []) as InvitePaymentSubmission[]);
+      });
+
     Promise.all([
       supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
       supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
-      supabase.from('invite_payment_submissions').select('*').order('submitted_at', { ascending: false }),
       supabase.from('mock_payment_receipts').select('*').order('paid_on', { ascending: false }),
       supabase.from('payu_payments').select('*').order('created_at', { ascending: false }),
-    ]).then(([evRes, msgRes, doubtsRes, invitePaymentsRes, mockReceiptsRes, payuRes]) => {
+    ]).then(([evRes, msgRes, doubtsRes, mockReceiptsRes, payuRes]) => {
       if (evRes.data) setTrips(evRes.data as Trip[]);
       if (msgRes.data) {
         const allMsgs = msgRes.data as ChatMsg[];
@@ -350,9 +369,11 @@ export default function AdminPanel() {
         setDoubtFormWebhookUrl(webhookMsg?.bot_message || '');
       }
       if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
-      if (invitePaymentsRes.data) setInvitePaymentSubmissions(invitePaymentsRes.data as InvitePaymentSubmission[]);
       if (mockReceiptsRes.data) setMockPaymentReceipts(mockReceiptsRes.data as MockPaymentReceipt[]);
       if (payuRes.data) setPayuPayments(payuRes.data as PayuPayment[]);
+      setLoading(false);
+    }).catch(err => {
+      console.error('Admin data load error:', err);
       setLoading(false);
     });
   }, [authed]);
@@ -365,11 +386,16 @@ export default function AdminPanel() {
     } catch {
       setLocalInvitePaymentSubmissions([]);
     }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('invite_payment_submissions')
       .select('*')
       .order('submitted_at', { ascending: false });
-    if (data) setInvitePaymentSubmissions(data as InvitePaymentSubmission[]);
+    console.log('[AdminPanel] invite_payment_submissions refresh →', { count: data?.length, error });
+    if (error) {
+      showToast(`❌ Failed to load submissions: ${error.message}`);
+    } else {
+      setInvitePaymentSubmissions((data ?? []) as InvitePaymentSubmission[]);
+    }
     setRefreshingSubmissions(false);
   };
 
@@ -482,9 +508,11 @@ export default function AdminPanel() {
 
     let eventId = id;
     if (id) {
-      await supabase.from('events').update(fields).eq('id', id);
+      const { error: updateError } = await supabase.from('events').update(fields).eq('id', id);
+      if (updateError) { console.error('Update error:', updateError); showToast('Save failed: ' + updateError.message); setSaving(null); return; }
     } else {
-      const { data } = await supabase.from('events').insert(fields).select('id').single();
+      const { data, error: insertError } = await supabase.from('events').insert(fields).select('id').single();
+      if (insertError) { console.error('Insert error:', insertError); showToast('Save failed: ' + insertError.message); setSaving(null); return; }
       eventId = data?.id;
     }
 
@@ -620,9 +648,10 @@ export default function AdminPanel() {
       ...rest,
       title: `${trip.title} (duplicate)`,
       slug: newSlug,
+      invite_slug: newSlug,
       is_active: false,
     }).select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').single();
-    if (error || !data) { showToast('Duplicate failed.'); return; }
+    if (error || !data) { console.error('Duplicate failed:', error); showToast('Duplicate failed: ' + (error?.message ?? 'unknown error')); return; }
 
     // Copy related rows
     const related: Promise<any>[] = [];
@@ -1806,6 +1835,9 @@ export default function AdminPanel() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <div style={{ fontWeight: 700, fontSize: 20 }}>Invite Payment Tracking</div>
+              <span style={{ fontSize: 11, color: '#888', fontWeight: 500 }}>
+                DB: {invitePaymentSubmissions.length} | Local: {localInvitePaymentSubmissions.length}
+              </span>
               <button
                 onClick={refreshSubmissions}
                 disabled={refreshingSubmissions}
@@ -2986,7 +3018,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const field = (label: string, key: keyof Trip, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
       <label style={s.label}>{label}</label>
-      <input type={type} style={s.input} value={(trip[key] as string) ?? ''} onChange={e => set(key, type === 'number' ? Number(e.target.value) : e.target.value)} />
+      <input type={type} style={s.input} value={(trip[key] as string) ?? ''} onChange={e => set(key, type === 'number' ? Number(e.target.value) : e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} />
     </div>
   );
   const showInOther = (trip.cities ?? []).includes('Other');
@@ -3028,7 +3060,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
           {field('Category', 'category')}
           {field('Full Price (₹)', 'price_full', 'number')}
-          {field('Advance Amount (₹)', 'price_advance', 'number')}
+          {trip.booking_url !== 'payu-hosted' && field('Advance Amount (₹)', 'price_advance', 'number')}
           {/* Booking URL */}
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Booking Type</label>
@@ -3060,6 +3092,20 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 value={trip.booking_url}
                 onChange={e => set('booking_url', e.target.value)}
               />
+            )}
+            {trip.booking_url === 'payu-hosted' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <label style={{ ...s.label, marginBottom: 0, whiteSpace: 'nowrap' }}>Total Capacity</label>
+                <input
+                  type="number"
+                  min={1}
+                  style={{ ...s.input, width: 90, marginBottom: 0 }}
+                  placeholder="e.g. 20"
+                  value={trip.total_capacity ?? ''}
+                  onChange={e => set('total_capacity', e.target.value === '' ? null : Number(e.target.value))}
+                />
+                <span style={{ fontSize: 12, color: '#999' }}>spots (for sold-out indicator)</span>
+              </div>
             )}
           </div>
 
@@ -3348,15 +3394,15 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
               <div>
                 <label style={s.label}>Date Offset (days)</label>
-                <input type="number" style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
               </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
               </div>
               <div style={{ gridColumn: '1/-1' }}>
                 <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
               </div>
             </div>
             <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
@@ -3459,7 +3505,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
               <div>
                 <label style={s.label}>Own Transport Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Meeting Point (Event Location)</label>
@@ -3471,11 +3517,11 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -3693,7 +3739,7 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
               </div>
               <div>
                 <label style={s.label}>Own Transport Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Meeting Point (Event Location)</label>
@@ -3705,11 +3751,11 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
               </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -3764,11 +3810,11 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
               </div>
               <div>
                 <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = base event price" value={point.otherPrice ?? ''} onChange={e => setPickup(point._idx, { otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = base event price" value={point.otherPrice ?? ''} onChange={e => setPickup(point._idx, { otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
               <div>
                 <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" min={0} style={s.input} placeholder="Leave blank = event advance amount" value={point.otherAdvance ?? ''} onChange={e => setPickup(point._idx, { otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
+                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={point.otherAdvance ?? ''} onChange={e => setPickup(point._idx, { otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
               </div>
             </div>
             <button type="button" onClick={() => removePickup(point._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
