@@ -2393,7 +2393,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                 onClick={() => {
                   setShowDetailsForm(false);
                   setDetailsFormStep('details');
-                  setTimeout(() => setShowBookingTimeline(true), 80);
+                  if (existingBooking && !forceNewBooking) {
+                    // Already-booked card: just dismiss, stay on event details
+                  } else {
+                    setTimeout(() => setShowBookingTimeline(true), 80);
+                  }
                 }}
               />
               <motion.div
@@ -2409,7 +2413,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                   onClick={() => {
                     setShowDetailsForm(false);
                     setDetailsFormStep('details');
-                    setTimeout(() => setShowBookingTimeline(true), 80);
+                    if (existingBooking && !forceNewBooking) {
+                      // Already-booked card: just dismiss, stay on event details
+                    } else {
+                      setTimeout(() => setShowBookingTimeline(true), 80);
+                    }
                   }}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 >
