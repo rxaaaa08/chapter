@@ -1207,7 +1207,35 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       return { slug: event.slug, title: event.title, dateLabel, inviteSpots: event.inviteSpots, advanceQrUrl: event.advanceQrUrl, balanceQrUrl: event.balanceQrUrl };
     }));
 
-    const found = checks.filter(Boolean) as SharedInviteMatch[];
+    let found = checks.filter(Boolean) as SharedInviteMatch[];
+
+    // Fallback: check applications table for native-application flow events
+    if (found.length === 0) {
+      const { data: appData } = await supabase
+        .from('applications')
+        .select('event_slug')
+        .eq('phone', tenDigit)
+        .eq('status', 'invited')
+        .limit(1);
+
+      if (appData && appData.length > 0) {
+        const eventSlug = appData[0].event_slug;
+        const { data: eventRow } = await supabase
+          .from('events')
+          .select('title, invite_slug, invite_spots, advance_qr_url, balance_qr_url, event_dates(start_date)')
+          .eq('slug', eventSlug)
+          .maybeSingle();
+
+        if (eventRow) {
+          const dates = Array.isArray(eventRow.event_dates) ? eventRow.event_dates : [];
+          const firstDate = dates.map((d: any) => String(d.start_date ?? '')).filter(Boolean).sort()[0] ?? '';
+          const dateLabel = firstDate
+            ? new Date(`${firstDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : 'Invite';
+          found = [{ slug: eventSlug, title: eventRow.title, dateLabel, inviteSpots: eventRow.invite_spots ?? null, advanceQrUrl: eventRow.advance_qr_url ?? null, balanceQrUrl: eventRow.balance_qr_url ?? null }];
+        }
+      }
+    }
 
     if (found.length === 0) {
       setError("not_found");
