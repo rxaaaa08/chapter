@@ -108,6 +108,7 @@ interface Event {
   advanceQrUrl?: string | null;
   balanceQrUrl?: string | null;
   kynPaymentUrl?: string | null;
+  ticketTypes?: Array<{ id: string; label: string; price: number; advance: number }>;
 }
 
 type GroupChatMessage = { name: string; text: string };
@@ -670,6 +671,141 @@ type InviteVerifiedUser = {
   phone: string;
 };
 
+// ─── APPLICATION FORM ──────────────────────────────────────────────────────────
+function ApplicationForm({ event, onClose }: { event: any; onClose: () => void }) {
+  const [form, setForm] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
+
+  const isValid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender && form.whyJoin.trim();
+
+  const handleSubmit = async () => {
+    if (!isValid || submitting) return;
+    setSubmitting(true);
+    setError('');
+
+    const { error: sbError } = await supabase.from('applications').insert({
+      event_slug: event.id,
+      name: form.name.trim(),
+      phone: form.phone,
+      gender: form.gender,
+      why_join: form.whyJoin.trim(),
+      attended_before: form.attendedBefore.trim(),
+      status: 'pending',
+    });
+
+    if (sbError) {
+      if (sbError.code === '23505') {
+        setAlreadyApplied(true);
+      } else {
+        setError('Something went wrong. Please try again.');
+      }
+      setSubmitting(false);
+      return;
+    }
+    setSubmitted(true);
+    setSubmitting(false);
+  };
+
+  if (alreadyApplied) return (
+    <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-4 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">👋</div>
+      <p className="text-[20px] font-black text-gray-900">Already Applied!</p>
+      <p className="text-[14px] text-gray-500 leading-relaxed max-w-[260px]">We already have your application for this plan. We'll reach out on WhatsApp if you're selected.</p>
+      <button onClick={onClose} className="mt-2 w-full py-4 rounded-2xl bg-black text-white font-bold text-[15px] active:opacity-80">Got it</button>
+    </div>
+  );
+
+  if (submitted) return (
+    <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-4 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center text-3xl">🎉</div>
+      <p className="text-[20px] font-black text-gray-900">Application Submitted!</p>
+      <p className="text-[14px] text-gray-500 leading-relaxed max-w-[260px]">We'll review your application and reach out on WhatsApp if you're selected. Stay tuned!</p>
+      <button onClick={onClose} className="mt-2 w-full py-4 rounded-2xl bg-black text-white font-bold text-[15px] active:opacity-80">Done</button>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+
+      {/* Name */}
+      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label>
+        <input
+          type="text" value={form.name} placeholder="Your full name"
+          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+          className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-400 outline-none mt-1"
+        />
+      </div>
+
+      {/* Phone */}
+      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">WhatsApp Number</label>
+        <input
+          type="tel" value={form.phone} placeholder="10-digit number"
+          onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+          className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-400 outline-none mt-1"
+        />
+      </div>
+
+      {/* Gender */}
+      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Gender</label>
+        <div className="flex gap-2 mt-2">
+          {['Male', 'Female', 'Other'].map(g => (
+            <button
+              key={g} type="button"
+              onClick={() => setForm(f => ({ ...f, gender: g }))}
+              className={`flex-1 py-2 rounded-xl text-[13px] font-bold transition-all ${form.gender === g ? 'bg-black text-white' : 'bg-white text-gray-600 border border-gray-200'}`}
+            >{g}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Why join */}
+      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Why do you want to join us?</label>
+        <textarea
+          value={form.whyJoin} placeholder="Tell us a little about yourself and why this plan excites you..."
+          onChange={e => setForm(f => ({ ...f, whyJoin: e.target.value }))}
+          rows={3}
+          className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-400 outline-none mt-1 resize-none leading-relaxed"
+        />
+      </div>
+
+      {/* Attended before */}
+      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Attended a chapter அ event before?</label>
+        <textarea
+          value={form.attendedBefore} placeholder="If yes, which one? (Optional)"
+          onChange={e => setForm(f => ({ ...f, attendedBefore: e.target.value }))}
+          rows={2}
+          className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-400 outline-none mt-1 resize-none leading-relaxed"
+        />
+      </div>
+
+      {error && <p className="text-[13px] text-red-500 text-center">{error}</p>}
+
+      {/* Submit */}
+      <div className="pb-6 pt-2">
+        <button
+          type="button" disabled={!isValid || submitting}
+          onClick={handleSubmit}
+          className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all disabled:opacity-40"
+        >
+          {submitting ? (
+            <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+          ) : (
+            <>Submit Application <ArrowRight size={18} strokeWidth={2.5} /></>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { inviteSlug?: string; inviteVerifiedUser?: InviteVerifiedUser; onClose?: () => void } = {}) {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [eventsLoaded, setEventsLoaded] = useState(false);
@@ -867,6 +1003,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const [showBookingTimeline, setShowBookingTimeline] = useState(false);
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
+  const [showApplicationForm, setShowApplicationForm] = useState(false);
+  const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
@@ -980,6 +1118,23 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const isUpiFlow     = selectedEvent?.bookingUrl?.toLowerCase().includes('upi-manual');
   const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
+  const isNativeApplicationFlow = selectedEvent?.bookingUrl === 'native-application';
+
+  // Fetch application count for native-application events
+  useEffect(() => {
+    if (!isNativeApplicationFlow || !selectedEvent?.id) {
+      setApplicationCount(null);
+      return;
+    }
+    supabase
+      .from('applications')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_slug', selectedEvent.id)
+      .then(({ count }) => {
+        setApplicationCount(typeof count === 'number' ? count : null);
+      });
+  }, [isNativeApplicationFlow, selectedEvent?.id]);
+
   const isInvitePaymentFlow = !!inviteSlug;
   const shouldUseManualUpi = isUpiFlow || isInvitePaymentFlow;
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
@@ -1594,13 +1749,26 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         setInviteVerifyError('Please enter a valid 10-digit phone number.');
         return;
       }
-      const { data: inviteData, error: inviteError } = await supabase
+      const { data: inviteData } = await supabase
         .from('invited_numbers')
         .select('id')
         .eq('event_slug', inviteSlug)
         .eq('phone', tenDigit)
         .maybeSingle();
-      if (inviteError || !inviteData) {
+
+      // Fallback: also check applications table (native-application flow)
+      let foundInApplications = false;
+      if (!inviteData) {
+        const { data: appData } = await supabase
+          .from('applications')
+          .select('id')
+          .eq('phone', tenDigit)
+          .eq('status', 'invited')
+          .maybeSingle();
+        foundInApplications = !!appData;
+      }
+
+      if (!inviteData && !foundInApplications) {
         setInviteVerifyError('__not_found__');
         return;
       }
@@ -2110,6 +2278,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
             event={selectedEvent}
             selectedCity={selectedCity}
             allEvents={events}
+            applicationCount={applicationCount}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
             openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
@@ -2302,7 +2471,26 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                   </div>
 
                   <div className="px-6 pb-6">
-                    {selectedEvent.inviteOnly && !isInvitePaymentFlow ? (
+                    {isNativeApplicationFlow ? (
+                      <>
+                        {typeof applicationCount === 'number' && applicationCount > 0 && (
+                          <div className="flex items-center justify-center gap-1.5 mb-3">
+                            <span className="text-sm">🙌</span>
+                            <span className="text-[13px] font-semibold text-gray-500">
+                              Join {applicationCount} {applicationCount === 1 ? 'other' : 'others'} who've applied
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => { setShowBookingTimeline(false); setShowApplicationForm(true); }}
+                          className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
+                        >
+                          <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
+                          {selectedEvent.ctaLabel || 'Apply Now'}
+                          <ArrowRight size={18} strokeWidth={2.5} />
+                        </button>
+                      </>
+                    ) : selectedEvent.inviteOnly && !isInvitePaymentFlow ? (
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
@@ -2705,6 +2893,42 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                   )}
 
                 </AnimatePresence>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* ── Native Application Form ─────────────────────────────── */}
+        <AnimatePresence>
+          {showApplicationForm && selectedEvent && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
+                onClick={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
+              />
+              <motion.div
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+                className="absolute bottom-0 left-0 right-0 z-[56] bg-white rounded-t-[2rem] overflow-hidden flex flex-col"
+                style={{ maxHeight: '92%' }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+                  <div>
+                    <p className="text-[18px] font-black text-gray-900">Apply for this Plan</p>
+                    <p className="text-[13px] text-gray-400 mt-0.5">{selectedEvent.title}</p>
+                  </div>
+                  <button onClick={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }} className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center active:opacity-60">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </div>
+
+                {/* Form */}
+                <ApplicationForm
+                  event={selectedEvent}
+                  onClose={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
+                />
               </motion.div>
             </>
           )}
@@ -3269,7 +3493,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -3781,6 +4005,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                   </div>
                 </div>
 
+
               </div>
             </div>
           );
@@ -4076,6 +4301,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
 
         {/* Bottom Action Button (End of scroll) */}
         <div className="px-4 pt-4 pb-12">
+
           <button
             onClick={() => {
               trackEvent('calendar_opened', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
@@ -4092,6 +4318,39 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
             Join Our Plan
             <ArrowRight size={22} strokeWidth={3.0} />
           </button>
+
+          {/* Dot grid — native-application events only */}
+          {event.bookingUrl === 'native-application' && (() => {
+            const capacity = (event as any).totalCapacity as number | null;
+            const taken = typeof applicationCount === 'number' ? applicationCount : null;
+            if (!capacity || taken === null) return null;
+            const available = Math.max(capacity - taken, 0);
+            const fillRatio = taken / capacity;
+            const dotColor = fillRatio >= 0.85 ? '#ef4444' : fillRatio >= 0.6 ? '#f97316' : '#22c55e';
+            const labelColor = fillRatio >= 0.85 ? '#dc2626' : fillRatio >= 0.6 ? '#ea580c' : '#16a34a';
+            const MAX_DOTS = 30;
+            const dotCount = Math.min(capacity, MAX_DOTS);
+            const filledDots = Math.round(taken / (capacity / dotCount));
+            return (
+              <div className="mt-7 flex flex-col gap-2.5">
+                <div className="flex flex-wrap gap-[5px]">
+                  {Array.from({ length: dotCount }).map((_, i) => (
+                    <div key={i} style={{
+                      width: 13, height: 13, borderRadius: '50%', flexShrink: 0,
+                      background: i < filledDots ? dotColor : 'transparent',
+                      border: `2px solid ${i < filledDots ? dotColor : '#d1d5db'}`,
+                    }} />
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold" style={{ color: labelColor }}>
+                    {available === 0 ? 'Fully booked' : `${available} spot${available === 1 ? '' : 's'} left`}
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-medium">{taken} of {capacity} taken</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Footer — Branding + Work With Us + Legal links */}

@@ -109,6 +109,7 @@ type Trip = {
   total_capacity?: number | null;
   advance_qr_url?: string | null;
   balance_qr_url?: string | null;
+  ticket_types?: Array<{ id: string; label: string; price: number; advance: number }>;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type DoubtSubmission = {
@@ -201,7 +202,7 @@ export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState('');
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'receipts' | 'other' | 'messages' | 'analytics'>('trips');
+  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'receipts' | 'other' | 'messages' | 'analytics' | 'applications'>('trips');
   const [paymentsEventFilter, setPaymentsEventFilter] = useState<'all' | string>('all');
   const [receiptsEventFilter, setReceiptsEventFilter] = useState<'all' | string>('all');
   const [manualPaymentForm, setManualPaymentForm] = useState({ eventId: '', selectedDate: '', name: '', phone: '', amount: '' });
@@ -237,6 +238,14 @@ export default function AdminPanel() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
   const [analyticsFunnelEventFilter, setAnalyticsFunnelEventFilter] = useState<'all' | string>('all');
+  const [applications, setApplications] = useState<any[]>([]);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
+  const [applicationsStatusFilter, setApplicationsStatusFilter] = useState<'all' | string>('all');
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
+  const [callNotesEdits, setCallNotesEdits] = useState<Record<string, string>>({});
+  const [savingCallId, setSavingCallId] = useState<string | null>(null);
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCityFilter, setQnaDoubtCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCategoryFilter, setQnaDoubtCategoryFilter] = useState<'all' | string>('all');
@@ -407,6 +416,117 @@ export default function AdminPanel() {
       .order('paid_on', { ascending: false });
     if (data) setMockPaymentReceipts(data as MockPaymentReceipt[]);
     setRefreshingReceipts(false);
+  };
+
+  const loadApplications = async () => {
+    setApplicationsLoading(true);
+    const { data, error } = await supabase
+      .from('applications')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      showToast(`❌ Failed to load applications: ${error.message}`);
+    } else {
+      setApplications(data ?? []);
+      // Seed local edits from DB values
+      const cs: Record<string, string> = {};
+      const cn: Record<string, string> = {};
+      (data ?? []).forEach((a: any) => {
+        cs[a.id] = a.call_status ?? 'not_called';
+        cn[a.id] = a.call_notes ?? '';
+      });
+      setCallStatusEdits(cs);
+      setCallNotesEdits(cn);
+    }
+    setApplicationsLoading(false);
+  };
+
+  const approveApplication = async (id: string) => {
+    setApprovingId(id);
+    const app = applications.find(a => a.id === id);
+
+    // 1. Update status to invited
+    const { error } = await supabase
+      .from('applications')
+      .update({ status: 'invited' })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`❌ ${error.message}`);
+      setApprovingId(null);
+      return;
+    }
+
+    setApplications(prev => prev.map(a => a.id === id ? { ...a, status: 'invited' } : a));
+
+    // 2. Fire AiSensy invite message
+    if (app) {
+      const trip = trips.find(t => (t.slug || t.id) === app.event_slug);
+      const eventName = trip?.title ?? app.event_slug ?? '';
+      const firstDate = trip?.event_dates?.[0]?.start_date ?? '';
+      const eventDate = (() => {
+        if (!firstDate) return '';
+        const d = new Date(firstDate + 'T00:00:00');
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+        const month = d.toLocaleDateString('en-US', { month: 'long' });
+        const day = d.getDate();
+        const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
+        return `${dayName}, ${month} ${day}${suffix}`;
+      })();
+      const phone = '91' + String(app.phone).replace(/\D/g, '').slice(-10);
+
+      // Add phone to invited_numbers so the /invite flow works
+      const inviteSlug = trip?.invite_slug;
+      if (inviteSlug) {
+        await supabase.from('invited_numbers').insert({
+          event_slug: inviteSlug,
+          phone: String(app.phone).replace(/\D/g, '').slice(-10),
+        }).select();
+      }
+
+      try {
+        const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZDY1Yjk2MmFiNTdlMGUzNjJiNzA2ZCIsIm5hbWUiOiJjaGFwdGVyIEEgMzA2MyIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OWQ2NWI5NjJhYjU3ZTBlMzYyYjcwNjciLCJhY3RpdmVQbGFuIjoiRlJFRV9GT1JFVkVSIiwiaWF0IjoxNzc1NjU1ODMwfQ.vYeRHCDeP-U5VPhsUrbLfIgkS2hIK1-adr0NrNtYfEI',
+            campaignName: 'Invite-Only Automation',
+            destination: phone,
+            userName: app.name ?? '',
+            source: 'chapter-admin-dashboard',
+            templateParams: [eventName, eventDate],
+            tags: ['chapter-invite'],
+            attributes: { name: app.name ?? '', event_name: eventName, event_date: eventDate },
+          }),
+        });
+        const ok = aiRes.status >= 200 && aiRes.status < 300;
+        // Mark aisensy_invite_sent on the row
+        await supabase.from('applications').update({ aisensy_invite_sent: ok }).eq('id', id);
+        setApplications(prev => prev.map(a => a.id === id ? { ...a, aisensy_invite_sent: ok } : a));
+        showToast(ok ? '✅ Approved & WhatsApp invite sent' : '✅ Approved — but WhatsApp send failed');
+      } catch {
+        showToast('✅ Approved — WhatsApp send failed (network error)');
+      }
+    } else {
+      showToast('✅ Approved — status set to invited');
+    }
+
+    setApprovingId(null);
+  };
+
+  const saveCallInfo = async (id: string) => {
+    setSavingCallId(id);
+    const { error } = await supabase
+      .from('applications')
+      .update({ call_status: callStatusEdits[id] ?? 'not_called', call_notes: callNotesEdits[id] ?? '' })
+      .eq('id', id);
+    if (error) {
+      showToast(`❌ ${error.message}`);
+    } else {
+      setApplications(prev => prev.map(a => a.id === id ? { ...a, call_status: callStatusEdits[id], call_notes: callNotesEdits[id] } : a));
+      showToast('✅ Saved');
+    }
+    setSavingCallId(null);
   };
 
   const addManualAdvancePayment = async () => {
@@ -973,9 +1093,10 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
         <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
         <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>
+        <button style={s.tab(tab === 'applications')} onClick={() => { setTab('applications'); loadApplications(); }}>Applications</button>
       </div>
 
-      <div style={{ maxWidth: tab === 'payments' || tab === 'receipts' ? 1120 : 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: tab === 'payments' || tab === 'receipts' || tab === 'applications' ? 1200 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -2862,6 +2983,261 @@ export default function AdminPanel() {
           );
         })()}
 
+        {/* ── APPLICATIONS TAB ────────────────────────────────────────────── */}
+        {tab === 'applications' && (() => {
+          const nativeEventSlugs = [...new Set(applications.map(a => a.event_slug).filter(Boolean))];
+          const filteredApps = applications.filter(a => {
+            const eventMatch = applicationsEventFilter === 'all' || a.event_slug === applicationsEventFilter;
+            const statusMatch = applicationsStatusFilter === 'all' || a.status === applicationsStatusFilter;
+            return eventMatch && statusMatch;
+          });
+
+          const statusColor = (status: string) => {
+            if (status === 'fully_paid') return '#4caf50';
+            if (status === 'advance_paid') return '#8bc34a';
+            if (status === 'invited') return '#2196f3';
+            if (status === 'pending') return '#ff9800';
+            return '#aaa';
+          };
+
+          const callStatusOptions = [
+            { value: 'not_called', label: 'Not Called' },
+            { value: 'called', label: 'Called' },
+            { value: 'callback', label: 'Callback' },
+            { value: 'has_doubts', label: 'Has Doubts' },
+            { value: 'not_interested', label: 'Not Interested' },
+            { value: 'no_answer', label: 'No Answer' },
+          ];
+
+          const callBadgeColor = (cs: string) => {
+            if (cs === 'called') return '#4caf50';
+            if (cs === 'callback') return '#ff9800';
+            if (cs === 'has_doubts') return '#9c27b0';
+            if (cs === 'not_interested') return '#f44336';
+            if (cs === 'no_answer') return '#607d8b';
+            return '#555';
+          };
+
+          return (
+            <div>
+              {/* Toolbar */}
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 700, fontSize: 18 }}>Applications</div>
+                <div style={{ flex: 1 }} />
+                {/* Event filter */}
+                <select
+                  value={applicationsEventFilter}
+                  onChange={e => setApplicationsEventFilter(e.target.value)}
+                  style={{ background: '#1e1e1e', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '6px 12px', fontSize: 13 }}
+                >
+                  <option value="all">All Events</option>
+                  {nativeEventSlugs.map(slug => (
+                    <option key={slug} value={slug}>{slug}</option>
+                  ))}
+                </select>
+                {/* Status filter */}
+                <select
+                  value={applicationsStatusFilter}
+                  onChange={e => setApplicationsStatusFilter(e.target.value)}
+                  style={{ background: '#1e1e1e', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '6px 12px', fontSize: 13 }}
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="invited">Invited</option>
+                  <option value="advance_paid">Advance Paid</option>
+                  <option value="fully_paid">Fully Paid</option>
+                </select>
+                <button
+                  onClick={loadApplications}
+                  disabled={applicationsLoading}
+                  style={{ background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13 }}
+                >
+                  {applicationsLoading ? 'Loading…' : '↺ Refresh'}
+                </button>
+              </div>
+
+              {applicationsLoading && <div style={{ color: '#aaa', textAlign: 'center', padding: 40 }}>Loading applications…</div>}
+
+              {!applicationsLoading && filteredApps.length === 0 && (
+                <div style={{ color: '#666', textAlign: 'center', padding: 60 }}>No applications found.</div>
+              )}
+
+              {!applicationsLoading && filteredApps.length > 0 && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #333' }}>
+                        {['Name', 'Phone', 'Gender', 'Ticket', 'Why Join', 'Attended Before', 'Status', 'Call', 'Notes', 'Date', 'Actions'].map(h => (
+                          <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#aaa', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredApps.map(app => {
+                        const callSt = callStatusEdits[app.id] ?? app.call_status ?? 'not_called';
+                        const callNt = callNotesEdits[app.id] ?? app.call_notes ?? '';
+                        const isDirty = callSt !== (app.call_status ?? 'not_called') || callNt !== (app.call_notes ?? '');
+                        return (
+                          <tr key={app.id} style={{ borderBottom: '1px solid #222', verticalAlign: 'top' }}>
+                            {/* Name */}
+                            <td style={{ padding: '10px 10px', color: '#fff', whiteSpace: 'nowrap', fontWeight: 500 }}>{app.name || '—'}</td>
+                            {/* Phone */}
+                            <td style={{ padding: '10px 10px', color: '#ccc', whiteSpace: 'nowrap' }}>
+                              <a href={`tel:${app.phone}`} style={{ color: '#d4b483', textDecoration: 'none' }}>{app.phone || '—'}</a>
+                            </td>
+                            {/* Gender */}
+                            <td style={{ padding: '10px 10px', color: '#ccc', whiteSpace: 'nowrap' }}>{app.gender || '—'}</td>
+                            {/* Ticket type */}
+                            <td style={{ padding: '10px 10px', color: '#ccc', whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {app.ticket_type || '—'}
+                            </td>
+                            {/* Why Join */}
+                            <td style={{ padding: '10px 10px', color: '#bbb', maxWidth: 200 }}>
+                              <div style={{ maxHeight: 60, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                                {app.why_join || '—'}
+                              </div>
+                            </td>
+                            {/* Attended Before */}
+                            <td style={{ padding: '10px 10px', color: '#bbb', maxWidth: 160 }}>
+                              <div style={{ maxHeight: 60, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                                {app.attended_before || '—'}
+                              </div>
+                            </td>
+                            {/* Status */}
+                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
+                              <span style={{
+                                background: statusColor(app.status) + '22',
+                                color: statusColor(app.status),
+                                border: `1px solid ${statusColor(app.status)}44`,
+                                borderRadius: 6,
+                                padding: '2px 8px',
+                                fontSize: 12,
+                                fontWeight: 600,
+                                textTransform: 'capitalize',
+                              }}>
+                                {app.status || 'pending'}
+                              </span>
+                            </td>
+                            {/* Call status */}
+                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
+                              <select
+                                value={callSt}
+                                onChange={e => setCallStatusEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
+                                style={{
+                                  background: callBadgeColor(callSt) + '22',
+                                  color: callBadgeColor(callSt),
+                                  border: `1px solid ${callBadgeColor(callSt)}44`,
+                                  borderRadius: 6,
+                                  padding: '3px 8px',
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  minWidth: 120,
+                                }}
+                              >
+                                {callStatusOptions.map(o => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Call notes */}
+                            <td style={{ padding: '10px 10px', minWidth: 160 }}>
+                              <input
+                                type="text"
+                                placeholder="Notes…"
+                                value={callNt}
+                                onChange={e => setCallNotesEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
+                                style={{
+                                  background: '#111',
+                                  color: '#ccc',
+                                  border: '1px solid #333',
+                                  borderRadius: 6,
+                                  padding: '4px 8px',
+                                  fontSize: 12,
+                                  width: '100%',
+                                  outline: 'none',
+                                }}
+                              />
+                            </td>
+                            {/* Date */}
+                            <td style={{ padding: '10px 10px', color: '#888', whiteSpace: 'nowrap', fontSize: 11 }}>
+                              {formatAdminDateTime(app.created_at)}
+                            </td>
+                            {/* Actions */}
+                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
+                                {app.status === 'pending' && (
+                                  <button
+                                    disabled={approvingId === app.id}
+                                    onClick={() => approveApplication(app.id)}
+                                    style={{
+                                      background: '#2196f3',
+                                      color: '#fff',
+                                      border: 'none',
+                                      borderRadius: 6,
+                                      padding: '4px 10px',
+                                      fontSize: 12,
+                                      cursor: approvingId === app.id ? 'not-allowed' : 'pointer',
+                                      opacity: approvingId === app.id ? 0.6 : 1,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {approvingId === app.id ? 'Sending…' : '✓ Approve'}
+                                  </button>
+                                )}
+                                {app.status !== 'pending' && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                    <span style={{ fontSize: 12, color: '#4caf50', fontWeight: 700 }}>✓ Approved</span>
+                                    <span style={{ fontSize: 11, color: app.aisensy_invite_sent ? '#4caf50' : '#f97316', fontWeight: 600 }}>
+                                      {app.aisensy_invite_sent ? '📲 WA sent' : '⚠️ WA not sent'}
+                                    </span>
+                                  </div>
+                                )}
+                                {isDirty && (
+                                  <button
+                                    disabled={savingCallId === app.id}
+                                    onClick={() => saveCallInfo(app.id)}
+                                    style={{
+                                      background: '#333',
+                                      color: '#d4b483',
+                                      border: '1px solid #d4b48344',
+                                      borderRadius: 6,
+                                      padding: '4px 10px',
+                                      fontSize: 12,
+                                      cursor: savingCallId === app.id ? 'not-allowed' : 'pointer',
+                                      opacity: savingCallId === app.id ? 0.6 : 1,
+                                    }}
+                                  >
+                                    {savingCallId === app.id ? 'Saving…' : '↑ Save'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Summary footer */}
+              {!applicationsLoading && applications.length > 0 && (
+                <div style={{ marginTop: 20, color: '#888', fontSize: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <span>Total: <b style={{ color: '#ccc' }}>{filteredApps.length}</b></span>
+                  {(['pending', 'invited', 'advance_paid', 'fully_paid'] as const).map(st => {
+                    const count = filteredApps.filter(a => a.status === st).length;
+                    return count > 0 ? (
+                      <span key={st} style={{ color: statusColor(st) }}>
+                        {st.replace(/_/g, ' ')}: <b>{count}</b>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
       </div>
     </div>
   );
@@ -3060,7 +3436,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
           {field('Category', 'category')}
           {field('Full Price (₹)', 'price_full', 'number')}
-          {trip.booking_url !== 'payu-hosted' && field('Advance Amount (₹)', 'price_advance', 'number')}
+          {trip.booking_url !== 'payu-hosted' && trip.booking_url !== 'native-application' && field('Advance Amount (₹)', 'price_advance', 'number')}
           {/* Booking URL */}
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Booking Type</label>
@@ -3069,9 +3445,10 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 { mode: 'external', label: 'External Link', value: '' },
                 { mode: 'upi-manual', label: 'Manual UPI (QR Code)', value: 'upi-manual' },
                 { mode: 'payu', label: 'PayU', value: 'payu-hosted' },
+                { mode: 'native-application', label: 'Native Application', value: 'native-application' },
               ] as const).map(option => {
                 const active = option.mode === 'external'
-                  ? trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted'
+                  ? trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted' && trip.booking_url !== 'native-application'
                   : trip.booking_url === option.value;
                 return (
                   <button
@@ -3085,7 +3462,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 );
               })}
             </div>
-            {trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted' && (
+            {trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted' && trip.booking_url !== 'native-application' && (
               <input
                 style={s.input}
                 placeholder="https://tally.so/r/..."
@@ -3093,7 +3470,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 onChange={e => set('booking_url', e.target.value)}
               />
             )}
-            {trip.booking_url === 'payu-hosted' && (
+            {(trip.booking_url === 'payu-hosted' || trip.booking_url === 'native-application') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                 <label style={{ ...s.label, marginBottom: 0, whiteSpace: 'nowrap' }}>Total Capacity</label>
                 <input
