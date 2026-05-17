@@ -4299,38 +4299,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, closeCalendarSign
                                 const displayTotal = pricing.total;
                                 const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
 
-                                // Girls-only: show full price + countdown to event
-                                if (event.girlsOnly) {
-                                  const eventDateStr = selectedDate || event.dates?.[0]?.date || '';
-                                  const joinDeadlineMs = eventDateStr
-                                    ? new Date(eventDateStr + 'T00:00:00').getTime() - (2 * 24 * 60 * 60 * 1000)
-                                    : 0;
-                                  const secondsLeft = joinDeadlineMs
-                                    ? Math.max(0, Math.floor((joinDeadlineMs - Date.now()) / 1000))
-                                    : 0;
-                                  const cd_d = Math.floor(secondsLeft / (3600 * 24));
-                                  const cd_h = Math.floor((secondsLeft % (3600 * 24)) / 3600);
-                                  const cd_m = Math.floor((secondsLeft % 3600) / 60);
-                                  const cd_s = secondsLeft % 60;
-                                  const countdownLabel = secondsLeft > 0
-                                    ? `${cd_d}d ${String(cd_h).padStart(2,'0')}h ${String(cd_m).padStart(2,'0')}m ${String(cd_s).padStart(2,'0')}s`
-                                    : 'Starting soon';
-                                  return (
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="flex flex-col items-start gap-0.5 min-w-0">
-                                        <p className="text-[11px] font-semibold text-gray-500">Entry</p>
-                                        <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
-                                      </div>
-                                      <div className="flex flex-col items-center gap-1 min-w-0">
-                                        <p className="text-[11px] font-semibold text-gray-500 text-center">Time Left to Join</p>
-                                        <span className="text-[12px] font-bold text-gray-700 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full tabular-nums leading-tight">
-                                          {countdownLabel}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-
                                 return isPayUFlow ? (
                               <div className="flex flex-col gap-2">
                                 {openSpotsLeft !== null && openSpotsLeft < 10 && (
