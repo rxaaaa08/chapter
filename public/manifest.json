@@ -1,0 +1,17 @@
+{
+  "name": "chapter அ",
+  "short_name": "chapter அ",
+  "description": "Curated experiences for people who want to step out and connect.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

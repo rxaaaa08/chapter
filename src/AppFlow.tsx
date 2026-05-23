@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts } from './supabase';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight, Copy, Check } from 'lucide-react';
+import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 
 // Types
@@ -9,6 +9,7 @@ type Message = {
   id: string;
   sender: 'bot' | 'user';
   text?: string;
+  time?: string;
 };
 
 interface TripDate {
@@ -33,7 +34,7 @@ const hasGirlsOnlyQuickInfo = (quickInfo?: { label?: string; value?: string }[])
     String(item.value ?? '').trim().toLowerCase() !== 'false'
   );
 
-const sortGirlsOnlyLast = <T extends { girlsOnly?: boolean; quickInfo?: { label?: string; value?: string }[] }>(events: T[]) =>
+const sortGirlsOnlyLast = (events: Event[]) =>
   [...events].sort((a, b) => Number(Boolean(a.girlsOnly || hasGirlsOnlyQuickInfo(a.quickInfo))) - Number(Boolean(b.girlsOnly || hasGirlsOnlyQuickInfo(b.quickInfo))));
 
 interface Event {
@@ -47,7 +48,9 @@ interface Event {
   oneLiner?: string;
   timing: string;
   price: string;
+  priceFull: number;
   advanceAmount: number;
+  priceAdvance: number;
   description: string;
   heroImage: string;
   heroImages?: string[];
@@ -65,6 +68,7 @@ interface Event {
     otherPrice?: number;
     otherAdvance?: number;
     forOtherCity?: boolean;
+    forCity?: string;
   }[];
   transport: string;
   groupSize: string;
@@ -105,8 +109,6 @@ interface Event {
   girlsOnly?: boolean;
   waitlistUrl?: string;
   bookingSteps?: Array<{ label: string; value: string; date: string }>;
-  advanceQrUrl?: string | null;
-  balanceQrUrl?: string | null;
   kynPaymentUrl?: string | null;
   ticketTypes?: Array<{ id: string; label: string; price: number; advance: number }>;
 }
@@ -157,6 +159,8 @@ const FALLBACK_EVENTS: Event[] = [
     title: 'Pondicherry Weekend Escape',
     timing: '1 Night 2 Days',
     price: '₹7,999',
+    priceFull: 7999,
+    priceAdvance: 2400,
     advanceAmount: 2400,
     description: 'A breezy coastal reset with White Town walks, cafe hopping, sea-facing sunsets, and one easy weekend away with a like-minded group.',
     heroImage: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?q=80&w=1600&auto=format&fit=crop',
@@ -267,6 +271,8 @@ const FALLBACK_EVENTS: Event[] = [
     title: 'Kolukkumalai Sunrise Trail',
     timing: '2 Nights 3 Days',
     price: '₹11,999',
+    priceFull: 11999,
+    priceAdvance: 3600,
     advanceAmount: 3600,
     description: 'A high-energy mountain escape with an overnight road trip, a pre-dawn jeep climb, sunrise above the clouds, and tea-estate weather that feels like a reset.',
     heroImage: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?q=80&w=1600&auto=format&fit=crop',
@@ -389,63 +395,8 @@ const GENERAL_ANNOUNCEMENTS = [
 ];
 
 
-// ─── UPI PAYMENT SCREEN ────────────────────────────────────────────────────────
-const UPI_ID = 'chapter.a@ybl';
-const UPI_ID_GIRLS = 'galcode@ybl';
 const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
-const PRELOADED_QR_URLS = new Set<string>();
-const preloadQrImages = (...urls: Array<string | null | undefined>) => {
-  if (typeof window === 'undefined') return;
-  urls.filter(Boolean).forEach(url => {
-    const src = url as string;
-    if (PRELOADED_QR_URLS.has(src)) return;
-    const img = new window.Image();
-    img.onload = () => PRELOADED_QR_URLS.add(src);
-    img.src = src;
-  });
-};
-
-function QrImage({ src, fallbackSrc }: { src: string; fallbackSrc: string }) {
-  const [status, setStatus] = React.useState<'loading' | 'loaded' | 'error'>(() => PRELOADED_QR_URLS.has(src) ? 'loaded' : 'loading');
-  const timerRef = React.useRef<number | null>(null);
-
-  React.useEffect(() => {
-    setStatus(PRELOADED_QR_URLS.has(src) ? 'loaded' : 'loading');
-    timerRef.current = window.setTimeout(() => setStatus(prev => prev === 'loaded' ? prev : 'error'), 8000);
-    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
-  }, [src]);
-
-  const clearTimer = () => { if (timerRef.current) { window.clearTimeout(timerRef.current); timerRef.current = null; } };
-
-  return (
-    <div className="relative w-full max-w-[280px] aspect-square flex items-center justify-center">
-      {/* Spinner while loading */}
-      {status === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <svg className="w-10 h-10 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-          </svg>
-        </div>
-      )}
-      {/* Actual QR — hidden until loaded */}
-      {status !== 'error' && (
-        <img
-          src={src}
-          alt="UPI QR Code"
-          className={`w-full h-full object-contain transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={() => { PRELOADED_QR_URLS.add(src); clearTimer(); setStatus('loaded'); }}
-          onError={() => { clearTimer(); setStatus('error'); }}
-        />
-      )}
-      {/* Fallback QR on error */}
-      {status === 'error' && (
-        <img src={fallbackSrc} alt="UPI QR Code" className="w-full h-full object-contain" />
-      )}
-    </div>
-  );
-}
 
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
@@ -468,6 +419,7 @@ function PayUCheckout({ paymentContext, onError }: {
         email: paymentContext.email ?? null,
         amount: paymentContext.amount,
         event_id: paymentContext.eventId ?? null,
+        event_slug: paymentContext.eventId ?? null,
         event_title: paymentContext.eventTitle,
         trip_date: paymentContext.tripDateFull,
         whatsapp_group_url: paymentContext.whatsappGroupUrl ?? null,
@@ -513,171 +465,17 @@ function PayUCheckout({ paymentContext, onError }: {
   );
 }
 
-function UpiPaymentScreen({
-  paymentContext,
-  girlsOnly = false,
-  isBalancePayment = false,
-  onClose,
-}: {
-  paymentContext: { eventTitle: string; amount: number; date: string; name: string; phone?: string; advanceQrUrl?: string | null; balanceQrUrl?: string | null };
-  girlsOnly?: boolean;
-  isBalancePayment?: boolean;
-  onClose?: () => void;
-}) {
-  const upiId = girlsOnly ? UPI_ID_GIRLS : UPI_ID;
-  const fallbackQr = girlsOnly ? '/payment-qr-girls.png' : '/payment-qr.png';
-  const qrSrc = isBalancePayment
-    ? (paymentContext.balanceQrUrl || fallbackQr)
-    : (paymentContext.advanceQrUrl || fallbackQr);
-  const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'failed'>('idle');
-  const copyResetRef = React.useRef<number | null>(null);
-  React.useEffect(() => () => {
-    if (copyResetRef.current) window.clearTimeout(copyResetRef.current);
-  }, []);
-
-  const copyText = async (text: string) => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch {
-      // Fall through to the textarea fallback below.
-    }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    textarea.style.top = '0';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-
-    try {
-      return document.execCommand('copy');
-    } catch {
-      return false;
-    } finally {
-      document.body.removeChild(textarea);
-    }
-  };
-
-  const handleCopy = async () => {
-    if (copyResetRef.current) window.clearTimeout(copyResetRef.current);
-    const didCopy = await copyText(upiId);
-    setCopyStatus(didCopy ? 'copied' : 'failed');
-    copyResetRef.current = window.setTimeout(() => setCopyStatus('idle'), 2200);
-  };
-
-  return (
-    <motion.div
-      initial={{ y: '100%' }}
-      animate={{ y: 0 }}
-      exit={{ y: '100%' }}
-      transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-      className="absolute inset-0 z-[70] bg-white flex flex-col rounded-t-[2rem] overflow-hidden"
-    >
-      {/* Close button */}
-      {onClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active:scale-95 transition-all z-10"
-        >
-          <X size={14} strokeWidth={2.5} />
-        </button>
-      )}
-
-      {/* Drag handle */}
-      <div className="pt-4 flex justify-center flex-shrink-0">
-        <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
-      </div>
-
-      {/* Hero header */}
-      <div className="px-6 pt-3 pb-4 flex-shrink-0">
-        <p className="text-[11px] font-semibold uppercase tracking-widest mb-1">
-          {isBalancePayment ? (
-            <>
-              <span className="text-green-600">✓ Advance Paid</span>
-              <span className="text-gray-400"> · {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}</span>
-            </>
-          ) : (
-            <span className="text-gray-400">
-              {paymentContext.eventTitle}{paymentContext.date ? ` · ${paymentContext.date}` : ''}
-            </span>
-          )}
-        </p>
-        <h1 className="text-[24px] font-black text-gray-950 leading-tight tracking-tight">
-          {isBalancePayment ? 'Settle Balance ' : 'Settle Advance '}{formatUpiINR(paymentContext.amount)}
-        </h1>
-      </div>
-
-      {/* QR + UPI card — grows to fill available space */}
-      <div className="mx-5 flex-1 flex flex-col min-h-0">
-        <div className="border border-black/[0.08] rounded-[24px] px-5 pt-6 pb-5 flex flex-col items-center gap-4 flex-1 justify-center">
-
-          {/* QR — fills available space up to a max */}
-          <QrImage src={qrSrc} fallbackSrc={fallbackQr} />
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 w-full">
-            <div className="flex-1 h-px bg-black/8" />
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">or UPI ID</span>
-            <div className="flex-1 h-px bg-black/8" />
-          </div>
-
-          {/* UPI ID row */}
-          <div className="flex items-center gap-3 bg-[#F7F7F8] rounded-2xl px-4 py-3 w-full">
-            <p className="flex-1 font-sans font-semibold text-gray-950 text-[16px] tracking-widest select-text">{upiId}</p>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className={`h-9 px-4 rounded-xl flex items-center gap-1.5 text-[13px] font-black active:scale-95 transition-all ${
-                copyStatus === 'copied'
-                  ? 'bg-[#34C759] text-white'
-                  : copyStatus === 'failed'
-                    ? 'bg-red-100 text-red-600'
-                    : girlsOnly
-                      ? 'bg-[#FF4FB8] text-white'
-                      : 'bg-[#FFD700] text-black'
-              }`}
-            >
-              {copyStatus === 'copied' ? <Check size={14} strokeWidth={3} /> : <Copy size={14} strokeWidth={2.5} />}
-              {copyStatus === 'copied' ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-          <div className="h-2 -mt-2 w-full text-center" aria-live="polite">
-            {copyStatus === 'failed' && (
-              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[11px] font-semibold text-red-500">
-                Couldn't copy — long-press to select manually
-              </motion.p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Reminder */}
-      <p className="mx-5 mt-4 mb-8 text-[12px] text-gray-600 text-center leading-relaxed font-medium flex-shrink-0">
-        After paying, send payment screenshot to the WhatsApp number you got this invite from.
-      </p>
-    </motion.div>
-  );
-}
-
-type InviteVerifiedUser = {
-  name: string;
-  phone: string;
-};
-
 // ─── APPLICATION FORM ──────────────────────────────────────────────────────────
-function ApplicationForm({ event, onClose }: { event: any; onClose: () => void }) {
+function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, reservedCount, onClose }: { event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string; reservedCount: number | null; onClose: () => void }) {
   const [form, setForm] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [alreadyApplied, setAlreadyApplied] = useState(false);
+
+  const inviteSpots = typeof event?.inviteSpots === 'number' ? event.inviteSpots : null;
+  const spotsLeft = inviteSpots != null && typeof reservedCount === 'number'
+    ? Math.max(0, inviteSpots - reservedCount)
+    : null;
 
   const isValid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender && form.whyJoin.trim();
 
@@ -686,14 +484,23 @@ function ApplicationForm({ event, onClose }: { event: any; onClose: () => void }
     setSubmitting(true);
     setError('');
 
+    // Resolve the chosen pickup point details for storage
+    const chosenPoint = selectedPickupId
+      ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
+      : null;
+
     const { error: sbError } = await supabase.from('applications').insert({
-      event_slug: event.id,
+      event_slug: String(event.id ?? '').toLowerCase(),
       name: form.name.trim(),
       phone: form.phone,
       gender: form.gender,
       why_join: form.whyJoin.trim(),
       attended_before: form.attendedBefore.trim(),
       status: 'pending',
+      selected_date: selectedDate ?? null,
+      pickup_point_id: chosenPoint?.id ?? selectedPickupId ?? null,
+      pickup_label: chosenPoint?.label ?? null,
+      selected_city: selectedCity ?? null,
     });
 
     if (sbError) {
@@ -705,8 +512,19 @@ function ApplicationForm({ event, onClose }: { event: any; onClose: () => void }
       setSubmitting(false);
       return;
     }
-    setSubmitted(true);
-    setSubmitting(false);
+    const dateStr = selectedDate || event.dates?.[0]?.date || '';
+    const formattedDate = (() => {
+      if (!dateStr) return '';
+      const d = new Date(`${dateStr}T00:00:00`);
+      if (isNaN(d.getTime())) return '';
+      const month = d.toLocaleDateString('en-US', { month: 'long' });
+      const day = d.getDate();
+      const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
+      return `${month} ${day}${suffix}`;
+    })();
+    const waText = `Hi, I'm ${form.name.trim()}. I have registered for ${event.title}${formattedDate ? ` on ${formattedDate}` : ''}.`;
+    window.open(`https://wa.me/919940111564?text=${encodeURIComponent(waText)}`, '_blank');
+    onClose();
   };
 
   if (alreadyApplied) return (
@@ -718,14 +536,6 @@ function ApplicationForm({ event, onClose }: { event: any; onClose: () => void }
     </div>
   );
 
-  if (submitted) return (
-    <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-4 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center text-3xl">🎉</div>
-      <p className="text-[20px] font-black text-gray-900">Application Submitted!</p>
-      <p className="text-[14px] text-gray-500 leading-relaxed max-w-[260px]">We'll review your application and reach out on WhatsApp if you're selected. Stay tuned!</p>
-      <button onClick={onClose} className="mt-2 w-full py-4 rounded-2xl bg-black text-white font-bold text-[15px] active:opacity-80">Done</button>
-    </div>
-  );
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
@@ -801,12 +611,17 @@ function ApplicationForm({ event, onClose }: { event: any; onClose: () => void }
             <>Submit Application <ArrowRight size={18} strokeWidth={2.5} /></>
           )}
         </button>
+        {spotsLeft !== null && (
+          <p className="mt-3 text-[12px] font-semibold text-center text-[#b45309]">
+            🔥 Only {spotsLeft} {spotsLeft === 1 ? 'spot' : 'spots'} left
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
-export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { inviteSlug?: string; inviteVerifiedUser?: InviteVerifiedUser; onClose?: () => void } = {}) {
+export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [loadingSlow, setLoadingSlow] = useState(false);
@@ -815,10 +630,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const isPreviewMode = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const isPlansPath = typeof window !== 'undefined' && window.location.pathname === '/plans';
   const isPlansHistoryManaged = isPlansPath && !isPreviewMode;
-  const isInviteOverlay = !!inviteSlug;
-  const hasExternalInviteVerification = !!inviteVerifiedUser?.name?.trim() && /^\d{10}$/.test(inviteVerifiedUser.phone ?? '');
-  const isDetailsHistoryManaged = isPlansHistoryManaged || isPreviewMode || isInviteOverlay;
-  const [previewLoading, setPreviewLoading] = useState(isPreviewMode || !!inviteSlug);
+  const isDetailsHistoryManaged = isPlansHistoryManaged || isPreviewMode;
+  const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
   const historyLayerRef = useRef<HistoryLayer | null>(null);
   const handlingPopStateRef = useRef(false);
 
@@ -922,70 +735,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     });
   }, []);
 
-  const [inviteVerifyError, setInviteVerifyError] = useState('');
-  const [advanceAlreadyPaid, setAdvanceAlreadyPaid] = useState(false);
-  const [inviteAlreadyVerified, setInviteAlreadyVerified] = useState(false);
-
-  // When rendered from the invite flow, auto-fetch and pre-select the event
-  // then open the booking timeline immediately.
-  useEffect(() => {
-    if (!inviteSlug) return;
-    (async () => {
-      const { data } = await supabase
-        .from('events')
-        .select('slug, id')
-        .eq('invite_slug', inviteSlug)
-        .maybeSingle();
-      if (!data) {
-        setPreviewLoading(false);
-        return;
-      }
-      const idOrSlug = (data as any).slug || (data as any).id;
-      const event = await fetchEventByIdOrSlug(idOrSlug);
-      if (!event) {
-        setPreviewLoading(false);
-        return;
-      }
-      preloadQrImages(event.advanceQrUrl, event.balanceQrUrl);
-      setSelectedEvent(event);
-      setSelectedCity(event.cities?.[0] || 'Chennai');
-      setSelectedCategory(event.category || 'Trips');
-      setShowTransition(false);
-      setShowDetails(false);
-      setShowChat(false);
-      setStep('EVENT_SELECTED');
-      if (hasExternalInviteVerification) {
-        const tenDigit = inviteVerifiedUser.phone.replace(/^\+91/, '').replace(/^0/, '');
-        setDetailsForm({ name: inviteVerifiedUser.name.trim(), phone: tenDigit });
-        setInviteAlreadyVerified(true);
-        const { data: paidRows } = await supabase
-          .from('invite_payment_submissions')
-          .select('id')
-          .eq('invite_slug', inviteSlug)
-          .eq('phone', tenDigit)
-          .eq('status', 'advance_paid')
-          .limit(1);
-        const isAdvancePaid = (paidRows ?? []).length > 0;
-        setAdvanceAlreadyPaid(isAdvancePaid);
-        if (!isAdvancePaid) {
-          const city = event.cities?.[0] || 'Chennai';
-          const pricing = getMeetingPointPricing(event, '', city);
-          await recordPaymentSubmission(pricing.advance, {
-            event,
-            name: inviteVerifiedUser.name.trim(),
-            phone: tenDigit,
-            dateStr: event.dates?.[0]?.date || '',
-          });
-        }
-        setShowBookingTimeline(true);
-      }
-      setMessages([]);
-      setIsTyping(false);
-      setPreviewLoading(false);
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inviteSlug, hasExternalInviteVerification, inviteVerifiedUser?.name, inviteVerifiedUser?.phone]);
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
   const [selectedCity, setSelectedCity] = useState('');
@@ -1005,6 +754,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const [showDetailsForm, setShowDetailsForm] = useState(false);
   const [showApplicationForm, setShowApplicationForm] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
+  const [reservedCount, setReservedCount] = useState<number | null>(null);
   const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
@@ -1070,15 +820,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     issuedAt?: string;
     girlsOnly?: boolean;
     isBalancePayment?: boolean;
-    advanceQrUrl?: string | null;
-    balanceQrUrl?: string | null;
     whatsappGroupUrl?: string;
     email?: string;
   } | null>(null);
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
-  const [kynTimer, setKynTimer] = useState(15 * 60); // 15 minutes for KYN flow
-  const [slotsLeft, setSlotsLeft] = useState<number | null>(null);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
@@ -1116,7 +862,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     setStep('SELECT_EVENT');
   }, [isPlansHistoryManaged, activeHistoryLayer]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
-  const isUpiFlow     = selectedEvent?.bookingUrl?.toLowerCase().includes('upi-manual');
   const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
   const isNativeApplicationFlow = selectedEvent?.bookingUrl === 'native-application';
 
@@ -1124,21 +869,16 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   useEffect(() => {
     if (!isNativeApplicationFlow || !selectedEvent?.id) {
       setApplicationCount(null);
+      setReservedCount(null);
       return;
     }
-    supabase
-      .from('applications')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_slug', selectedEvent.id)
-      .then(({ count }) => {
-        setApplicationCount(typeof count === 'number' ? count : null);
-      });
+    fetchEventCounts(selectedEvent.id).then(({ registered, reserved }) => {
+      setApplicationCount(registered);
+      setReservedCount(reserved);
+    });
   }, [isNativeApplicationFlow, selectedEvent?.id]);
 
-  const isInvitePaymentFlow = !!inviteSlug;
-  const shouldUseManualUpi = isUpiFlow || isInvitePaymentFlow;
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
-  const doubtFormWebhookUrl = (msgs.doubt_form_webhook_url || '').trim();
   const getSelectedEventQuickInfoValue = (labels: string[]) =>
     selectedEvent?.quickInfo?.find(item => labels.includes(item.label))?.value?.trim() ?? '';
   const getSelectedDateForVars = () => bookingDate || journeyCardData?.startDate || selectedEvent?.dates?.[0]?.date || '';
@@ -1365,12 +1105,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
-        if (isInviteOverlay && onClose) {
-          window.setTimeout(onClose, 300);
-        } else {
-          setShowDetails(true);
-          setStep('EVENT_SELECTED');
-        }
+        setShowDetails(true);
+        setStep('EVENT_SELECTED');
       } else if (activeHistoryLayer === 'post-details-chat') {
         setShowDetails(true);
         setStep('EVENT_SELECTED');
@@ -1418,38 +1154,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // KYN timer (separate from chat)
-  useEffect(() => {
-    const t = setInterval(() => {
-      setKynTimer(prev => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // Fetch slots left for invite-only events
-  const fetchSlotsLeft = async () => {
-    if (!inviteSlug || !selectedEvent?.inviteSpots) return;
-    const { data } = await supabase
-      .from('invite_payment_submissions')
-      .select('phone')
-      .eq('invite_slug', inviteSlug)
-      .eq('status', 'advance_paid');
-    const uniquePhones = new Set((data ?? []).map((r: any) => r.phone));
-    setSlotsLeft(Math.max(0, selectedEvent.inviteSpots - uniquePhones.size));
-  };
-
-  useEffect(() => {
-    if (showBookingTimeline && inviteSlug) fetchSlotsLeft();
-  }, [showBookingTimeline, inviteSlug]);
-
-  // Preload per-event QR images as soon as the booking timeline opens
-  // so they're in the browser cache by the time the payment screen appears
-  useEffect(() => {
-    if (!showBookingTimeline || !selectedEvent) return;
-    preloadQrImages(selectedEvent.advanceQrUrl, selectedEvent.balanceQrUrl);
-  }, [showBookingTimeline, selectedEvent?.advanceQrUrl, selectedEvent?.balanceQrUrl]);
-
-
   const formatKynTime = (secs: number) => {
     const d = Math.floor(secs / (24 * 3600));
     const h = Math.floor((secs % (24 * 3600)) / 3600);
@@ -1466,17 +1170,17 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   // Only start typing after loading screen clears (both events + msgs ready)
   // so users see: loading screen → chat appears → typing dots → first message
   useEffect(() => {
-    if (inviteSlug) return;
     if (!eventsLoaded || !msgsReady) return;
     simulateBotTyping(() => {
       setMessages([{
         id: Date.now().toString(),
         sender: 'bot',
-        text: fillMsg(msgs, 'welcome', {}, 'Welcome to chapter அ! 👋\nWhich city are you from buddy?')
+        text: fillMsg(msgs, 'welcome', {}, 'Welcome to chapter அ! 👋\nWhich plan are you looking to join?'),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
-      setStep('ASK_CITY');
+      setStep('SELECT_EVENT');
     }, 1000);
-  }, [eventsLoaded, msgsReady, inviteSlug]);
+  }, [eventsLoaded, msgsReady]);
 
   const simulateBotTyping = (callback: () => void, delay: number = 800) => {
     setIsTyping(true);
@@ -1486,12 +1190,14 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     }, delay);
   };
 
+  const nowTimeStr = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   const addUserMessage = (text: string) => {
-    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'user', text }]);
+    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'user', text, time: nowTimeStr() }]);
   };
 
   const addBotMessage = (text: string) => {
-    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text }]);
+    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text, time: nowTimeStr() }]);
   };
 
   const formatCityLabel = (city: string) => (city === 'Other' ? 'Other City' : city);
@@ -1542,15 +1248,105 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     setSelectedEvent(event);
     trackEvent('event_selected', { city: formatCityLabel(selectedCity), category: selectedCategory || event.category, event_id: event.id, event_title: event.title });
 
+    // After the user picks a plan, ask which city they're joining from.
+    // Options come from the event's own cities array (minus "Other") + own transport.
+    const pickupCities = (event.cities ?? []).filter((c: string) => c !== 'Other');
+
+    if (pickupCities.length === 0) {
+      // No designated pickup cities — skip the question, default to 'Other'
+      setSelectedCity('Other');
+      clearDetailTimers();
+      setDetailsReady(false);
+      setShowTransition(true);
+      detailsReadyTimerRef.current = setTimeout(() => setDetailsReady(true), 1200);
+      detailsSafetyTimerRef.current = setTimeout(() => setDetailsReady(true), 3000);
+      setStep('EVENT_SELECTED');
+      return;
+    }
+
+    // Build template vars — spots_left requires an async DB call
+    const buildMeetingMsgVars = async () => {
+      const eventname = event.title;
+
+      // spots_left: only for capacity-limited events
+      let spots_left = '';
+      const capacity: number | null = (event as any).inviteSpots ?? (event as any).totalCapacity ?? null;
+      if (capacity != null && capacity > 0) {
+        const { reserved } = await fetchEventCounts(event.id);
+        const left = Math.max(0, capacity - reserved);
+        spots_left = left <= 5 ? 'last few' : String(left);
+      }
+
+      // eventdate: nearest upcoming non-sold-out date (1-city variant only)
+      const eventdate = (() => {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const active = (event.dates ?? []).filter(d => d.status !== 'sold_out');
+        const upcoming = active
+          .map(d => new Date(d.date + 'T00:00:00'))
+          .filter(d => d >= today)
+          .sort((a, b) => a.getTime() - b.getTime());
+        const d = upcoming[0]
+          ?? active.map(d2 => new Date(d2.date + 'T00:00:00')).sort((a, b) => b.getTime() - a.getTime())[0];
+        if (!d) return '';
+        const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+        const month   = d.toLocaleDateString('en-US', { month: 'short' });
+        const day = d.getDate();
+        const v = day % 100;
+        const su = ['th', 'st', 'nd', 'rd'];
+        const suffix = su[(v - 20) % 10] || su[v] || su[0];
+        return `${weekday}, ${month} ${day}${suffix}`;
+      })();
+
+      return { eventname, spots_left, eventdate };
+    };
+
+    buildMeetingMsgVars().then(vars => {
+      simulateBotTyping(() => {
+        let meetingPointMsg: string;
+        if (pickupCities.length === 1) {
+          meetingPointMsg = fillMsg(msgs, 'ask_pickup_city_1',
+            { city1: pickupCities[0], eventname: vars.eventname, spots_left: vars.spots_left, eventdate: vars.eventdate },
+            `This plan has a meeting point in {city1}.`);
+        } else if (pickupCities.length === 2) {
+          meetingPointMsg = fillMsg(msgs, 'ask_pickup_city_2',
+            { city1: pickupCities[0], city2: pickupCities[1], eventname: vars.eventname, spots_left: vars.spots_left },
+            `This plan has meeting points in {city1} & {city2}.`);
+        } else {
+          const numberedList = pickupCities.map((c: string, i: number) => `${i + 1}. ${c}`).join('\n');
+          meetingPointMsg = fillMsg(msgs, 'ask_pickup_city_many',
+            { cities_list: numberedList, eventname: vars.eventname, spots_left: vars.spots_left },
+            `This plan has meeting points in:\n{cities_list}`);
+        }
+        addBotMessage(meetingPointMsg);
+        setStep('ASK_PICKUP_CITY');
+      });
+    });
+  };
+
+  const handlePickupCitySelect = (city: string, label: string) => {
+    setStep('PROCESSING');
+    addUserMessage(label);
+    setSelectedCity(city);
+    trackEvent('city_selected', { city: label });
+
     clearDetailTimers();
     setDetailsReady(false);
     setShowTransition(true);
-
-    // Simulate data readiness; in real fetch, setDetailsReady(true) in the success callback.
     detailsReadyTimerRef.current = setTimeout(() => setDetailsReady(true), 1200);
-
-    // Fallback to avoid getting stuck
     detailsSafetyTimerRef.current = setTimeout(() => setDetailsReady(true), 3000);
+    setStep('EVENT_SELECTED');
+  };
+
+  const handleFromAnotherCity = () => {
+    setStep('PROCESSING');
+    addUserMessage("I'm from another city");
+    simulateBotTyping(() => {
+      addBotMessage(
+        fillMsg(msgs, 'ask_own_transport_city', {},
+          "You can join us at any of these meeting points with your own transport 🙂")
+      );
+      setStep('ASK_OWN_TRANSPORT_CITY');
+    });
   };
 
   const handleDetailsAction = (action: 'book' | 'contact', date?: string, meetingPoint?: string) => {
@@ -1650,9 +1446,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     addUserMessage(transport);
     
     simulateBotTyping(() => {
-      addBotMessage(fillMsgForSelectedEvent('kyn_ready', {}, "Perfect! I'll show you exactly what to select on KYN."));
       setStep('DONE');
-      setShowKynPopup(true);
       setShowWaitlistForm(false);
     });
   };
@@ -1664,25 +1458,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     const message = doubtFormData.message;
     const pickup = getSelectedPickupForVars();
     const selectedDate = getSelectedDateForVars();
-    const webhookPayload = {
-      name,
-      phone,
-      doubt: message,
-      message,
-      city: selectedCity ? formatCityLabel(selectedCity) : '',
-      category: selectedCategory || selectedEvent?.category || '',
-      title: selectedEvent?.title ?? '',
-      reporting_date: selectedDate ? formatFullDate(selectedDate) : '',
-      meeting_spot: pickup.meetingSpot,
-      transport: pickup.transport,
-      reporting_time: pickup.reportingTime,
-      eventId: selectedEvent?.id ?? '',
-      eventTitle: selectedEvent?.title ?? '',
-      eventCategory: selectedEvent?.category ?? selectedCategory ?? '',
-      selectedDate,
-      submittedAt: new Date().toISOString(),
-      source: 'chaptera_doubt_form',
-    };
     try {
       await supabase.from('doubt_submissions').insert({
         name,
@@ -1697,14 +1472,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         submitted_at: new Date().toISOString(),
       });
     } catch (_) {}
-    if (doubtFormWebhookUrl) {
-      fetch(doubtFormWebhookUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(webhookPayload),
-      }).catch(() => {});
-    }
     setShowDoubtPopup(false);
     setDoubtFormData({ name: '', phone: '', message: '' });
     setStep('PROCESSING');
@@ -1739,56 +1506,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const handleProceedToPhonePe = async () => {
     if (!selectedEvent) return;
 
-    // Invite-only verification: check the entered phone against invited_numbers
-    // Skip if already verified via the invite verify step
-    let isBalanceDue = inviteAlreadyVerified ? advanceAlreadyPaid : false;
-    if (inviteSlug && !inviteAlreadyVerified) {
-      const raw = detailsForm.phone;
-      const tenDigit = raw.replace(/^\+91/, '').replace(/^0/, '');
-      if (!/^\d{10}$/.test(tenDigit)) {
-        setInviteVerifyError('Please enter a valid 10-digit phone number.');
-        return;
-      }
-      const { data: inviteData } = await supabase
-        .from('invited_numbers')
-        .select('id')
-        .eq('event_slug', inviteSlug)
-        .eq('phone', tenDigit)
-        .maybeSingle();
-
-      // Fallback: also check applications table (native-application flow)
-      let foundInApplications = false;
-      if (!inviteData) {
-        const { data: appData } = await supabase
-          .from('applications')
-          .select('id')
-          .eq('phone', tenDigit)
-          .eq('status', 'invited')
-          .maybeSingle();
-        foundInApplications = !!appData;
-      }
-
-      if (!inviteData && !foundInApplications) {
-        setInviteVerifyError('__not_found__');
-        return;
-      }
-      setInviteVerifyError('');
-
-      // Check if advance is already paid and verified for this phone + event
-      const { data: paidRows } = await supabase
-        .from('invite_payment_submissions')
-        .select('id')
-        .eq('invite_slug', inviteSlug)
-        .eq('phone', tenDigit)
-        .eq('status', 'advance_paid')
-        .limit(1);
-      isBalanceDue = (paidRows ?? []).length > 0;
-      setAdvanceAlreadyPaid(isBalanceDue);
-    }
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
     const selectedDateEntry = selectedEvent.dates?.find((d: any) => d.date === dateStr);
     const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
-    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
+    const _cd1 = (selectedEvent as any).cityDetails?.[selectedCity];
+    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity, _cd1?.price_full > 0 ? _cd1.price_full : undefined, _cd1?.price_advance > 0 ? _cd1.price_advance : undefined);
     const balanceDueRaw = shiftDateString(dateStr, -5) || '';
     const balanceDue = balanceDueRaw ? formatDisplayDate(balanceDueRaw) : 'TBD';
     const pickupDetails = dateStr ? formatDisplayDate(shiftDateString(dateStr, -3) || undefined) : 'TBD';
@@ -1799,24 +1521,22 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     const ctx = {
       eventId: selectedEvent.id,
       eventTitle: selectedEvent.title,
-      amount: isBalanceDue ? balanceAmount : advanceAmount,
-      remainingBalance: isBalanceDue ? 0 : balanceAmount,
-      isBalancePayment: isBalanceDue,
+      amount: advanceAmount,
+      remainingBalance: balanceAmount,
+      isBalancePayment: false,
       date: formatDisplayDate(dateStr),
       balanceDue,
       balanceDueRaw,
       pickupDetails,
       tripDate,
       tripDateFull: formatFullDate(dateStr),
-      phonepeUrl: isInvitePaymentFlow ? 'upi-manual' : selectedEvent.bookingUrl,
+      phonepeUrl: selectedEvent.bookingUrl,
       shareUrl: typeof window !== 'undefined' ? window.location.origin : '/',
       name: detailsForm.name.trim(),
       phone: detailsForm.phone,
       receiptId: `CA-${Date.now().toString(36).toUpperCase()}`,
       issuedAt: new Date().toISOString(),
       girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
-      advanceQrUrl: selectedEvent.advanceQrUrl ?? null,
-      balanceQrUrl: selectedEvent.balanceQrUrl ?? null,
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
       email: googleUser?.email ?? undefined,
     };
@@ -1828,12 +1548,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     }
     trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setPaymentContext(ctx);
-    if (shouldUseManualUpi) {
-      setDetailsFormStep('instructions');
-    } else {
-      setShowDetailsForm(false);
-      setPaymentView('checkout');
-    }
+    setShowDetailsForm(false);
+    setPaymentView('checkout');
   };
 
   const handleMockPaymentComplete = async () => {
@@ -1869,7 +1585,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     const dateStr = options.dateStr ?? (bookingDate || eventForSubmission.dates?.[0]?.date || '');
     const name = options.name ?? detailsForm.name.trim();
     const { error: submissionError } = await supabase.rpc('upsert_payment_submission', {
-      p_invite_slug: inviteSlug ?? null,
+      p_invite_slug: null,
       p_event_id: eventForSubmission.id,
       p_event_slug: eventForSubmission.id,
       p_event_title: eventForSubmission.title,
@@ -1882,7 +1598,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
     if (submissionError) {
       // RPC doesn't exist — fall back to direct insert so admin can see submissions
       await supabase.from('invite_payment_submissions').insert({
-        invite_slug: inviteSlug ?? null,
+        invite_slug: null,
         event_id: eventForSubmission.id,
         event_slug: eventForSubmission.id,
         event_title: eventForSubmission.title,
@@ -1898,7 +1614,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
         localRows.unshift({
           id: `local-${Date.now()}`,
-          invite_slug: inviteSlug ?? null,
+          invite_slug: null,
           event_id: eventForSubmission.id,
           event_slug: eventForSubmission.id,
           event_title: eventForSubmission.title,
@@ -1915,15 +1631,14 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         // ignore storage errors
       }
     }
-    // Refresh slots count after insert (invite-only events only)
-    if (inviteSlug) await fetchSlotsLeft();
   };
 
   // Called when user taps "Get Payment Details" — inserts submission + refreshes slots
   const handleGetPaymentDetails = async () => {
     if (!paymentContext || !selectedEvent) return;
     const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
-    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity);
+    const _cd2 = (selectedEvent as any).cityDetails?.[selectedCity];
+    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity, _cd2?.price_full > 0 ? _cd2.price_full : undefined, _cd2?.price_advance > 0 ? _cd2.price_advance : undefined);
     await recordPaymentSubmission(pricing.advance);
     setShowDetailsForm(false);
     setPaymentView('checkout');
@@ -1948,7 +1663,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
 
     switch (step) {
       case 'ASK_CITY': {
-        const baseCities = Array.from(new Set(events.flatMap(e => e.cities).filter(Boolean)));
+        const baseCities: string[] = Array.from(new Set(events.flatMap(e => e.cities as string[]).filter(Boolean)));
         const middleCities = baseCities
           .filter(c => {
             const lc = c.toLowerCase();
@@ -1977,7 +1692,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
         );
       }
       case 'ASK_CATEGORY': {
-        const availableCategories = Array.from(new Set(events.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
+        const availableCategories: string[] = Array.from(new Set(events.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {availableCategories.map((cat, i) => (
@@ -2062,8 +1777,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
             <button onClick={() => {
               setStep('PROCESSING');
               simulateBotTyping(() => {
-                addBotMessage(fillMsg(msgs, 'retry_city', {}, "Let's try again! Which city are you from?"));
-                setStep('ASK_CITY');
+                addBotMessage(fillMsg(msgs, 'retry_city', {}, "Let's try again! Which plan are you looking to join?"));
+                setStep('SELECT_EVENT');
               });
             }} className={`${btnClass} relative overflow-hidden`}>
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
@@ -2071,8 +1786,48 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
             </button>
           </motion.div>
         );
+      case 'ASK_PICKUP_CITY': {
+        const pickupCities = (selectedEvent?.cities ?? []).filter((c: string) => c !== 'Other');
+        return (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
+            {pickupCities.map((city: string, i: number) => (
+              <button key={city} onClick={() => handlePickupCitySelect(city, `I'll join in ${city}`)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div
+                  className="absolute inset-0 -skew-x-12"
+                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
+                />
+                <span>I'll join in {city}</span> <Send size={16} className="flex-shrink-0" />
+              </button>
+            ))}
+            <button onClick={handleFromAnotherCity} className={`${btnClass} relative overflow-hidden`}>
+              <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: pickupCities.length * 1.2, ease: 'easeInOut' }} />
+              <span>I'm from another city</span> <Send size={16} className="flex-shrink-0" />
+            </button>
+          </motion.div>
+        );
+      }
+      case 'ASK_OWN_TRANSPORT_CITY': {
+        const pickupCities = (selectedEvent?.cities ?? []).filter((c: string) => c !== 'Other');
+        return (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
+            {pickupCities.map((city: string, i: number) => (
+              <button key={city} onClick={() => handlePickupCitySelect(city, `I'll come to ${city} by own transport`)} className={`${btnClass} relative overflow-hidden`}>
+                <motion.div
+                  className="absolute inset-0 -skew-x-12"
+                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
+                />
+                <span>I'll come to {city} by own transport</span> <Send size={16} className="flex-shrink-0" />
+              </button>
+            ))}
+          </motion.div>
+        );
+      }
       case 'SELECT_EVENT': {
-        const filteredEvents = sortGirlsOnlyLast(events.filter(e => e.cities.includes(selectedCity)));
+        const filteredEvents = sortGirlsOnlyLast(events);
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
             {filteredEvents.map((event, i) => {
@@ -2083,9 +1838,10 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                   <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
                   <span className="text-left flex-1 mr-2 flex items-center gap-2">
                     {isGirlsOnlyEvent && (
-                      <span className="rounded-full bg-white/25 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-white ring-1 ring-white/35">
-                        Girls Only
-                      </span>
+	                      <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[7px] font-black uppercase leading-none tracking-[0.08em] text-white ring-1 ring-white/35 flex flex-col items-center gap-[1px]">
+	                        <span>Girls</span>
+	                        <span>Only</span>
+	                      </span>
                     )}
                     <span>{event.oneLiner || event.title}</span>
                   </span>
@@ -2113,10 +1869,9 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const isPhoneValid = /^\d{10,}$/.test(detailsForm.phone);
   const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && (!isPayUFlow || !!googleUser);
 
-  if (previewLoading) return isInviteOverlay ? null : <div className="fixed inset-0 bg-white z-50" />;
+  if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
 
-  const appReady = isInviteOverlay ? !!selectedEvent : eventsLoaded && msgsReady;
-  if (!appReady && isInviteOverlay) return null;
+  const appReady = eventsLoaded && msgsReady;
   if (!appReady) return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
       {/* Logo with gentle glow pulse */}
@@ -2161,11 +1916,11 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
   const isSelectedGirlsOnlyEvent = selectedEvent?.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent?.quickInfo);
 
   return (
-    <div className={isInviteOverlay ? "absolute inset-0 overflow-hidden bg-transparent font-sans" : "h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans"}>
-      <div className={isInviteOverlay ? "absolute inset-0 bg-transparent overflow-hidden" : "w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white"}>
-        
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+
         {/* Header */}
-        {!isInviteOverlay && <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
+        <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
               <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
@@ -2194,7 +1949,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
               )}
             </div>
           </div>
-        </div>}
+        </div>
 
         {showChat && !showDetails && !showTransition && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
@@ -2202,7 +1957,9 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
               <JourneyCard event={journeyCardData.event} city={journeyCardData.city} startDate={journeyCardData.startDate} meetingPoint={journeyCardData.meetingPoint} />
             )}
             {messages.map(msg => (
-              <ChatMessage key={msg.id} message={msg} />
+              <React.Fragment key={msg.id}>
+                <ChatMessage message={msg} />
+              </React.Fragment>
             ))}
             <div className="pt-1">
               {(() => {
@@ -2279,6 +2036,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
             selectedCity={selectedCity}
             allEvents={events}
             applicationCount={applicationCount}
+            reservedCount={reservedCount}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
             openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
@@ -2308,48 +2066,34 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                 className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
                 onClick={() => {
                   setShowBookingTimeline(false);
-                  if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
-                  else if (selectedEvent) { setShowDetails(true); setShowChat(false); }
+                  if (selectedEvent) { setShowDetails(true); setShowChat(false); }
                 }}
               />
               <motion.div
                 variants={{
-                  hidden: isInvitePaymentFlow
-                    ? { y: '100%', transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } }
-                    : { opacity: 0, scale: 0.92, transition: { duration: 0.2, ease: 'easeIn' } },
-                  visible: isInvitePaymentFlow
-                    ? { y: 0, transition: { type: 'spring', damping: 32, stiffness: 300 } }
-                    : { opacity: 1, scale: 1, transition: { type: 'spring', damping: 25, stiffness: 300 } },
+                  hidden: { y: '100%', transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } },
+                  visible: { y: 0, transition: { type: 'spring', damping: 32, stiffness: 300 } },
                 }}
                 initial="hidden"
                 animate="visible"
                 exit="hidden"
-                className={isInvitePaymentFlow ? 'absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[2rem]' : 'absolute inset-0 z-50 flex items-center justify-center px-5 pointer-events-none'}
+                className="absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[2rem]"
               >
-                <div
-                  className={isInvitePaymentFlow ? '' : 'w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100 pointer-events-auto'}
-                  onClick={e => e.stopPropagation()}
-                >
-                  {isInvitePaymentFlow && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowBookingTimeline(false);
-                          if (isInviteOverlay && onClose) window.setTimeout(onClose, 300);
-                        }}
-                        className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
-                      >
-                        <X size={14} strokeWidth={2.5} />
-                      </button>
-                      <div className="pt-4 flex justify-center flex-shrink-0">
-                        <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
-                      </div>
-                    </>
-                  )}
-                <div>
-                  <div className={isInvitePaymentFlow ? 'px-6 pt-3 pb-4' : 'px-6 pt-6 pb-4'}>
-                    <p className={isInvitePaymentFlow ? 'text-[24px] font-black text-gray-900 tracking-tight leading-tight text-center' : 'text-lg font-black text-gray-900 leading-tight text-center'}>Your Booking Timeline</p>
+                <div onClick={e => e.stopPropagation()}>
+                  {/* Close button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBookingTimeline(false);
+                      if (selectedEvent) { setShowDetails(true); setShowChat(false); }
+                    }}
+                    className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                  >
+                    <X size={14} strokeWidth={2.5} />
+                  </button>
+                <div className="pt-4">
+                  <div className="px-6 pt-3 pb-4">
+                    <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight text-center">Your Booking Timeline</p>
                   </div>
 
                   <div className="px-6 pb-6">
@@ -2357,7 +2101,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                       {/* All booking steps — index 0 = "Now" row, rest = deadline rows */}
                       {(() => {
                         const meetingPoint = journeyCardData?.meetingPoint || '';
-                        const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity);
+                        const _cd3 = (selectedEvent as any).cityDetails?.[selectedCity];
+                        const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity, _cd3?.price_full > 0 ? _cd3.price_full : undefined, _cd3?.price_advance > 0 ? _cd3.price_advance : undefined);
                         const advanceStr = `₹${pricing.advance.toLocaleString('en-IN')}`;
                         const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
                         const priceStr = `₹${pricing.total.toLocaleString('en-IN')}`;
@@ -2372,24 +2117,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
-                        const steps = isInvitePaymentFlow ? (() => {
-                          const advanceStepIndex = eventSteps.findIndex(step =>
-                            /advance/i.test(`${step.label} ${step.value}`)
-                          );
-                          const requestStepIndex = eventSteps.findIndex(step =>
-                            /request invitation|sign up|vibe check/i.test(`${step.label} ${step.value}`)
-                          );
-                          const sourceAdvanceStep = eventSteps[advanceStepIndex] ?? eventSteps[requestStepIndex] ?? eventSteps[0];
-                          return [
-                            {
-                              ...sourceAdvanceStep,
-                              label: 'settle advance',
-                              value: '{advance}',
-                              date: sourceAdvanceStep?.date ?? '',
-                            },
-                            ...eventSteps.filter((_, index) => index !== advanceStepIndex && index !== requestStepIndex),
-                          ];
-                        })() : eventSteps;
+                        const steps = eventSteps;
 
                         const buildCountdown = (dateStr: string) => {
                           const secs = dateStr
@@ -2402,32 +2130,19 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           const s = secs % 60;
                           return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
                         };
-                        const isBalanceRow = (si: number, step: any) =>
-                          si > 0 && /balance/i.test(step.label || step.value || '');
-
                         return steps.map((step, si) => {
                           const isNowRow = si === 0;
                           const stepValue = resolveValue(step.value || '');
                           const dateLabel = !isNowRow && step.date
                             ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                             : null;
-                          const isAdvancePaidRow = isInvitePaymentFlow && advanceAlreadyPaid && isNowRow;
-                          const isBalancePaidCountdown = isInvitePaymentFlow && advanceAlreadyPaid && isBalanceRow(si, step);
                           return (
-                            <div key={si} className={`px-5 py-3 flex items-center justify-between border-b border-black/5 ${isBalancePaidCountdown ? 'bg-[#FFD700]/10' : ''}`}>
+                            <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                               <div>
-                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">{isAdvancePaidRow ? 'advance' : step.label}</p>
+                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
                                 <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
                               </div>
-                              {isAdvancePaidRow ? (
-                                <span className="text-[11px] font-bold text-white bg-green-500 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                                  ✓ Paid
-                                </span>
-                              ) : isBalancePaidCountdown ? (
-                                <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
-                                  due by {buildCountdown(step.date || '')}
-                                </span>
-                              ) : isNowRow ? (
+                              {isNowRow ? (
                                 <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                                   Now
                                 </span>
@@ -2441,26 +2156,26 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         });
                       })()}
 
-                      {/* Prize row — event title + date + slots */}
-                      <div className={`px-5 py-4 flex items-center justify-between ${advanceAlreadyPaid && isInvitePaymentFlow ? '' : 'bg-[#FFD700]/10'}`}>
-                        <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
+	                      {/* Prize row — event title + date */}
+	                      <div className="px-5 py-4 flex items-end justify-between bg-[#FFD700]/10">
+	                        <div>
+	                          {(() => {
+	                            const capacity = (selectedEvent as any).totalCapacity;
+	                            const socialProofCount =
+	                              isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && typeof applicationCount === 'number'
+	                                ? (capacity * 3) + applicationCount
+	                                : null;
+	                            return socialProofCount !== null ? (
+	                              <p className="text-[11px] text-gray-400 font-medium mb-0.5 flex items-center gap-1"><Users size={11} className="flex-shrink-0" />{socialProofCount} ppl have requested invitation</p>
+	                            ) : null;
+	                          })()}
+	                          <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
+	                        </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
-                          {isInvitePaymentFlow && !advanceAlreadyPaid ? (
-                            // Not yet paid — show spots left only
-                            slotsLeft !== null && (
-                              <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full tabular-nums">
-                                {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
-                              </span>
-                            )
-                          ) : (() => {
-                            // Paid or non-invite flow — show date
+                          {(() => {
                             const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
                             return dateStr ? (
-                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
-                                isInvitePaymentFlow
-                                  ? 'text-gray-500 bg-gray-100 border border-gray-200'
-                                  : 'text-black bg-[#FFD700] border border-[#d4af37] font-black'
-                              }`}>
+                              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full text-black bg-[#FFD700] border border-[#d4af37] font-black">
                                 {new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                               </span>
                             ) : null;
@@ -2470,39 +2185,29 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                     </div>
                   </div>
 
-                  <div className="px-6 pb-6">
+                  <div className="px-6 pb-8">
                     {isNativeApplicationFlow ? (
                       <>
-                        {typeof applicationCount === 'number' && applicationCount > 0 && (
-                          <div className="flex items-center justify-center gap-1.5 mb-3">
-                            <span className="text-sm">🙌</span>
-                            <span className="text-[13px] font-semibold text-gray-500">
-                              Join {applicationCount} {applicationCount === 1 ? 'other' : 'others'} who've applied
-                            </span>
-                          </div>
-                        )}
                         <button
                           onClick={() => { setShowBookingTimeline(false); setShowApplicationForm(true); }}
-                          className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
+                          className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
                         >
-                          <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
-                          {selectedEvent.ctaLabel || 'Apply Now'}
-                          <ArrowRight size={18} strokeWidth={2.5} />
+                          {selectedEvent.ctaLabel || 'Request Invitation'}
+                          <ArrowRight size={18} strokeWidth={3.0} />
                         </button>
                       </>
-                    ) : selectedEvent.inviteOnly && !isInvitePaymentFlow ? (
+                    ) : selectedEvent.inviteOnly ? (
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
                           window.open(selectedEvent.bookingUrl, '_blank');
                         }}
-                        className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
+                        className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
                       >
-                        <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         {selectedEvent.ctaLabel || 'Request Invitation'}
-                        <ArrowRight size={18} strokeWidth={2.5} />
+                        <ArrowRight size={18} strokeWidth={3.0} />
                       </button>
-                    ) : isPhonePeFlow && !isInvitePaymentFlow ? (
+                    ) : isPhonePeFlow ? (
                       <button
                         onClick={() => {
                           setShowBookingTimeline(false);
@@ -2512,28 +2217,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                       >
                         <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                         {selectedEvent.ctaLabel || 'Confirm'}
-                        <ArrowRight size={18} strokeWidth={3.0} />
-                      </button>
-                    ) : shouldUseManualUpi ? (
-                      <button
-                        onClick={async () => {
-                          if (isInvitePaymentFlow && selectedEvent.kynPaymentUrl) {
-                            trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-                            window.open(selectedEvent.kynPaymentUrl, '_blank');
-                          } else if (isInvitePaymentFlow) {
-                            setShowBookingTimeline(false);
-                            setShowDetailsForm(true);
-                            await handleProceedToPhonePe();
-                          } else {
-                            setShowBookingTimeline(false);
-                            setShowDetailsForm(true);
-                          }
-                        }}
-                        className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
-                      >
-                        {isInvitePaymentFlow
-                          ? (advanceAlreadyPaid ? 'Settle Balance' : 'Pay Advance')
-                          : (selectedEvent.ctaLabel || 'Pay Advance')}
                         <ArrowRight size={18} strokeWidth={3.0} />
                       </button>
                     ) : isPayUFlow ? (
@@ -2604,11 +2287,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                 >
                   <X size={14} strokeWidth={2.5} />
                 </button>
-                {/* Handle — always visible */}
-                <div className="pt-4 flex justify-center">
-                  <div className="w-8 h-[3px] bg-gray-100 rounded-full" />
-                </div>
-
                 <AnimatePresence mode="wait">
 
                   {/* ── Step 1: Details form ── */}
@@ -2624,7 +2302,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                       {(!existingBooking || forceNewBooking) && (
                       <div className="px-6 pt-3 pb-4">
                         <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">
-                          {isInvitePaymentFlow ? 'Invite Verification 🔐' : "Let's Lock This In! 🔐"}
+                          Let's Lock This In! 🔐
                         </p>
                       </div>
                       )}
@@ -2677,8 +2355,8 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                           </div>
                         )}
 
-                        {/* Google Sign-In — only for non-invite PayU flow */}
-                        {!isInvitePaymentFlow && (!existingBooking || forceNewBooking) && (
+                        {/* Google Sign-In */}
+                        {(!existingBooking || forceNewBooking) && (
                           <>
                             {googleUser ? (
                               /* Already signed in — show pill with avatar */
@@ -2747,7 +2425,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                                 type="text"
                                 value={detailsForm.name}
                                 onChange={e => setDetailsForm({ ...detailsForm, name: e.target.value })}
-                                placeholder={isInvitePaymentFlow ? 'Name entered in application form' : 'What do we call you?'}
+                                placeholder="What do we call you?"
                                 className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                               />
                             </div>
@@ -2762,35 +2440,13 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                               <input
                                 type="tel"
                                 value={detailsForm.phone}
-                                onChange={e => { setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') }); setInviteVerifyError(''); }}
-                                placeholder={isInvitePaymentFlow ? 'Number entered in application form' : 'Updates & reminders are sent here'}
+                                onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') })}
+                                placeholder="Updates & reminders are sent here"
                                 className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                                 inputMode="tel"
                               />
                             </div>
                           </>
-                        )}
-
-                        {inviteVerifyError && (
-                          <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] text-red-600 leading-relaxed px-1">
-                            {inviteVerifyError === '__not_found__' ? (
-                              <>
-                                <span className="font-semibold">This number isn't on our invite list.</span>
-                                <br />
-                                Re-enter the number you used in the application form.
-                                <br /><br />
-                                Haven't applied yet? →{' '}
-                                <a
-                                  href={selectedEvent?.bookingUrl ?? '#'}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline font-semibold"
-                                >
-                                  Apply Now
-                                </a>
-                              </>
-                            ) : inviteVerifyError}
-                          </motion.p>
                         )}
 
                         {(!existingBooking || forceNewBooking) && (
@@ -2814,12 +2470,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                         </div>
                         )}
 
-                        {isInvitePaymentFlow && (
-                          <div className="flex items-center justify-center gap-1.5 pt-2">
-                            <ShieldCheck size={13} className="text-emerald-500 flex-shrink-0" />
-                            <span className="text-[12px] text-gray-400 font-medium">Only 1 Entry Slot per Phone Number.</span>
-                          </div>
-                        )}
                       </div>
 
                       {(!existingBooking || forceNewBooking) && (
@@ -2832,7 +2482,7 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                             isDetailsFormValid ? 'bg-black text-white active:opacity-80' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
-                          <span>{shouldUseManualUpi ? 'Continue' : 'Pay Advance'}</span>
+                          <span>Pay Advance</span>
                           <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
                         </button>
                       </div>
@@ -2927,6 +2577,10 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
                 {/* Form */}
                 <ApplicationForm
                   event={selectedEvent}
+                  selectedDate={bookingDate || selectedEvent?.dates?.[0]?.date}
+                  selectedPickupId={journeyCardData?.meetingPoint}
+                  selectedCity={selectedCity || undefined}
+                  reservedCount={reservedCount}
                   onClose={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
                 />
               </motion.div>
@@ -2984,22 +2638,6 @@ export default function App({ inviteSlug, inviteVerifiedUser, onClose }: { invit
             onError={() => { setPaymentView('idle'); setShowDetailsForm(true); }}
           />
         )}
-
-        {/* UPI Manual Payment */}
-        <AnimatePresence>
-          {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl?.includes('upi-manual') && (
-            <UpiPaymentScreen
-              paymentContext={paymentContext}
-              girlsOnly={paymentContext.girlsOnly}
-              isBalancePayment={paymentContext.isBalancePayment}
-              onClose={() => {
-                setPaymentView('idle');
-                setDetailsFormStep('instructions');
-                setShowDetailsForm(true);
-              }}
-            />
-          )}
-        </AnimatePresence>
 
         {/* Payment Success Screen */}
         <AnimatePresence>
@@ -3355,7 +2993,7 @@ const ChatMessage = ({ message }: { message: Message }) => {
         {message.text && <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{message.text}</p>}
 
         <span className={`text-[10px] float-right mt-1 ml-3 select-none ${isBot ? 'text-gray-400' : 'text-black/60'}`}>
-          {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {message.time ?? ''}
         </span>
       </div>
     </motion.div>
@@ -3367,9 +3005,9 @@ const MEETING_POINT_CONFIG: Record<string, { meetingSpot: string; transport: str
   anna_nagar:    { meetingSpot: 'Anna Nagar', transport: 'Party Bus', pickupTime: '8:00 AM', dropdownLabel: 'Anna Nagar — by 8:00 AM' },
 };
 
-const getMeetingPointPricing = (event: Event, meetingPointId?: string, city?: string) => {
-  const baseTotal = parseInt(event.price.replace(/[^0-9]/g, ''), 10) || 0;
-  const baseAdvance = event.advanceAmount || 0;
+const getMeetingPointPricing = (event: Event, meetingPointId?: string, city?: string, baseTotalOverride?: number, baseAdvanceOverride?: number) => {
+  const baseTotal = baseTotalOverride ?? (parseInt(event.price.replace(/[^0-9]/g, ''), 10) || 0);
+  const baseAdvance = baseAdvanceOverride ?? (event.advanceAmount || 0);
   if (!meetingPointId) {
     return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
   }
@@ -3378,7 +3016,7 @@ const getMeetingPointPricing = (event: Event, meetingPointId?: string, city?: st
     const total = selectedPoint?.otherPrice && selectedPoint.otherPrice > 0
       ? selectedPoint.otherPrice
       : (meetingPointId === 'own_transport'
-        ? (event.pickupPoints?.find(p => p.id === 'own_transport')?.ownTransportPrice ?? baseTotal)
+        ? (baseTotalOverride != null ? baseTotal : (event.pickupPoints?.find(p => p.id === 'own_transport')?.ownTransportPrice ?? baseTotal))
         : baseTotal);
     const desiredAdvance = selectedPoint?.otherAdvance && selectedPoint.otherAdvance > 0
       ? selectedPoint.otherAdvance
@@ -3389,7 +3027,11 @@ const getMeetingPointPricing = (event: Event, meetingPointId?: string, city?: st
     return { total: baseTotal, advance: Math.min(baseAdvance, baseTotal) };
   }
   const ownPoint = event.pickupPoints?.find(p => p.id === 'own_transport');
-  const ownTotal = ownPoint?.ownTransportPrice ?? baseTotal;
+  // If a city-specific price override was supplied, it takes precedence over the
+  // globally-stored ownTransportPrice (which was set from the old global price_full).
+  const ownTotal = baseTotalOverride != null
+    ? baseTotal
+    : (ownPoint?.ownTransportPrice ?? baseTotal);
   return { total: ownTotal, advance: Math.min(baseAdvance, ownTotal) };
 };
 
@@ -3412,18 +3054,31 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
   const ownPoint = dbPoints.find(p => p.id === 'own_transport');
   const isOtherCity = selectedCity === 'Other';
 
-  // Points that have been explicitly tagged
-  const hasTaggedPoints = dbPoints.some(p => p.id !== 'own_transport' && p.forOtherCity !== undefined);
+  // New system: forCity string takes priority over old forOtherCity boolean
+  const hasForCityPoints = dbPoints.some(p => p.id !== 'own_transport' && p.forCity);
 
   let points: typeof dbPoints;
-  if (hasTaggedPoints) {
-    // Filter by flag — home city sees forOtherCity:false, Other sees forOtherCity:true
-    points = dbPoints.filter(p =>
-      p.id === 'own_transport' || (isOtherCity ? p.forOtherCity === true : p.forOtherCity === false)
-    );
+  if (hasForCityPoints) {
+    if (selectedCity && selectedCity !== 'Other') {
+      // Normal flow: user selected a city — show only points tagged to that city
+      points = dbPoints.filter(p =>
+        p.id === 'own_transport' || p.forCity === selectedCity
+      );
+    } else {
+      // No city selected yet (preview link, etc.) — show all forCity-tagged points
+      points = dbPoints;
+    }
   } else {
-    // Legacy: no flags set — show all points to everyone (backward compatible)
-    points = dbPoints;
+    // Legacy: forOtherCity boolean (home city = false, Other = true)
+    const hasTaggedPoints = dbPoints.some(p => p.id !== 'own_transport' && p.forOtherCity !== undefined);
+    if (hasTaggedPoints) {
+      points = dbPoints.filter(p =>
+        p.id === 'own_transport' || (isOtherCity ? p.forOtherCity === true : p.forOtherCity === false)
+      );
+    } else {
+      // No flags at all — show all points to everyone (fully backward compatible)
+      points = dbPoints;
+    }
   }
 
   if (!isOtherCity && ownPoint?.ownOnly) {
@@ -3432,7 +3087,7 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
   return points;
 };
 
-const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
+const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
   const dbPoint = meetingPoint ? event.pickupPoints?.find(p => p.id === meetingPoint) : null;
   const pointDateOffset = dbPoint?.dateOffset ?? 0;
   const d = new Date(startDate + 'T00:00:00');
@@ -3447,9 +3102,12 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
 
   const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
 
+  // City-specific quick-info override
+  const _cityData = city ? (event as any).cityDetails?.[city] : null;
+
   const cfg = (!dbPoint && meetingPoint) ? MEETING_POINT_CONFIG[meetingPoint] : null;
-  const resolvedMeeting   = dbPoint ? dbPoint.meetingSpot : cfg ? cfg.meetingSpot  : spotField?.value;
-  const resolvedTransport = dbPoint ? dbPoint.transport   : cfg ? cfg.transport     : transportField?.value;
+  const resolvedMeeting   = dbPoint ? dbPoint.meetingSpot : cfg ? cfg.meetingSpot  : (_cityData?.meeting_spot ?? spotField?.value);
+  const resolvedTransport = dbPoint ? dbPoint.transport   : cfg ? cfg.transport     : (_cityData?.transport    ?? transportField?.value);
   const resolvedTime      = dbPoint ? dbPoint.time        : cfg?.pickupTime || firstTime;
 
   return (
@@ -3493,7 +3151,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   );
 };
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -3519,6 +3177,15 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const [headerCarouselPaused, setHeaderCarouselPaused] = useState(false);
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
   const isPayUFlow = event.bookingUrl === 'payu-hosted';
+
+  // City-specific content: prefer city_details[selectedCity], fall back to flat event fields
+  const _cd = (event as any).cityDetails?.[selectedCity];
+  const activeIncluded: string[] = _cd?.included ?? (event.included ?? []);
+  const activeNotIncluded: string[] = _cd?.not_included ?? (event.notIncluded ?? []);
+  const activeOptional: string[] = _cd?.optional_activities ?? (event.optionalActivities ?? []);
+  const activeItinerary: any[] = _cd?.itinerary ?? (event.itinerary ?? []);
+  const activePriceFull: number    = _cd?.price_full    ?? event.priceFull    ?? 0;
+  const activePriceAdvance: number = _cd?.price_advance ?? event.priceAdvance ?? event.advanceAmount ?? 0;
   const [openSpotsLeft, setOpenSpotsLeft] = useState<number | null>(null);
   useEffect(() => {
     if (!(event as any).totalCapacity || !isPayUFlow) return;
@@ -3541,10 +3208,16 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const lastHandledOpenPlanSwitcherSignalRef = useRef(openPlanSwitcherSignal ?? 0);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cityDateOffset = React.useMemo(() => {
-    if (!event.transportPlan) return 0;
-    const leg = event.transportPlan.find(l => l.cities?.map(c => c.toLowerCase()).includes(selectedCity.toLowerCase()));
+    // Pickup points carry per-city departure offsets — use them first
+    const cityPoints = getCityPickupPoints(event, selectedCity).filter(p => p.id !== 'own_transport');
+    if (cityPoints.length > 0 && (cityPoints[0].dateOffset ?? 0) !== 0) {
+      return cityPoints[0].dateOffset ?? 0;
+    }
+    // Fall back to transportPlan for legacy events
+    if (!(event as any).transportPlan?.length) return 0;
+    const leg = (event as any).transportPlan.find((l: any) => l.cities?.map((c: any) => c.toLowerCase()).includes(selectedCity.toLowerCase()));
     return leg ? leg.dateOffset : 0;
-  }, [event.transportPlan, selectedCity]);
+  }, [event, selectedCity]);
   const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
   const headerImages = React.useMemo(() => {
     const fromArray = Array.isArray(event.heroImages) ? event.heroImages : [];
@@ -3696,14 +3369,24 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     }, 1500);
   };
 
-  const renderCalendar = () => {
-    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    // Shift so Monday = 0, Sunday = 6 (common in India)
-    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
-    
-    // Calculate trip duration
-    const durationMatch = event.timing.match(/(\d+)\s*Days?/i);
-    const tripDays = durationMatch ? parseInt(durationMatch[1], 10) : event.itinerary.length;
+	  const renderCalendar = () => {
+	    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+	    // Shift so Monday = 0, Sunday = 6 (common in India)
+	    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
+	    const nativeCapacity = (event as any).totalCapacity as number | null;
+	    const nativeTaken = typeof reservedCount === 'number' ? reservedCount : null;
+	    const nativeAvailability =
+	      event.bookingUrl === 'native-application' && nativeCapacity && nativeTaken !== null
+	        ? {
+	            available: Math.max(nativeCapacity - nativeTaken, 0),
+	            isFillingFast: nativeTaken / nativeCapacity >= 0.5,
+	          }
+	        : null;
+	    const useNativeFillingFastCells = !!nativeAvailability?.isFillingFast && nativeAvailability.available > 0;
+	    
+	    // Calculate trip duration
+	    const durationMatch = event.timing.match(/(\d+)\s*Days?/i);
+    const tripDays = durationMatch ? parseInt(durationMatch[1], 10) : activeItinerary.length;
     
     const selectedDateObj = selectedDate ? new Date(`${selectedDate}T00:00:00`) : null;
     // Base trip start is always the original city-agnostic start
@@ -3720,10 +3403,13 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     
     for (let i = 1; i <= daysInMonth; i++) {
       const currentDateObj = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i);
-      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
-      const tripDate = event.dates?.find(d => d.date === baseDateStr);
-      const isForcedSoldOut = dateStr === '2026-04-05'; // topmost Sunday, without touching agenda data
+	      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+	      const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
+	      const tripDate = event.dates?.find(d => d.date === baseDateStr);
+	      const effectiveDateStatus =
+	        useNativeFillingFastCells && tripDate?.status === 'available'
+	          ? 'selling_out'
+	          : tripDate?.status;
 
       const isSelectedStart = selectedDate === dateStr;
       const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
@@ -3737,8 +3423,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         return "rounded-xl";
       })();
 
-      const isUnavailable = isForcedSoldOut || !tripDate || tripDate.status === 'sold_out';
-      const isColoured = !!tripDate && (tripDate.status === 'available' || tripDate.status === 'selling_out');
+	      const isSoldOut = tripDate?.status === 'sold_out';
+	      const isUnavailable = !tripDate || isSoldOut;
+	      const isColoured = !!tripDate && (effectiveDateStatus === 'available' || effectiveDateStatus === 'selling_out');
       const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && !selectedDate;
       const shimmerIdx = isShimmerable ? availableCellIdx++ : -1;
       const staggerDelay = (i - 1) * 0.025;
@@ -3748,35 +3435,19 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         if (isSelectedStart) return "text-black font-black border border-[#d4af37] z-10";
         if (isWithinTrip)    return "text-black font-semibold border border-[#d4af37]/80 z-0";
         if (isTripEnd)       return "text-black font-semibold border border-[#d4af37]";
-        if (tripDate?.status === 'available')    return "text-green-900 font-bold border border-green-500 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
-        if (tripDate?.status === 'selling_out')  return "text-amber-950 font-bold border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]";
-        if (tripDate?.status === 'sold_out')     return "text-gray-300";
+	        if (effectiveDateStatus === 'available')    return "text-green-900 font-bold border border-green-500 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]";
+	        if (effectiveDateStatus === 'selling_out')  return "text-amber-950 font-bold border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]";
+		        if (isSoldOut)     return "text-gray-600 font-black";
         return "text-gray-400";
       })();
 
       const bgOverlay = (() => {
         if (isSelectedStart || isWithinTrip || isTripEnd) return "rgba(255,226,138,1)";
-        if (tripDate?.status === 'available')   return "rgba(187,247,208,0.8)";
-        if (tripDate?.status === 'selling_out') return "#FFEDE5";
-        return "#f3f4f6"; // gray-100 for unavailable
+	        if (effectiveDateStatus === 'available')   return "rgba(187,247,208,0.8)";
+	        if (effectiveDateStatus === 'selling_out') return "#FFEDE5";
+	        if (isSoldOut) return "#e5e7eb";
+	        return "#f3f4f6"; // gray-100 for unavailable
       })();
-
-      if (isForcedSoldOut) {
-        days.push(
-          <motion.button
-            key={i}
-            disabled
-            initial={{ opacity: 0 }}
-            animate={{ opacity: calendarRevealed ? 1 : 0 }}
-            transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
-            className={`h-10 ${shapeClass} flex flex-col items-center justify-center relative overflow-hidden bg-gray-300 text-white pt-1`}
-          >
-            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em]">Sold</span>
-            <span className="text-[10px] font-extrabold uppercase leading-tight tracking-[0.08em] -mt-[2px]">Out</span>
-          </motion.button>
-        );
-        continue;
-      }
 
       days.push(
         <motion.button
@@ -3798,16 +3469,16 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
             transition={{ duration: 0.45, delay: staggerDelay, ease: 'easeInOut' }}
             style={{ backgroundColor: bgOverlay }}
           />
-          {/* Slash — fades in only for unavailable, slightly after bg */}
-          {isUnavailable && !isSelectedStart && !isWithinTrip && !isTripEnd && (
-            <motion.div
-              className="absolute inset-0 pointer-events-none z-[2]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: calendarRevealed ? 1 : 0 }}
-              transition={{ duration: 0.35, delay: staggerDelay + 0.18, ease: 'easeInOut' }}
-              style={{
-                backgroundImage: 'linear-gradient(315deg, transparent 48%, rgba(128,128,128,0.18) 49%, rgba(128,128,128,0.18) 51%, transparent 52%)',
-                backgroundSize: '100% 100%'
+	          {/* Slash — fades in only for unavailable non-trip dates, slightly after bg */}
+	          {isUnavailable && !isSoldOut && !isSelectedStart && !isWithinTrip && !isTripEnd && (
+	            <motion.div
+	              className="absolute inset-0 pointer-events-none z-[2]"
+	              initial={{ opacity: 0 }}
+	              animate={{ opacity: calendarRevealed ? 1 : 0 }}
+	              transition={{ duration: 0.35, delay: staggerDelay + 0.18, ease: 'easeInOut' }}
+	              style={{
+	                backgroundImage: 'linear-gradient(315deg, transparent 48%, rgba(128,128,128,0.18) 49%, rgba(128,128,128,0.18) 51%, transparent 52%)',
+	                backgroundSize: '100% 100%'
               }}
             />
           )}
@@ -3825,14 +3496,36 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                 ease: 'easeInOut',
               }}
             />
-          )}
-          {/* Number — always on top */}
-          <span className="text-base relative z-[3]">{i}</span>
+	          )}
+	          {/* Label — always on top */}
+	          {isSoldOut ? (
+	            <>
+	              <motion.span
+	                className="text-base relative z-[3] text-gray-400 font-normal"
+	                initial={{ opacity: 1 }}
+	                animate={{ opacity: calendarRevealed ? [1, 1, 0] : 1 }}
+	                transition={{ duration: 0.7, delay: staggerDelay, times: [0, 0.7, 1], ease: 'easeInOut' }}
+	              >
+	                {i}
+	              </motion.span>
+	              <motion.span
+	                className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-[3px] text-[10px] leading-none font-black tracking-wider text-gray-600 [text-shadow:0_0_0_currentColor]"
+	                initial={{ opacity: 0 }}
+	                animate={{ opacity: calendarRevealed ? 1 : 0 }}
+	                transition={{ duration: 0.25, delay: staggerDelay + 0.62, ease: 'easeOut' }}
+	              >
+	                <span>SOLD</span>
+	                <span>OUT</span>
+	              </motion.span>
+	            </>
+	          ) : (
+	            <span className="text-base relative z-[3]">{i}</span>
+	          )}
         </motion.button>
       );
     }
 
-    return (
+	    return (
       <div className="mb-1">
         <div className="flex justify-center items-center gap-6 mb-3">
           <button
@@ -3854,14 +3547,23 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
           </button>
         </div>
         <div className="flex items-center justify-center gap-5 mt-4 mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
-            <span>Filling fast</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
-            <span>Available</span>
-          </div>
+          {nativeAvailability?.available > 0 && nativeAvailability.isFillingFast ? (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
+              <span>Only {nativeAvailability.available} spot{nativeAvailability.available === 1 ? '' : 's'} left</span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
+                <span>Filling fast</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
+                <span>Available</span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-7 gap-1 mb-2 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -3956,8 +3658,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         {event.quickInfo && event.quickInfo.length > 0 && (() => {
           const madeFor    = event.quickInfo!.find(c => c.label === 'Made For' || c.label === "You'll Meet") || event.quickInfo![3];
           const groupSize  = event.quickInfo!.find(c => c.label === 'Group Size')   || event.quickInfo![2];
-          const meetingSpot= event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
-          const transport  = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
+          const _msBase    = event.quickInfo!.find(c => c.label === 'Meeting Spot') || event.quickInfo![0];
+          const _trBase    = event.quickInfo!.find(c => c.label === 'Transport')    || event.quickInfo![1];
+          // City-specific override: prefer city_details[selectedCity].meeting_spot / .transport
+          const meetingSpot = _cd?.meeting_spot ? { ..._msBase, value: _cd.meeting_spot } : _msBase;
+          const transport   = _cd?.transport    ? { ..._trBase, value: _cd.transport    } : _trBase;
           const planTitle  = event.quickInfo!.find(c => c.label === 'Plan Title')?.value || 'The Plan';
           const groupNum   = groupSize?.value.match(/\d+[-–]\d+|\d+/)?.[0] || groupSize?.value;
           const groupSub   = groupSize?.value.replace(/\d+\s?/, '') || '';
@@ -4016,21 +3721,21 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
           <h3 className="text-xl font-black mb-4">What's Included</h3>
           <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
             <div className="p-4 space-y-3">
-              {event.included?.map((item, i) => (
+              {activeIncluded.map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <CheckCircle2 size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
                   <span className="text-sm font-medium text-gray-800">{item}</span>
                 </div>
               ))}
             </div>
-            {event.optionalActivities && event.optionalActivities.length > 0 && (
+            {activeOptional.length > 0 && (
               <div className="px-4 pb-2 space-y-2">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                   <Plus size={20} className="text-gray-500" />
                   <span>Optional activities</span>
                 </div>
                 <div className="space-y-2">
-                  {event.optionalActivities.map((act, idx) => (
+                  {activeOptional.map((act, idx) => (
                     <div key={idx} className="flex items-start gap-3 text-sm text-gray-800 font-medium">
                       <CheckCircle2 size={18} className="text-[#D4AF37] flex-shrink-0 mt-0.5" />
                       <span>{act}</span>
@@ -4057,7 +3762,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                   >
                     <div className="p-4 pt-0">
                       <ul className="list-disc pl-5 space-y-1.5">
-                        {event.notIncluded?.map((item, i) => (
+                        {activeNotIncluded.map((item, i) => (
                           <li key={i} className="text-[12px] leading-5 text-gray-600/85 marker:text-gray-400">
                             {item}
                           </li>
@@ -4075,7 +3780,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         <div className="p-6" ref={itineraryRef}>
           <h3 className="text-xl font-black mb-4">You'll Experience</h3>
           <div className="space-y-3">
-            {event.itinerary?.map((day, i) => (
+            {activeItinerary.map((day, i) => (
               <div key={i} className="rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
                 <button 
                   onClick={() => setExpandedItinerary(expandedItinerary === i ? null : i)}
@@ -4196,6 +3901,10 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                             </li>
                           ))}
                         </ul>
+                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
+                          <ShieldCheck size={14} className="text-emerald-500 flex-shrink-0" />
+                          <span className="text-[13px] text-gray-500">Same gender rooms — so that everyone's comfortable.</span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -4319,39 +4028,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
             <ArrowRight size={22} strokeWidth={3.0} />
           </button>
 
-          {/* Dot grid — native-application events only */}
-          {event.bookingUrl === 'native-application' && (() => {
-            const capacity = (event as any).totalCapacity as number | null;
-            const taken = typeof applicationCount === 'number' ? applicationCount : null;
-            if (!capacity || taken === null) return null;
-            const available = Math.max(capacity - taken, 0);
-            const fillRatio = taken / capacity;
-            const dotColor = fillRatio >= 0.85 ? '#ef4444' : fillRatio >= 0.6 ? '#f97316' : '#22c55e';
-            const labelColor = fillRatio >= 0.85 ? '#dc2626' : fillRatio >= 0.6 ? '#ea580c' : '#16a34a';
-            const MAX_DOTS = 30;
-            const dotCount = Math.min(capacity, MAX_DOTS);
-            const filledDots = Math.round(taken / (capacity / dotCount));
-            return (
-              <div className="mt-7 flex flex-col gap-2.5">
-                <div className="flex flex-wrap gap-[5px]">
-                  {Array.from({ length: dotCount }).map((_, i) => (
-                    <div key={i} style={{
-                      width: 13, height: 13, borderRadius: '50%', flexShrink: 0,
-                      background: i < filledDots ? dotColor : 'transparent',
-                      border: `2px solid ${i < filledDots ? dotColor : '#d1d5db'}`,
-                    }} />
-                  ))}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-bold" style={{ color: labelColor }}>
-                    {available === 0 ? 'Fully booked' : `${available} spot${available === 1 ? '' : 's'} left`}
-                  </span>
-                  <span className="text-[11px] text-gray-400 font-medium">{taken} of {capacity} taken</span>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
+	        </div>
 
         {/* Footer — Branding + Work With Us + Legal links */}
         <div className="bg-[#F5F2ED] border-t border-[#E4DDD3]">
@@ -4553,7 +4230,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                           >
                             <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 flex flex-col gap-3">
                               {(() => {
-                                const pricing = getMeetingPointPricing(event, selectedMeetingPoint, selectedCity);
+                                const pricing = getMeetingPointPricing(event, selectedMeetingPoint, selectedCity, activePriceFull > 0 ? activePriceFull : undefined, activePriceAdvance > 0 ? activePriceAdvance : undefined);
                                 const displayAdvance = pricing.advance;
                                 const displayTotal = pricing.total;
                                 const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
@@ -4594,7 +4271,10 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                   onClick={() => {
                                     trackEvent('contact_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
                                     setShowCalendar(false);
-                                    onAction('contact', selectedDate || undefined, selectedMeetingPoint);
+                                    // Pass the base event date (undo the cityDateOffset shift) so
+                                    // handleDetailsAction / JourneyCard don't double-offset.
+                                    const baseDate = selectedDate ? shiftDateStr(selectedDate, -cityDateOffset) : undefined;
+                                    onAction('contact', baseDate, selectedMeetingPoint);
                                   }}
                                   className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFF3BF] text-[#b38200] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#ffe58f] transition-colors border border-[#FFD700]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]"
                                 >
@@ -4605,7 +4285,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                   onClick={() => {
                                     trackEvent('book_cta_clicked', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
                                     setShowCalendar(false);
-                                    onAction('book', selectedDate || undefined, selectedMeetingPoint);
+                                    const baseDate = selectedDate ? shiftDateStr(selectedDate, -cityDateOffset) : undefined;
+                                    onAction('book', baseDate, selectedMeetingPoint);
                                   }}
                                   className="w-full sm:min-w-[160px] px-3 py-2.5 rounded-lg bg-[#FFD700] text-black font-black text-sm flex items-center justify-center gap-2 hover:bg-[#e6c200] transition-transform active:scale-95 shadow-md shadow-[#FFD700]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 relative overflow-hidden"
                                 >

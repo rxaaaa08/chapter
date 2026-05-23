@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <title>chapter அ</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="chapter அ" />
+    <link rel="apple-touch-icon" href="/icon.png" />
     <script src="https://t.contentsquare.net/uxa/02bde574cbdd5.js" async></script>
     <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S"></script>
@@ -13,10 +20,64 @@
       gtag('js', new Date());
       gtag('config', 'G-3MLZ9S6M2S');
     </script>
+    <style>
+      @keyframes ca-glow {
+        0%, 100% { opacity: 0.15; transform: scale(1); }
+        50%       { opacity: 0.45; transform: scale(1.18); }
+      }
+      #html-preloader {
+        position: fixed;
+        top: 0; right: 0; bottom: 0; left: 0;
+        z-index: 9999;
+        background: #ffffff;
+        display: -webkit-box;
+        display: -webkit-flex;
+        display: flex;
+        -webkit-box-align: center;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-box-pack: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+      }
+      #html-preloader-inner {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        flex-shrink: 0;
+        -webkit-flex-shrink: 0;
+      }
+      #html-preloader-glow {
+        position: absolute;
+        top: -10px; right: -10px; bottom: -10px; left: -10px;
+        border-radius: 22px;
+        background: radial-gradient(circle, rgba(255,200,0,0.4) 0%, transparent 70%);
+        filter: blur(8px);
+        -webkit-filter: blur(8px);
+        animation: ca-glow 2s ease-in-out infinite;
+        -webkit-animation: ca-glow 2s ease-in-out infinite;
+      }
+      #html-preloader-box {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 16px;
+        background: #000000;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+      }
+    </style>
   </head>
   <body>
+    <!-- Pre-loader: pure CSS, no image fetch, covers any partial-state flash before React mounts.
+         Removed via double-rAF in main.tsx after React's first paint. -->
+    <div id="html-preloader">
+      <div id="html-preloader-inner">
+        <div id="html-preloader-glow"></div>
+        <div id="html-preloader-box"></div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

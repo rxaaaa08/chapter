@@ -49,7 +49,6 @@ function ImageUploadInput({
   );
 }
 
-const ADMIN_PASSWORD = 'chaptera2025';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type TripDate = { id?: string; start_date: string; status: 'available' | 'selling_out' | 'sold_out'; label: string; whatsapp_group_url?: string };
@@ -65,6 +64,7 @@ type PickupPoint = {
   otherPrice?: number;
   otherAdvance?: number;
   forOtherCity?: boolean;
+  forCity?: string;
 };
 type EventMedia = { id?: string; url: string; caption: string; thumbnail_url?: string };
 type EventReview = { id?: string; name: string; rating: number; review_text: string; date_label?: string; review_count?: number; images?: string[] };
@@ -90,7 +90,6 @@ type Trip = {
   not_included: string[];
   announcements?: string[];
   booking_url: string;
-  kyn_payment_url?: string | null;
   cta_label: string;
   is_active: boolean;
   pickup_points?: PickupPoint[];
@@ -107,9 +106,9 @@ type Trip = {
   invite_only?: boolean;
   invite_spots?: number | null;
   total_capacity?: number | null;
-  advance_qr_url?: string | null;
-  balance_qr_url?: string | null;
   ticket_types?: Array<{ id: string; label: string; price: number; advance: number }>;
+  invite_faqs?: FAQ[];
+  city_details?: Record<string, { included: string[]; not_included: string[]; optional_activities: string[]; itinerary: ItineraryDay[]; meeting_spot?: string; transport?: string; price_full?: number; price_advance?: number }>;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type DoubtSubmission = {
@@ -131,37 +130,6 @@ type DoubtSubmission = {
   submitted_at?: string;
   created_at?: string;
 };
-type InvitePaymentSubmission = {
-  id?: string;
-  invite_slug?: string;
-  event_id?: string;
-  event_slug?: string;
-  event_title?: string;
-  selected_date?: string;
-  name?: string;
-  phone?: string;
-  amount?: number;
-  status?: string;
-  submitted_at?: string;
-  source?: string;
-};
-type MockPaymentReceipt = {
-  id?: string;
-  receipt_no?: string;
-  event_id?: string;
-  event_title?: string;
-  event_date?: string;
-  customer_name?: string;
-  contact?: string;
-  amount_paid?: number;
-  payment_for?: string;
-  payment_mode?: string;
-  status?: string;
-  paid_on?: string;
-  remaining_balance?: number;
-  balance_due?: string;
-  created_at?: string;
-};
 type PayuPayment = {
   id?: string;
   txnid?: string;
@@ -175,8 +143,6 @@ type PayuPayment = {
   mihpayid?: string;
   created_at?: string;
 };
-
-const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const statusLabel = { available: 'Available', selling_out: 'Selling Out', sold_out: 'Sold Out' };
@@ -199,28 +165,37 @@ function Badge({ status }: { status: TripDate['status'] }) {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
-  const [authed, setAuthed] = useState(false);
-  const [pw, setPw] = useState('');
-  const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<'trips' | 'media' | 'timelines' | 'qna' | 'payments' | 'receipts' | 'other' | 'messages' | 'analytics' | 'applications'>('trips');
-  const [paymentsEventFilter, setPaymentsEventFilter] = useState<'all' | string>('all');
-  const [receiptsEventFilter, setReceiptsEventFilter] = useState<'all' | string>('all');
-  const [manualPaymentForm, setManualPaymentForm] = useState({ eventId: '', selectedDate: '', name: '', phone: '', amount: '' });
+  const [adminRole, setAdminRole] = useState<'admin' | 'ops' | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authDenied, setAuthDenied] = useState(false);
+  const [debugEmail, setDebugEmail] = useState<string>('');
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics'>('people');
+  const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
+  const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
+  const [peopleSearch, setPeopleSearch] = useState('');
+  // Normalize city_details keys to match the casing in the cities array.
+  // Older saves may have stored keys like "delhi" when the city is "Delhi".
+  // This merges all case-variants of a city into the single canonical key.
+  const normalizeCityDetails = (trip: any): any => {
+    const cd = trip.city_details;
+    if (!cd || typeof cd !== 'object') return trip;
+    const cityNames: string[] = trip.cities ?? [];
+    const normalized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(cd)) {
+      const canonical = cityNames.find(c => c.toLowerCase() === key.toLowerCase()) ?? key;
+      normalized[canonical] = { ...(normalized[canonical] ?? {}), ...(value as any) };
+    }
+    return { ...trip, city_details: normalized };
+  };
+
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
-  const [invitePaymentSubmissions, setInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
-  const [mockPaymentReceipts, setMockPaymentReceipts] = useState<MockPaymentReceipt[]>([]);
   const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
-  const [localInvitePaymentSubmissions, setLocalInvitePaymentSubmissions] = useState<InvitePaymentSubmission[]>([]);
-  const [refreshingSubmissions, setRefreshingSubmissions] = useState(false);
-  const [refreshingReceipts, setRefreshingReceipts] = useState(false);
-  const [addingManualPayment, setAddingManualPayment] = useState(false);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
   const [doubtCtaLabel, setDoubtCtaLabel] = useState('');
-  const [doubtFormWebhookUrl, setDoubtFormWebhookUrl] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
   const [savingDoubtSettings, setSavingDoubtSettings] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -232,6 +207,7 @@ export default function AdminPanel() {
   const [timelinesCityFilter, setTimelinesCityFilter] = useState<'all' | string>('all');
   const [timelineEdits, setTimelineEdits] = useState<Record<string, Array<{ label: string; value: string; date: string }>>>({});
   const [selectedTimelineDates, setSelectedTimelineDates] = useState<Record<string, string>>({});
+  const [expandedTimelineId, setExpandedTimelineId] = useState<string | null>(null);
   const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
   const [analyticsData, setAnalyticsData] = useState<any[]>([]);
@@ -248,7 +224,7 @@ export default function AdminPanel() {
   const [savingCallId, setSavingCallId] = useState<string | null>(null);
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCityFilter, setQnaDoubtCityFilter] = useState<'all' | string>('all');
-  const [qnaDoubtCategoryFilter, setQnaDoubtCategoryFilter] = useState<'all' | string>('all');
+  const [qnaDoubtPlanFilter, setQnaDoubtPlanFilter] = useState<'all' | string>('all');
   const [mediaEditingId, setMediaEditingId] = useState<string | null>(null);
   const [qnaEditingId, setQnaEditingId] = useState<string | null>(null);
   const [mediaOriginalById, setMediaOriginalById] = useState<Record<string, Trip>>({});
@@ -272,8 +248,10 @@ export default function AdminPanel() {
     doubts_btn_yes: 'booking', doubts_btn_no: 'booking',
     faq_followup: 'booking', faq_followup_repeat: 'booking', show_faq: 'booking',
     ask_transport: 'booking', kyn_ready: 'booking',
+    ask_pickup_city_1: 'booking', ask_pickup_city_2: 'booking', ask_pickup_city_many: 'booking',
+    ask_own_transport_city: 'booking',
     contact_success: 'contact',
-    general_announcements: 'global', doubt_cta_label: 'global', doubt_form_webhook_url: 'global',
+    general_announcements: 'global', doubt_cta_label: 'global',
   };
 
   const allCities = [
@@ -290,13 +268,13 @@ export default function AdminPanel() {
     })
     .sort((a, b) => a.localeCompare(b));
   const orderedCities = ['Chennai', ...middleCities].filter((c, i, arr) => allCities.includes(c) && arr.indexOf(c) === i);
-  const qnaDoubtCategories = [
-    ...new Set(
-      (doubtSubmissions ?? [])
-        .map(s => (s.event_category || s.category || '').trim())
-        .filter(Boolean)
-    ),
-  ].sort((a, b) => a.localeCompare(b));
+  const qnaDoubtPlans = (trips
+    .map(t => (t.title || '').trim())
+    .filter((s): s is string => !!s))
+    .sort((a, b) => a.localeCompare(b));
+
+  const getDoubtSubmissionPlanName = (submission: DoubtSubmission) =>
+    (submission.event_title || submission.event || submission.event_name || '').trim();
 
   const formatAdminDateTime = (value?: string) => {
     if (!value) return '-';
@@ -308,60 +286,57 @@ export default function AdminPanel() {
     return `${day} ${month} at ${time}`;
   };
 
-  const formatAdminINR = (amount?: number) =>
-    typeof amount === 'number' ? `₹${amount.toLocaleString('en-IN')}` : '-';
-
-  const invitePaymentRows: InvitePaymentSubmission[] = [...localInvitePaymentSubmissions, ...invitePaymentSubmissions]
-    .sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
-
-  const mockReceiptRows: MockPaymentReceipt[] = [...mockPaymentReceipts]
-    .sort((a, b) => new Date(b.paid_on || b.created_at || 0).getTime() - new Date(a.paid_on || a.created_at || 0).getTime());
-
-  const inviteEligibleTrips = trips.filter(t => t.invite_slug || t.invite_only);
-  const selectedManualPaymentTrip = trips.find(t => t.id === manualPaymentForm.eventId);
-
-  // Auto-select the first invite-eligible trip once trips load
+  // ─── AUTH: resolve session on mount & listen for changes ──────────────────
   useEffect(() => {
-    if (manualPaymentForm.eventId) return; // already set
-    const list = inviteEligibleTrips.length > 0 ? inviteEligibleTrips : trips;
-    const first = list[0];
-    if (!first) return;
-    const date = first.event_dates?.[0]?.start_date || '';
-    const amount = first.price_advance ? String(first.price_advance) : '';
-    setManualPaymentForm(prev => ({ ...prev, eventId: first.id, selectedDate: date, amount }));
-  }, [trips]);
+    const resolveRole = async (userId: string | undefined, userEmail: string | undefined) => {
+      if (!userId || !userEmail) { setAdminRole(null); setAuthDenied(false); setAuthLoading(false); return; }
+      const { data, error } = await supabase.from('admin_users').select('role').eq('email', userEmail).maybeSingle();
+      if (error) console.error('[admin] admin_users query error:', error);
+      console.log('[admin] resolveRole', { userEmail, data, error });
+      setDebugEmail(userEmail ?? '');
+      const role = (data?.role as 'admin' | 'ops') ?? null;
+      setAdminRole(role);
+      setAuthDenied(!role); // logged in via Google but not in admin_users
+      if (role === 'ops') setTab('people');
+      else if (role === 'admin') setTab('trips');
+      setAuthLoading(false);
+    };
 
-  const login = () => {
-    if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); }
-    else setPwError(true);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      resolveRole(session?.user?.id, session?.user?.email);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      resolveRole(session?.user?.id, session?.user?.email);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const login = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + window.location.pathname },
+    });
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setAdminRole(null);
+    setAuthDenied(false);
   };
 
   // ─── LOAD DATA ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authed) return;
+    if (!adminRole) return;
     setLoading(true);
-    try {
-      const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
-      setLocalInvitePaymentSubmissions(Array.isArray(localRows) ? localRows : []);
-    } catch {
-      setLocalInvitePaymentSubmissions([]);
-    }
-    // Fetch invite_payment_submissions independently so a failure doesn't block other data
-    supabase.from('invite_payment_submissions').select('*').order('submitted_at', { ascending: false })
-      .then(({ data, error }) => {
-        console.log('[AdminPanel] invite_payment_submissions initial load →', { count: data?.length, error });
-        if (error) console.error('invite_payment_submissions fetch error:', error);
-        setInvitePaymentSubmissions((data ?? []) as InvitePaymentSubmission[]);
-      });
-
     Promise.all([
       supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
       supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
-      supabase.from('mock_payment_receipts').select('*').order('paid_on', { ascending: false }),
       supabase.from('payu_payments').select('*').order('created_at', { ascending: false }),
-    ]).then(([evRes, msgRes, doubtsRes, mockReceiptsRes, payuRes]) => {
-      if (evRes.data) setTrips(evRes.data as Trip[]);
+    ]).then(([evRes, msgRes, doubtsRes, payuRes]) => {
+      if (evRes.data) setTrips((evRes.data as Trip[]).map(normalizeCityDetails));
       if (msgRes.data) {
         const allMsgs = msgRes.data as ChatMsg[];
         setMsgs(allMsgs);
@@ -374,64 +349,76 @@ export default function AdminPanel() {
         }
         const doubtLabelMsg = allMsgs.find(m => m.step_key === 'doubt_cta_label');
         setDoubtCtaLabel(doubtLabelMsg?.bot_message || '');
-        const webhookMsg = allMsgs.find(m => m.step_key === 'doubt_form_webhook_url');
-        setDoubtFormWebhookUrl(webhookMsg?.bot_message || '');
       }
       if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
-      if (mockReceiptsRes.data) setMockPaymentReceipts(mockReceiptsRes.data as MockPaymentReceipt[]);
       if (payuRes.data) setPayuPayments(payuRes.data as PayuPayment[]);
       setLoading(false);
+    }).then(() => {
+      // For ops users the People tab is shown by default — load applications automatically
+      if (adminRole === 'ops') loadApplications();
     }).catch(err => {
       console.error('Admin data load error:', err);
       setLoading(false);
     });
-  }, [authed]);
+  }, [adminRole]);
 
-  const refreshSubmissions = async () => {
-    setRefreshingSubmissions(true);
-    try {
-      const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
-      setLocalInvitePaymentSubmissions(Array.isArray(localRows) ? localRows : []);
-    } catch {
-      setLocalInvitePaymentSubmissions([]);
-    }
-    const { data, error } = await supabase
-      .from('invite_payment_submissions')
-      .select('*')
-      .order('submitted_at', { ascending: false });
-    console.log('[AdminPanel] invite_payment_submissions refresh →', { count: data?.length, error });
-    if (error) {
-      showToast(`❌ Failed to load submissions: ${error.message}`);
-    } else {
-      setInvitePaymentSubmissions((data ?? []) as InvitePaymentSubmission[]);
-    }
-    setRefreshingSubmissions(false);
-  };
-
-  const refreshMockReceipts = async () => {
-    setRefreshingReceipts(true);
+  const refreshPayuPayments = async () => {
     const { data } = await supabase
-      .from('mock_payment_receipts')
+      .from('payu_payments')
       .select('*')
-      .order('paid_on', { ascending: false });
-    if (data) setMockPaymentReceipts(data as MockPaymentReceipt[]);
-    setRefreshingReceipts(false);
+      .order('created_at', { ascending: false });
+    if (data) setPayuPayments(data as PayuPayment[]);
   };
 
   const loadApplications = async () => {
     setApplicationsLoading(true);
-    const { data, error } = await supabase
-      .from('applications')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }] = await Promise.all([
+      supabase.from('applications').select('*').order('created_at', { ascending: false }),
+      supabase.from('plan_doubts').select('*').order('created_at', { ascending: false }),
+      supabase.from('events').select('slug, invite_slug'),
+    ]);
+    console.log('[loadApplications] applications:', data?.length ?? 0, 'doubts:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message})` : '');
+    if (doubtsErr) showToast(`⚠️ Could not load doubts: ${doubtsErr.message}`);
     if (error) {
       showToast(`❌ Failed to load applications: ${error.message}`);
     } else {
-      setApplications(data ?? []);
+      const eventSlugAliases = new Map<string, Set<string>>();
+      (eventRows ?? []).forEach((event: any) => {
+        const slug = String(event.slug ?? '').trim();
+        const inviteSlug = String(event.invite_slug ?? '').trim();
+        if (!slug) return;
+        const aliases = eventSlugAliases.get(slug) ?? new Set<string>([slug]);
+        if (inviteSlug) aliases.add(inviteSlug);
+        eventSlugAliases.set(slug, aliases);
+      });
+
+      // Index doubts by (phone, event_slug) so each application can carry its latest doubts.
+      // Older invite-chat rows may have stored events.invite_slug; applications use events.slug.
+      const doubtsByKey = new Map<string, any[]>();
+      (doubtsRows ?? []).forEach((d: any) => {
+        // Normalize phone to last 10 digits to be resilient to country-code prefixes
+        const normPhone = String(d.phone ?? '').replace(/\D/g, '').slice(-10);
+        const key = `${normPhone}__${d.event_slug}`;
+        const arr = doubtsByKey.get(key) ?? [];
+        arr.push(d);
+        doubtsByKey.set(key, arr);
+      });
+      const enriched = (data ?? []).map((a: any) => {
+        const normPhone = String(a.phone ?? '').replace(/\D/g, '').slice(-10);
+        const aliases = eventSlugAliases.get(String(a.event_slug ?? '').trim()) ?? new Set<string>([a.event_slug]);
+        const doubts = Array.from(aliases).flatMap(slug => doubtsByKey.get(`${normPhone}__${slug}`) ?? []);
+        return {
+          ...a,
+          doubts,
+        };
+      });
+      const totalDoubtsAttached = enriched.reduce((sum, a) => sum + (a.doubts?.length ?? 0), 0);
+      console.log('[loadApplications] doubts attached to apps:', totalDoubtsAttached, '/ total doubts:', doubtsRows?.length ?? 0);
+      setApplications(enriched);
       // Seed local edits from DB values
       const cs: Record<string, string> = {};
       const cn: Record<string, string> = {};
-      (data ?? []).forEach((a: any) => {
+      enriched.forEach((a: any) => {
         cs[a.id] = a.call_status ?? 'not_called';
         cn[a.id] = a.call_notes ?? '';
       });
@@ -446,22 +433,29 @@ export default function AdminPanel() {
     const app = applications.find(a => a.id === id);
 
     // 1. Update status to invited
-    const { error } = await supabase
+    const { data: updatedApp, error } = await supabase
       .from('applications')
       .update({ status: 'invited' })
-      .eq('id', id);
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
 
-    if (error) {
-      showToast(`❌ ${error.message}`);
+    if (error || !updatedApp) {
+      showToast(`❌ ${error?.message || 'Could not save approval. Please refresh and try again.'}`);
       setApprovingId(null);
+      await loadApplications();
       return;
     }
 
-    setApplications(prev => prev.map(a => a.id === id ? { ...a, status: 'invited' } : a));
+    setApplications(prev => prev.map(a => a.id === id ? { ...a, ...updatedApp } : a));
 
     // 2. Fire AiSensy invite message
     if (app) {
-      const trip = trips.find(t => (t.slug || t.id) === app.event_slug);
+      // Case-insensitive trip lookup — guards against any old vs new slug casing drift.
+      const appSlugLower = String(app.event_slug ?? '').toLowerCase();
+      const trip = trips.find(t =>
+        String(t.slug ?? t.id ?? '').toLowerCase() === appSlugLower
+      );
       const eventName = trip?.title ?? app.event_slug ?? '';
       const firstDate = trip?.event_dates?.[0]?.start_date ?? '';
       const eventDate = (() => {
@@ -490,7 +484,7 @@ export default function AdminPanel() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZDY1Yjk2MmFiNTdlMGUzNjJiNzA2ZCIsIm5hbWUiOiJjaGFwdGVyIEEgMzA2MyIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OWQ2NWI5NjJhYjU3ZTBlMzYyYjcwNjciLCJhY3RpdmVQbGFuIjoiRlJFRV9GT1JFVkVSIiwiaWF0IjoxNzc1NjU1ODMwfQ.vYeRHCDeP-U5VPhsUrbLfIgkS2hIK1-adr0NrNtYfEI',
-            campaignName: 'Invite-Only Automation',
+            campaignName: 'invitation_with_contact',
             destination: phone,
             userName: app.name ?? '',
             source: 'chapter-admin-dashboard',
@@ -501,9 +495,19 @@ export default function AdminPanel() {
         });
         const ok = aiRes.status >= 200 && aiRes.status < 300;
         // Mark aisensy_invite_sent on the row
-        await supabase.from('applications').update({ aisensy_invite_sent: ok }).eq('id', id);
-        setApplications(prev => prev.map(a => a.id === id ? { ...a, aisensy_invite_sent: ok } : a));
-        showToast(ok ? '✅ Approved & WhatsApp invite sent' : '✅ Approved — but WhatsApp send failed');
+        const { data: sentApp, error: sentError } = await supabase
+          .from('applications')
+          .update({ status: 'invited', aisensy_invite_sent: ok })
+          .eq('id', id)
+          .select('*')
+          .maybeSingle();
+        if (sentError || !sentApp) {
+          showToast(`⚠️ WhatsApp ${ok ? 'sent' : 'failed'}, but DB did not save the sent flag. Refreshing…`);
+          await loadApplications();
+        } else {
+          setApplications(prev => prev.map(a => a.id === id ? { ...a, ...sentApp } : a));
+          showToast(ok ? '✅ Approved & WhatsApp invite sent' : '✅ Approved — but WhatsApp send failed');
+        }
       } catch {
         showToast('✅ Approved — WhatsApp send failed (network error)');
       }
@@ -529,80 +533,6 @@ export default function AdminPanel() {
     setSavingCallId(null);
   };
 
-  const addManualAdvancePayment = async () => {
-    const trip = selectedManualPaymentTrip;
-    if (!trip) { showToast('Select an event first'); return; }
-    const tenDigit = manualPaymentForm.phone.replace(/\D/g, '').slice(-10);
-    if (!/^\d{10}$/.test(tenDigit)) { showToast('Enter a valid 10-digit phone'); return; }
-    const name = manualPaymentForm.name.trim();
-    if (!name) { showToast('Enter the customer name'); return; }
-
-    setAddingManualPayment(true);
-    const submittedAt = new Date().toISOString();
-    const selectedDate = manualPaymentForm.selectedDate || trip.event_dates?.[0]?.start_date || '';
-    const amount = Number(manualPaymentForm.amount) || Number(trip.price_advance) || 0;
-    const inviteSlug = trip.invite_slug || trip.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || trip.slug || trip.id || null;
-
-    const { error: rpcError } = await supabase.rpc('upsert_payment_submission', {
-      p_invite_slug: inviteSlug,
-      p_event_id: trip.id ?? null,
-      p_event_slug: trip.id ?? trip.slug ?? null,
-      p_event_title: trip.title,
-      p_selected_date: selectedDate,
-      p_name: name,
-      p_phone: tenDigit,
-      p_amount: amount,
-      p_submitted_at: submittedAt,
-    });
-
-    if (rpcError) {
-      const { error: insertError } = await supabase.from('invite_payment_submissions').insert({
-        invite_slug: inviteSlug,
-        event_id: trip.id ?? null,
-        event_slug: trip.id ?? trip.slug ?? null,
-        event_title: trip.title,
-        selected_date: selectedDate,
-        name,
-        phone: tenDigit,
-        amount,
-        status: 'advance_paid',
-        submitted_at: submittedAt,
-      });
-      if (insertError) {
-        setAddingManualPayment(false);
-        showToast('❌ Could not add payment row');
-        return;
-      }
-    } else {
-      let updateQuery = supabase
-        .from('invite_payment_submissions')
-        .update({ status: 'advance_paid', name, amount })
-        .eq('invite_slug', inviteSlug)
-        .eq('phone', tenDigit);
-      if (trip.id) updateQuery = updateQuery.eq('event_id', trip.id);
-      await updateQuery;
-    }
-
-    const newRow: InvitePaymentSubmission = {
-      id: `manual-${Date.now()}`,
-      invite_slug: inviteSlug ?? undefined,
-      event_id: trip.id,
-      event_slug: trip.id ?? trip.slug,
-      event_title: trip.title,
-      selected_date: selectedDate,
-      name,
-      phone: tenDigit,
-      amount,
-      status: 'advance_paid',
-      submitted_at: submittedAt,
-      source: 'manual_admin',
-    };
-    setInvitePaymentSubmissions(prev => [newRow, ...prev]);
-    setManualPaymentForm({ eventId: manualPaymentForm.eventId, selectedDate, name: '', phone: '', amount: String(amount || '') });
-    setAddingManualPayment(false);
-    showToast('Advance payment added');
-    await refreshSubmissions();
-  };
 
   useEffect(() => {
     if (msgs.length === 0) return;
@@ -623,7 +553,14 @@ export default function AdminPanel() {
     setSaving(trip.id ?? 'new');
     // Auto-generate invite_slug from title if not manually set
     const autoSlug = trip.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const tripWithSlug = { ...trip, invite_slug: trip.invite_slug || autoSlug };
+    // Force both slug + invite_slug to lowercase to prevent the
+    // mixed-case bug (applications.event_slug stored 'Sunrise-at-Kovalam'
+    // while payu_payments.event_slug stored 'sunrise-at-kovalam' → UPDATE missed).
+    const tripWithSlug = {
+      ...trip,
+      slug:        String(trip.slug ?? '').toLowerCase(),
+      invite_slug: String(trip.invite_slug || autoSlug).toLowerCase(),
+    };
     const { event_dates, event_media, event_reviews, faqs, id, ...fields } = tripWithSlug;
 
     let eventId = id;
@@ -697,7 +634,7 @@ export default function AdminPanel() {
 
     // Refresh
     const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true });
-    if (data) setTrips(data as Trip[]);
+    if (data) setTrips((data as Trip[]).map(normalizeCityDetails));
     setSaving(null);
     setEditingTrip(null);
     setAddingTrip(false);
@@ -774,7 +711,7 @@ export default function AdminPanel() {
     if (error || !data) { console.error('Duplicate failed:', error); showToast('Duplicate failed: ' + (error?.message ?? 'unknown error')); return; }
 
     // Copy related rows
-    const related: Promise<any>[] = [];
+    const related: PromiseLike<any>[] = [];
     if ((event_dates ?? []).length > 0) {
       related.push(supabase.from('event_dates').insert(
         event_dates.map(({ id: _id, ...d }: any) => ({ ...d, event_id: data.id }))
@@ -1028,31 +965,45 @@ export default function AdminPanel() {
     };
 
     const ok1 = await saveSetting('doubt_cta_label', doubtCtaLabel);
-    const ok2 = await saveSetting('doubt_form_webhook_url', doubtFormWebhookUrl);
     setSavingDoubtSettings(false);
-    if (!ok1 || !ok2) { showToast('❌ Save failed — check your connection'); return; }
+    if (!ok1) { showToast('❌ Save failed — check your connection'); return; }
     showToast('Doubt form settings saved!');
   };
 
   // ─── LOGIN SCREEN ────────────────────────────────────────────────────────────
-  if (!authed) {
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f0' }}>
+        <div style={{ color: '#aaa', fontSize: 15 }}>Loading…</div>
+      </div>
+    );
+  }
+
+  if (!adminRole) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f0', fontFamily: 'sans-serif' }}>
-        <div style={{ background: '#fff', padding: 40, borderRadius: 16, width: 340, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+        <div style={{ background: '#fff', padding: 40, borderRadius: 16, width: 340, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', textAlign: 'center' }}>
           <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>chapter அ</div>
-          <div style={{ color: '#888', marginBottom: 28 }}>Admin Panel</div>
-          <input
-            type="password"
-            placeholder="Password"
-            value={pw}
-            onChange={e => setPw(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && login()}
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: pwError ? '1.5px solid #dc2626' : '1.5px solid #e5e5e5', fontSize: 15, boxSizing: 'border-box', outline: 'none' }}
-          />
-          {pwError && <div style={{ color: '#dc2626', fontSize: 13, marginTop: 6 }}>Wrong password</div>}
-          <button onClick={login} style={{ marginTop: 14, width: '100%', padding: '12px', background: '#111', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
-            Sign in
-          </button>
+          <div style={{ color: '#888', marginBottom: 32 }}>Admin Panel</div>
+          {authDenied ? (
+            <>
+              <div style={{ color: '#dc2626', fontSize: 14, marginBottom: 8 }}>
+                This Google account doesn't have admin access.
+              </div>
+              {debugEmail && <div style={{ color: '#888', fontSize: 11, marginBottom: 20, wordBreak: 'break-all' }}>Signed in as: {debugEmail}</div>}
+              <button onClick={logout} style={{ width: '100%', padding: '12px', background: '#f5f5f5', color: '#111', border: '1.5px solid #e0e0e0', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                Sign out & try another account
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={login}
+              style={{ width: '100%', padding: '12px 16px', background: '#fff', color: '#111', border: '1.5px solid #e0e0e0', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+            >
+              <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.3-.2-2.7-.5-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.1 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3c-7.6 0-14.2 4.6-17.7 11.7z"/><path fill="#FBBC05" d="M24 45c5.5 0 10.4-1.9 14.2-5l-6.6-5.4C29.7 36.3 27 37 24 37c-6 0-10.6-3-11.8-8.4l-7 5.4C8.7 40.5 15.8 45 24 45z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.9 2.6-2.6 4.7-4.8 6.1l6.6 5.4C41.5 36.8 45 31 45 24c0-1.3-.2-2.7-.5-4z"/></svg>
+              Continue with Google
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1084,19 +1035,14 @@ export default function AdminPanel() {
       <div style={s.header}>
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
-        <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>
-        <button style={s.tab(tab === 'media')} onClick={() => setTab('media')}>Media</button>
-        <button style={s.tab(tab === 'qna')} onClick={() => setTab('qna')}>Q&A</button>
-        <button style={s.tab(tab === 'payments')} onClick={() => setTab('payments')}>Payments</button>
-        <button style={s.tab(tab === 'receipts')} onClick={() => setTab('receipts')}>Receipts</button>
-        <button style={s.tab(tab === 'timelines')} onClick={() => setTab('timelines')}>Timelines</button>
-        <button style={s.tab(tab === 'other')} onClick={() => setTab('other')}>Other Cities</button>
-        <button style={s.tab(tab === 'messages')} onClick={() => setTab('messages')}>Messages</button>
-        <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>
-        <button style={s.tab(tab === 'applications')} onClick={() => { setTab('applications'); loadApplications(); }}>Applications</button>
+        {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => setTab('flow')}>Flow</button>}
+        <button style={s.tab(tab === 'people')} onClick={() => { setTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
+        {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>}
+        <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
 
-      <div style={{ maxWidth: tab === 'payments' || tab === 'receipts' || tab === 'applications' ? 1200 : 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: tab === 'people' ? 1280 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -1132,7 +1078,7 @@ export default function AdminPanel() {
                   <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
               </div>
-              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', one_liner: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', kyn_payment_url: null, cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: true, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}] }); }}>
+              <button style={s.btn()} onClick={() => { setAddingTrip(true); setEditingTrip({ slug: '', title: '', one_liner: '', timing: '', price_full: 0, price_advance: 0, description: '', hero_image: '', cities: ['Chennai'], category: 'Trips', quick_info: [], included: [], optional_activities: [], not_included: [], announcements: [], booking_url: '', cta_label: '', is_active: true, show_accommodation: false, show_secret_offer: false, accommodation: { stays: [{ name: '', images: ['', '', ''], features: ['', '', ''] }] }, event_dates: [], itinerary: [{ day: 'Day 1', title: '', description: '', schedule: [] }], event_reviews: [], faqs: [], event_media: [{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''},{url:'',thumbnail_url:'',caption:''}], city_details: {} }); }}>
                 + Add Plan
               </button>
             </div>
@@ -1144,8 +1090,18 @@ export default function AdminPanel() {
                   .filter(ts => !Number.isNaN(ts));
                 return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
               };
+              const isGalcodePlan = (plan: Trip) =>
+                (plan.quick_info ?? []).some(item =>
+                  ['girls only event', "girl's only event", 'girls_only_event'].includes(String(item.label ?? '').trim().toLowerCase()) &&
+                  String(item.value ?? '').trim().toLowerCase() !== 'false'
+                );
+              const planSortBucket = (plan: Trip) => {
+                if (!plan.is_active) return 2;
+                return isGalcodePlan(plan) ? 1 : 0;
+              };
               const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
-                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const bucketDiff = planSortBucket(a) - planSortBucket(b);
+                if (bucketDiff !== 0) return bucketDiff;
                 const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
                 if (dateDiff !== 0) return dateDiff;
                 return a.title.localeCompare(b.title);
@@ -1153,35 +1109,22 @@ export default function AdminPanel() {
               const filteredTrips = plansCityFilter === 'all'
                 ? trips
                 : trips.filter(plan => (plan.cities ?? []).includes(plansCityFilter));
-              const grouped = new Map<string, Trip[]>();
-              filteredTrips.forEach((plan) => {
-                const rawCategory = (plan.category || '').trim();
-                const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
-                if (!grouped.has(key)) grouped.set(key, []);
-                grouped.get(key)!.push(plan);
-              });
+              const sortedTrips = sortPlans(filteredTrips);
 
-              const preferredOrder = ['events', 'trips'];
-              const categoryKeys = Array.from(grouped.keys());
-              const orderedKeys = [
-                ...preferredOrder.filter(k => categoryKeys.includes(k)),
-                ...categoryKeys
-                  .filter(k => !preferredOrder.includes(k))
-                  .sort((a, b) => a.localeCompare(b)),
-              ];
-
-              const sections = orderedKeys.map((key) => {
-                const items = sortPlans(grouped.get(key) ?? []);
-                const displayTitle = items[0]?.category?.trim() || (key === 'uncategorized' ? 'Uncategorized' : key);
-                return { title: displayTitle, items };
-              });
-
-              return sections.map(section => (
-                section.items.length > 0 ? (
-                  <div key={section.title}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{section.title}</div>
-                    {section.items.map(trip => (
-                      <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
+              return sortedTrips.length > 0 ? (
+                <div>
+                  {sortedTrips.map(trip => {
+                    const isGalcode = isGalcodePlan(trip);
+                    return (
+                      <div
+                        key={trip.id}
+                        style={{
+                          ...s.card,
+                          opacity: 1,
+                          background: s.card.background,
+                          border: trip.is_active && isGalcode ? '2px solid #f9a8d4' : 'none',
+                        }}
+                      >
                         {editingTrip?.id === trip.id ? (
                           <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => setEditingTrip(null)} saving={saving === trip.id} s={s} />
                         ) : (
@@ -1191,7 +1134,7 @@ export default function AdminPanel() {
                               <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                              <button style={s.outlineBtn} onClick={() => setEditingTrip({ ...trip })}>Edit</button>
+                              <button style={s.outlineBtn} onClick={() => setEditingTrip(normalizeCityDetails({ ...trip }))}>Edit</button>
                               <div style={{ position: 'relative', minWidth: 118 }}>
                                 <select
                                   value={planActionById[trip.id!] ?? ''}
@@ -1228,11 +1171,95 @@ export default function AdminPanel() {
                           </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                ) : null
-              ));
+                    );
+                  })}
+                </div>
+              ) : null;
             })()}
+
+            <CollapsibleSection
+              title="Edit Other City Plans"
+              badge={`${trips.filter(t => (t.cities ?? []).includes('Other')).length} plan${trips.filter(t => (t.cities ?? []).includes('Other')).length !== 1 ? 's' : ''}`}
+            >
+              {trips.filter(t => (t.cities ?? []).includes('Other')).length === 0 ? (
+                <div style={{ ...s.card, color: '#777' }}>
+                  No plans are enabled for Other city users yet. Turn ON <strong>Show In Other City Feed</strong> inside any plan to see it here.
+                </div>
+              ) : (
+                trips
+                  .filter(t => (t.cities ?? []).includes('Other'))
+                  .map(trip => {
+                    const isExpanded = otherEditingId === trip.id;
+                    return (
+                      <div key={trip.id} style={{ ...s.card, opacity: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: isExpanded ? 10 : 0 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
+                            <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
+                          </div>
+                          <button
+                            style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
+                            disabled={saving === trip.id}
+                            onClick={async () => {
+                              if (!trip.id) return;
+                              if (!isExpanded) {
+                                setOtherEditingId(trip.id);
+                                return;
+                              }
+                              await saveTrip(trip);
+                              setOtherEditingId(null);
+                            }}
+                          >
+                            {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
+                          </button>
+                          <div style={{ position: 'relative', minWidth: 118 }}>
+                            <select
+                              value={otherActionById[trip.id!] ?? ''}
+                              onChange={async (e) => {
+                                const action = e.target.value;
+                                setOtherActionById(prev => ({ ...prev, [trip.id!]: action }));
+                                await handleOtherAction(trip, action);
+                                setOtherActionById(prev => ({ ...prev, [trip.id!]: '' }));
+                              }}
+                              style={{
+                                ...s.input,
+                                width: '100%',
+                                padding: '8px 30px 8px 10px',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                borderRadius: 8,
+                                color: '#16a34a',
+                                appearance: 'none',
+                                WebkitAppearance: 'none',
+                                MozAppearance: 'none',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <option value="" disabled>Live</option>
+                              <option value="live">Live</option>
+                              <option value="preview">Preview</option>
+                              <option value="remove">Remove</option>
+                            </select>
+                            <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <OtherCityForm
+                            trip={trip}
+                            onChange={(next) => updateTripInList(trip.id!, () => next)}
+                            onSave={() => saveTrip(trip)}
+                            onCancel={() => setOtherEditingId(null)}
+                            saving={saving === trip.id}
+                            s={s}
+                            hideFooterActions={true}
+                          />
+                        )}
+                      </div>
+                    );
+                  })
+              )}
+            </CollapsibleSection>
 
             {addingTrip && editingTrip && !editingTrip.id && (
               <div style={s.card}>
@@ -1243,10 +1270,40 @@ export default function AdminPanel() {
           </>
         )}
 
-        {/* ── MEDIA TAB ─────────────────────────────────────────────────────── */}
-        {!loading && tab === 'media' && (
+        {!loading && tab === 'flow' && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 18, padding: 5, background: '#f3f3f3', borderRadius: 99, width: 'fit-content' }}>
+            {([
+              ['media', 'Media'],
+              ['timelines', 'Timelines'],
+              ['faqs', 'FAQs'],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => setFlowMode(mode)}
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: 99,
+                  border: 'none',
+                  background: flowMode === mode ? '#111' : '#fff',
+                  color: flowMode === mode ? '#fff' : '#555',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  boxShadow: flowMode === mode ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── FLOW TAB: MEDIA ───────────────────────────────────────────────── */}
+        {!loading && tab === 'flow' && flowMode === 'media' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Media</div>
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
                   value={mediaCityFilter}
@@ -1282,8 +1339,18 @@ export default function AdminPanel() {
                   .filter(ts => !Number.isNaN(ts));
                 return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
               };
+              const isGalcodePlan = (plan: Trip) =>
+                (plan.quick_info ?? []).some(item =>
+                  ['girls only event', "girl's only event", 'girls_only_event'].includes(String(item.label ?? '').trim().toLowerCase()) &&
+                  String(item.value ?? '').trim().toLowerCase() !== 'false'
+                );
+              const planSortBucket = (plan: Trip) => {
+                if (!plan.is_active) return 2;
+                return isGalcodePlan(plan) ? 1 : 0;
+              };
               const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
-                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const bucketDiff = planSortBucket(a) - planSortBucket(b);
+                if (bucketDiff !== 0) return bucketDiff;
                 const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
                 if (dateDiff !== 0) return dateDiff;
                 return a.title.localeCompare(b.title);
@@ -1291,40 +1358,18 @@ export default function AdminPanel() {
               const filteredTrips = mediaCityFilter === 'all'
                 ? trips
                 : trips.filter(plan => (plan.cities ?? []).includes(mediaCityFilter));
-              const grouped = new Map<string, Trip[]>();
-              filteredTrips.forEach((plan) => {
-                const rawCategory = (plan.category || '').trim();
-                const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
-                if (!grouped.has(key)) grouped.set(key, []);
-                grouped.get(key)!.push(plan);
-              });
+              const sortedTrips = sortPlans(filteredTrips);
 
-              const preferredOrder = ['events', 'trips'];
-              const categoryKeys = Array.from(grouped.keys());
-              const orderedKeys = [
-                ...preferredOrder.filter(k => categoryKeys.includes(k)),
-                ...categoryKeys
-                  .filter(k => !preferredOrder.includes(k))
-                  .sort((a, b) => a.localeCompare(b)),
-              ];
-
-              const sections = orderedKeys.map((key) => {
-                const items = sortPlans(grouped.get(key) ?? []);
-                const displayTitle = items[0]?.category?.trim() || (key === 'uncategorized' ? 'Uncategorized' : key);
-                return { title: displayTitle, items };
-              });
-
-              return sections.map(section => (
-                section.items.length > 0 ? (
-                  <div key={section.title}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{section.title}</div>
-                    {section.items.map(trip => {
+              return sortedTrips.length > 0 ? (
+                <div>
+                  {sortedTrips.map(trip => {
                       const media = trip.event_media ?? [];
                       const videos: EventMedia[] = [0, 1, 2].map(i => media[i] ?? { url: '', thumbnail_url: '', caption: '' });
                       const reviews = trip.event_reviews ?? [];
                       const isExpanded = mediaEditingId === trip.id;
+                      const isGalcode = isGalcodePlan(trip);
                       return (
-                        <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
+                        <div key={trip.id} style={{ ...s.card, opacity: 1, border: trip.is_active && isGalcode ? '2px solid #f9a8d4' : 'none' }}>
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0 }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
@@ -1451,18 +1496,17 @@ export default function AdminPanel() {
                         </div>
                       );
                     })}
-                  </div>
-                ) : null
-              ));
+                </div>
+              ) : null;
             })()}
 
           </>
         )}
 
-        {/* ── TIMELINES TAB ─────────────────────────────────────────────────── */}
-        {!loading && tab === 'timelines' && (
+        {/* ── FLOW TAB: TIMELINES ────────────────────────────────────────────── */}
+        {!loading && tab === 'flow' && flowMode === 'timelines' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, marginTop: 28 }}>
               <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Timelines</div>
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
@@ -1477,36 +1521,33 @@ export default function AdminPanel() {
               </div>
             </div>
             <div style={{ fontSize: 11, color: '#aaa', marginBottom: 18 }}>
-              Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code> or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code> in Value to auto-fill prices.
+              Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code>, <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code>, or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{price}'}</code> in Value to auto-fill prices.
             </div>
             {(() => {
               const getNearestDateTs = (trip: Trip) => {
                 const dates = (trip.event_dates ?? []).map(d => new Date(`${d.start_date}T00:00:00`).getTime()).filter(ts => !Number.isNaN(ts));
                 return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
               };
+              const isGalcodePlan = (plan: Trip) =>
+                (plan.quick_info ?? []).some(item =>
+                  ['girls only event', "girl's only event", 'girls_only_event'].includes(String(item.label ?? '').trim().toLowerCase()) &&
+                  String(item.value ?? '').trim().toLowerCase() !== 'false'
+                );
+              const planSortBucket = (plan: Trip) => {
+                if (!plan.is_active) return 2;
+                return isGalcodePlan(plan) ? 1 : 0;
+              };
               const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
-                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const bucketDiff = planSortBucket(a) - planSortBucket(b);
+                if (bucketDiff !== 0) return bucketDiff;
                 const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
                 return dateDiff !== 0 ? dateDiff : a.title.localeCompare(b.title);
               });
               const filtered = timelinesCityFilter === 'all' ? trips : trips.filter(t => (t.cities ?? []).includes(timelinesCityFilter));
-              const grouped = new Map<string, Trip[]>();
-              filtered.forEach(plan => {
-                const key = (plan.category || '').trim().toLowerCase() || 'uncategorized';
-                if (!grouped.has(key)) grouped.set(key, []);
-                grouped.get(key)!.push(plan);
-              });
-              const orderedKeys = [
-                ...['events', 'trips'].filter(k => grouped.has(k)),
-                ...[...grouped.keys()].filter(k => !['events', 'trips'].includes(k)).sort(),
-              ];
-              return orderedKeys.map(key => {
-                const items = sortPlans(grouped.get(key) ?? []);
-                const displayTitle = items[0]?.category?.trim() || key;
-                return items.length > 0 ? (
-                  <div key={key}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{displayTitle}</div>
-                    {items.map(trip => {
+              const sortedTrips = sortPlans(filtered);
+              return sortedTrips.length > 0 ? (
+                <div>
+                  {sortedTrips.map(trip => {
                       const sortedDates = (trip.event_dates ?? []).filter(d => d.start_date).sort((a, b) => a.start_date.localeCompare(b.start_date));
                       const hasMultipleDates = sortedDates.length > 1;
                       const selectedDate = sortedDates.length > 0
@@ -1529,16 +1570,30 @@ export default function AdminPanel() {
                       const addStep = () => setTimelineEdits(prev => ({ ...prev, [editKey]: [...currentSteps, { label: '', value: '', date: '' }] }));
                       const removeStep = (i: number) => setTimelineEdits(prev => ({ ...prev, [editKey]: currentSteps.filter((_, idx) => idx !== i) }));
                       const isDirty = !!timelineEdits[editKey] || ctaEdits[trip.id!] !== undefined;
+                      const isExpanded = expandedTimelineId === trip.id || isDirty;
+                      const isGalcode = isGalcodePlan(trip);
                       return (
-                        <div key={trip.id} style={{ ...s.card, marginBottom: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                            <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
+                        <div
+                          key={trip.id}
+                          onClick={() => setExpandedTimelineId(prev => prev === trip.id ? null : trip.id!)}
+                          style={{ ...s.card, marginBottom: 12, border: trip.is_active && isGalcode ? '2px solid #f9a8d4' : 'none', cursor: 'pointer' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: isExpanded ? 14 : 0 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
+                              {!isExpanded && (
+                                <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+                                  {currentSteps.length} steps{selectedDate ? ` · ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                                </div>
+                              )}
+                            </div>
                             {isDirty && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <button
                                   style={{ ...s.outlineBtn, fontSize: 12, padding: '6px 14px' }}
                                   disabled={savingTimeline === trip.id}
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setTimelineEdits(prev => {
                                       const next = { ...prev };
                                       delete next[editKey];
@@ -1556,14 +1611,22 @@ export default function AdminPanel() {
                                 <button
                                   style={{ ...s.btn(savingTimeline === trip.id ? '#aaa' : '#111'), fontSize: 12, padding: '6px 14px' }}
                                   disabled={savingTimeline === trip.id}
-                                  onClick={() => saveTimeline(trip, currentSteps, hasMultipleDates ? selectedDate : undefined, ctaEdits[trip.id!])}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    saveTimeline(trip, currentSteps, hasMultipleDates ? selectedDate : undefined, ctaEdits[trip.id!]);
+                                  }}
                                 >
                                   {savingTimeline === trip.id ? 'Saving…' : 'Save'}
                                 </button>
                               </div>
                             )}
+                            {!isDirty && (
+                              <span style={{ color: '#aaa', fontSize: 18, lineHeight: 1 }}>{isExpanded ? '⌃' : '⌄'}</span>
+                            )}
                           </div>
 
+                          {isExpanded && (
+                            <div onClick={e => e.stopPropagation()}>
                           {currentSteps.map((step, i) => {
                             const isNowRow = i === 0;
                             return (
@@ -1637,20 +1700,22 @@ export default function AdminPanel() {
                               />
                             </div>
                           </div>
+                            </div>
+                          )}
                         </div>
                       );
-                    })}
-                  </div>
-                ) : null;
-              });
+                  })}
+                </div>
+              ) : null;
             })()}
           </>
         )}
 
-        {/* ── Q&A TAB ───────────────────────────────────────────────────────── */}
-        {!loading && tab === 'qna' && (
+        {/* ── FLOW TAB: AUTOMATIC DOUBT ANSWERS ─────────────────────────────── */}
+        {!loading && tab === 'flow' && flowMode === 'faqs' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Automatic Doubt Answers</div>
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
                   value={qnaCityFilter}
@@ -1687,8 +1752,18 @@ export default function AdminPanel() {
                   .filter(ts => !Number.isNaN(ts));
                 return dates.length > 0 ? Math.min(...dates) : Number.MAX_SAFE_INTEGER;
               };
+              const isGalcodePlan = (plan: Trip) =>
+                (plan.quick_info ?? []).some(item =>
+                  ['girls only event', "girl's only event", 'girls_only_event'].includes(String(item.label ?? '').trim().toLowerCase()) &&
+                  String(item.value ?? '').trim().toLowerCase() !== 'false'
+                );
+              const planSortBucket = (plan: Trip) => {
+                if (!plan.is_active) return 2;
+                return isGalcodePlan(plan) ? 1 : 0;
+              };
               const sortPlans = (list: Trip[]) => [...list].sort((a, b) => {
-                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+                const bucketDiff = planSortBucket(a) - planSortBucket(b);
+                if (bucketDiff !== 0) return bucketDiff;
                 const dateDiff = getNearestDateTs(a) - getNearestDateTs(b);
                 if (dateDiff !== 0) return dateDiff;
                 return a.title.localeCompare(b.title);
@@ -1696,34 +1771,16 @@ export default function AdminPanel() {
               const filteredTrips = qnaCityFilter === 'all'
                 ? trips
                 : trips.filter(plan => (plan.cities ?? []).includes(qnaCityFilter));
-              const grouped = new Map<string, Trip[]>();
-              filteredTrips.forEach((plan) => {
-                const rawCategory = (plan.category || '').trim();
-                const key = rawCategory ? rawCategory.toLowerCase() : 'uncategorized';
-                if (!grouped.has(key)) grouped.set(key, []);
-                grouped.get(key)!.push(plan);
-              });
-              const preferredOrder = ['events', 'trips'];
-              const categoryKeys = Array.from(grouped.keys());
-              const orderedKeys = [
-                ...preferredOrder.filter(k => categoryKeys.includes(k)),
-                ...categoryKeys.filter(k => !preferredOrder.includes(k)).sort((a, b) => a.localeCompare(b)),
-              ];
-              const sections = orderedKeys.map((key) => {
-                const items = sortPlans(grouped.get(key) ?? []);
-                const displayTitle = items[0]?.category?.trim() || (key === 'uncategorized' ? 'Uncategorized' : key);
-                return { title: displayTitle, items };
-              });
+              const sortedTrips = sortPlans(filteredTrips);
 
-              return sections.map(section => (
-                section.items.length > 0 ? (
-                  <div key={section.title}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10, marginTop: 12 }}>{section.title}</div>
-                    {section.items.map(trip => {
+              return sortedTrips.length > 0 ? (
+                <div>
+                  {sortedTrips.map(trip => {
                       const isExpanded = qnaEditingId === trip.id;
                       const faqs = trip.faqs ?? [];
+                      const isGalcode = isGalcodePlan(trip);
                       return (
-                        <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.65 }}>
+                        <div key={trip.id} style={{ ...s.card, opacity: 1, border: trip.is_active && isGalcode ? '2px solid #f9a8d4' : 'none' }}>
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0 }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
@@ -1767,6 +1824,7 @@ export default function AdminPanel() {
 
                           {isExpanded && (
                             <div style={{ marginTop: 6 }}>
+                              {/* ── Automatic Doubt Answers (AppFlow booking chat) ── */}
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <label style={{ ...s.label, marginBottom: 0 }}>Possible Doubts (FAQ)</label>
                                 <button
@@ -1811,508 +1869,505 @@ export default function AdminPanel() {
                                   />
                                 </div>
                               ))}
+
+                              {/* ── Invitation Doubts (invite chat "I Have a Doubt" flow) ── */}
+                              <div style={{ borderTop: '1.5px solid #eee', marginTop: 16, paddingTop: 16 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <div>
+                                    <label style={{ ...s.label, marginBottom: 0 }}>Invitation Doubts</label>
+                                    <div style={{ color: '#999', fontSize: 11, marginTop: 2 }}>Shown as quick-reply chips in the /invite chat "I Have a Doubt" flow.</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                    onClick={() => updateTripInList(trip.id!, t => ({ ...t, invite_faqs: [...(t.invite_faqs ?? []), { question: '', answer: '' }] }))}
+                                  >
+                                    + Add Q&A
+                                  </button>
+                                </div>
+                                {(trip.invite_faqs ?? []).length === 0 && (
+                                  <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No invitation doubts added yet.</div>
+                                )}
+                                {(trip.invite_faqs ?? []).map((faq, i) => (
+                                  <div key={i} style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                                      <input
+                                        style={s.input}
+                                        placeholder="Example: Can I pay advance in person?"
+                                        value={faq.question}
+                                        onChange={e => updateTripInList(trip.id!, t => {
+                                          const next = [...(t.invite_faqs ?? [])];
+                                          next[i] = { ...next[i], question: e.target.value };
+                                          return { ...t, invite_faqs: next };
+                                        })}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => updateTripInList(trip.id!, t => ({ ...t, invite_faqs: [...(t.invite_faqs ?? [])].filter((_, idx) => idx !== i) }))}
+                                        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                    <textarea
+                                      style={s.textarea}
+                                      placeholder="Example: No — advance must be paid online to confirm your spot."
+                                      value={faq.answer}
+                                      onChange={e => updateTripInList(trip.id!, t => {
+                                        const next = [...(t.invite_faqs ?? [])];
+                                        next[i] = { ...next[i], answer: e.target.value };
+                                        return { ...t, invite_faqs: next };
+                                      })}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
                       );
                     })}
-                  </div>
-                ) : null
-              ));
-            })()}
-
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#666', marginBottom: 10 }}>Doubt Submissions</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <div style={{ position: 'relative', minWidth: 190 }}>
-                  <select
-                    value={qnaDoubtCityFilter}
-                    onChange={e => setQnaDoubtCityFilter(e.target.value)}
-                    style={{
-                      ...s.input,
-                      width: '100%',
-                      padding: '9px 34px 9px 12px',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      borderRadius: 999,
-                      border: '1.5px solid #d7d7d7',
-                      background: '#fff',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      MozAppearance: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <option value="all">All Cities</option>
-                    {orderedCities.map(city => (
-                      <option key={city} value={city}>{city}</option>
-                    ))}
-                  </select>
-                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
                 </div>
-                <div style={{ position: 'relative', minWidth: 190 }}>
-                  <select
-                    value={qnaDoubtCategoryFilter}
-                    onChange={e => setQnaDoubtCategoryFilter(e.target.value)}
-                    style={{
-                      ...s.input,
-                      width: '100%',
-                      padding: '9px 34px 9px 12px',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      borderRadius: 999,
-                      border: '1.5px solid #d7d7d7',
-                      background: '#fff',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      MozAppearance: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <option value="all">All Categories</option>
-                    {qnaDoubtCategories.map(category => (
-                      <option key={category} value={category}>{category}</option>
-                    ))}
-                  </select>
-                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 12, pointerEvents: 'none' }}>▾</span>
-                </div>
-              </div>
-              {(() => {
-                const filteredSubmissions = (doubtSubmissions ?? []).filter((submission) => {
-                  const cityMatch = qnaDoubtCityFilter === 'all'
-                    ? true
-                    : (submission.city ?? '').trim().toLowerCase() === qnaDoubtCityFilter.trim().toLowerCase();
-                  const submissionCategory = (submission.event_category || submission.category || '').trim();
-                  const categoryMatch = qnaDoubtCategoryFilter === 'all'
-                    ? true
-                    : submissionCategory.toLowerCase() === qnaDoubtCategoryFilter.trim().toLowerCase();
-                  return cityMatch && categoryMatch;
-                });
-                if (filteredSubmissions.length === 0) {
-                  return <div style={{ ...s.card, color: '#888' }}>No doubt submissions yet.</div>;
-                }
-                return (
-                  <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
-                    <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: '#fafafa' }}>
-                          {['Doubt', 'Event', 'City', 'Reporting Date & Time', 'Contact'].map((heading) => (
-                            <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
-                              {heading}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredSubmissions.map((submission, index) => {
-                          const eventName = submission.event_title || submission.event || submission.event_name || '-';
-                          const reportingDate = submission.reporting_date || '-';
-                          const reportingTime = submission.reporting_time || '-';
-                          const doubtText = submission.doubt || submission.message || '-';
-                          const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
-                          const contactMessage = `Hi, ${submission.name || 'there'}, we're contacting you from chapter அ regarding ${eventName} (${reportingDate}).`;
-                          const contactHref = phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(contactMessage)}` : '';
-
-                          return (
-                            <tr key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                              <td title={doubtText} style={{ width: '18%', padding: '10px 10px', fontSize: 13, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {doubtText}
-                              </td>
-                              <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
-                              <td style={{ width: '14%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{submission.city || '-'}</td>
-                              <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {reportingDate === '-' && reportingTime === '-' ? '-' : `${reportingDate}${reportingTime !== '-' ? ` · ${reportingTime}` : ''}`}
-                              </td>
-                              <td style={{ width: '20%', padding: '10px 10px', whiteSpace: 'nowrap' }}>
-                                {phoneDigits ? (
-                                  <a
-                                    href={contactHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    style={{ ...s.outlineBtn, display: 'inline-block', padding: '6px 12px', fontSize: 12, textDecoration: 'none' }}
-                                  >
-                                    Contact
-                                  </a>
-                                ) : (
-                                  <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()}
-            </div>
-          </>
-        )}
-
-        {/* ── INVITES TAB ───────────────────────────────────────────────────── */}
-        {!loading && tab === 'payments' && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>Invite Payment Tracking</div>
-              <span style={{ fontSize: 11, color: '#888', fontWeight: 500 }}>
-                DB: {invitePaymentSubmissions.length} | Local: {localInvitePaymentSubmissions.length}
-              </span>
-              <button
-                onClick={refreshSubmissions}
-                disabled={refreshingSubmissions}
-                title="Refresh submissions"
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: refreshingSubmissions ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: '#444', opacity: refreshingSubmissions ? 0.55 : 1, transition: 'opacity 0.15s' }}
-              >
-                <svg
-                  width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ animation: refreshingSubmissions ? 'spin 0.8s linear infinite' : 'none' }}
-                >
-                  <polyline points="23 4 23 10 17 10" />
-                  <polyline points="1 20 1 14 7 14" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-                {refreshingSubmissions ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-            <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
-              Recorded when an invite user enters successfully, reaches manual UPI, or needs KYN payment tracking.
-            </div>
-            <div style={{ ...s.card, marginBottom: 18 }}>
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Add / Mark Advance Paid Manually</div>
-              <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
-                Use this to backfill KYN payments that were missed. This creates an advance-paid row, so returning users see their advance as paid.
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 0.7fr auto', gap: 10, alignItems: 'end' }}>
-                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  Event
-                  <select
-                    value={manualPaymentForm.eventId}
-                    onChange={e => {
-                      const trip = trips.find(t => t.id === e.target.value);
-                      const date = trip?.event_dates?.[0]?.start_date || '';
-                      const amount = trip?.price_advance ? String(trip.price_advance) : '';
-                      setManualPaymentForm(prev => ({ ...prev, eventId: e.target.value, selectedDate: date, amount }));
-                    }}
-                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 0 }}
-                  >
-                    <option value="">Select event</option>
-                    {(inviteEligibleTrips.length > 0 ? inviteEligibleTrips : trips).map(trip => (
-                      <option key={trip.id ?? trip.slug} value={trip.id}>{trip.title}</option>
-                    ))}
-                  </select>
-                </label>
-                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  Date
-                  <select
-                    value={manualPaymentForm.selectedDate}
-                    onChange={e => setManualPaymentForm(prev => ({ ...prev, selectedDate: e.target.value }))}
-                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 0 }}
-                  >
-                    <option value="">No date</option>
-                    {(selectedManualPaymentTrip?.event_dates ?? []).map(date => (
-                      <option key={date.id ?? date.start_date} value={date.start_date}>
-                        {date.start_date ? (() => { const d = new Date(date.start_date); return isNaN(d.getTime()) ? date.start_date : `${d.getDate()} ${d.toLocaleString('en-IN', { month: 'short' })}`; })() : 'No date'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  Name
-                  <input
-                    value={manualPaymentForm.name}
-                    onChange={e => setManualPaymentForm(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Customer name"
-                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, minWidth: 0 }}
-                  />
-                </label>
-                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  Phone
-                  <input
-                    value={manualPaymentForm.phone}
-                    onChange={e => setManualPaymentForm(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
-                    placeholder="10-digit phone"
-                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, minWidth: 0 }}
-                  />
-                </label>
-                <label style={{ display: 'grid', gap: 5, fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  Amount
-                  <input
-                    value={manualPaymentForm.amount}
-                    onChange={e => setManualPaymentForm(prev => ({ ...prev, amount: e.target.value.replace(/\D/g, '') }))}
-                    placeholder="2600"
-                    style={{ padding: '9px 10px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, minWidth: 0 }}
-                  />
-                </label>
-                <button
-                  onClick={addManualAdvancePayment}
-                  disabled={addingManualPayment}
-                  style={{ ...s.btn(addingManualPayment ? '#999' : '#111'), padding: '10px 14px', whiteSpace: 'nowrap' }}
-                >
-                  {addingManualPayment ? 'Adding…' : 'Add Paid'}
-                </button>
-              </div>
-            </div>
-            {/* Event filter */}
-            {invitePaymentRows.length > 0 && (() => {
-              const uniqueEvents = [...new Set(invitePaymentRows.map(r => r.event_title || '').filter(Boolean))].sort();
-              return (
-                <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Event</label>
-                  <select
-                    value={paymentsEventFilter}
-                    onChange={e => setPaymentsEventFilter(e.target.value)}
-                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
-                  >
-                    <option value="all">All Events</option>
-                    {uniqueEvents.map(ev => <option key={ev} value={ev}>{ev}</option>)}
-                  </select>
-                  {paymentsEventFilter !== 'all' && (
-                    <button onClick={() => setPaymentsEventFilter('all')} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
-                  )}
-                </div>
-              );
-            })()}
-            {(() => {
-              const filtered = paymentsEventFilter === 'all'
-                ? invitePaymentRows
-                : invitePaymentRows.filter(r => (r.event_title || '') === paymentsEventFilter);
-              return filtered.length === 0 ? (
-                <div style={{ ...s.card, color: '#888' }}>No payment submissions yet.</div>
-              ) : (
-              <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
-                <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-                  <colgroup>
-                    <col style={{ width: '22%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '22%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '20%' }} />
-                  </colgroup>
-                  <thead>
-                    <tr style={{ background: '#fafafa' }}>
-                      {['Payment Time', 'Name', 'Phone', 'Event', 'Trip Date', 'Advance Paid'].map((heading) => (
-                        <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
-                          {heading}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((submission, index) => {
-                      const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
-                      const eventName = submission.event_title || '-';
-                      const isPaid = submission.status === 'advance_paid';
-                      const toggleAdvancePaid = async () => {
-                        const newStatus = isPaid ? 'pending' : 'advance_paid';
-                        await supabase
-                          .from('invite_payment_submissions')
-                          .update({ status: newStatus })
-                          .eq('id', submission.id!);
-                        setInvitePaymentSubmissions(prev =>
-                          prev.map(r => r.id === submission.id ? { ...r, status: newStatus } : r)
-                        );
-                        setLocalInvitePaymentSubmissions(prev =>
-                          prev.map(r => r.id === submission.id ? { ...r, status: newStatus } : r)
-                        );
-                      };
-                      return (
-                        <tr key={submission.id ?? `${submission.phone ?? 'invite'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0', background: isPaid ? '#f0fdf4' : 'white' }}>
-                          <td style={{ padding: '10px 12px', fontSize: 13, lineHeight: 1.25, color: '#111', whiteSpace: 'normal', overflowWrap: 'break-word' }}>{formatAdminDateTime(submission.submitted_at)}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{submission.name || '-'}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{phoneDigits || '-'}</td>
-                          <td title={eventName} style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(() => { if (!submission.selected_date) return '-'; const d = new Date(submission.selected_date); return isNaN(d.getTime()) ? submission.selected_date : `${d.getDate()} ${d.toLocaleString('en-IN', { month: 'short' })}`; })()}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <button
-                                onClick={toggleAdvancePaid}
-                                style={{ padding: '4px 12px', borderRadius: 99, border: 'none', background: isPaid ? '#16a34a' : '#e5e7eb', color: isPaid ? '#fff' : '#555', fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}
-                              >
-                                {isPaid ? '✓ Paid' : 'Pending'}
-                              </button>
-                              {submission.amount ? <span style={{ fontSize: 12, color: '#aaa' }}>{formatAdminINR(submission.amount)}</span> : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            );
+              ) : null;
             })()}
           </>
         )}
 
-        {/* ── RECEIPTS TAB (PayU Payments) ──────────────────────────────────── */}
-        {!loading && tab === 'receipts' && (() => {
+        {/* ── PEOPLE TAB (unified: applications + payments + receipts) ──────── */}
+        {!loading && tab === 'people' && (() => {
+          const nativeEventSlugs = [...new Set(applications.map(a => a.event_slug).filter(Boolean))] as string[];
+
+          // Build a phone+event → payu payment index
           const successPayments = payuPayments.filter(p => p.status === 'success');
-          const uniqueEvents = [...new Set(successPayments.map(p => p.event_title || '').filter(Boolean))].sort();
-          const filtered = receiptsEventFilter === 'all'
-            ? successPayments
-            : successPayments.filter(p => (p.event_title || '') === receiptsEventFilter);
+          const titleBySlug: Record<string, string> = {};
+          trips.forEach(t => { if (t.slug && t.title) titleBySlug[t.slug] = t.title; });
+          const paymentsFor = (phone: string, eventSlug: string) => {
+            const title = titleBySlug[eventSlug] ?? '';
+            const matches = successPayments.filter(p =>
+              p.phone === phone && (!title || p.event_title === title || !p.event_title)
+            );
+            return { all: matches };
+          };
+
+          // Apply filters
+          const searchLower = peopleSearch.trim().toLowerCase();
+          const filteredApps = applications.filter(a => {
+            const pays = paymentsFor(a.phone, a.event_slug);
+            const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
+            const statusMatch = applicationsStatusFilter === 'all'
+              || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0 : a.status === applicationsStatusFilter);
+            const searchMatch = !searchLower
+              || String(a.name  ?? '').toLowerCase().includes(searchLower)
+              || String(a.phone ?? '').includes(searchLower)
+              || pays.all.some((p: any) => String(p.txnid ?? '').toLowerCase().includes(searchLower));
+            return eventMatch && statusMatch && searchMatch;
+          });
+          const filteredDoubtSubmissions = (doubtSubmissions ?? []).filter((submission) => {
+            const cityMatch = qnaDoubtCityFilter === 'all'
+              ? true
+              : (submission.city ?? '').trim().toLowerCase() === qnaDoubtCityFilter.trim().toLowerCase();
+            const submissionPlan = getDoubtSubmissionPlanName(submission);
+            const planMatch = qnaDoubtPlanFilter === 'all'
+              ? true
+              : submissionPlan.toLowerCase() === qnaDoubtPlanFilter.trim().toLowerCase();
+            return cityMatch && planMatch;
+          });
+
+          const statusColor = (status: string) => {
+            if (status === 'fully_paid')   return '#16a34a';
+            if (status === 'advance_paid') return '#84cc16';
+            if (status === 'invited')      return '#2196f3';
+            if (status === 'waitlist')     return '#a855f7';
+            if (status === 'pending')      return '#f97316';
+            if (status === 'rejected')     return '#dc2626';
+            return '#999';
+          };
+
+          const callStatusOptions = [
+            { value: 'not_called',     label: 'Not Called' },
+            { value: 'called',         label: 'Called' },
+            { value: 'callback',       label: 'Callback' },
+            { value: 'has_doubts',     label: 'Has Doubts' },
+            { value: 'not_interested', label: 'Not Interested' },
+            { value: 'no_answer',      label: 'No Answer' },
+          ];
+
+          const callBadgeColor = (cs: string) => {
+            if (cs === 'called')         return '#16a34a';
+            if (cs === 'callback')       return '#f97316';
+            if (cs === 'has_doubts')     return '#9333ea';
+            if (cs === 'not_interested') return '#dc2626';
+            if (cs === 'no_answer')      return '#64748b';
+            return '#555';
+          };
+
+          const modeChip = (m: typeof peopleMode, label: string, emoji: string) => (
+            <button
+              key={m}
+              onClick={() => setPeopleMode(m)}
+              style={{
+                padding: '8px 18px',
+                borderRadius: 99,
+                border: 'none',
+                background: peopleMode === m ? '#111' : '#fff',
+                color: peopleMode === m ? '#fff' : '#555',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                boxShadow: peopleMode === m ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              <span style={{ marginRight: 6 }}>{emoji}</span>{label}
+            </button>
+          );
+
+          // Count summary for footer
+          const counts = {
+            total:        peopleMode === 'doubts' ? filteredDoubtSubmissions.length : filteredApps.length,
+            pending:      filteredApps.filter(a => a.status === 'pending').length,
+            invited:      filteredApps.filter(a => a.status === 'invited').length,
+            waitlist:     filteredApps.filter(a => a.status === 'waitlist').length,
+            advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
+            fully_paid:   filteredApps.filter(a => a.status === 'fully_paid').length,
+          };
+
+          // Header columns per mode
+          const headers: Record<typeof peopleMode, string[]> =
+            peopleMode === 'call'
+              ? { call: ['Name', 'Phone', 'Event', 'Why Join', 'Call Status', 'Notes', 'Date', 'Action'], approval: [], payments: [], doubts: [] }
+              : peopleMode === 'approval'
+              ? { call: [], approval: ['Plan Name', 'Why Join', 'Action'], payments: [], doubts: [] }
+              : peopleMode === 'payments'
+              ? { call: [], approval: [], payments: ['Name', 'Plan', 'Status', 'Transaction IDs'], doubts: [] }
+              : { call: [], approval: [], payments: [], doubts: ['Doubt', 'Plan', 'City', 'Reporting Date & Time', 'Contact'] };
+
           return (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <div style={{ fontWeight: 700, fontSize: 20 }}>PayU Payments</div>
+            <div>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 700, fontSize: 22 }}>People</div>
+                <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
+                  {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
+                </span>
+                <div style={{ flex: 1 }} />
                 <button
-                  onClick={async () => {
-                    setRefreshingReceipts(true);
-                    const { data } = await supabase.from('payu_payments').select('*').order('created_at', { ascending: false });
-                    if (data) setPayuPayments(data as PayuPayment[]);
-                    setRefreshingReceipts(false);
-                  }}
-                  disabled={refreshingReceipts}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: refreshingReceipts ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: '#444', opacity: refreshingReceipts ? 0.55 : 1, transition: 'opacity 0.15s' }}
+                  onClick={() => { loadApplications(); refreshPayuPayments(); }}
+                  disabled={applicationsLoading}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: applicationsLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: applicationsLoading ? 0.55 : 1 }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: refreshingReceipts ? 'spin 0.8s linear infinite' : 'none' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: applicationsLoading ? 'spin 0.8s linear infinite' : 'none' }}>
                     <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
                     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                   </svg>
-                  {refreshingReceipts ? 'Refreshing…' : 'Refresh'}
+                  {applicationsLoading ? 'Refreshing…' : 'Refresh'}
                 </button>
               </div>
-              <div style={{ color: '#777', fontSize: 13, marginBottom: 14 }}>
-                Successful payments processed via PayU. Only confirmed transactions are shown.
+
+              {/* Mode switcher */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: 5, background: '#f3f3f3', borderRadius: 99, width: 'fit-content' }}>
+                {modeChip('call', 'Call', '📞')}
+                {modeChip('approval', 'Approval', '✅')}
+                {modeChip('payments', 'Payments', '💰')}
+                {modeChip('doubts', 'Doubts', '💬')}
               </div>
-              {uniqueEvents.length > 0 && (
-                <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Event</label>
-                  <select value={receiptsEventFilter} onChange={e => setReceiptsEventFilter(e.target.value)} style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}>
-                    <option value="all">All Events</option>
-                    {uniqueEvents.map(ev => <option key={ev} value={ev}>{ev}</option>)}
-                  </select>
-                  {receiptsEventFilter !== 'all' && <button onClick={() => setReceiptsEventFilter('all')} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>}
-                </div>
-              )}
-              {filtered.length === 0 ? (
-                <div style={{ ...s.card, color: '#888' }}>No successful PayU payments yet.</div>
+
+              {/* Filters row */}
+              {peopleMode !== 'doubts' ? (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                  value={applicationsEventFilter}
+                  onChange={e => setApplicationsEventFilter(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  <option value="all">All Events</option>
+                  {nativeEventSlugs.map(slug => (
+                    <option key={slug} value={slug}>{titleBySlug[slug] ?? slug}</option>
+                  ))}
+                </select>
+                <select
+                  value={applicationsStatusFilter}
+                  onChange={e => setApplicationsStatusFilter(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="invited">Invited</option>
+                  <option value="waitlist">Waitlist</option>
+                  <option value="advance_paid">Advance Paid</option>
+                  <option value="fully_paid">Fully Paid</option>
+                  <option value="has_doubt">Raised Doubt</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Search name or phone…"
+                  value={peopleSearch}
+                  onChange={e => setPeopleSearch(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', minWidth: 220 }}
+                />
+                {(applicationsEventFilter !== 'all' || applicationsStatusFilter !== 'all' || peopleSearch) && (
+                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsStatusFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                )}
+              </div>
               ) : (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                  value={qnaDoubtCityFilter}
+                  onChange={e => setQnaDoubtCityFilter(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  <option value="all">All Cities</option>
+                  {orderedCities.map(city => <option key={city} value={city}>{city}</option>)}
+                </select>
+                <select
+                  value={qnaDoubtPlanFilter}
+                  onChange={e => setQnaDoubtPlanFilter(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  <option value="all">All Plans</option>
+                  {qnaDoubtPlans.map(plan => <option key={plan} value={plan}>{plan}</option>)}
+                </select>
+                {(qnaDoubtCityFilter !== 'all' || qnaDoubtPlanFilter !== 'all') && (
+                  <button onClick={() => { setQnaDoubtCityFilter('all'); setQnaDoubtPlanFilter('all'); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                )}
+              </div>
+              )}
+
+              {/* Loading / Empty */}
+              {applicationsLoading && <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading…</div>}
+              {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length === 0 && (
+                <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>No people match the current filters.</div>
+              )}
+              {!applicationsLoading && peopleMode === 'doubts' && filteredDoubtSubmissions.length === 0 && (
+                <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>No doubt submissions match the current filters.</div>
+              )}
+
+              {!applicationsLoading && peopleMode === 'doubts' && filteredDoubtSubmissions.length > 0 && (
                 <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
                   <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-                    <colgroup>
-                      <col style={{ width: '16%' }} /><col style={{ width: '14%' }} /><col style={{ width: '13%' }} />
-                      <col style={{ width: '22%' }} /><col style={{ width: '12%' }} /><col style={{ width: '23%' }} />
-                    </colgroup>
                     <thead>
                       <tr style={{ background: '#fafafa' }}>
-                        {['Paid On', 'Name', 'Phone', 'Event', 'Amount', 'Transaction ID'].map(h => (
-                          <th key={h} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>{h}</th>
+                        {headers.doubts.map((heading) => (
+                          <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
+                            {heading}
+                          </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((p, i) => (
-                        <tr key={p.id ?? i} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111' }}>{formatAdminDateTime(p.created_at)}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || '-'}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', whiteSpace: 'nowrap' }}>{p.phone || '-'}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.event_title || ''}>
-                            {p.event_title || '-'}
-                            {p.trip_date ? <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>{p.trip_date}</div> : null}
-                          </td>
-                          <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: '#111', whiteSpace: 'nowrap' }}>{formatAdminINR(p.amount)}</td>
-                          <td style={{ padding: '10px 12px', fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.txnid || ''}>{p.txnid || '-'}</td>
-                        </tr>
-                      ))}
+                      {filteredDoubtSubmissions.map((submission, index) => {
+                        const eventName = getDoubtSubmissionPlanName(submission) || '-';
+                        const reportingDate = submission.reporting_date || '-';
+                        const reportingTime = submission.reporting_time || '-';
+                        const doubtText = submission.doubt || submission.message || '-';
+                        const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
+                        const contactMessage = `Hi, ${submission.name || 'there'}, we're contacting you from chapter அ regarding ${eventName} (${reportingDate}).`;
+                        const contactHref = phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(contactMessage)}` : '';
+
+                        return (
+                          <tr key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                            <td title={doubtText} style={{ width: '22%', padding: '10px 10px', fontSize: 13, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {doubtText}
+                            </td>
+                            <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
+                            <td style={{ width: '14%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{submission.city || '-'}</td>
+                            <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {reportingDate === '-' && reportingTime === '-' ? '-' : `${reportingDate}${reportingTime !== '-' ? ` · ${reportingTime}` : ''}`}
+                            </td>
+                            <td style={{ width: '16%', padding: '10px 10px', whiteSpace: 'nowrap' }}>
+                              {phoneDigits ? (
+                                <a
+                                  href={contactHref}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ ...s.outlineBtn, display: 'inline-block', padding: '6px 12px', fontSize: 12, textDecoration: 'none' }}
+                                >
+                                  Contact
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
-            </>
+
+              {/* Table */}
+              {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length > 0 && (
+                <div style={{ ...s.card, overflow: 'auto', padding: 0 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: '#fafafa' }}>
+                        {headers[peopleMode].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '11px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredApps.map(app => {
+                        const callSt  = callStatusEdits[app.id] ?? app.call_status ?? 'not_called';
+                        const callNt  = callNotesEdits[app.id]  ?? app.call_notes  ?? '';
+                        const isDirty = callSt !== (app.call_status ?? 'not_called') || callNt !== (app.call_notes ?? '');
+                        const pays = paymentsFor(app.phone, app.event_slug);
+                        const eventTitle = titleBySlug[app.event_slug] ?? app.event_slug ?? '—';
+
+                        // ─── CALL MODE ───
+                        const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
+                        if (peopleMode === 'call') return (
+                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : undefined }}>
+                            <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                              {app.name || '—'}
+                              {openDoubts.length > 0 && (
+                                <span title={`${openDoubts.length} unresolved doubt${openDoubts.length === 1 ? '' : 's'}`} style={{ marginLeft: 6, background: '#fde047', color: '#854d0e', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
+                                  💬 {openDoubts.length}
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
+                              <a href={`tel:${app.phone}`} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>{app.phone || '—'}</a>
+                            </td>
+                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
+                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 220 }}>
+                              <div style={{ maxHeight: 56, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>{app.why_join || '—'}</div>
+                            </td>
+                            <td style={{ padding: '11px 12px' }}>
+                              <select
+                                value={callSt}
+                                onChange={e => setCallStatusEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
+                                style={{ background: callBadgeColor(callSt) + '22', color: callBadgeColor(callSt), border: `1px solid ${callBadgeColor(callSt)}44`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer', fontWeight: 600, minWidth: 120 }}
+                              >
+                                {callStatusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding: '11px 12px', minWidth: 200 }}>
+                              {openDoubts.length > 0 && (
+                                <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {openDoubts.slice(0, 3).map((d: any) => (
+                                    <div key={d.id} style={{ background: '#fef3c7', borderLeft: '3px solid #f59e0b', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#78350f', lineHeight: 1.4 }}>
+                                      <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600, marginBottom: 2 }}>💬 {formatAdminDateTime(d.created_at)}</div>
+                                      {d.message}
+                                    </div>
+                                  ))}
+                                  {openDoubts.length > 3 && (
+                                    <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600 }}>+{openDoubts.length - 3} more</div>
+                                  )}
+                                </div>
+                              )}
+                              <input
+                                type="text"
+                                placeholder="Call notes…"
+                                value={callNt}
+                                onChange={e => setCallNotesEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
+                                style={{ background: '#fff', color: '#333', border: '1.5px solid #e0e0e0', borderRadius: 6, padding: '5px 9px', fontSize: 12, width: '100%', outline: 'none' }}
+                              />
+                            </td>
+                            <td style={{ padding: '11px 12px', color: '#888', whiteSpace: 'nowrap', fontSize: 11 }}>{formatAdminDateTime(app.created_at)}</td>
+                            <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
+                              {isDirty ? (
+                                <button
+                                  disabled={savingCallId === app.id}
+                                  onClick={() => saveCallInfo(app.id)}
+                                  style={{ background: '#111', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: savingCallId === app.id ? 'not-allowed' : 'pointer', opacity: savingCallId === app.id ? 0.6 : 1, fontWeight: 600 }}
+                                >
+                                  {savingCallId === app.id ? 'Saving…' : 'Save'}
+                                </button>
+                              ) : app.status === 'pending' ? (
+                                <button
+                                  disabled={approvingId === app.id}
+                                  onClick={() => approveApplication(app.id)}
+                                  style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: approvingId === app.id ? 'not-allowed' : 'pointer', opacity: approvingId === app.id ? 0.6 : 1, fontWeight: 600 }}
+                                >
+                                  {approvingId === app.id ? 'Sending…' : '✓ Approve'}
+                                </button>
+                              ) : (
+                                <span style={{ background: statusColor(app.status) + '22', color: statusColor(app.status), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{String(app.status ?? '').replace(/_/g, ' ')}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+
+                        // ─── APPROVAL MODE ───
+                        if (peopleMode === 'approval') return (
+                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top' }}>
+                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={eventTitle}>{eventTitle}</td>
+                            <td style={{ padding: '11px 12px', color: '#444', maxWidth: 520 }}>
+                              <div style={{ maxHeight: 80, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>{app.why_join || '—'}</div>
+                            </td>
+                            <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
+                              {app.status === 'pending' ? (
+                                <button
+                                  disabled={approvingId === app.id}
+                                  onClick={() => approveApplication(app.id)}
+                                  style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 13, cursor: approvingId === app.id ? 'not-allowed' : 'pointer', opacity: approvingId === app.id ? 0.6 : 1, fontWeight: 700 }}
+                                >
+                                  {approvingId === app.id ? 'Sending…' : '✓ Approve'}
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: 12, color: statusColor(app.status), fontWeight: 700, textTransform: 'capitalize' }}>
+                                  ✓ {String(app.status ?? '').replace(/_/g, ' ')}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+
+                        // ─── PAYMENTS MODE ───
+                        return (
+                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top' }}>
+                            <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>{app.name || '—'}</td>
+                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
+                            <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
+                              <span style={{ background: statusColor(app.status) + '22', color: statusColor(app.status), border: `1px solid ${statusColor(app.status)}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize' }}>
+                                {String(app.status ?? 'pending').replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td style={{ padding: '11px 12px', fontSize: 11, color: '#888', maxWidth: 200 }}>
+                              {pays.all.length === 0 ? (
+                                <span style={{ color: '#bbb' }}>—</span>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  {pays.all.map((p: any) => (
+                                    <span key={p.id ?? p.txnid} title={p.txnid} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      <span style={{ color: p.payment_type === 'balance' ? '#9333ea' : '#0891b2', fontWeight: 600, marginRight: 4 }}>
+                                        {p.payment_type === 'balance' ? 'BAL' : 'ADV'}
+                                      </span>
+                                      {p.txnid}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Summary footer */}
+              {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length > 0 && (
+                <div style={{ marginTop: 18, color: '#888', fontSize: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <span>Total: <b style={{ color: '#333' }}>{counts.total}</b></span>
+                  {counts.pending      > 0 && <span style={{ color: statusColor('pending')      }}>pending: <b>{counts.pending}</b></span>}
+                  {counts.invited      > 0 && <span style={{ color: statusColor('invited')      }}>invited: <b>{counts.invited}</b></span>}
+                  {counts.waitlist     > 0 && <span style={{ color: statusColor('waitlist')     }}>waitlist: <b>{counts.waitlist}</b></span>}
+                  {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
+                  {counts.fully_paid   > 0 && <span style={{ color: statusColor('fully_paid')   }}>fully paid: <b>{counts.fully_paid}</b></span>}
+                </div>
+              )}
+            </div>
           );
         })()}
 
-        {/* ── OTHER TAB ─────────────────────────────────────────────────────── */}
-        {!loading && tab === 'other' && (
+        {/* ── PLANS TAB: GLOBAL MESSAGES ───────────────────────────────────── */}
+        {!loading && tab === 'trips' && (
           <>
-            <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>Plans for Other Cities</div>
-            {trips.filter(t => (t.cities ?? []).includes('Other')).length === 0 && (
-              <div style={{ ...s.card, color: '#777' }}>
-                No trips are enabled for Other city users yet. Turn ON <strong>Show In "Other" City Feed</strong> in any trip to see it here.
-              </div>
-            )}
-            {trips
-              .filter(t => (t.cities ?? []).includes('Other'))
-              .map(trip => {
-                const isExpanded = otherEditingId === trip.id;
-                return (
-                  <div key={trip.id} style={{ ...s.card, opacity: trip.is_active ? 1 : 0.55 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: isExpanded ? 10 : 0 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                        <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
-                      </div>
-                      <button
-                        style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
-                        disabled={saving === trip.id}
-                        onClick={async () => {
-                          if (!trip.id) return;
-                          if (!isExpanded) {
-                            setOtherEditingId(trip.id);
-                            return;
-                          }
-                          await saveTrip(trip);
-                          setOtherEditingId(null);
-                        }}
-                      >
-                        {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
-                      </button>
-                      <div style={{ position: 'relative', minWidth: 118 }}>
-                        <select
-                          value={otherActionById[trip.id!] ?? ''}
-                          onChange={async (e) => {
-                            const action = e.target.value;
-                            setOtherActionById(prev => ({ ...prev, [trip.id!]: action }));
-                            await handleOtherAction(trip, action);
-                            setOtherActionById(prev => ({ ...prev, [trip.id!]: '' }));
-                          }}
-                          style={{
-                            ...s.input,
-                            width: '100%',
-                            padding: '8px 30px 8px 10px',
-                            fontSize: 13,
-                            fontWeight: 700,
-                            borderRadius: 8,
-                            color: '#16a34a',
-                            appearance: 'none',
-                            WebkitAppearance: 'none',
-                            MozAppearance: 'none',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <option value="" disabled>Live</option>
-                          <option value="live">Live</option>
-                          <option value="preview">Preview</option>
-                          <option value="remove">Remove</option>
-                        </select>
-                        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <OtherCityForm
-                        trip={trip}
-                        onChange={(next) => updateTripInList(trip.id!, () => next)}
-                        onSave={() => saveTrip(trip)}
-                        onCancel={() => setOtherEditingId(null)}
-                        saving={saving === trip.id}
-                        s={s}
-                        hideFooterActions={true}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-          </>
-        )}
-
-        {/* ── MESSAGES TAB ─────────────────────────────────────────────────── */}
-        {!loading && tab === 'messages' && (
-          <>
+            <CollapsibleSection title="Edit Global Messages" defaultOpen={false}>
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
               You can use dynamic variables like <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{category}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{reporting_date}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{meeting_spot}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{transport}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{reporting_time}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{phone}'}</code> and <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{doubt}'}</code>.
             </div>
@@ -2346,34 +2401,7 @@ export default function AdminPanel() {
             <CollapsibleSection title="Global Pre Selection Messages" defaultOpen={true}>
               {[
                 { key: 'welcome', label: 'Select City', placeholder: "Welcome to chapter அ! 👋 Which city are you from buddy?" },
-                { key: 'ask_category', label: 'Select Category', placeholder: "Awesome, {city}! What are you looking for today - events or trips?" },
                 { key: 'select_event', label: 'Select Plan', placeholder: "Here are the upcoming {category} in {city}. Which one should I open for you?" },
-              ].map(({ key, label, placeholder }) => (
-                <div key={key} style={{ marginBottom: 12 }}>
-                  <label style={s.label}>{label}</label>
-                  <textarea
-                    style={s.textarea}
-                    value={globalMessageDrafts[key] ?? ''}
-                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={placeholder}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                    <button
-                      style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
-                      disabled={saving === `global:${key}`}
-                      onClick={() => saveGlobalStepTemplate(key)}
-                    >
-                      {saving === `global:${key}` ? 'Saving…' : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </CollapsibleSection>
-
-            <CollapsibleSection title="Other City Pre Selection Messages" defaultOpen={true}>
-              {[
-                { key: 'other_ask_category', label: 'Select Category (Other City)', placeholder: "Awesome! Which type of plan are you looking for from Other Cities - events or trips?" },
-                { key: 'other_select_event', label: 'Select Plan (Other City)', placeholder: "Here are plans available for Other Cities in {category}. Which one should I open for you?" },
               ].map(({ key, label, placeholder }) => (
                 <div key={key} style={{ marginBottom: 12 }}>
                   <label style={s.label}>{label}</label>
@@ -2474,6 +2502,33 @@ export default function AdminPanel() {
                 </div>
               ))}
 
+	              {[
+	                { key: 'ask_pickup_city_1',    label: 'Meeting Points Message — 1 city',    hint: 'Variables: {city1}, {eventname}, {spots_left}, {eventdate}',                            placeholder: 'This plan has a meeting point in {city1}.' },
+	                { key: 'ask_pickup_city_2',    label: 'Meeting Points Message — 2 cities',  hint: 'Variables: {city1}, {city2}, {eventname}, {spots_left}',                                placeholder: 'This plan has meeting points in {city1} & {city2}.' },
+	                { key: 'ask_pickup_city_many', label: 'Meeting Points Message — 3+ cities', hint: 'Variables: {cities_list} (numbered list), {eventname}, {spots_left}',                   placeholder: 'This plan has meeting points in:\n{cities_list}' },
+	                { key: 'ask_own_transport_city', label: 'Own Transport Message', hint: 'Shown after user taps "I’m from another city".', placeholder: 'You can join us at any of these meeting points with your own transport 🙂' },
+	              ].map(({ key, label, hint, placeholder }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <label style={s.label}>{label}</label>
+                  <p style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>{hint}</p>
+                  <textarea
+                    style={s.textarea}
+                    value={globalMessageDrafts[key] ?? ''}
+                    onChange={e => setGlobalMessageDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      style={s.btn(saving === `global:${key}` ? '#aaa' : '#111')}
+                      disabled={saving === `global:${key}`}
+                      onClick={() => saveGlobalStepTemplate(key)}
+                    >
+                      {saving === `global:${key}` ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+
               <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid #ececec' }}>
               <label style={s.label}>Unique Doubt Button</label>
               <input
@@ -2483,22 +2538,13 @@ export default function AdminPanel() {
                 placeholder="Still have a different doubt?"
               />
 
-              <label style={{ ...s.label, marginTop: 10 }}>Google Sheets Webhook URL</label>
-              <input
-                style={s.input}
-                value={doubtFormWebhookUrl}
-                onChange={e => setDoubtFormWebhookUrl(e.target.value)}
-                placeholder="Paste Google Apps Script Web App URL (…/exec)"
-              />
-              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
-                We send name, phone, doubt, city, category, title, reporting_date, meeting_spot, transport and reporting_time on form submit.
-              </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                 <button style={s.btn(savingDoubtSettings ? '#aaa' : '#111')} disabled={savingDoubtSettings} onClick={saveDoubtFormSettings}>
                   {savingDoubtSettings ? 'Saving…' : 'Save Doubt Settings'}
                 </button>
               </div>
               </div>
+            </CollapsibleSection>
             </CollapsibleSection>
 
           </>
@@ -2983,260 +3029,6 @@ export default function AdminPanel() {
           );
         })()}
 
-        {/* ── APPLICATIONS TAB ────────────────────────────────────────────── */}
-        {tab === 'applications' && (() => {
-          const nativeEventSlugs = [...new Set(applications.map(a => a.event_slug).filter(Boolean))];
-          const filteredApps = applications.filter(a => {
-            const eventMatch = applicationsEventFilter === 'all' || a.event_slug === applicationsEventFilter;
-            const statusMatch = applicationsStatusFilter === 'all' || a.status === applicationsStatusFilter;
-            return eventMatch && statusMatch;
-          });
-
-          const statusColor = (status: string) => {
-            if (status === 'fully_paid') return '#4caf50';
-            if (status === 'advance_paid') return '#8bc34a';
-            if (status === 'invited') return '#2196f3';
-            if (status === 'pending') return '#ff9800';
-            return '#aaa';
-          };
-
-          const callStatusOptions = [
-            { value: 'not_called', label: 'Not Called' },
-            { value: 'called', label: 'Called' },
-            { value: 'callback', label: 'Callback' },
-            { value: 'has_doubts', label: 'Has Doubts' },
-            { value: 'not_interested', label: 'Not Interested' },
-            { value: 'no_answer', label: 'No Answer' },
-          ];
-
-          const callBadgeColor = (cs: string) => {
-            if (cs === 'called') return '#4caf50';
-            if (cs === 'callback') return '#ff9800';
-            if (cs === 'has_doubts') return '#9c27b0';
-            if (cs === 'not_interested') return '#f44336';
-            if (cs === 'no_answer') return '#607d8b';
-            return '#555';
-          };
-
-          return (
-            <div>
-              {/* Toolbar */}
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>Applications</div>
-                <div style={{ flex: 1 }} />
-                {/* Event filter */}
-                <select
-                  value={applicationsEventFilter}
-                  onChange={e => setApplicationsEventFilter(e.target.value)}
-                  style={{ background: '#1e1e1e', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '6px 12px', fontSize: 13 }}
-                >
-                  <option value="all">All Events</option>
-                  {nativeEventSlugs.map(slug => (
-                    <option key={slug} value={slug}>{slug}</option>
-                  ))}
-                </select>
-                {/* Status filter */}
-                <select
-                  value={applicationsStatusFilter}
-                  onChange={e => setApplicationsStatusFilter(e.target.value)}
-                  style={{ background: '#1e1e1e', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '6px 12px', fontSize: 13 }}
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="invited">Invited</option>
-                  <option value="advance_paid">Advance Paid</option>
-                  <option value="fully_paid">Fully Paid</option>
-                </select>
-                <button
-                  onClick={loadApplications}
-                  disabled={applicationsLoading}
-                  style={{ background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13 }}
-                >
-                  {applicationsLoading ? 'Loading…' : '↺ Refresh'}
-                </button>
-              </div>
-
-              {applicationsLoading && <div style={{ color: '#aaa', textAlign: 'center', padding: 40 }}>Loading applications…</div>}
-
-              {!applicationsLoading && filteredApps.length === 0 && (
-                <div style={{ color: '#666', textAlign: 'center', padding: 60 }}>No applications found.</div>
-              )}
-
-              {!applicationsLoading && filteredApps.length > 0 && (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #333' }}>
-                        {['Name', 'Phone', 'Gender', 'Ticket', 'Why Join', 'Attended Before', 'Status', 'Call', 'Notes', 'Date', 'Actions'].map(h => (
-                          <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#aaa', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredApps.map(app => {
-                        const callSt = callStatusEdits[app.id] ?? app.call_status ?? 'not_called';
-                        const callNt = callNotesEdits[app.id] ?? app.call_notes ?? '';
-                        const isDirty = callSt !== (app.call_status ?? 'not_called') || callNt !== (app.call_notes ?? '');
-                        return (
-                          <tr key={app.id} style={{ borderBottom: '1px solid #222', verticalAlign: 'top' }}>
-                            {/* Name */}
-                            <td style={{ padding: '10px 10px', color: '#fff', whiteSpace: 'nowrap', fontWeight: 500 }}>{app.name || '—'}</td>
-                            {/* Phone */}
-                            <td style={{ padding: '10px 10px', color: '#ccc', whiteSpace: 'nowrap' }}>
-                              <a href={`tel:${app.phone}`} style={{ color: '#d4b483', textDecoration: 'none' }}>{app.phone || '—'}</a>
-                            </td>
-                            {/* Gender */}
-                            <td style={{ padding: '10px 10px', color: '#ccc', whiteSpace: 'nowrap' }}>{app.gender || '—'}</td>
-                            {/* Ticket type */}
-                            <td style={{ padding: '10px 10px', color: '#ccc', whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {app.ticket_type || '—'}
-                            </td>
-                            {/* Why Join */}
-                            <td style={{ padding: '10px 10px', color: '#bbb', maxWidth: 200 }}>
-                              <div style={{ maxHeight: 60, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
-                                {app.why_join || '—'}
-                              </div>
-                            </td>
-                            {/* Attended Before */}
-                            <td style={{ padding: '10px 10px', color: '#bbb', maxWidth: 160 }}>
-                              <div style={{ maxHeight: 60, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
-                                {app.attended_before || '—'}
-                              </div>
-                            </td>
-                            {/* Status */}
-                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
-                              <span style={{
-                                background: statusColor(app.status) + '22',
-                                color: statusColor(app.status),
-                                border: `1px solid ${statusColor(app.status)}44`,
-                                borderRadius: 6,
-                                padding: '2px 8px',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                textTransform: 'capitalize',
-                              }}>
-                                {app.status || 'pending'}
-                              </span>
-                            </td>
-                            {/* Call status */}
-                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
-                              <select
-                                value={callSt}
-                                onChange={e => setCallStatusEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
-                                style={{
-                                  background: callBadgeColor(callSt) + '22',
-                                  color: callBadgeColor(callSt),
-                                  border: `1px solid ${callBadgeColor(callSt)}44`,
-                                  borderRadius: 6,
-                                  padding: '3px 8px',
-                                  fontSize: 12,
-                                  cursor: 'pointer',
-                                  minWidth: 120,
-                                }}
-                              >
-                                {callStatusOptions.map(o => (
-                                  <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                              </select>
-                            </td>
-                            {/* Call notes */}
-                            <td style={{ padding: '10px 10px', minWidth: 160 }}>
-                              <input
-                                type="text"
-                                placeholder="Notes…"
-                                value={callNt}
-                                onChange={e => setCallNotesEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
-                                style={{
-                                  background: '#111',
-                                  color: '#ccc',
-                                  border: '1px solid #333',
-                                  borderRadius: 6,
-                                  padding: '4px 8px',
-                                  fontSize: 12,
-                                  width: '100%',
-                                  outline: 'none',
-                                }}
-                              />
-                            </td>
-                            {/* Date */}
-                            <td style={{ padding: '10px 10px', color: '#888', whiteSpace: 'nowrap', fontSize: 11 }}>
-                              {formatAdminDateTime(app.created_at)}
-                            </td>
-                            {/* Actions */}
-                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
-                              <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
-                                {app.status === 'pending' && (
-                                  <button
-                                    disabled={approvingId === app.id}
-                                    onClick={() => approveApplication(app.id)}
-                                    style={{
-                                      background: '#2196f3',
-                                      color: '#fff',
-                                      border: 'none',
-                                      borderRadius: 6,
-                                      padding: '4px 10px',
-                                      fontSize: 12,
-                                      cursor: approvingId === app.id ? 'not-allowed' : 'pointer',
-                                      opacity: approvingId === app.id ? 0.6 : 1,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {approvingId === app.id ? 'Sending…' : '✓ Approve'}
-                                  </button>
-                                )}
-                                {app.status !== 'pending' && (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                    <span style={{ fontSize: 12, color: '#4caf50', fontWeight: 700 }}>✓ Approved</span>
-                                    <span style={{ fontSize: 11, color: app.aisensy_invite_sent ? '#4caf50' : '#f97316', fontWeight: 600 }}>
-                                      {app.aisensy_invite_sent ? '📲 WA sent' : '⚠️ WA not sent'}
-                                    </span>
-                                  </div>
-                                )}
-                                {isDirty && (
-                                  <button
-                                    disabled={savingCallId === app.id}
-                                    onClick={() => saveCallInfo(app.id)}
-                                    style={{
-                                      background: '#333',
-                                      color: '#d4b483',
-                                      border: '1px solid #d4b48344',
-                                      borderRadius: 6,
-                                      padding: '4px 10px',
-                                      fontSize: 12,
-                                      cursor: savingCallId === app.id ? 'not-allowed' : 'pointer',
-                                      opacity: savingCallId === app.id ? 0.6 : 1,
-                                    }}
-                                  >
-                                    {savingCallId === app.id ? 'Saving…' : '↑ Save'}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Summary footer */}
-              {!applicationsLoading && applications.length > 0 && (
-                <div style={{ marginTop: 20, color: '#888', fontSize: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                  <span>Total: <b style={{ color: '#ccc' }}>{filteredApps.length}</b></span>
-                  {(['pending', 'invited', 'advance_paid', 'fully_paid'] as const).map(st => {
-                    const count = filteredApps.filter(a => a.status === st).length;
-                    return count > 0 ? (
-                      <span key={st} style={{ color: statusColor(st) }}>
-                        {st.replace(/_/g, ' ')}: <b>{count}</b>
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })()}
 
       </div>
     </div>
@@ -3249,6 +3041,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 }) {
   const set = (key: keyof Trip, val: any) => onChange({ ...trip, [key]: val });
   const [newCityInput, setNewCityInput] = React.useState('');
+  const [contentCityTab, setContentCityTab] = React.useState('');
   const heroImages = React.useMemo(() => {
     const parsed = parseHeroImages(trip.hero_image);
     return [0, 1, 2, 3].map(i => parsed[i] ?? '');
@@ -3275,6 +3068,17 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     onChange({
       ...trip,
       quick_info: trimmed ? [...next, { icon, label: saveLabel, value: trimmed }] : next,
+    });
+  };
+  const setGangSize = (value: string) => {
+    const next = quickInfo.filter(item => item.label !== 'Group Size');
+    const trimmed = value.trim();
+    const capacity = trimmed === '' ? null : Number(trimmed);
+    onChange({
+      ...trip,
+      quick_info: trimmed ? [...next, { icon: 'users', label: 'Group Size', value: trimmed }] : next,
+      invite_spots: Number.isFinite(capacity) ? capacity : null,
+      total_capacity: Number.isFinite(capacity) ? capacity : null,
     });
   };
   const setGirlsOnlyEvent = (enabled: boolean) => {
@@ -3335,11 +3139,11 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
     onChange({ ...trip, pickup_points: updated });
   };
-  const addPickup = () => onChange({ ...trip, pickup_points: [...pickups, { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '', forOtherCity: false }] });
+  const addPickup = () => onChange({ ...trip, pickup_points: [...pickups, { id: `pt_${Date.now()}`, label: '', meetingSpot: '', time: '', transport: '', forCity: (trip.cities ?? []).filter(c => c !== 'Other')[0] ?? '' }] });
   const removePickup = (i: number) => onChange({ ...trip, pickup_points: pickups.filter((_, idx) => idx !== i) });
   const ownTransportIndex = pickups.findIndex(p => p.id === 'own_transport');
   const ownTransport = ownTransportIndex >= 0 ? pickups[ownTransportIndex] : null;
-  // Only show Pondy-specific points (forOtherCity: false) or legacy untagged points (undefined)
+  // Show all non-own_transport, non-OtherCity pickup points (includes new forCity points + legacy untagged)
   const regularPickups = pickups.map((p, idx) => ({ ...p, _idx: idx })).filter(p => p.id !== 'own_transport' && p.forOtherCity !== true);
   const toggleOwnTransport = (enabled: boolean) => {
     if (enabled) {
@@ -3391,6 +3195,105 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     updateItineraryDay(dayIndex, { schedule: (day.schedule ?? []).filter((_, i) => i !== itemIndex) });
   };
 
+  // ── City-specific content helpers ──────────────────────────────────────────
+  const contentCities = (trip.cities ?? []).filter((c: string) => c !== 'Other');
+  const activeContentCity = contentCityTab || contentCities[0] || '';
+  const multiCity = contentCities.length > 1;
+
+  const getCityData = (city: string) => {
+    const cd = (trip.city_details ?? {}) as any;
+    // If city-specific data has been saved, use it.
+    // Otherwise fall back to the flat event-level fields so existing content
+    // stays visible in the admin panel until explicitly overridden per city.
+    if (cd[city] !== undefined) return cd[city];
+    return {
+      included: trip.included ?? [],
+      not_included: trip.not_included ?? [],
+      optional_activities: trip.optional_activities ?? [],
+      itinerary: trip.itinerary ?? [],
+    };
+  };
+  const setCityData = (city: string, data: any) =>
+    onChange({ ...trip, city_details: { ...(trip.city_details ?? {}), [city]: data } });
+  const setCityField = (city: string, key: string, val: any) =>
+    setCityData(city, { ...getCityData(city), [key]: val });
+
+  const updateCityStringItem = (key: 'included' | 'not_included' | 'optional_activities', index: number, value: string) => {
+    if (!multiCity) { updateStringListItem(key, index, value); return; }
+    const current = [...(getCityData(activeContentCity)[key] ?? [])]; current[index] = value;
+    setCityField(activeContentCity, key, current);
+  };
+  const addCityStringItem = (key: 'included' | 'not_included' | 'optional_activities') => {
+    if (!multiCity) { addStringListItem(key); return; }
+    setCityField(activeContentCity, key, [...(getCityData(activeContentCity)[key] ?? []), '']);
+  };
+  const removeCityStringItem = (key: 'included' | 'not_included' | 'optional_activities', index: number) => {
+    if (!multiCity) { removeStringListItem(key, index); return; }
+    setCityField(activeContentCity, key, (getCityData(activeContentCity)[key] ?? []).filter((_: any, i: number) => i !== index));
+  };
+
+  const activeCityItinerary: ItineraryDay[] = multiCity
+    ? (getCityData(activeContentCity).itinerary ?? [])
+    : itinerary;
+
+  const updateCityItineraryDay = (index: number, patch: Partial<ItineraryDay>) => {
+    if (!multiCity) { updateItineraryDay(index, patch); return; }
+    const cur = getCityData(activeContentCity).itinerary ?? [];
+    setCityField(activeContentCity, 'itinerary', cur.map((d: any, i: number) => i === index ? { ...d, ...patch } : d));
+  };
+  const addCityItineraryDay = () => {
+    if (!multiCity) { addItineraryDay(); return; }
+    const cur = getCityData(activeContentCity).itinerary ?? [];
+    setCityField(activeContentCity, 'itinerary', [...cur, { day: `Day ${cur.length + 1}`, title: '', description: '', schedule: [] }]);
+  };
+  const removeCityItineraryDay = (index: number) => {
+    if (!multiCity) { removeItineraryDay(index); return; }
+    const cur = getCityData(activeContentCity).itinerary ?? [];
+    setCityField(activeContentCity, 'itinerary', cur.filter((_: any, i: number) => i !== index));
+  };
+  const updateCityScheduleItem = (dayIndex: number, itemIndex: number, patch: Partial<ItineraryScheduleItem>) => {
+    if (!multiCity) { updateScheduleItem(dayIndex, itemIndex, patch); return; }
+    const cur = getCityData(activeContentCity).itinerary ?? [];
+    setCityField(activeContentCity, 'itinerary', cur.map((d: any, i: number) =>
+      i === dayIndex ? { ...d, schedule: (d.schedule ?? []).map((item: any, j: number) => j === itemIndex ? { ...item, ...patch } : item) } : d
+    ));
+  };
+  const addCityScheduleItem = (dayIndex: number) => {
+    if (!multiCity) { addScheduleItem(dayIndex); return; }
+    const cur = getCityData(activeContentCity).itinerary ?? [];
+    setCityField(activeContentCity, 'itinerary', cur.map((d: any, i: number) =>
+      i === dayIndex ? { ...d, schedule: [...(d.schedule ?? []), { time: '', activity: '' }] } : d
+    ));
+  };
+  const removeCityScheduleItem = (dayIndex: number, itemIndex: number) => {
+    if (!multiCity) { removeScheduleItem(dayIndex, itemIndex); return; }
+    const cur = getCityData(activeContentCity).itinerary ?? [];
+    setCityField(activeContentCity, 'itinerary', cur.map((d: any, i: number) =>
+      i === dayIndex ? { ...d, schedule: (d.schedule ?? []).filter((_: any, j: number) => j !== itemIndex) } : d
+    ));
+  };
+
+  // Inline city radio tab strip (reused in two sections)
+  const CityTabs = multiCity ? () => (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+      {contentCities.map((city: string) => (
+        <button
+          key={city}
+          type="button"
+          onClick={() => setContentCityTab(city)}
+          style={{
+            padding: '5px 14px', borderRadius: 99, cursor: 'pointer', fontWeight: 600, fontSize: 12,
+            border: activeContentCity === city ? '2px solid #111' : '1.5px solid #ddd',
+            background: activeContentCity === city ? '#111' : '#fff',
+            color: activeContentCity === city ? '#fff' : '#555',
+          }}
+        >
+          {city}
+        </button>
+      ))}
+    </div>
+  ) : () => null;
+
   const field = (label: string, key: keyof Trip, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
       <label style={s.label}>{label}</label>
@@ -3435,26 +3338,25 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           )}
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
           {field('Category', 'category')}
-          {field('Full Price (₹)', 'price_full', 'number')}
-          {trip.booking_url !== 'payu-hosted' && trip.booking_url !== 'native-application' && field('Advance Amount (₹)', 'price_advance', 'number')}
-          {/* Booking URL */}
+          {/* Booking Type */}
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Booking Type</label>
             <div style={{ display: 'flex', gap: 0, marginBottom: 10, border: '1.5px solid #e0e0e0', borderRadius: 10, overflow: 'hidden' }}>
               {([
-                { mode: 'external', label: 'External Link', value: '' },
-                { mode: 'upi-manual', label: 'Manual UPI (QR Code)', value: 'upi-manual' },
-                { mode: 'payu', label: 'PayU', value: 'payu-hosted' },
-                { mode: 'native-application', label: 'Native Application', value: 'native-application' },
+                { mode: 'invite-only', label: 'Invite Only',  bookingUrl: 'native-application', inviteOnly: true  },
+                { mode: 'open-event',  label: 'Open Event',   bookingUrl: 'payu-hosted',        inviteOnly: false },
+                { mode: 'external',    label: 'External Link', bookingUrl: '',                  inviteOnly: false },
               ] as const).map(option => {
-                const active = option.mode === 'external'
-                  ? trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted' && trip.booking_url !== 'native-application'
-                  : trip.booking_url === option.value;
+                const current =
+                  trip.booking_url === 'native-application' ? 'invite-only' :
+                  trip.booking_url === 'payu-hosted'        ? 'open-event'  :
+                  'external';
+                const active = current === option.mode;
                 return (
                   <button
                     key={option.mode}
                     type="button"
-                    onClick={() => set('booking_url', option.value)}
+                    onClick={() => onChange({ ...trip, booking_url: option.bookingUrl, invite_only: option.inviteOnly })}
                     style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
                   >
                     {option.label}
@@ -3462,7 +3364,9 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 );
               })}
             </div>
-            {trip.booking_url !== 'upi-manual' && trip.booking_url !== 'payu-hosted' && trip.booking_url !== 'native-application' && (
+
+            {/* External Link: URL input */}
+            {trip.booking_url !== 'native-application' && trip.booking_url !== 'payu-hosted' && (
               <input
                 style={s.input}
                 placeholder="https://tally.so/r/..."
@@ -3470,18 +3374,36 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 onChange={e => set('booking_url', e.target.value)}
               />
             )}
-            {(trip.booking_url === 'payu-hosted' || trip.booking_url === 'native-application') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+
+            {/* Invite Only: total spots */}
+            {trip.booking_url === 'native-application' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                <label style={{ ...s.label, marginBottom: 0, whiteSpace: 'nowrap' }}>Total Spots</label>
+                <input
+                  type="number"
+                  min={0}
+                  style={{ ...s.input, width: 90, marginBottom: 0 }}
+                  placeholder="e.g. 35"
+                  value={gangSizeNumber}
+                  onChange={e => setGangSize(e.target.value)}
+                />
+                <span style={{ fontSize: 12, color: '#999' }}>same as Gang Size (whitelist can be larger)</span>
+              </div>
+            )}
+
+            {/* Open Event: total capacity */}
+            {trip.booking_url === 'payu-hosted' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 <label style={{ ...s.label, marginBottom: 0, whiteSpace: 'nowrap' }}>Total Capacity</label>
                 <input
                   type="number"
                   min={1}
                   style={{ ...s.input, width: 90, marginBottom: 0 }}
                   placeholder="e.g. 20"
-                  value={trip.total_capacity ?? ''}
-                  onChange={e => set('total_capacity', e.target.value === '' ? null : Number(e.target.value))}
+                  value={gangSizeNumber}
+                  onChange={e => setGangSize(e.target.value)}
                 />
-                <span style={{ fontSize: 12, color: '#999' }}>spots (for sold-out indicator)</span>
+                <span style={{ fontSize: 12, color: '#999' }}>same as Gang Size (for sold-out indicator)</span>
               </div>
             )}
           </div>
@@ -3490,35 +3412,10 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Visible In Cities</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-              {/* Preset cities */}
-              {['Chennai'].map(city => {
-                const active = (trip.cities ?? []).includes(city);
-                return (
-                  <button
-                    key={city}
-                    type="button"
-                    onClick={() => {
-                      const current = trip.cities ?? [];
-                      set('cities', active ? current.filter(c => c !== city) : Array.from(new Set([...current, city])));
-                    }}
-                    style={{ padding: '5px 14px', borderRadius: 99, border: `1.5px solid ${active ? '#6366f1' : '#ddd'}`, background: active ? '#6366f1' : '#fff', color: active ? '#fff' : '#555', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-                  >
-                    {city}
-                  </button>
-                );
-              })}
-              {/* Custom cities (removable) */}
-              {(trip.cities ?? []).filter(c => !['Chennai', 'Pondy', 'Bangalore', 'Other'].includes(c)).map(city => (
-                <span
-                  key={city}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px 5px 14px', borderRadius: 99, border: '1.5px solid #6366f1', background: '#6366f1', color: '#fff', fontWeight: 600, fontSize: 13 }}
-                >
+              {(trip.cities ?? []).filter(c => c !== 'Other').map(city => (
+                <span key={city} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px 5px 14px', borderRadius: 99, border: '1.5px solid #6366f1', background: '#6366f1', color: '#fff', fontWeight: 600, fontSize: 13 }}>
                   {city}
-                  <button
-                    type="button"
-                    onClick={() => set('cities', (trip.cities ?? []).filter(c => c !== city))}
-                    style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, opacity: 0.75 }}
-                  >×</button>
+                  <button type="button" onClick={() => set('cities', (trip.cities ?? []).filter(c => c !== city))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, opacity: 0.75 }}>×</button>
                 </span>
               ))}
             </div>
@@ -3553,6 +3450,47 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
           </div>
 
+          {/* Per-city pricing */}
+          {(trip.cities ?? []).filter(c => c !== 'Other').length > 0 && (
+            <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+              <label style={s.label}>City Pricing</label>
+              {(trip.cities ?? []).filter(c => c !== 'Other').map((city: string) => {
+                const cd = (trip.city_details ?? {}) as any;
+                const cityPriceFull    = cd[city]?.price_full    ?? trip.price_full    ?? 0;
+                const cityPriceAdvance = cd[city]?.price_advance ?? trip.price_advance ?? 0;
+                return (
+                  <div key={city} style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 10 }}>
+                    <span style={{ minWidth: 90, fontWeight: 700, fontSize: 13, color: '#333', paddingBottom: 8 }}>{city}</span>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, color: '#888', fontWeight: 600, display: 'block', marginBottom: 4 }}>Full Price (₹)</label>
+                      <input
+                        type="number"
+                        style={{ ...s.input, marginBottom: 0 }}
+                        value={cityPriceFull}
+                        onChange={e => {
+                          const cd2 = (trip.city_details ?? {}) as any;
+                          onChange({ ...trip, city_details: { ...cd2, [city]: { ...(cd2[city] ?? {}), price_full: Number(e.target.value) } } });
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, color: '#888', fontWeight: 600, display: 'block', marginBottom: 4 }}>Advance (₹)</label>
+                      <input
+                        type="number"
+                        style={{ ...s.input, marginBottom: 0 }}
+                        value={cityPriceAdvance}
+                        onChange={e => {
+                          const cd2 = (trip.city_details ?? {}) as any;
+                          onChange({ ...trip, city_details: { ...cd2, [city]: { ...(cd2[city] ?? {}), price_advance: Number(e.target.value) } } });
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Galcode event flag */}
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Galcode Event</label>
@@ -3579,65 +3517,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
           </div>
 
-          {/* Invite-only settings */}
-          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
-            <label style={s.label}>Invite Only</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <button
-                type="button"
-                onClick={() => set('invite_only', !trip.invite_only)}
-                style={{ padding: '5px 16px', borderRadius: 99, border: 'none', background: trip.invite_only ? '#16a34a' : '#ddd', color: trip.invite_only ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-              >
-                {trip.invite_only ? 'ON' : 'OFF'}
-              </button>
-              {trip.invite_only && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label style={{ ...s.label, marginBottom: 0 }}>Total Spots</label>
-                  <input
-                    type="number"
-                    min={0}
-                    style={{ ...s.input, width: 90, marginBottom: 0 }}
-                    placeholder="e.g. 35"
-                    value={trip.invite_spots ?? ''}
-                    onChange={e => set('invite_spots', e.target.value === '' ? null : Number(e.target.value))}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>KYN Payment Link</label>
-            <input
-              style={s.input}
-              placeholder="Paste KYN event checkout link"
-              value={trip.kyn_payment_url ?? ''}
-              onChange={e => set('kyn_payment_url', e.target.value || null)}
-            />
-            <div style={{ marginTop: 6, fontSize: 12, color: '#888', lineHeight: 1.45 }}>
-              Used by the invite payment flow. Keep advance / balance branching on the website, then send users to this KYN event link.
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>Advance Payment QR URL</label>
-            <input
-              style={s.input}
-              placeholder="Paste Cloudinary URL for advance QR"
-              value={trip.advance_qr_url ?? ''}
-              onChange={e => set('advance_qr_url', e.target.value || null)}
-            />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>Balance Payment QR URL</label>
-            <input
-              style={s.input}
-              placeholder="Paste Cloudinary URL for balance QR"
-              value={trip.balance_qr_url ?? ''}
-              onChange={e => set('balance_qr_url', e.target.value || null)}
-            />
-          </div>
-
           <div style={{ marginBottom: 14 }}>
             <label style={s.label}>Calendar CTA Text (e.g. Book Now)</label>
             <input
@@ -3650,13 +3529,14 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <label style={s.label}>Hero Images (up to 4)</label>
             <div style={{ display: 'grid', gap: 8 }}>
               {[0, 1, 2, 3].map((idx) => (
-                <ImageUploadInput
-                  key={idx}
-                  value={heroImages[idx] ?? ''}
-                  onChange={url => setHeroImage(idx, url)}
-                  placeholder={`Hero Image ${idx + 1} — paste URL or upload`}
-                  folder="hero"
-                />
+                <div key={idx}>
+                  <ImageUploadInput
+                    value={heroImages[idx] ?? ''}
+                    onChange={url => setHeroImage(idx, url)}
+                    placeholder={`Hero Image ${idx + 1} — paste URL or upload`}
+                    folder="hero"
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -3667,23 +3547,28 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 14 }}>Logistics</div>
 
       <CollapsibleSection title="The Plan">
+        <CityTabs />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div>
-            <label style={s.label}>Meeting Spot</label>
+            <label style={s.label}>Meeting Spot{multiCity ? ` — ${activeContentCity}` : ''}</label>
             <input
               style={s.input}
               placeholder="e.g. Airport Metro"
-              value={meetingSpotValue}
-              onChange={e => setPlanValue(['Meeting Spot'], 'Meeting Spot', e.target.value, 'map')}
+              value={multiCity ? (getCityData(activeContentCity).meeting_spot ?? meetingSpotValue) : meetingSpotValue}
+              onChange={e => multiCity
+                ? setCityField(activeContentCity, 'meeting_spot', e.target.value)
+                : setPlanValue(['Meeting Spot'], 'Meeting Spot', e.target.value, 'map')}
             />
           </div>
           <div>
-            <label style={s.label}>Transport</label>
+            <label style={s.label}>Transport{multiCity ? ` — ${activeContentCity}` : ''}</label>
             <input
               style={s.input}
               placeholder="e.g. Party Bus"
-              value={transportValue}
-              onChange={e => setPlanValue(['Transport'], 'Transport', e.target.value, 'bus')}
+              value={multiCity ? (getCityData(activeContentCity).transport ?? transportValue) : transportValue}
+              onChange={e => multiCity
+                ? setCityField(activeContentCity, 'transport', e.target.value)
+                : setPlanValue(['Transport'], 'Transport', e.target.value, 'bus')}
             />
           </div>
           <div>
@@ -3704,45 +3589,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               style={s.input}
               placeholder="e.g. 15"
               value={gangSizeNumber}
-              onChange={e => setPlanValue(['Group Size'], 'Group Size', e.target.value, 'users')}
-            />
-          </div>
-        </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Secret Offer">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <label style={{ ...s.label, marginBottom: 0 }}>Show Secret Offer after payment</label>
-          <button
-            type="button"
-            onClick={() => set('show_secret_offer', !(trip.show_secret_offer ?? true))}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: (trip.show_secret_offer ?? true) ? '#16a34a' : '#ddd', color: (trip.show_secret_offer ?? true) ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}
-          >
-            {(trip.show_secret_offer ?? true) ? 'ON' : 'OFF'}
-          </button>
-        </div>
-        <div style={{ display: 'grid', gap: 8 }}>
-          <div>
-            <label style={s.label}>WhatsApp Number</label>
-            <input
-              style={s.input}
-              placeholder="e.g. 919739832100"
-              value={secretOfferPhoneValue}
-              onChange={e => setPlanValue(
-                ['Secret Offer Number', 'Secret Offer Phone', 'Secret Offer WhatsApp'],
-                'Secret Offer Number',
-                e.target.value,
-                'ticket'
-              )}
-            />
-          </div>
-          <div>
-            <label style={s.label}>Prefilled Message</label>
-            <textarea
-              style={s.textarea}
-              placeholder="Example: Hi! I just paid the advance for {title} ({date}). I'd like to pay the remaining balance and claim my offer!"
-              value={secretOfferMessageValue}
-              onChange={e => setPlanValue(['Secret Offer Message'], 'Secret Offer Message', e.target.value, 'ticket')}
+              onChange={e => setGangSize(e.target.value)}
             />
           </div>
         </div>
@@ -3782,6 +3629,41 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
               </div>
             </div>
+            {/* For City — radio buttons (one per event city, excluding Other) */}
+            {(() => {
+              const citiesForRadio = (trip.cities ?? []).filter(c => c !== 'Other');
+              if (citiesForRadio.length === 0) return null;
+              return (
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ ...s.label, marginBottom: 4 }}>For City <span style={{ color: '#dc2626' }}>*</span></label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {citiesForRadio.map(city => {
+                      const selected = (p.forCity ?? '') === city;
+                      return (
+                        <button
+                          key={city}
+                          type="button"
+                          onClick={() => setPickup(p._idx, 'forCity', city)}
+                          style={{
+                            padding: '5px 14px',
+                            borderRadius: 99,
+                            border: `1.5px solid ${selected ? '#111' : '#ddd'}`,
+                            background: selected ? '#111' : '#fff',
+                            color: selected ? '#fff' : '#555',
+                            fontWeight: 600,
+                            fontSize: 13,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {city}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!p.forCity && <div style={{ color: '#dc2626', fontSize: 11, marginTop: 4 }}>Select a city for this pickup point</div>}
+                </div>
+              );
+            })()}
             <button onClick={() => removePickup(p._idx)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
           </div>
         ))}
@@ -3939,72 +3821,83 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
       </CollapsibleSection>
 
       <CollapsibleSection title="You'll Experience (Itinerary)">
-        {itinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No itinerary days yet.</div>}
-        {itinerary.map((day, dayIndex) => (
-          <div key={dayIndex} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+        <CityTabs />
+        {activeCityItinerary.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No itinerary days yet.</div>}
+        {activeCityItinerary.map((day, dayIndex) => (
+          <div key={`${activeContentCity}-${dayIndex}`} style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <input style={s.input} placeholder="Day label (e.g. Day 1)" value={day.day} onChange={e => updateItineraryDay(dayIndex, { day: e.target.value })} />
-              <input style={s.input} placeholder="Day title" value={day.title} onChange={e => updateItineraryDay(dayIndex, { title: e.target.value })} />
-              <button type="button" onClick={() => removeItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+              <input style={s.input} placeholder="Day label (e.g. Day 1)" value={day.day} onChange={e => updateCityItineraryDay(dayIndex, { day: e.target.value })} />
+              <input style={s.input} placeholder="Day title" value={day.title} onChange={e => updateCityItineraryDay(dayIndex, { title: e.target.value })} />
+              <button type="button" onClick={() => removeCityItineraryDay(dayIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
             </div>
-            <textarea style={s.textarea} placeholder="Day description" value={day.description} onChange={e => updateItineraryDay(dayIndex, { description: e.target.value })} />
+            <textarea style={s.textarea} placeholder="Day description" value={day.description} onChange={e => updateCityItineraryDay(dayIndex, { description: e.target.value })} />
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <label style={{ ...s.label, marginBottom: 0 }}>Schedule</label>
-                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addScheduleItem(dayIndex)}>+ Add Time Slot</button>
+                <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={() => addCityScheduleItem(dayIndex)}>+ Add Time Slot</button>
               </div>
               {(day.schedule ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No time slots yet.</div>}
               {(day.schedule ?? []).map((item, itemIndex) => (
                 <div key={itemIndex} style={{ display: 'grid', gridTemplateColumns: '140px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                  <input style={s.input} placeholder="e.g. 7:30 PM" value={item.time} onChange={e => updateScheduleItem(dayIndex, itemIndex, { time: e.target.value })} />
-                  <input style={s.input} placeholder="Activity" value={item.activity} onChange={e => updateScheduleItem(dayIndex, itemIndex, { activity: e.target.value })} />
-                  <button type="button" onClick={() => removeScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+                  <input style={s.input} placeholder="e.g. 7:30 PM" value={item.time} onChange={e => updateCityScheduleItem(dayIndex, itemIndex, { time: e.target.value })} />
+                  <input style={s.input} placeholder="Activity" value={item.activity} onChange={e => updateCityScheduleItem(dayIndex, itemIndex, { activity: e.target.value })} />
+                  <button type="button" onClick={() => removeCityScheduleItem(dayIndex, itemIndex)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
                 </div>
               ))}
             </div>
           </div>
         ))}
-        <button type="button" onClick={addItineraryDay} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Day</button>
+        <button type="button" onClick={addCityItineraryDay} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add Day</button>
       </CollapsibleSection>
 
-      <CollapsibleSection title="What's Included">
-        {(trip.included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>}
-        {(trip.included ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Round-trip transport" value={item} onChange={e => updateStringListItem('included', i, e.target.value)} />
-            <button type="button" onClick={() => removeStringListItem('included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+      <CollapsibleSection title="What's Included & Activities">
+        <CityTabs />
+
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 8 }}>✓ Included</div>
+        {(multiCity ? (getCityData(activeContentCity).included ?? []) : (trip.included ?? [])).length === 0 && (
+          <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>
+        )}
+        {(multiCity ? (getCityData(activeContentCity).included ?? []) : (trip.included ?? [])).map((item: string, i: number) => (
+          <div key={`inc-${activeContentCity}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Round-trip transport" value={item} onChange={e => updateCityStringItem('included', i, e.target.value)} />
+            <button type="button" onClick={() => removeCityStringItem('included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
-        <button type="button" onClick={() => addStringListItem('included')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
-      </CollapsibleSection>
+        <button type="button" onClick={() => addCityStringItem('included')} style={{ marginTop: 4, marginBottom: 18, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
 
-      <CollapsibleSection title="Optional Activities">
-        {(trip.optional_activities ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>}
-        {(trip.optional_activities ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Sunrise walk" value={item} onChange={e => updateStringListItem('optional_activities', i, e.target.value)} />
-            <button type="button" onClick={() => removeStringListItem('optional_activities', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 8 }}>○ Optional Add-ons</div>
+        {(multiCity ? (getCityData(activeContentCity).optional_activities ?? []) : (trip.optional_activities ?? [])).length === 0 && (
+          <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>
+        )}
+        {(multiCity ? (getCityData(activeContentCity).optional_activities ?? []) : (trip.optional_activities ?? [])).map((item: string, i: number) => (
+          <div key={`opt-${activeContentCity}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Sunrise hike" value={item} onChange={e => updateCityStringItem('optional_activities', i, e.target.value)} />
+            <button type="button" onClick={() => removeCityStringItem('optional_activities', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
-        <button type="button" onClick={() => addStringListItem('optional_activities')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
-      </CollapsibleSection>
+        <button type="button" onClick={() => addCityStringItem('optional_activities')} style={{ marginTop: 4, marginBottom: 18, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
 
-      <CollapsibleSection title="What's Not Included">
-        {(trip.not_included ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>}
-        {(trip.not_included ?? []).map((item, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input style={s.input} placeholder="e.g. Lunch" value={item} onChange={e => updateStringListItem('not_included', i, e.target.value)} />
-            <button type="button" onClick={() => removeStringListItem('not_included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 8 }}>✗ Not Included</div>
+        {(multiCity ? (getCityData(activeContentCity).not_included ?? []) : (trip.not_included ?? [])).length === 0 && (
+          <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No items yet.</div>
+        )}
+        {(multiCity ? (getCityData(activeContentCity).not_included ?? []) : (trip.not_included ?? [])).map((item: string, i: number) => (
+          <div key={`notinc-${activeContentCity}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input style={s.input} placeholder="e.g. Lunch" value={item} onChange={e => updateCityStringItem('not_included', i, e.target.value)} />
+            <button type="button" onClick={() => removeCityStringItem('not_included', i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
         ))}
-        <button type="button" onClick={() => addStringListItem('not_included')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
+        <button type="button" onClick={() => addCityStringItem('not_included')} style={{ marginTop: 4, padding: '7px 16px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>+ Add</button>
       </CollapsibleSection>
 
-      {trip.id && <InvitedNumbersSection eventSlug={trip.invite_slug || trip.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || trip.slug || trip.id} s={s} />}
-
-      <div style={{ background: '#fffbe6', border: '1.5px solid #ffe58f', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7c5c00' }}>
-        💡 <strong>Media</strong> (videos & reviews), <strong>Timelines</strong> (booking steps), and <strong>Q&A</strong> are managed in their own tabs above.
-      </div>
+      {trip.id && (
+        <InvitedNumbersSection
+          eventSlug={trip.invite_slug || trip.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || trip.slug || trip.id}
+          applicationEventSlug={trip.slug || trip.id}
+          cities={trip.cities ?? []}
+          s={s}
+        />
+      )}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
         <button style={s.outlineBtn} onClick={onCancel}>Cancel</button>
@@ -4216,7 +4109,14 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\s+/g, '').replace(/^\+91/, '').replace(/^0/, '').trim();
 }
 
-function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) {
+function InvitedNumbersSection({ eventSlug, applicationEventSlug, cities = [], s }: { eventSlug: string; applicationEventSlug: string; cities?: string[]; s: any }) {
+  // Named cities (non-Other) that have been set up on this event
+  const namedCities = cities.filter(c => c !== 'Other');
+  const hasCityTabs = namedCities.length > 1;
+
+  // 'All' means no city filter; otherwise a specific city name
+  const [selectedCity, setSelectedCity] = React.useState<string>('All');
+
   const [count, setCount] = React.useState<number | null>(null);
   const [pasteText, setPasteText] = React.useState('');
   const [pasteStatus, setPasteStatus] = React.useState('');
@@ -4225,46 +4125,135 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
   const [csvFileName, setCsvFileName] = React.useState('');
   const [clearing, setClearing] = React.useState(false);
   const [showNumbers, setShowNumbers] = React.useState(false);
-  const [savedNumbers, setSavedNumbers] = React.useState<string[]>([]);
+  const [savedNumbers, setSavedNumbers] = React.useState<{ phone: string; city: string | null }[]>([]);
   const [loadingNumbers, setLoadingNumbers] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
+  const buildQuery = React.useCallback((base: any, city: string) => {
+    if (city === 'All') return base;
+    return base.eq('city', city);
+  }, []);
+
   const fetchCount = React.useCallback(async () => {
     if (!eventSlug) return;
-    const { count: c } = await supabase
-      .from('invited_numbers')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_slug', eventSlug);
+    let q = supabase.from('invited_numbers').select('id', { count: 'exact', head: true }).eq('event_slug', eventSlug);
+    q = buildQuery(q, selectedCity);
+    const { count: c } = await q;
     setCount(c ?? 0);
-  }, [eventSlug]);
+  }, [eventSlug, selectedCity, buildQuery]);
 
   const fetchNumbers = React.useCallback(async () => {
     if (!eventSlug) return;
     setLoadingNumbers(true);
-    const { data } = await supabase
-      .from('invited_numbers')
-      .select('phone')
-      .eq('event_slug', eventSlug)
-      .order('phone', { ascending: true });
-    setSavedNumbers((data ?? []).map((r: any) => r.phone));
+    let q = supabase.from('invited_numbers').select('phone, city').eq('event_slug', eventSlug).order('city', { ascending: true }).order('phone', { ascending: true });
+    q = buildQuery(q, selectedCity);
+    const { data } = await q;
+    setSavedNumbers((data ?? []).map((r: any) => ({ phone: r.phone, city: r.city ?? null })));
     setLoadingNumbers(false);
-  }, [eventSlug]);
+  }, [eventSlug, selectedCity, buildQuery]);
 
   const handleToggleNumbers = () => {
     if (!showNumbers) fetchNumbers();
     setShowNumbers(v => !v);
   };
 
-  React.useEffect(() => { fetchCount(); }, [fetchCount]);
+  // Refetch when city tab changes
+  React.useEffect(() => {
+    setShowNumbers(false);
+    fetchCount();
+  }, [fetchCount]);
 
   const parseNumbers = (text: string): string[] => {
     const parts = text.split(/[\n,]+/).map(p => normalizePhone(p)).filter(p => p.length >= 10 && /^\d+$/.test(p)).map(p => p.slice(-10));
     return [...new Set(parts)];
   };
 
-  const upsertNumbers = async (phones: string[]): Promise<{ saved: number; error: string }> => {
-    if (phones.length === 0) return { saved: 0, error: '' };
-    const rows = phones.map(phone => ({ event_slug: eventSlug, phone }));
+  const syncApplicationsForInvites = async (phones: string[], cityValue: string | null): Promise<{ synced: number; error: string }> => {
+    if (phones.length === 0 || !applicationEventSlug) return { synced: 0, error: '' };
+
+    const protectedStatuses = new Set(['advance_paid', 'fully_paid']);
+    let synced = 0;
+    let lastError = '';
+
+    for (let i = 0; i < phones.length; i += 500) {
+      const batchPhones = phones.slice(i, i + 500);
+      const { data: existingRows, error: fetchError } = await supabase
+        .from('applications')
+        .select('id, phone, status')
+        .eq('event_slug', applicationEventSlug)
+        .in('phone', batchPhones);
+
+      if (fetchError) {
+        lastError = fetchError.message;
+        continue;
+      }
+
+      const existingByPhone = new Map((existingRows ?? []).map((row: any) => [String(row.phone), row]));
+      const rowsToInsert = batchPhones
+        .filter(phone => !existingByPhone.has(phone))
+        .map(phone => ({
+          event_slug: applicationEventSlug,
+          name: 'Invited Guest',
+          phone,
+          gender: '',
+          why_join: 'Added from invited list',
+          attended_before: '',
+          status: 'invited',
+          selected_city: cityValue,
+        }));
+      const idsToPromote = (existingRows ?? [])
+        .filter((row: any) => !protectedStatuses.has(String(row.status ?? '')))
+        .map((row: any) => row.id)
+        .filter(Boolean);
+
+      if (rowsToInsert.length > 0) {
+        const { error: insertError } = await supabase.from('applications').insert(rowsToInsert);
+        if (insertError) {
+          // Some public insert policies only allow the native form shape/status=pending.
+          // Insert a form-compatible row, then promote it to invited below.
+          const pendingRows = rowsToInsert.map(row => ({ ...row, status: 'pending' }));
+          const { error: pendingInsertError } = await supabase.from('applications').insert(pendingRows);
+          if (pendingInsertError) {
+            lastError = pendingInsertError.message || insertError.message;
+          } else {
+            const { data: insertedRows, error: refetchError } = await supabase
+              .from('applications')
+              .select('id')
+              .eq('event_slug', applicationEventSlug)
+              .in('phone', pendingRows.map(row => row.phone));
+            const insertedIds = (insertedRows ?? []).map((row: any) => row.id).filter(Boolean);
+            if (refetchError) {
+              lastError = refetchError.message;
+              synced += pendingRows.length;
+            } else if (insertedIds.length > 0) {
+              const { error: promoteError } = await supabase
+                .from('applications')
+                .update({ status: 'invited', selected_city: cityValue })
+                .in('id', insertedIds);
+              if (promoteError) lastError = promoteError.message;
+              synced += pendingRows.length;
+            }
+          }
+        } else synced += rowsToInsert.length;
+      }
+
+      if (idsToPromote.length > 0) {
+        const { error: updateError } = await supabase
+          .from('applications')
+          .update({ status: 'invited', selected_city: cityValue })
+          .in('id', idsToPromote);
+        if (updateError) lastError = updateError.message;
+        else synced += idsToPromote.length;
+      }
+    }
+
+    return { synced, error: lastError };
+  };
+
+  const upsertNumbers = async (phones: string[]): Promise<{ saved: number; synced: number; error: string }> => {
+    if (phones.length === 0) return { saved: 0, synced: 0, error: '' };
+    const cityValue = (hasCityTabs && selectedCity !== 'All') ? selectedCity : null;
+    const rows = phones.map(phone => ({ event_slug: eventSlug, phone, city: cityValue }));
     let saved = 0;
     let lastError = '';
     for (let i = 0; i < rows.length; i += 500) {
@@ -4273,16 +4262,17 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
       if (error) { lastError = error.message; }
       else saved += batch.length;
     }
-    return { saved, error: lastError };
+    const { synced, error: syncError } = await syncApplicationsForInvites(phones, cityValue);
+    return { saved, synced, error: lastError || syncError };
   };
 
   const handleSavePaste = async () => {
     const phones = parseNumbers(pasteText);
     if (phones.length === 0) { setPasteStatus('No valid numbers found.'); return; }
     setPasteStatus('Saving…');
-    const { saved, error } = await upsertNumbers(phones);
+    const { saved, synced, error } = await upsertNumbers(phones);
     await fetchCount();
-    setPasteStatus(error ? `Error: ${error}` : `${saved} numbers saved.`);
+    setPasteStatus(error ? `Error: ${error}` : `${saved} numbers saved. ${synced} application rows synced.`);
   };
 
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -4303,28 +4293,60 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
   const handleImportCsv = async () => {
     if (csvParsed.length === 0) { setCsvStatus('No valid numbers to import.'); return; }
     setCsvStatus('Importing…');
-    const { saved, error } = await upsertNumbers(csvParsed);
+    const { saved, synced, error } = await upsertNumbers(csvParsed);
     await fetchCount();
-    setCsvStatus(error ? `Error: ${error}` : `${saved} numbers imported.`);
+    setCsvStatus(error ? `Error: ${error}` : `${saved} numbers imported. ${synced} application rows synced.`);
     setCsvParsed([]);
     setCsvFileName('');
   };
 
   const handleClearAll = async () => {
-    if (!window.confirm(`Clear ALL invited numbers for "${eventSlug}"? This cannot be undone.`)) return;
+    const scopeLabel = (hasCityTabs && selectedCity !== 'All') ? `${selectedCity} numbers` : 'ALL invited numbers';
+    if (!window.confirm(`Clear ${scopeLabel} for "${eventSlug}"? This cannot be undone.`)) return;
     setClearing(true);
-    await supabase.from('invited_numbers').delete().eq('event_slug', eventSlug);
+    let q: any = supabase.from('invited_numbers').delete().eq('event_slug', eventSlug);
+    if (hasCityTabs && selectedCity !== 'All') q = q.eq('city', selectedCity);
+    await q;
     await fetchCount();
     setClearing(false);
   };
 
+  const cityTabs = ['All', ...namedCities];
+
   return (
     <CollapsibleSection title="Invited Numbers" badge={count !== null ? `${count} saved` : undefined} badgeColor="#7c3aed">
       <div style={{ display: 'grid', gap: 14 }}>
+
+        {/* City radio tabs — only shown for multi-city events */}
+        {hasCityTabs && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {cityTabs.map(city => (
+              <button
+                key={city}
+                type="button"
+                onClick={() => setSelectedCity(city)}
+                style={{
+                  padding: '5px 14px',
+                  borderRadius: 99,
+                  border: selectedCity === city ? '2px solid #7c3aed' : '1.5px solid #ddd',
+                  background: selectedCity === city ? '#7c3aed' : '#fff',
+                  color: selectedCity === city ? '#fff' : '#555',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {city}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#4c1d95' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>
-              <strong>{count !== null ? count : '…'}</strong> numbers currently on the invite list for slug <code style={{ background: '#ede9fe', padding: '1px 6px', borderRadius: 4 }}>{eventSlug}</code>
+              <strong>{count !== null ? count : '…'}</strong> {hasCityTabs && selectedCity !== 'All' ? <><strong>{selectedCity}</strong> </> : ''}numbers on invite list for <code style={{ background: '#ede9fe', padding: '1px 6px', borderRadius: 4 }}>{eventSlug}</code>
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               {count !== null && count > 0 && (
@@ -4343,7 +4365,7 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
                   disabled={clearing}
                   style={{ padding: '3px 10px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
                 >
-                  {clearing ? 'Clearing…' : 'Clear All'}
+                  {clearing ? 'Clearing…' : hasCityTabs && selectedCity !== 'All' ? `Clear ${selectedCity}` : 'Clear All'}
                 </button>
               )}
             </div>
@@ -4354,10 +4376,10 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
               {loadingNumbers ? (
                 <p style={{ fontSize: 12, color: '#7c3aed', margin: 0 }}>Loading…</p>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '4px 12px', maxHeight: 200, overflowY: 'auto' }}>
-                  {savedNumbers.map((phone, i) => (
-                    <span key={phone} style={{ fontSize: 12, fontFamily: 'monospace', color: '#4c1d95', padding: '2px 0' }}>
-                      {i + 1}. {phone}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '4px 12px', maxHeight: 200, overflowY: 'auto' }}>
+                  {savedNumbers.map((entry, i) => (
+                    <span key={entry.phone} style={{ fontSize: 12, fontFamily: 'monospace', color: '#4c1d95', padding: '2px 0' }}>
+                      {i + 1}. {entry.phone}{selectedCity === 'All' && entry.city ? <span style={{ fontSize: 11, color: '#7c3aed', marginLeft: 4 }}>({entry.city})</span> : null}
                     </span>
                   ))}
                 </div>
@@ -4367,7 +4389,12 @@ function InvitedNumbersSection({ eventSlug, s }: { eventSlug: string; s: any }) 
         </div>
 
         <div>
-          <label style={s.label}>Paste Phone Numbers</label>
+          <label style={s.label}>
+            Paste Phone Numbers
+            {hasCityTabs && selectedCity !== 'All' && (
+              <span style={{ fontWeight: 400, color: '#7c3aed', marginLeft: 6 }}>→ will be saved as <strong>{selectedCity}</strong></span>
+            )}
+          </label>
           <textarea
             style={{ ...s.textarea, minHeight: 80 }}
             placeholder="Paste phone numbers, one per line (or comma separated)"
