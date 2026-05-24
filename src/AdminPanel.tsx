@@ -169,7 +169,10 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics'>('people');
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics' | 'chats'>(
+    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'chats') ?? 'people'
+  );
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'chats') => { setTab(t); localStorage.setItem('adminTab', t); };
   const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
   const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
   const [peopleSearch, setPeopleSearch] = useState('');
@@ -191,6 +194,7 @@ export default function AdminPanel() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
+  const [planDoubts, setPlanDoubts] = useState<any[]>([]);
   const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
@@ -198,8 +202,20 @@ export default function AdminPanel() {
   const [doubtCtaLabel, setDoubtCtaLabel] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
   const [savingDoubtSettings, setSavingDoubtSettings] = useState(false);
+  // ── CHATS ─────────────────────────────────────────────────────────────────
+  const [chatConversations, setChatConversations] = useState<any[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatReply, setChatReply] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
+  const [faqClipboard, setFaqClipboard] = useState<FAQ[] | null>(null);
+  const [inviteFaqClipboard, setInviteFaqClipboard] = useState<FAQ[] | null>(null);
+  const [groupchatClipboard, setGroupchatClipboard] = useState<any[] | null>(null);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [addingTrip, setAddingTrip] = useState(false);
   const [plansCityFilter, setPlansCityFilter] = useState<'all' | string>('all');
@@ -273,8 +289,20 @@ export default function AdminPanel() {
     .filter((s): s is string => !!s))
     .sort((a, b) => a.localeCompare(b));
 
-  const getDoubtSubmissionPlanName = (submission: DoubtSubmission) =>
-    (submission.event_title || submission.event || submission.event_name || '').trim();
+  const getDoubtSubmissionPlanName = (submission: any) => {
+    // doubt_submissions uses event_title (plain string) — look it up in trips for a canonical title
+    const raw = (submission.event_title || submission.event || submission.event_name || '').trim();
+    if (raw) {
+      const match = trips.find(t => t.title === raw || t.slug === raw || t.invite_slug === raw);
+      return match ? match.title : raw;
+    }
+    if (submission.event_slug) {
+      const match = trips.find(t => t.slug === submission.event_slug || t.invite_slug === submission.event_slug);
+      if (match) return match.title;
+      return submission.event_slug;
+    }
+    return '-';
+  };
 
   const formatAdminDateTime = (value?: string) => {
     if (!value) return '-';
@@ -297,8 +325,10 @@ export default function AdminPanel() {
       const role = (data?.role as 'admin' | 'ops') ?? null;
       setAdminRole(role);
       setAuthDenied(!role); // logged in via Google but not in admin_users
-      if (role === 'ops') setTab('people');
-      else if (role === 'admin') setTab('trips');
+      if (!localStorage.getItem('adminTab')) {
+        if (role === 'ops') setTab('people');
+        else if (role === 'admin') setTab('trips');
+      }
       setAuthLoading(false);
     };
 
@@ -333,7 +363,7 @@ export default function AdminPanel() {
     Promise.all([
       supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
-      supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
+      supabase.from('doubt_submissions').select('*').order('created_at', { ascending: false }),
       supabase.from('payu_payments').select('*').order('created_at', { ascending: false }),
     ]).then(([evRes, msgRes, doubtsRes, payuRes]) => {
       if (evRes.data) setTrips((evRes.data as Trip[]).map(normalizeCityDetails));
@@ -350,7 +380,7 @@ export default function AdminPanel() {
         const doubtLabelMsg = allMsgs.find(m => m.step_key === 'doubt_cta_label');
         setDoubtCtaLabel(doubtLabelMsg?.bot_message || '');
       }
-      if (doubtsRes.data) setDoubtSubmissions(doubtsRes.data as DoubtSubmission[]);
+      if (doubtsRes.data) setPlanDoubts(doubtsRes.data);
       if (payuRes.data) setPayuPayments(payuRes.data as PayuPayment[]);
       setLoading(false);
     }).then(() => {
@@ -361,6 +391,93 @@ export default function AdminPanel() {
       setLoading(false);
     });
   }, [adminRole]);
+
+  // ── CHATS: load conversations ──────────────────────────────────────────────
+  const loadChats = async () => {
+    setChatsLoading(true);
+    const { data } = await supabase
+      .from('doubt_conversations')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (data) setChatConversations(data);
+    setChatsLoading(false);
+  };
+
+  const loadChatMessages = async (conversationId: string) => {
+    const { data } = await supabase
+      .from('doubt_messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+    if (data) setChatMessages(data);
+  };
+
+  const sendAgentReply = async () => {
+    if (!activeChatId || !chatReply.trim()) return;
+    setChatSending(true);
+    const body = chatReply.trim();
+    setChatReply('');
+    await supabase.from('doubt_messages').insert({
+      conversation_id: activeChatId,
+      sender: 'agent',
+      body,
+    });
+    setChatSending(false);
+  };
+
+  // Open a conversation — load its messages and subscribe to new ones
+  const openConversation = (conv: any) => {
+    setActiveChatId(conv.id);
+    loadChatMessages(conv.id);
+  };
+
+  const markResolved = async (id: string) => {
+    await supabase.from('doubt_conversations').update({ status: 'resolved' }).eq('id', id);
+    setChatConversations(prev => prev.map(c => c.id === id ? { ...c, status: 'resolved' } : c));
+    if (activeChatId === id) setActiveChatId(null);
+  };
+
+  const reopenConversation = async (id: string) => {
+    await supabase.from('doubt_conversations').update({ status: 'open' }).eq('id', id);
+    setChatConversations(prev => prev.map(c => c.id === id ? { ...c, status: 'open' } : c));
+  };
+
+  // Realtime: subscribe when on chats tab
+  useEffect(() => {
+    if (tab !== 'chats' || !adminRole) return;
+    loadChats();
+
+    const convSub = supabase
+      .channel('admin-doubt-conversations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doubt_conversations' }, () => {
+        loadChats();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(convSub); };
+  }, [tab, adminRole]);
+
+  // Realtime: subscribe to messages of active conversation
+  useEffect(() => {
+    if (!activeChatId) return;
+    const msgSub = supabase
+      .channel(`admin-chat-msgs-${activeChatId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'doubt_messages',
+        filter: `conversation_id=eq.${activeChatId}`,
+      }, (payload) => {
+        setChatMessages(prev => [...prev, payload.new]);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(msgSub); };
+  }, [activeChatId]);
+
+  // Scroll to bottom when messages update
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   const refreshPayuPayments = async () => {
     const { data } = await supabase
@@ -374,11 +491,12 @@ export default function AdminPanel() {
     setApplicationsLoading(true);
     const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }] = await Promise.all([
       supabase.from('applications').select('*').order('created_at', { ascending: false }),
-      supabase.from('plan_doubts').select('*').order('created_at', { ascending: false }),
+      supabase.from('doubt_submissions').select('*').order('created_at', { ascending: false }),
       supabase.from('events').select('slug, invite_slug'),
     ]);
-    console.log('[loadApplications] applications:', data?.length ?? 0, 'doubts:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message})` : '');
+    console.log('[loadApplications] applications:', data?.length ?? 0, 'doubt_submissions:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message})` : '');
     if (doubtsErr) showToast(`⚠️ Could not load doubts: ${doubtsErr.message}`);
+    if (doubtsRows) setPlanDoubts(doubtsRows);
     if (error) {
       showToast(`❌ Failed to load applications: ${error.message}`);
     } else {
@@ -1035,14 +1153,20 @@ export default function AdminPanel() {
       <div style={s.header}>
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
         <div style={{ flex: 1 }} />
-        {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => setTab('trips')}>Plans</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => setTab('flow')}>Flow</button>}
-        <button style={s.tab(tab === 'people')} onClick={() => { setTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { setTab('analytics'); loadAnalytics(); }}>Analytics</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
+        <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
+        <button style={{ ...s.tab(tab === 'chats'), position: 'relative' }} onClick={() => switchTab('chats')}>
+          Chats
+          {chatConversations.filter(c => c.status === 'open').length > 0 && (
+            <span style={{ position: 'absolute', top: 2, right: 2, width: 7, height: 7, borderRadius: '50%', background: '#22c55e', border: '1.5px solid #fff' }} />
+          )}
+        </button>
+        {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
 
-      <div style={{ maxWidth: tab === 'people' ? 1280 : 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: tab === 'people' ? 1280 : tab === 'chats' ? 1100 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -1442,13 +1566,32 @@ export default function AdminPanel() {
                               <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                                   <label style={{ ...s.label, marginBottom: 0 }}>Groupchat Messages</label>
-                                  <button
-                                    type="button"
-                                    style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
-                                    onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), { name: '', rating: 5, review_text: '', review_count: 0, date_label: '' }] }))}
-                                  >
-                                    + Add Message
-                                  </button>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    {groupchatClipboard && (
+                                      <button
+                                        type="button"
+                                        style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12, color: '#16a34a', borderColor: '#86efac' }}
+                                        onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), ...groupchatClipboard] }))}
+                                      >
+                                        ⎘ Paste ({groupchatClipboard.length})
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                      onClick={() => { setGroupchatClipboard(reviews.length > 0 ? [...reviews] : null); showToast(`Copied ${reviews.length} message${reviews.length === 1 ? '' : 's'}`); }}
+                                      disabled={reviews.length === 0}
+                                    >
+                                      ⎘ Copy
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                      onClick={() => updateTripInList(trip.id!, t => ({ ...t, event_reviews: [...(t.event_reviews ?? []), { name: '', rating: 5, review_text: '', review_count: 0, date_label: '' }] }))}
+                                    >
+                                      + Add Message
+                                    </button>
+                                  </div>
                                 </div>
                                 <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
                                   Casual post-trip messages between participants — not reviews. e.g. "does anyone have that video of me falling 😭" or "tell me when the next one is!"
@@ -1556,13 +1699,32 @@ export default function AdminPanel() {
                       const editKey = hasMultipleDates ? `${trip.id}:${selectedDate}` : trip.id!;
                       const activeDateRow = sortedDates.find(d => d.start_date === selectedDate);
                       const perDateSteps = (activeDateRow as any)?.booking_steps as Array<{ label: string; value: string; date: string }> | undefined;
-                      const defaultSteps = trip.booking_steps ?? [
-                        { label: 'Advance', value: '{advance}', date: '' },
-                        { label: 'Remaining Balance', value: '{balance}', date: '' },
-                        { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                      const isNativeApp = trip.booking_url === 'native-application';
+                      const nativeDefaultSteps = [
+                        { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
+                        { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
+                        { label: 'remaining balance',                 value: '{balance}',               date: '' },
+                        { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
+                        { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
                       ];
-                      const currentSteps: Array<{ label: string; value: string; date: string }> =
+                      const defaultSteps = isNativeApp
+                        ? (trip.booking_steps?.length ? trip.booking_steps : nativeDefaultSteps)
+                        : trip.booking_steps ?? [
+                          { label: 'Advance', value: '{advance}', date: '' },
+                          { label: 'Remaining Balance', value: '{balance}', date: '' },
+                          { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                        ];
+                      const rawSteps: Array<{ label: string; value: string; date: string }> =
                         timelineEdits[editKey] ?? (hasMultipleDates ? (perDateSteps ?? defaultSteps) : defaultSteps);
+                      // Native app events always show exactly 5 rows — pad missing steps from defaults
+                      // Step 5 (index 4) defaults to the event's own title as value
+                      const currentSteps: Array<{ label: string; value: string; date: string }> = isNativeApp
+                        ? Array.from({ length: 5 }, (_, i) => {
+                            if (rawSteps[i]) return rawSteps[i];
+                            const def = nativeDefaultSteps[i];
+                            return i === 4 ? { ...def, value: trip.title ?? def.value } : def;
+                          })
+                        : rawSteps;
                       const setStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) => {
                         const next = currentSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s);
                         setTimelineEdits(prev => ({ ...prev, [editKey]: next }));
@@ -1629,26 +1791,43 @@ export default function AdminPanel() {
                             <div onClick={e => e.stopPropagation()}>
                           {currentSteps.map((step, i) => {
                             const isNowRow = i === 0;
+                            // Native app: steps 0 (request invitation) and 4 (enjoy the plan) have no date
+                            const nativeNoDate = isNativeApp && (i === 0 || i === 4);
                             return (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: '1px solid #ebebeb', borderRadius: 10, marginBottom: 6 }}>
-                                {/* Left: tag + value stacked */}
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isNativeApp ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
+                                {/* Left: label + value stacked */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <input
                                     style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 11, fontWeight: 600, color: '#999', padding: 0, marginBottom: 3 }}
-                                    placeholder={isNowRow ? 'e.g. Advance' : 'Tag label'}
+                                    placeholder={isNowRow ? 'e.g. Advance' : 'Step label'}
                                     value={step.label}
                                     onChange={e => setStep(i, { label: e.target.value })}
                                   />
                                   <input
                                     style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 15, fontWeight: 700, color: '#111', padding: 0 }}
-                                    placeholder={isNowRow ? '{advance}' : i === 1 ? '{balance}' : 'Value or text'}
+                                    placeholder={i === 1 ? '{advance}' : i === 2 ? '{balance}' : 'Value or text'}
                                     value={step.value}
                                     onChange={e => setStep(i, { value: e.target.value })}
                                   />
                                 </div>
-                                {/* Right: date or NOW pill + delete */}
+                                {/* Right: date or fixed pill */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                                  {isNowRow
+                                  {nativeNoDate
+                                    ? i === 0
+                                      ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
+                                      : <select
+                                          value={selectedDate}
+                                          onChange={e => setSelectedTimelineDates(prev => ({ ...prev, [trip.id!]: e.target.value }))}
+                                          style={{ border: '1.5px solid #FFD700', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 700, color: '#111', background: '#FFF9D6', outline: 'none', appearance: 'none', WebkitAppearance: 'none', cursor: hasMultipleDates ? 'pointer' : 'default', opacity: hasMultipleDates ? 1 : 0.85 }}
+                                          disabled={!hasMultipleDates}
+                                        >
+                                          {sortedDates.map(d => (
+                                            <option key={d.start_date} value={d.start_date}>
+                                              {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </option>
+                                          ))}
+                                        </select>
+                                    : isNowRow && !isNativeApp
                                     ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
                                     : <input
                                         type="date"
@@ -1657,14 +1836,16 @@ export default function AdminPanel() {
                                         onChange={e => setStep(i, { date: e.target.value })}
                                       />
                                   }
-                                  <button type="button" onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 18, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>×</button>
+                                  {!isNativeApp && (
+                                    <button type="button" onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 18, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>×</button>
+                                  )}
                                 </div>
                               </div>
                             );
                           })}
 
                           {/* Reference row — styled like a step row, dropdown on the right */}
-                          {sortedDates.length > 0 && (
+                          {!isNativeApp && sortedDates.length > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: '1px solid #ebebeb', borderRadius: 10, marginBottom: 6, marginTop: 2 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>{trip.title}</div>
@@ -1690,11 +1871,14 @@ export default function AdminPanel() {
                           )}
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                            <button type="button" onClick={addStep} style={{ padding: '5px 14px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>+ Add Step</button>
+                            {!isNativeApp && (
+                              <button type="button" onClick={addStep} style={{ padding: '5px 14px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>+ Add Step</button>
+                            )}
                             <div style={{ flex: 1 }}>
+                              <label style={{ ...s.label, marginBottom: 4, display: 'block' }}>Booking CTA Label</label>
                               <input
                                 style={{ ...s.input, fontSize: 13 }}
-                                placeholder="Booking CTA button label…"
+                                placeholder="e.g. Request Invitation, Pay Now…"
                                 value={ctaEdits[trip.id!] !== undefined ? ctaEdits[trip.id!] : (trip.cta_label ?? '')}
                                 onChange={e => setCtaEdits(prev => ({ ...prev, [trip.id!]: e.target.value }))}
                               />
@@ -1827,13 +2011,32 @@ export default function AdminPanel() {
                               {/* ── Automatic Doubt Answers (AppFlow booking chat) ── */}
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <label style={{ ...s.label, marginBottom: 0 }}>Possible Doubts (FAQ)</label>
-                                <button
-                                  type="button"
-                                  style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
-                                  onClick={() => updateTripInList(trip.id!, t => ({ ...t, faqs: [...(t.faqs ?? []), { question: '', answer: '' }] }))}
-                                >
-                                  + Add Q&A
-                                </button>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  {faqClipboard && (
+                                    <button
+                                      type="button"
+                                      style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12, color: '#16a34a', borderColor: '#86efac' }}
+                                      onClick={() => updateTripInList(trip.id!, t => ({ ...t, faqs: [...(t.faqs ?? []), ...faqClipboard] }))}
+                                    >
+                                      ⎘ Paste ({faqClipboard.length})
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                    onClick={() => { setFaqClipboard((trip.faqs ?? []).length > 0 ? [...(trip.faqs ?? [])] : null); showToast(`Copied ${(trip.faqs ?? []).length} FAQ${(trip.faqs ?? []).length === 1 ? '' : 's'}`); }}
+                                    disabled={(trip.faqs ?? []).length === 0}
+                                  >
+                                    ⎘ Copy
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                    onClick={() => updateTripInList(trip.id!, t => ({ ...t, faqs: [...(t.faqs ?? []), { question: '', answer: '' }] }))}
+                                  >
+                                    + Add Q&A
+                                  </button>
+                                </div>
                               </div>
                               {faqs.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No FAQs added yet.</div>}
                               {faqs.map((faq, i) => (
@@ -1877,13 +2080,32 @@ export default function AdminPanel() {
                                     <label style={{ ...s.label, marginBottom: 0 }}>Invitation Doubts</label>
                                     <div style={{ color: '#999', fontSize: 11, marginTop: 2 }}>Shown as quick-reply chips in the /invite chat "I Have a Doubt" flow.</div>
                                   </div>
-                                  <button
-                                    type="button"
-                                    style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
-                                    onClick={() => updateTripInList(trip.id!, t => ({ ...t, invite_faqs: [...(t.invite_faqs ?? []), { question: '', answer: '' }] }))}
-                                  >
-                                    + Add Q&A
-                                  </button>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    {inviteFaqClipboard && (
+                                      <button
+                                        type="button"
+                                        style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12, color: '#16a34a', borderColor: '#86efac' }}
+                                        onClick={() => updateTripInList(trip.id!, t => ({ ...t, invite_faqs: [...(t.invite_faqs ?? []), ...inviteFaqClipboard] }))}
+                                      >
+                                        ⎘ Paste ({inviteFaqClipboard.length})
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                      onClick={() => { setInviteFaqClipboard((trip.invite_faqs ?? []).length > 0 ? [...(trip.invite_faqs ?? [])] : null); showToast(`Copied ${(trip.invite_faqs ?? []).length} invite FAQ${(trip.invite_faqs ?? []).length === 1 ? '' : 's'}`); }}
+                                      disabled={(trip.invite_faqs ?? []).length === 0}
+                                    >
+                                      ⎘ Copy
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }}
+                                      onClick={() => updateTripInList(trip.id!, t => ({ ...t, invite_faqs: [...(t.invite_faqs ?? []), { question: '', answer: '' }] }))}
+                                    >
+                                      + Add Q&A
+                                    </button>
+                                  </div>
                                 </div>
                                 {(trip.invite_faqs ?? []).length === 0 && (
                                   <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No invitation doubts added yet.</div>
@@ -1962,15 +2184,14 @@ export default function AdminPanel() {
               || pays.all.some((p: any) => String(p.txnid ?? '').toLowerCase().includes(searchLower));
             return eventMatch && statusMatch && searchMatch;
           });
-          const filteredDoubtSubmissions = (doubtSubmissions ?? []).filter((submission) => {
-            const cityMatch = qnaDoubtCityFilter === 'all'
-              ? true
-              : (submission.city ?? '').trim().toLowerCase() === qnaDoubtCityFilter.trim().toLowerCase();
+          const filteredDoubtSubmissions = (planDoubts ?? []).filter((submission) => {
             const submissionPlan = getDoubtSubmissionPlanName(submission);
             const planMatch = qnaDoubtPlanFilter === 'all'
               ? true
               : submissionPlan.toLowerCase() === qnaDoubtPlanFilter.trim().toLowerCase();
-            return cityMatch && planMatch;
+            const cityMatch = qnaDoubtCityFilter === 'all'
+              || (submission.city ?? '').toLowerCase().includes(qnaDoubtCityFilter.toLowerCase());
+            return planMatch && cityMatch;
           });
 
           const statusColor = (status: string) => {
@@ -2040,7 +2261,7 @@ export default function AdminPanel() {
               ? { call: [], approval: ['Plan Name', 'Why Join', 'Action'], payments: [], doubts: [] }
               : peopleMode === 'payments'
               ? { call: [], approval: [], payments: ['Name', 'Plan', 'Status', 'Transaction IDs'], doubts: [] }
-              : { call: [], approval: [], payments: [], doubts: ['Doubt', 'Plan', 'City', 'Reporting Date & Time', 'Contact'] };
+              : { call: [], approval: [], payments: [], doubts: ['Name / Doubt', 'Plan', 'City', 'Reporting Date', 'Phone', 'Reply'] };
 
           return (
             <div>
@@ -2157,24 +2378,30 @@ export default function AdminPanel() {
                     <tbody>
                       {filteredDoubtSubmissions.map((submission, index) => {
                         const eventName = getDoubtSubmissionPlanName(submission) || '-';
-                        const reportingDate = submission.reporting_date || '-';
-                        const reportingTime = submission.reporting_time || '-';
                         const doubtText = submission.doubt || submission.message || '-';
+                        const submitterName = (submission.name ?? '').trim() || '-';
+                        const cityText = (submission.city ?? '').trim() || '-';
+                        const reportingDateText = (submission.reporting_date ?? '').trim() || '-';
+                        const submittedAt = submission.submitted_at || submission.created_at
+                          ? new Date(submission.submitted_at ?? submission.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                          : '-';
                         const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
-                        const contactMessage = `Hi, ${submission.name || 'there'}, we're contacting you from chapter அ regarding ${eventName} (${reportingDate}).`;
-                        const contactHref = phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(contactMessage)}` : '';
+                        const contactMessage = `Hi ${submission.name ? submission.name.split(' ')[0] : 'there'}, we're reaching out from chapter அ regarding your doubt about ${eventName}.`;
+                        const contactHref = phoneDigits ? `https://wa.me/91${phoneDigits.slice(-10)}?text=${encodeURIComponent(contactMessage)}` : '';
 
                         return (
                           <tr key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                            <td title={doubtText} style={{ width: '22%', padding: '10px 10px', fontSize: 13, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {doubtText}
+                            <td title={doubtText} style={{ width: '28%', padding: '10px 10px', fontSize: 13, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <div style={{ fontWeight: 500 }}>{submitterName}</div>
+                              <div style={{ fontSize: 12, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{doubtText}</div>
                             </td>
-                            <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
-                            <td style={{ width: '14%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{submission.city || '-'}</td>
-                            <td style={{ width: '24%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {reportingDate === '-' && reportingTime === '-' ? '-' : `${reportingDate}${reportingTime !== '-' ? ` · ${reportingTime}` : ''}`}
+                            <td style={{ width: '20%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
+                            <td style={{ width: '12%', padding: '10px 10px', fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cityText}</td>
+                            <td style={{ width: '18%', padding: '10px 10px', fontSize: 12, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <div>{reportingDateText !== '-' ? reportingDateText : submittedAt}</div>
                             </td>
-                            <td style={{ width: '16%', padding: '10px 10px', whiteSpace: 'nowrap' }}>
+                            <td style={{ width: '14%', padding: '10px 10px', fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{phoneDigits ? `+91 ${phoneDigits.slice(-10)}` : '-'}</td>
+                            <td style={{ width: '8%', padding: '10px 10px', whiteSpace: 'nowrap' }}>
                               {phoneDigits ? (
                                 <a
                                   href={contactHref}
@@ -2182,7 +2409,7 @@ export default function AdminPanel() {
                                   rel="noreferrer"
                                   style={{ ...s.outlineBtn, display: 'inline-block', padding: '6px 12px', fontSize: 12, textDecoration: 'none' }}
                                 >
-                                  Contact
+                                  Reply
                                 </a>
                               ) : (
                                 <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
@@ -2549,6 +2776,183 @@ export default function AdminPanel() {
 
           </>
         )}
+
+        {/* ── CHATS TAB ────────────────────────────────────────────────────── */}
+        {tab === 'chats' && (() => {
+          const activeConv = chatConversations.find(c => c.id === activeChatId) ?? null;
+          const openConvs = chatConversations.filter(c => c.status === 'open');
+          const resolvedConvs = chatConversations.filter(c => c.status === 'resolved');
+
+          const formatChatTime = (iso: string) => {
+            const d = new Date(iso);
+            const now = new Date();
+            const isToday = d.toDateString() === now.toDateString();
+            if (isToday) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+            return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+          };
+
+          const ConvList = ({ convs, label }: { convs: any[]; label: string }) => (
+            <>
+              {convs.length > 0 && (
+                <div style={{ padding: '6px 14px 4px', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#aaa', textTransform: 'uppercase' }}>{label}</div>
+              )}
+              {convs.map(conv => {
+                const isActive = conv.id === activeChatId;
+                const planName = trips.find(t => t.slug === conv.event_slug || t.invite_slug === conv.event_slug)?.title ?? conv.event_slug ?? '—';
+                return (
+                  <div
+                    key={conv.id}
+                    onClick={() => openConversation(conv)}
+                    style={{
+                      padding: '12px 14px',
+                      cursor: 'pointer',
+                      background: isActive ? '#f0f9ff' : 'transparent',
+                      borderLeft: isActive ? '3px solid #3b82f6' : '3px solid transparent',
+                      borderBottom: '1px solid #f3f3f3',
+                      transition: 'background 0.12s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#111' }}>{conv.name || `+91 ${(conv.phone ?? '').slice(-10)}`}</div>
+                      <div style={{ fontSize: 11, color: '#aaa', flexShrink: 0, marginLeft: 8 }}>{formatChatTime(conv.updated_at)}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{planName}</div>
+                    {conv.status === 'open' && (
+                      <div style={{ display: 'inline-block', marginTop: 4, padding: '1px 7px', borderRadius: 99, background: '#dcfce7', color: '#16a34a', fontSize: 10, fontWeight: 700 }}>open</div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          );
+
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, height: 'calc(100vh - 120px)', minHeight: 500 }}>
+
+              {/* ── Left: conversation list ── */}
+              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #ececec', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>Chats</div>
+                  <button
+                    onClick={loadChats}
+                    style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16, padding: 2 }}
+                    title="Refresh"
+                  >↻</button>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  {chatsLoading && <div style={{ padding: 20, color: '#aaa', fontSize: 13, textAlign: 'center' }}>Loading…</div>}
+                  {!chatsLoading && chatConversations.length === 0 && (
+                    <div style={{ padding: 24, color: '#bbb', fontSize: 13, textAlign: 'center' }}>No conversations yet</div>
+                  )}
+                  <ConvList convs={openConvs} label="Open" />
+                  <ConvList convs={resolvedConvs} label="Resolved" />
+                </div>
+              </div>
+
+              {/* ── Right: thread view ── */}
+              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #ececec', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {!activeConv ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc', fontSize: 14 }}>
+                    Select a conversation
+                  </div>
+                ) : (
+                  <>
+                    {/* Thread header */}
+                    <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>{activeConv.name || 'Unknown'}</div>
+                        <div style={{ fontSize: 12, color: '#888' }}>
+                          {activeConv.phone ? `+91 ${activeConv.phone.slice(-10)}` : ''}
+                          {activeConv.event_slug && (
+                            <> · {trips.find(t => t.slug === activeConv.event_slug || t.invite_slug === activeConv.event_slug)?.title ?? activeConv.event_slug}</>
+                          )}
+                        </div>
+                      </div>
+                      {activeConv.status === 'open' ? (
+                        <button
+                          onClick={() => markResolved(activeConv.id)}
+                          style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #16a34a', background: '#fff', color: '#16a34a', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                        >
+                          ✓ Mark Resolved
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => reopenConversation(activeConv.id)}
+                          style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #d0d0d0', background: '#fff', color: '#888', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                        >
+                          Reopen
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Messages */}
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, background: '#fafafa' }}>
+                      {chatMessages.map(msg => {
+                        const isAgent = msg.sender === 'agent';
+                        return (
+                          <div key={msg.id} style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
+                            <div style={{
+                              maxWidth: '70%',
+                              padding: '9px 13px',
+                              borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                              background: isAgent ? '#3b82f6' : '#fff',
+                              color: isAgent ? '#fff' : '#111',
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
+                              border: isAgent ? 'none' : '1px solid #ececec',
+                            }}>
+                              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.body}</div>
+                              <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: 'right' }}>
+                                {formatChatTime(msg.created_at)}
+                                {isAgent && <> · agent</>}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div ref={chatMessagesEndRef} />
+                    </div>
+
+                    {/* Reply input */}
+                    {activeConv.status === 'open' ? (
+                      <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                        <textarea
+                          value={chatReply}
+                          onChange={e => setChatReply(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgentReply(); } }}
+                          placeholder="Type a reply… (Enter to send, Shift+Enter for new line)"
+                          rows={2}
+                          style={{
+                            flex: 1, padding: '10px 13px', borderRadius: 10, border: '1.5px solid #e0e0e0',
+                            fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5,
+                          }}
+                        />
+                        <button
+                          onClick={sendAgentReply}
+                          disabled={!chatReply.trim() || chatSending}
+                          style={{
+                            padding: '10px 18px', borderRadius: 10, border: 'none',
+                            background: chatReply.trim() ? '#3b82f6' : '#e0e0e0',
+                            color: chatReply.trim() ? '#fff' : '#aaa',
+                            fontWeight: 700, fontSize: 13, cursor: chatReply.trim() ? 'pointer' : 'default',
+                            transition: 'all 0.15s', flexShrink: 0,
+                          }}
+                        >
+                          {chatSending ? '…' : 'Send'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0', textAlign: 'center', color: '#aaa', fontSize: 13 }}>
+                        Conversation resolved — reopen to reply
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── ANALYTICS TAB ────────────────────────────────────────────────── */}
         {tab === 'analytics' && (() => {
@@ -3123,13 +3527,25 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
   // ── Booking Steps ──
-  // Index 0 = the "Now" row (always green Now tag, no date)
-  // Index 1+ = middle steps with deadline date pickers
-  const bookingSteps = trip.booking_steps?.length ? trip.booking_steps : [
-    { label: 'Advance', value: '{advance}', date: '' },
-    { label: 'Remaining Balance', value: '{balance}', date: '' },
-    { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+  // Native application events always have exactly 5 fixed steps (label + date editable, value locked):
+  //   1. Request Invitation  2. Pay Advance ({advance})  3. Pay Balance ({balance})
+  //   4. Get Meeting Point Details  5. Enjoy the Plan
+  // Non-native: free-form, index 0 = "Now" row (no date), 1+ have date pickers
+  const isNativeAppEvent = trip.booking_url === 'native-application';
+  const nativeAppDefaultSteps = [
+    { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
+    { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
+    { label: 'remaining balance',                 value: '{balance}',               date: '' },
+    { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
+    { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
   ];
+  const bookingSteps = isNativeAppEvent
+    ? (trip.booking_steps?.length ? trip.booking_steps : nativeAppDefaultSteps)
+    : trip.booking_steps?.length ? trip.booking_steps : [
+        { label: 'Advance', value: '{advance}', date: '' },
+        { label: 'Remaining Balance', value: '{balance}', date: '' },
+        { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+      ];
   const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) =>
     onChange({ ...trip, booking_steps: bookingSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
   const addBookingStep = () => onChange({ ...trip, booking_steps: [...bookingSteps, { label: '', value: '', date: '' }] });

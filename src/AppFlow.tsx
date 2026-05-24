@@ -3901,10 +3901,12 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                             </li>
                           ))}
                         </ul>
-                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
-                          <ShieldCheck size={14} className="text-emerald-500 flex-shrink-0" />
-                          <span className="text-[13px] text-gray-500">Same gender rooms — so that everyone's comfortable.</span>
-                        </div>
+                        {stayIndex === stays.length - 1 && (
+                          <div className="mt-4 bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
+                            <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                            <span>Rooms are same-gender — so everyone's comfortable</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

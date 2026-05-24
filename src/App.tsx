@@ -1199,6 +1199,7 @@ function InvitePlanDetailsSheet({
   details,
   onPayAdvance,
   isFullyPaid = false,
+  isBalancePayment = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1206,6 +1207,7 @@ function InvitePlanDetailsSheet({
   details: InvitePlanDetails | null;
   onPayAdvance?: () => void;
   isFullyPaid?: boolean;
+  isBalancePayment?: boolean;
 }) {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(0);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
@@ -1226,7 +1228,7 @@ function InvitePlanDetailsSheet({
       : [];
   const roomSharingPolicy = accommodation?.policy === 'Twin sharing by default; limited solo upgrade on request'
     || accommodation?.policy === 'Twin sharing by default; upgrade to solo room on request'
-    ? "Rooms are same gender sharing — so that everyone's comfortable"
+    ? "Rooms are same-gender — so everyone's comfortable"
     : accommodation?.policy;
   const showStay = Boolean(details?.showAccommodation && stays.length > 0);
 
@@ -1450,11 +1452,9 @@ function InvitePlanDetailsSheet({
                               </ul>
                             )}
                             {i === stays.length - 1 && roomSharingPolicy && (
-                              <div className="mt-4 rounded-xl border border-gray-200 bg-white px-3 py-2.5">
-                                <p className="flex items-start gap-2 text-[12px] leading-relaxed text-gray-600">
-                                  <ShieldCheck size={15} className="mt-0.5 shrink-0 text-green-500" strokeWidth={2.3} />
-                                  <span>{roomSharingPolicy}</span>
-                                </p>
+                              <div className="mt-4 bg-emerald-50 p-3 rounded-xl text-sm font-medium text-emerald-800 border border-emerald-100 flex items-start gap-2">
+                                <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                                <span>{roomSharingPolicy}</span>
                               </div>
                             )}
                           </div>
@@ -1478,7 +1478,7 @@ function InvitePlanDetailsSheet({
                       animate={{ x: ['-100%', '300%'] }}
                       transition={{ duration: 0.9, repeat: Infinity, repeatDelay: 2.2, ease: 'easeInOut' }}
                     />
-                    <span>Pay Advance</span>
+                    <span>{isBalancePayment ? 'Pay Balance' : 'Pay Advance'}</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M5 12h14M12 5l7 7-7 7"/>
                     </svg>
@@ -1533,6 +1533,17 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [doubtText, setDoubtText] = useState('');
   const [doubtSubmitError, setDoubtSubmitError] = useState('');
   const [submittingDoubt, setSubmittingDoubt] = useState(false);
+  // In-app live chat (PWA doubt channel)
+  const [liveConversationId, setLiveConversationId] = useState<string | null>(
+    () => localStorage.getItem('liveConversationId')
+  );
+  const [liveMessages, setLiveMessages] = useState<any[]>([]);
+  const [liveChatInput, setLiveChatInput] = useState('');
+  const [liveChatSending, setLiveChatSending] = useState(false);
+  const [liveConvResolved, setLiveConvResolved] = useState(false);
+  const [showPwaPrompt, setShowPwaPrompt] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const liveChatEndRef = useRef<HTMLDivElement>(null);
   const [askedFaqs, setAskedFaqs] = useState<number[]>([]);
   const [inviteAnnouncementIndex, setInviteAnnouncementIndex] = useState(0);
   const [showPlanDetailsSheet, setShowPlanDetailsSheet] = useState(false);
@@ -2059,6 +2070,99 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setIsBillRestoreLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── PWA install prompt capture ──────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: any) => { e.preventDefault(); setDeferredInstallPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler as any);
+    return () => window.removeEventListener('beforeinstallprompt', handler as any);
+  }, []);
+
+  const isPwa = window.matchMedia('(display-mode: standalone)').matches
+    || (window.navigator as any).standalone === true;
+
+  // ── Live chat: load messages + Realtime subscription ───────────────────────
+  useEffect(() => {
+    if (!liveConversationId) return;
+    // Load existing messages
+    supabase.from('doubt_messages').select('*')
+      .eq('conversation_id', liveConversationId)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => { if (data) setLiveMessages(data); });
+    // Check if resolved
+    supabase.from('doubt_conversations').select('status')
+      .eq('id', liveConversationId).single()
+      .then(({ data }) => { if (data) setLiveConvResolved(data.status === 'resolved'); });
+    // Subscribe to new messages
+    const sub = supabase.channel(`live-chat-${liveConversationId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'doubt_messages',
+        filter: `conversation_id=eq.${liveConversationId}`,
+      }, (payload) => {
+        setLiveMessages(prev => [...prev, payload.new]);
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'doubt_conversations',
+        filter: `id=eq.${liveConversationId}`,
+      }, (payload) => {
+        setLiveConvResolved((payload.new as any).status === 'resolved');
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
+  }, [liveConversationId]);
+
+  // Scroll live chat to bottom
+  useEffect(() => {
+    liveChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [liveMessages]);
+
+  const startLiveChat = async (firstMessage: string) => {
+    if (!firstMessage.trim()) return;
+    setLiveChatSending(true);
+    const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    // Create conversation
+    const { data: convData, error: convErr } = await supabase
+      .from('doubt_conversations')
+      .insert({
+        phone: tenDigit,
+        name: form.name.trim() || null,
+        event_slug: nativeEventData?.eventSlug ?? verifiedSlug ?? null,
+        status: 'open',
+      })
+      .select()
+      .single();
+    if (convErr || !convData) { setLiveChatSending(false); return; }
+    const convId = convData.id;
+    // Insert first message
+    await supabase.from('doubt_messages').insert({
+      conversation_id: convId,
+      sender: 'user',
+      body: firstMessage.trim(),
+    });
+    localStorage.setItem('liveConversationId', convId);
+    setLiveConversationId(convId);
+    setDoubtText('');
+    setLiveChatSending(false);
+    // Show confirmation in invite chat
+    addInviteUserMsg(firstMessage.trim());
+    simulateInviteTyping(() => {
+      addInviteBotMsg("Got it! 👍 Your message is now in our live chat. We'll reply here as soon as possible.");
+      setInviteChatStep('doubt_submitted');
+    });
+  };
+
+  const sendLiveChatMessage = async () => {
+    if (!liveConversationId || !liveChatInput.trim()) return;
+    setLiveChatSending(true);
+    const body = liveChatInput.trim();
+    setLiveChatInput('');
+    await supabase.from('doubt_messages').insert({
+      conversation_id: liveConversationId,
+      sender: 'user',
+      body,
+    });
+    setLiveChatSending(false);
+  };
 
   const submitDoubt = async () => {
     const msg = doubtText.trim();
@@ -2660,12 +2764,25 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               : null;
             const applicationPhrase = socialProofCount !== null ? String(socialProofCount) : 'all';
 
+            // Step index 3 is always "Get Meeting Point Details" in native application events
+            const meetingPointDate = nativeEventData?.bookingSteps?.[3]?.date ?? null;
+            const formatMeetingDate = (iso: string): string => {
+              const d = new Date(`${iso}T00:00:00`);
+              if (isNaN(d.getTime())) return iso;
+              const day = d.getDate();
+              const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+              const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+              const month = d.toLocaleDateString('en-US', { month: 'long' });
+              return `${dayName}, ${month} ${day}${suffix}`;
+            };
+            const meetingPointDateFormatted = meetingPointDate ? formatMeetingDate(meetingPointDate) : null;
+
             const botGreeting = isFullyPaid
               ? `Hi ${firstName}! Your booking is fully confirmed. What would you like to do now?`
               : isSoldOut
               ? `Hey ${firstName}, we really wanted you in this plan but...\n\nAll ${totalSpots} spots in ${nativeEventData?.title ?? 'this plan'} are already reserved.\n\nPlease note — your spot is only reserved once the advance is settled.\n\nJoin the waitlist & we'll let you know if someone cancels their spot. We hope to see you in the future!`
               : isPaid
-              ? `Hi ${firstName}, we're doing everything we can to give you the best ${nativeEventData?.title ?? 'trip'} experience!\n\nWhat would you like to do now?`
+              ? `Hi ${firstName}, we're working on giving you the best ${nativeEventData?.title ?? 'trip'} experience!\n\nWe'll add you to the plan group chat & share further meeting point details${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' a few days before the plan'}.\n\nWhat would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50)
               ? `Hi ${firstName}, out of all applications, your vibe matched our club perfectly!\n\nBut please note — the invitation does not reserve your spot. A spot is reserved for you once the advance is paid.\n\n${inviteReservedCount} out of ${totalSpots} spots are already reserved. What would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null)
@@ -2964,28 +3081,136 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                       );
                     }
 
-                    // other_topic — free text input
+                    // other_topic — PWA live chat or install prompt
                     if (inviteChatStep === 'other_topic') {
+                      // Already has an open conversation → show live chat thread
+                      if (liveConversationId) {
+                        const formatMsgTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+                        return (
+                          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
+                            {/* Thread */}
+                            <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden mb-2">
+                              <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Live Chat</span>
+                                {!liveConvResolved && <span className="flex items-center gap-1 text-[11px] text-green-600 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />Open</span>}
+                                {liveConvResolved && <span className="text-[11px] text-gray-400 font-semibold">Resolved</span>}
+                              </div>
+                              <div className="flex flex-col gap-2 p-3 max-h-56 overflow-y-auto">
+                                {liveMessages.map(msg => {
+                                  const isUser = msg.sender === 'user';
+                                  return (
+                                    <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                                      <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-[13px] leading-snug ${isUser ? 'bg-[#FFD700] text-black rounded-br-sm' : 'bg-white border border-gray-200 text-gray-900 rounded-bl-sm'}`}>
+                                        <div className="whitespace-pre-wrap break-words">{msg.body}</div>
+                                        <div className={`text-[10px] mt-1 ${isUser ? 'text-black/50 text-right' : 'text-gray-400'}`}>{formatMsgTime(msg.created_at)}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {liveMessages.length === 0 && (
+                                  <p className="text-[12px] text-gray-400 text-center py-2">Waiting for agent reply…</p>
+                                )}
+                                <div ref={liveChatEndRef} />
+                              </div>
+                            </div>
+                            {/* Reply input */}
+                            {!liveConvResolved && (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={liveChatInput}
+                                  onChange={e => setLiveChatInput(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') sendLiveChatMessage(); }}
+                                  placeholder="Type a follow-up…"
+                                  className="flex-1 bg-white border border-gray-200 rounded-2xl px-4 py-2.5 text-[14px] outline-none focus:border-gray-400"
+                                />
+                                <button
+                                  onClick={sendLiveChatMessage}
+                                  disabled={!liveChatInput.trim() || liveChatSending}
+                                  className="px-4 py-2.5 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-1.5"
+                                >
+                                  <Send size={13} />
+                                </button>
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      }
+
+                      // On PWA → show text input to start conversation directly
+                      if (isPwa) {
+                        return (
+                          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-2 mb-3">
+                            <textarea
+                              rows={3}
+                              value={doubtText}
+                              onChange={e => { setDoubtText(e.target.value); }}
+                              placeholder="Type your question here…"
+                              className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:border-gray-400 resize-none shadow-sm"
+                            />
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => startLiveChat(doubtText)}
+                                disabled={!doubtText.trim() || liveChatSending}
+                                className="px-5 py-2.5 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-2"
+                              >
+                                {liveChatSending ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> : <Send size={13} />}
+                                Send
+                              </button>
+                            </div>
+                          </motion.div>
+                        );
+                      }
+
+                      // Not on PWA → show install prompt
                       return (
-                        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-2 mb-3">
-                          <textarea
-                            rows={3}
-                            value={doubtText}
-                            onChange={e => { setDoubtText(e.target.value); setDoubtSubmitError(''); }}
-                            placeholder="Type your question here…"
-                            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:border-gray-400 resize-none shadow-sm"
-                          />
-                          {doubtSubmitError && (
-                            <p className="px-1 text-[12px] font-semibold text-red-600">{doubtSubmitError}</p>
-                          )}
-                          <div className="flex justify-end">
+                        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-3">
+                          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0">
+                                <span className="text-white text-lg font-black">அ</span>
+                              </div>
+                              <div>
+                                <p className="text-[14px] font-bold text-gray-900 leading-snug">Get instant replies — add our app</p>
+                                <p className="text-[12px] text-gray-500 mt-0.5">Add chapter அ to your home screen to chat with us directly & get notified when we reply.</p>
+                              </div>
+                            </div>
+                            {/* Android: native install prompt */}
+                            {deferredInstallPrompt && (
+                              <button
+                                onClick={async () => {
+                                  deferredInstallPrompt.prompt();
+                                  const { outcome } = await deferredInstallPrompt.userChoice;
+                                  if (outcome === 'accepted') setDeferredInstallPrompt(null);
+                                }}
+                                className="w-full py-3 bg-black text-white rounded-2xl text-[14px] font-bold"
+                              >
+                                Add to Home Screen
+                              </button>
+                            )}
+                            {/* iOS: manual instructions */}
+                            {!deferredInstallPrompt && (
+                              <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+                                <p className="text-[12px] font-bold text-gray-700">How to add on iPhone:</p>
+                                <div className="flex items-center gap-2 text-[12px] text-gray-600">
+                                  <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                                  Tap the <span className="font-bold mx-0.5">Share</span> button in Safari (bottom bar)
+                                </div>
+                                <div className="flex items-center gap-2 text-[12px] text-gray-600">
+                                  <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                                  Tap <span className="font-bold mx-0.5">"Add to Home Screen"</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[12px] text-gray-600">
+                                  <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                                  Open the app → come back here to chat
+                                </div>
+                              </div>
+                            )}
                             <button
-                              onClick={submitDoubt}
-                              disabled={!doubtText.trim() || submittingDoubt}
-                              className="px-5 py-2.5 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-2"
+                              onClick={() => setShowPwaPrompt(false)}
+                              className="w-full py-2.5 border border-gray-200 rounded-2xl text-[13px] font-semibold text-gray-500"
                             >
-                              {submittingDoubt ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> : <Send size={13} />}
-                              Send
+                              I'll do it later
                             </button>
                           </div>
                         </motion.div>
@@ -3004,6 +3229,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   title={nativeEventData?.title ?? 'Plan'}
                   details={nativeEventData?.planDetails ?? null}
                   isFullyPaid={nativeEventData?.isFullyPaid ?? false}
+                  isBalancePayment={nativeEventData?.isBalancePayment ?? false}
                   onPayAdvance={() => {
                     setShowPlanDetailsSheet(false);
                     window.setTimeout(() => {
@@ -3028,6 +3254,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               inviteSlug={nativeEventData.inviteSlug}
               eventSlug={nativeEventData.eventSlug}
               inviteSpots={nativeEventData.inviteSpots}
+              applicationCount={inviteApplicationCount}
               onPayAdvance={() => {
                 if (typeof window !== 'undefined') {
                   window.history.pushState({ chapteraInviteStep: 'bill' }, '', window.location.href);
@@ -3170,9 +3397,9 @@ const PAYMENT_METHOD_GROUPS: PayMethodGroup[] = [
   { group: 'Cards',       methods: [{ id: 'debitcard',  label: 'Debit Card',         subLabel: 'Visa, Mastercard, Maestro, RuPay & more',      feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'debitcard'  },
                                     { id: 'creditcard', label: 'Credit Card',        subLabel: 'Visa, Mastercard, Amex, Diners & more',        feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'creditcard' }] },
   { group: 'Net Banking', methods: [{ id: 'netbanking', label: 'Net Banking',        subLabel: 'SBI, HDFC, ICICI, Axis & all major banks',     feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'netbanking' }] },
-  { group: 'EMI',         methods: [{ id: 'emi',        label: 'EMI',                subLabel: 'Credit & debit card EMI, no-cost options',     feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'emi'        }] },
-  { group: 'Wallets',     methods: [{ id: 'cashcard',   label: 'Wallets',            subLabel: 'Paytm, Amazon Pay & more',                     feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'cashcard'   }] },
-  { group: 'Pay Later',   methods: [{ id: 'bnpl',       label: 'Buy Now Pay Later',  subLabel: 'LazyPay & more',                               feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'bnpl'       }] },
+  { group: 'EMI',         methods: [{ id: 'emi',        label: 'EMI',                subLabel: 'Credit card EMI (no-cost) & debit card EMI',     feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'emi'        }] },
+  { group: 'Wallets',     methods: [{ id: 'cashcard',   label: 'Wallets',            subLabel: 'Airtel, Freecharge, Jio Money, OLA Money & more',                     feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'cashcard'   }] },
+  { group: 'Pay Later',   methods: [{ id: 'bnpl',       label: 'Buy Now Pay Later',  subLabel: 'LazyPay — pay later with zero interest',                               feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'bnpl'       }] },
 ];
 
 // ─── NATIVE BOOKING CONFIRMATION ─────────────────────────────────────────────
@@ -3292,6 +3519,7 @@ function NativeBookingTimeline({
   inviteSlug,
   eventSlug,
   inviteSpots,
+  applicationCount = null,
   onPayAdvance,
   onClose,
 }: {
@@ -3304,6 +3532,7 @@ function NativeBookingTimeline({
   inviteSlug?: string;
   eventSlug?: string;
   inviteSpots?: number | null;
+  applicationCount?: number | null;
   onPayAdvance: () => void;
   onClose: () => void;
 }) {
@@ -3316,10 +3545,13 @@ function NativeBookingTimeline({
   const balanceStr = `₹${Math.max(priceFull - priceAdvance, 0).toLocaleString('en-IN')}`;
   const priceStr   = `₹${priceFull.toLocaleString('en-IN')}`;
 
+  const countStr = applicationCount !== null ? String(applicationCount) : null;
   const resolveValue = (v: string) =>
     v.replace(/\{advance\}/gi, advanceStr)
      .replace(/\{balance\}/gi, balanceStr)
-     .replace(/\{price\}/gi, priceStr);
+     .replace(/\{price\}/gi, priceStr)
+     .replace(/\{application_count\}/gi, countStr ?? '__')
+     .replace(/\b__\b/g, countStr ?? '__');
 
   // Live countdown ticker (re-renders every second so due-by stays fresh)
   const [, setTick] = useState(0);
@@ -3457,7 +3689,7 @@ function NativeBookingTimeline({
               return (
                 <div key={si} className={`px-5 py-3 flex items-center justify-between border-b border-black/5 ${isBalanceDueRow ? 'bg-[#FFD700]/10' : ''}`}>
                   <div>
-                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
+                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">{resolveValue(step.label)}</p>
                     <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
                   </div>
                   {isAdvancePaidRow ? (
@@ -3533,13 +3765,7 @@ function PayMethodIcon({ id }: { id: string }) {
     case 'upi':
       return (
         <div className={`${base} bg-white border border-gray-100 shadow-sm`}>
-          <svg width="34" height="22" viewBox="0 0 42 28" fill="none">
-            <rect width="42" height="28" rx="5" fill="#097939"/>
-            <text x="21" y="20" textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" fontFamily="sans-serif">UPI</text>
-            {/* NPCI tri-colour stripe */}
-            <rect x="0" y="0" width="6" height="28" rx="5" fill="#FF6600" opacity="0.85"/>
-            <rect x="36" y="0" width="6" height="28" rx="5" fill="#0070C0" opacity="0.85"/>
-          </svg>
+          <img src="/upi-logo.png" alt="UPI" className="w-8 h-auto object-contain" />
         </div>
       );
     // Credit Card — Visa/MC circles
