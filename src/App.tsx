@@ -1527,7 +1527,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [chatEventTransportPlan, setChatEventTransportPlan] = useState<any[]>([]);
   const [chatEventPickupPoints, setChatEventPickupPoints] = useState<any[]>([]);
   const [savedPickupPointId, setSavedPickupPointId] = useState<string | null>(null);
-  const [inviteChatStep, setInviteChatStep] = useState<'prompt' | 'has_doubt' | 'other_topic' | 'doubt_submitted' | 'waitlist'>('prompt');
+  const [inviteChatStep, setInviteChatStep] = useState<'prompt' | 'has_doubt' | 'doubt_submitted' | 'waitlist'>('prompt');
   const [isInviteTyping, setIsInviteTyping] = useState(false);
   const [inviteMessages, setInviteMessages] = useState<Array<{ id: string; sender: 'bot' | 'user'; text: string; time: string }>>([]);
   const [doubtText, setDoubtText] = useState('');
@@ -1542,6 +1542,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [liveChatSending, setLiveChatSending] = useState(false);
   const [liveConvResolved, setLiveConvResolved] = useState(false);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
+  const [showPwaSheet, setShowPwaSheet] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const liveChatEndRef = useRef<HTMLDivElement>(null);
   const [askedFaqs, setAskedFaqs] = useState<number[]>([]);
@@ -2174,12 +2175,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setLiveChatSending(false);
     // Request push permission now that they're engaged
     subscribeToPush(tenDigit);
-    // Show confirmation in invite chat
-    addInviteUserMsg(firstMessage.trim());
-    simulateInviteTyping(() => {
-      addInviteBotMsg("Got it! 👍 Your message is now in our live chat. We'll reply here as soon as possible.");
-      setInviteChatStep('doubt_submitted');
-    });
   };
 
   const sendLiveChatMessage = async () => {
@@ -3078,13 +3073,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                             })}
                             <button
                               className="px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
-                              onClick={() => {
-                                addInviteUserMsg('Other Topic');
-                                simulateInviteTyping(() => {
-                                  addInviteBotMsg("What's on your mind? We'll get back to you on WhatsApp 💬");
-                                  setInviteChatStep('other_topic');
-                                });
-                              }}
+                              onClick={() => setShowPwaSheet(true)}
                             >
                               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
                               <span>Other Topic</span>
@@ -3112,91 +3101,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                       );
                     }
 
-                    // other_topic — PWA live chat or install prompt
-                    if (inviteChatStep === 'other_topic') {
-                      // Already has an open conversation → show live chat thread
-                      if (liveConversationId) {
-                        const formatMsgTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-                        return (
-                          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
-                            {/* Thread */}
-                            <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden mb-2">
-                              <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between">
-                                <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Live Chat</span>
-                                {!liveConvResolved && <span className="flex items-center gap-1 text-[11px] text-green-600 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />Open</span>}
-                                {liveConvResolved && <span className="text-[11px] text-gray-400 font-semibold">Resolved</span>}
-                              </div>
-                              <div className="flex flex-col gap-2 p-3 max-h-56 overflow-y-auto">
-                                {liveMessages.map(msg => {
-                                  const isUser = msg.sender === 'user';
-                                  return (
-                                    <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                                      <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-[13px] leading-snug ${isUser ? 'bg-[#FFD700] text-black rounded-br-sm' : 'bg-white border border-gray-200 text-gray-900 rounded-bl-sm'}`}>
-                                        <div className="whitespace-pre-wrap break-words">{msg.body}</div>
-                                        <div className={`text-[10px] mt-1 ${isUser ? 'text-black/50 text-right' : 'text-gray-400'}`}>{formatMsgTime(msg.created_at)}</div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                                {liveMessages.length === 0 && (
-                                  <p className="text-[12px] text-gray-400 text-center py-2">Waiting for agent reply…</p>
-                                )}
-                                <div ref={liveChatEndRef} />
-                              </div>
-                            </div>
-                            {/* Reply input */}
-                            {!liveConvResolved && (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={liveChatInput}
-                                  onChange={e => setLiveChatInput(e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'Enter') sendLiveChatMessage(); }}
-                                  placeholder="Type a follow-up…"
-                                  className="flex-1 bg-white border border-gray-200 rounded-2xl px-4 py-2.5 text-[14px] outline-none focus:border-gray-400"
-                                />
-                                <button
-                                  onClick={sendLiveChatMessage}
-                                  disabled={!liveChatInput.trim() || liveChatSending}
-                                  className="px-4 py-2.5 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-1.5"
-                                >
-                                  <Send size={13} />
-                                </button>
-                              </div>
-                            )}
-                          </motion.div>
-                        );
-                      }
-
-                      // On PWA → show text input to start conversation directly
-                      if (isPwa) {
-                        return (
-                          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-2 mb-3">
-                            <textarea
-                              rows={3}
-                              value={doubtText}
-                              onChange={e => { setDoubtText(e.target.value); }}
-                              placeholder="Type your question here…"
-                              className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:border-gray-400 resize-none shadow-sm"
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                onClick={() => startLiveChat(doubtText)}
-                                disabled={!doubtText.trim() || liveChatSending}
-                                className="px-5 py-2.5 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-2"
-                              >
-                                {liveChatSending ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> : <Send size={13} />}
-                                Send
-                              </button>
-                            </div>
-                          </motion.div>
-                        );
-                      }
-
-                      // Not on PWA → show install bottom sheet (rendered outside scroll area below)
-                      return null;
-                    }
-
                     // doubt_submitted and waitlist — no reply options
                     return null;
                   })()}
@@ -3219,15 +3123,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   }}
                 />
 
-                {/* ── PWA install bottom sheet ── */}
+                {/* ── PWA / live-chat bottom sheet ── */}
                 <AnimatePresence>
-                  {inviteChatStep === 'other_topic' && !isPwa && !liveConversationId && (
+                  {showPwaSheet && (
                     <>
                       <motion.div
                         key="pwa-backdrop"
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                         className="absolute inset-0 z-[70] bg-black/40"
-                        onClick={() => setInviteChatStep('has_doubt')}
+                        onClick={() => setShowPwaSheet(false)}
                       />
                       <motion.div
                         key="pwa-sheet"
@@ -3239,71 +3143,177 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                         {/* Close button */}
                         <button
                           type="button"
-                          onClick={() => setInviteChatStep('has_doubt')}
+                          onClick={() => setShowPwaSheet(false)}
                           className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                         >
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
                         </button>
 
-                        <div className="px-6 pt-7 pb-2">
-                          <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                          <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
-                        </div>
-
-                        <div className="px-6 pb-8 space-y-3 mt-2">
-                          {deferredInstallPrompt ? (
+                        {/* ── View 1: existing live chat thread ── */}
+                        {liveConversationId ? (() => {
+                          const formatMsgTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+                          return (
                             <>
-                              <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                                <div className="px-5 py-4 flex items-center justify-between">
-                                  <div>
-                                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
-                                    <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
-                                  </div>
-                                  <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
-                                    <span className="text-white text-base font-black">அ</span>
+                              <div className="px-6 pt-7 pb-2 flex items-center justify-between">
+                                <div>
+                                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
+                                  <p className="text-[14px] text-gray-500 mt-1">
+                                    {liveConvResolved ? 'This conversation has been resolved.' : 'We\'re here — reply below.'}
+                                  </p>
+                                </div>
+                                {!liveConvResolved
+                                  ? <span className="flex items-center gap-1.5 text-[11px] text-green-600 font-semibold shrink-0 ml-3"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Open</span>
+                                  : <span className="text-[11px] text-gray-400 font-semibold shrink-0 ml-3">Resolved</span>
+                                }
+                              </div>
+                              <div className="px-4 pb-2">
+                                <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
+                                  <div className="flex flex-col gap-2 p-3 max-h-64 overflow-y-auto">
+                                    {liveMessages.map(msg => {
+                                      const isUser = msg.sender === 'user';
+                                      return (
+                                        <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                                          <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-[13px] leading-snug ${isUser ? 'bg-[#FFD700] text-black rounded-br-sm' : 'bg-white border border-gray-200 text-gray-900 rounded-bl-sm'}`}>
+                                            <div className="whitespace-pre-wrap break-words">{msg.body}</div>
+                                            <div className={`text-[10px] mt-1 ${isUser ? 'text-black/50 text-right' : 'text-gray-400'}`}>{formatMsgTime(msg.created_at)}</div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {liveMessages.length === 0 && (
+                                      <p className="text-[12px] text-gray-400 text-center py-2">Waiting for agent reply…</p>
+                                    )}
+                                    <div ref={liveChatEndRef} />
                                   </div>
                                 </div>
                               </div>
-                              <button
-                                onClick={async () => {
-                                  deferredInstallPrompt.prompt();
-                                  const { outcome } = await deferredInstallPrompt.userChoice;
-                                  if (outcome === 'accepted') setDeferredInstallPrompt(null);
-                                }}
-                                className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
-                              >
-                                Add to Home Screen
-                              </button>
+                              {!liveConvResolved && (
+                                <div className="px-4 pb-8 flex gap-2 mt-2">
+                                  <input
+                                    type="text"
+                                    value={liveChatInput}
+                                    onChange={e => setLiveChatInput(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') sendLiveChatMessage(); }}
+                                    placeholder="Type a message…"
+                                    className="flex-1 bg-white border border-gray-200 rounded-2xl px-4 py-3 text-[14px] outline-none focus:border-gray-400"
+                                  />
+                                  <button
+                                    onClick={sendLiveChatMessage}
+                                    disabled={!liveChatInput.trim() || liveChatSending}
+                                    className="px-4 py-3 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-1.5"
+                                  >
+                                    <Send size={14} />
+                                  </button>
+                                </div>
+                              )}
+                              {liveConvResolved && (
+                                <div className="px-4 pb-8 mt-2">
+                                  <button
+                                    onClick={() => setShowPwaSheet(false)}
+                                    className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              )}
                             </>
-                          ) : (
-                            <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                              {[
-                                { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
-                                { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-                                { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                              ].map((step, i, arr) => (
-                                <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                                  <div className="flex items-center gap-3">
-                                    <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                    <div>
-                                      <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                      <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                          );
+                        })() : isPwa ? (
+                          /* ── View 2: PWA — textarea to start conversation ── */
+                          <>
+                            <div className="px-6 pt-7 pb-2">
+                              <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
+                              <p className="text-[14px] text-gray-500 mt-1">What's on your mind? We'll reply as soon as possible.</p>
+                            </div>
+                            <div className="px-4 pb-8 space-y-3 mt-2">
+                              <textarea
+                                rows={4}
+                                value={doubtText}
+                                onChange={e => setDoubtText(e.target.value)}
+                                placeholder="Type your question here…"
+                                className="w-full bg-[#F2F2F7] rounded-2xl px-4 py-3 text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-black/10 resize-none"
+                              />
+                              <button
+                                onClick={async () => { await startLiveChat(doubtText); setShowPwaSheet(false); }}
+                                disabled={!doubtText.trim() || liveChatSending}
+                                className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80 disabled:opacity-30 flex items-center justify-center gap-2"
+                              >
+                                {liveChatSending
+                                  ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
+                                  : <><Send size={16} /> Send</>
+                                }
+                              </button>
+                              <button
+                                onClick={() => setShowPwaSheet(false)}
+                                className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
+                              >
+                                I'll do it later
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          /* ── View 3: not on PWA — install instructions ── */
+                          <>
+                            <div className="px-6 pt-7 pb-2">
+                              <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
+                              <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
+                            </div>
+                            <div className="px-6 pb-8 space-y-3 mt-2">
+                              {deferredInstallPrompt ? (
+                                <>
+                                  <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                                    <div className="px-5 py-4 flex items-center justify-between">
+                                      <div>
+                                        <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
+                                        <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
+                                      </div>
+                                      <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
+                                        <span className="text-white text-base font-black">அ</span>
+                                      </div>
                                     </div>
                                   </div>
-                                  {step.badge && (
-                                    <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                                  )}
+                                  <button
+                                    onClick={async () => {
+                                      deferredInstallPrompt.prompt();
+                                      const { outcome } = await deferredInstallPrompt.userChoice;
+                                      if (outcome === 'accepted') setDeferredInstallPrompt(null);
+                                    }}
+                                    className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
+                                  >
+                                    Add to Home Screen
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                                  {[
+                                    { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
+                                    { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
+                                    { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+                                  ].map((step, i, arr) => (
+                                    <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                                      <div className="flex items-center gap-3">
+                                        <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                                        <div>
+                                          <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                                          <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                                        </div>
+                                      </div>
+                                      {step.badge && (
+                                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
+                              )}
+                              <button
+                                onClick={() => setShowPwaSheet(false)}
+                                className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
+                              >
+                                I'll do it later
+                              </button>
                             </div>
-                          )}
-                          <button
-                            onClick={() => setInviteChatStep('has_doubt')}
-                            className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
-                          >
-                            I'll do it later
-                          </button>
-                        </div>
+                          </>
+                        )}
                       </motion.div>
                     </>
                   )}
