@@ -3253,11 +3253,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                           <>
                             <div className="px-6 pt-7 pb-2">
                               <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                              <p className="text-[14px] text-gray-500 mt-1">
-                                {isIOSChrome
-                                  ? 'Our chat only works in Safari. Copy the link and open it there to install.'
-                                  : 'Add our app to get replies directly here & get notified instantly.'}
-                              </p>
+                              <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
                             </div>
                             <div className="px-6 pb-8 space-y-3 mt-2">
                               {deferredInstallPrompt ? (
@@ -3286,30 +3282,27 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                   </button>
                                 </>
                               ) : isIOSChrome ? (
-                                /* iOS Chrome: must switch to Safari */
-                                <>
-                                  <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                                    {[
-                                      { label: 'copy this link', value: 'Tap the button below', badge: null },
-                                      { label: 'open safari', value: 'Paste & open the link', badge: '← use Safari' },
-                                      { label: 'install from there', value: 'Tap Share → Add to Home Screen', badge: null },
-                                    ].map((step, i, arr) => (
-                                      <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                                        <div className="flex items-center gap-3">
-                                          <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                          <div>
-                                            <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                            <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                          </div>
+                                /* iOS Chrome: use Chrome's ··· menu → Add to Home Screen */
+                                <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                                  {[
+                                    { label: 'open chrome menu', value: 'Tap ··· at the bottom right', badge: 'Chrome bottom bar' },
+                                    { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
+                                    { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+                                  ].map((step, i, arr) => (
+                                    <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                                      <div className="flex items-center gap-3">
+                                        <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                                        <div>
+                                          <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                                          <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
                                         </div>
-                                        {step.badge && (
-                                          <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                                        )}
                                       </div>
-                                    ))}
-                                  </div>
-                                  <IosChromeCopyButton />
-                                </>
+                                      {step.badge && (
+                                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               ) : isAndroid ? (
                                 /* Android fallback: Chrome menu step */
                                 <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
@@ -5424,23 +5417,6 @@ function TermsScreen() {
   );
 }
 
-
-// ─── iOS CHROME COPY LINK BUTTON ──────────────────────────────────────────────
-function IosChromeCopyButton() {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={async () => {
-        try { await navigator.clipboard.writeText(window.location.href); } catch (_) {}
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
-      }}
-      className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80 flex items-center justify-center gap-2 transition-all"
-    >
-      {copied ? '✓ Link Copied!' : 'Copy Link'}
-    </button>
-  );
-}
 
 // ─── LIVE CHAT SCREEN ─────────────────────────────────────────────────────────
 function LiveChatScreen({ onBack }: { onBack: () => void }) {
