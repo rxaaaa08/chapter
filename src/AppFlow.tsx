@@ -508,6 +508,10 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
     setSubmitting(true);
     setError('');
 
+    // Must be called before any await — iOS requires PushManager.subscribe()
+    // to originate from a user gesture context (the button tap).
+    subscribeToPushForPwa(form.phone);
+
     // Resolve the chosen pickup point details for storage
     const chosenPoint = selectedPickupId
       ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
@@ -546,11 +550,6 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
       return `${month} ${day}${suffix}`;
     })();
-    // Subscribe to push notifications so admin-approval notifications reach this device.
-    // No isPwa gate here — we let subscribeToPushForPwa's own PushManager check handle it,
-    // which only succeeds in the installed PWA anyway.
-    subscribeToPushForPwa(form.phone); // fire-and-forget
-
     // TODO: restore WhatsApp redirect once push notification testing is complete
     // const waText = `Hi, I'm ${form.name.trim()}. I have registered for ${event.title}${formattedDate ? ` on ${formattedDate}` : ''}.`;
     // window.open(`https://wa.me/919940111564?text=${encodeURIComponent(waText)}`, '_blank');
