@@ -2080,7 +2080,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
   // ── PWA install prompt capture ──────────────────────────────────────────────
   useEffect(() => {
-    const handler = (e: any) => { e.preventDefault(); setDeferredInstallPrompt(e); };
+    const handler = (e: any) => {
+      e.preventDefault();
+      (window as any).__deferredInstallPrompt = e;
+      setDeferredInstallPrompt(e);
+    };
     window.addEventListener('beforeinstallprompt', handler as any);
     return () => window.removeEventListener('beforeinstallprompt', handler as any);
   }, []);
@@ -4788,12 +4792,12 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 //
 // States:
 //   prompt ready           → Install button (one tap)
-//   prompt not ready yet   → loading pulse (Chrome is still evaluating, give it 3s)
+//   prompt not ready yet   → loading pulse (Chrome is still evaluating, give it up to 12s)
 //   3s elapsed, no prompt  → manual steps fallback (⋮ menu)
 function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolean; prompt: any; onDismiss: () => void }) {
-  // Wait up to 3s for Chrome to fire beforeinstallprompt before showing manual steps.
+  // Wait up to 12s for Chrome to fire beforeinstallprompt before showing manual steps.
   // Chrome evaluates PWA criteria asynchronously — manifest fetch, SW check, etc. — and
-  // fires the event anywhere from ~100ms to 2–3s after page load.
+  // on first Chrome loads the service worker may need several seconds before installability is ready.
   const [showFallback, setShowFallback] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -4808,7 +4812,7 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
       setInstalling(false);
       return;
     }
-    const t = setTimeout(() => setShowFallback(true), 3000);
+    const t = setTimeout(() => setShowFallback(true), 12000);
     return () => clearTimeout(t);
   }, [visible]);
 
@@ -4841,6 +4845,9 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
     try {
       await prompt.prompt();
       const choice = await prompt.userChoice;
+      if ((window as any).__deferredInstallPrompt === prompt) {
+        delete (window as any).__deferredInstallPrompt;
+      }
       if (choice?.outcome === 'accepted') {
         setInstalling(true);
         return;
@@ -5159,7 +5166,11 @@ function PwaInstallCard() {
 
   React.useEffect(() => {
     if (isStandalone) return;
-    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); };
+    const handler = (e: any) => {
+      e.preventDefault();
+      (window as any).__deferredInstallPrompt = e;
+      setDeferredPrompt(e);
+    };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
@@ -5948,21 +5959,34 @@ export default function App() {
     setPwaInstallVisible(true);
 
     // Check if beforeinstallprompt already fired (captured early in index.html)
+    const useDeferredPrompt = (prompt: any) => {
+      if (!prompt) return false;
+      setPwaInstallPrompt(prompt);
+      return true;
+    };
     const already = (window as any).__deferredInstallPrompt;
-    if (already) {
-      setPwaInstallPrompt(already);
-      delete (window as any).__deferredInstallPrompt;
+    if (useDeferredPrompt(already)) {
       return;
     }
     // Otherwise wait for it — overlay is already showing manual steps in the meantime
     const capture = (e: any) => {
       e.preventDefault();
       e.stopImmediatePropagation?.();
+      (window as any).__deferredInstallPrompt = e;
       setPwaInstallPrompt(e);
       window.removeEventListener('beforeinstallprompt', capture as any);
     };
     window.addEventListener('beforeinstallprompt', capture as any);
-    return () => window.removeEventListener('beforeinstallprompt', capture as any);
+    const pollStartedAt = Date.now();
+    const poll = window.setInterval(() => {
+      if (useDeferredPrompt((window as any).__deferredInstallPrompt) || Date.now() - pollStartedAt > 12000) {
+        window.clearInterval(poll);
+      }
+    }, 250);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', capture as any);
+      window.clearInterval(poll);
+    };
   }, []);
 
   useEffect(() => {

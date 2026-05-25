@@ -1566,7 +1566,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
 
   useEffect(() => {
-    const handler = (e: any) => { e.preventDefault(); setDeferredInstallPrompt(e); };
+    const handler = (e: any) => {
+      e.preventDefault();
+      (window as any).__deferredInstallPrompt = e;
+      setDeferredInstallPrompt(e);
+    };
     window.addEventListener('beforeinstallprompt', handler as any);
     return () => window.removeEventListener('beforeinstallprompt', handler as any);
   }, []);
