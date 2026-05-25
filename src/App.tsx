@@ -6045,7 +6045,7 @@ export default function App() {
     const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
     const isAndroid = /Android/i.test(navigator.userAgent);
     if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode')) {
-      const targetPath = '/plans';
+      const targetPath = window.location.pathname;
       const search = '?pwa_install=1';
       const fallback = `https://${window.location.host}${targetPath}${search}`;
       window.location.href =
