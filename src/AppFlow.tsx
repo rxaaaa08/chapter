@@ -1546,6 +1546,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       body: message.trim(),
     });
     localStorage.setItem('liveConversationId', convData.id);
+    localStorage.setItem('liveConvName', name.trim() || '');
+    localStorage.setItem('liveConvEventSlug', selectedEvent?.slug ?? '');
+    localStorage.setItem('liveConvEventTitle', selectedEvent?.title ?? '');
     setLiveConversationId(convData.id);
     setLiveChatSending(false);
     setDoubtSheetView('chat');
