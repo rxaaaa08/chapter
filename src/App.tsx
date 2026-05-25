@@ -4770,11 +4770,13 @@ function InAppBrowserNudge() {
   if (!isInApp) return null;
 
   const openInBrowser = () => {
-    const url = window.location.href;
-    // Android: fire a Chrome intent; falls back to the raw URL if Chrome isn't default
+    // Append ?pwa_install=1 so Chrome auto-triggers the install prompt on load
+    const sep = window.location.search ? '&' : '?';
+    const search = `${window.location.search}${sep}pwa_install=1`;
+    const fallback = `https://${window.location.host}${window.location.pathname}${search}`;
     window.location.href =
-      `intent://${window.location.host}${window.location.pathname}${window.location.search}` +
-      `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+      `intent://${window.location.host}${window.location.pathname}${search}` +
+      `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
   };
 
   return (
@@ -4805,11 +4807,11 @@ function InAppBrowserNudge() {
       <div className="fixed inset-0 z-[10000] flex items-center justify-center px-6 pointer-events-none">
         <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-7 pb-8 shadow-2xl pointer-events-auto">
           {isAndroid ? (
-            /* Android: one-tap open-in-browser button */
+            /* Android: one-tap install app button */
             <>
-              <h2 className="text-center font-black text-lg text-gray-900 mb-2">Wait a minute!</h2>
+              <h2 className="text-center font-black text-lg text-gray-900 mb-2">Install our App</h2>
               <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
-                Instagram's browser doesn't fully support our site
+                Add chapter அ to your home screen for the best experience
               </p>
               <button
                 onClick={openInBrowser}
@@ -4822,8 +4824,8 @@ function InAppBrowserNudge() {
                   transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
                 />
                 <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                  Open in Browser
-                  <ArrowRight size={18} strokeWidth={2.8} />
+                  Install App
+                  <Download size={18} strokeWidth={2.8} />
                 </span>
               </button>
             </>
@@ -5594,6 +5596,25 @@ export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isAdmin) trackEvent('page_view');
+  }, []);
+
+  // Auto-trigger PWA install if redirected from IG/FB in-app browser via ?pwa_install=1
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('pwa_install')) return;
+    // Clean the param from the URL so it doesn't persist
+    params.delete('pwa_install');
+    const newSearch = params.toString();
+    const cleanUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+    window.history.replaceState({}, '', cleanUrl);
+    // Wait for beforeinstallprompt then auto-show the install dialog
+    const handler = (e: any) => {
+      e.preventDefault(); // required before calling .prompt()
+      e.prompt();         // shows the "Add to Home Screen" dialog
+    };
+    window.addEventListener('beforeinstallprompt', handler as any);
+    return () => window.removeEventListener('beforeinstallprompt', handler as any);
   }, []);
 
   useEffect(() => {
