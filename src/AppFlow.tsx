@@ -3077,43 +3077,56 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 {/* ── INSTALL PROMPT VIEW ── */}
                 {doubtSheetView === 'install' && (
                   <>
-                    <div className="relative px-6 pt-4 pb-4">
-                      <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">One last step 👇</p>
-                      <p className="text-[14px] text-gray-500 mt-1">Add our app to get a reply directly here — no WhatsApp needed.</p>
+                    <div className="px-6 pt-7 pb-2">
+                      <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
+                      <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
                     </div>
-                    <div className="px-6 space-y-3 pb-6">
-                      <div className="flex items-start gap-3 bg-[#F2F2F7] rounded-2xl p-4">
-                        <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0">
-                          <span className="text-white text-lg font-black">அ</span>
-                        </div>
-                        <div>
-                          <p className="text-[14px] font-bold text-gray-900">chapter அ</p>
-                          <p className="text-[12px] text-gray-500 mt-0.5">Install to chat with us directly & get notified when we reply</p>
-                        </div>
-                      </div>
 
+                    <div className="px-6 pb-6 space-y-3 mt-2">
+                      {/* Android native prompt */}
                       {deferredInstallPrompt ? (
-                        <button
-                          onClick={async () => {
-                            deferredInstallPrompt.prompt();
-                            const { outcome } = await deferredInstallPrompt.userChoice;
-                            if (outcome === 'accepted') setDeferredInstallPrompt(null);
-                          }}
-                          className="w-full bg-black text-white font-bold py-4 rounded-2xl text-[16px] active:opacity-80"
-                        >
-                          Add to Home Screen
-                        </button>
+                        <>
+                          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                            <div className="px-5 py-4 flex items-center justify-between">
+                              <div>
+                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
+                                <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
+                              </div>
+                              <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
+                                <span className="text-white text-base font-black">அ</span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              deferredInstallPrompt.prompt();
+                              const { outcome } = await deferredInstallPrompt.userChoice;
+                              if (outcome === 'accepted') setDeferredInstallPrompt(null);
+                            }}
+                            className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
+                          >
+                            Add to Home Screen
+                          </button>
+                        </>
                       ) : (
-                        <div className="bg-[#F2F2F7] rounded-2xl p-4 space-y-3">
-                          <p className="text-[13px] font-bold text-gray-700">How to add on iPhone:</p>
+                        /* iOS step-by-step */
+                        <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
                           {[
-                            'Tap the Share button in Safari (bottom bar)',
-                            'Tap "Add to Home Screen"',
-                            'Open the app — your chat will be here',
-                          ].map((step, i) => (
-                            <div key={i} className="flex items-center gap-3 text-[13px] text-gray-600">
-                              <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                              {step}
+                            { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
+                            { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
+                            { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+                          ].map((step, i, arr) => (
+                            <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                              <div className="flex items-center gap-3">
+                                <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                                <div>
+                                  <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                                  <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                                </div>
+                              </div>
+                              {step.badge && (
+                                <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -3121,7 +3134,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                       <button
                         onClick={async () => {
-                          // Fall back: submit to doubt_submissions as before
                           const { name, phone, message } = doubtFormData;
                           const pickup = getSelectedPickupForVars();
                           const selectedDate = getSelectedDateForVars();
@@ -3148,7 +3160,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         }}
                         className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
                       >
-                        I'll do it later — just send via WhatsApp
+                        I'll do it later — send via WhatsApp instead
                       </button>
                     </div>
                   </>
