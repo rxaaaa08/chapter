@@ -2162,7 +2162,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       const existing = await reg.pushManager.getSubscription();
       const sub = existing ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU',
+        applicationServerKey: 'BDIel8slNslp_Wv2M3yv4ffMNwMSGIV1RB0PtMbQUG0tdzRvmAWW_1sx3LGMqwFBHP97-qWyX5BQ79DPBjlQi9Q',
       });
       const subJson = sub.toJSON();
       if (!subJson.keys) return;

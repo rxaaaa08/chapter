@@ -17,6 +17,28 @@ function uint8ToB64url(buf: Uint8Array): string {
   return btoa(String.fromCharCode(...buf)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+// VAPID private keys are distributed as raw 32-byte P-256 scalars (base64url),
+// but WebCrypto's importKey requires PKCS#8 DER format. Wrap the raw key here.
+// Structure: SEQUENCE { version, AlgorithmIdentifier(ecPublicKey, P-256), OCTET STRING { ECPrivateKey } }
+function rawP256PrivateKeyToPkcs8(rawKey: Uint8Array): Uint8Array {
+  if (rawKey.length !== 32) throw new Error(`Expected 32-byte P-256 private key, got ${rawKey.length}`);
+  const prefix = new Uint8Array([
+    0x30, 0x41,                                                       // SEQUENCE, 65 bytes
+    0x02, 0x01, 0x00,                                                  //   INTEGER version=0
+    0x30, 0x13,                                                        //   SEQUENCE (algorithm), 19 bytes
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,              //     OID 1.2.840.10045.2.1 ecPublicKey
+    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,        //     OID 1.2.840.10045.3.1.7 P-256
+    0x04, 0x27,                                                        //   OCTET STRING, 39 bytes
+    0x30, 0x25,                                                        //     SEQUENCE ECPrivateKey, 37 bytes
+    0x02, 0x01, 0x01,                                                  //       INTEGER version=1
+    0x04, 0x20,                                                        //       OCTET STRING, 32 bytes (the private key)
+  ]);
+  const out = new Uint8Array(prefix.length + 32);
+  out.set(prefix, 0);
+  out.set(rawKey, prefix.length);
+  return out;
+}
+
 async function buildVapidJwt(audience: string): Promise<string> {
   const header  = uint8ToB64url(new TextEncoder().encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
   const payload = uint8ToB64url(new TextEncoder().encode(JSON.stringify({
@@ -25,16 +47,36 @@ async function buildVapidJwt(audience: string): Promise<string> {
     sub: VAPID_SUBJECT,
   })));
   const signingInput = `${header}.${payload}`;
-  const key = await crypto.subtle.importKey(
-    'pkcs8', b64urlToUint8(VAPID_PRIVATE),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false, ['sign'],
-  );
-  const sig = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    key,
-    new TextEncoder().encode(signingInput),
-  );
+
+  // Import via JWK — more reliable than PKCS#8 in Deno's WebCrypto.
+  // JWK needs x and y of the public key; we extract them from VAPID_PUBLIC
+  // which is the uncompressed P-256 point (0x04 || x[32] || y[32]).
+  const rawPublic = b64urlToUint8(VAPID_PUBLIC);
+  if (rawPublic.length !== 65 || rawPublic[0] !== 0x04) {
+    throw new Error(`Bad VAPID_PUBLIC: len=${rawPublic.length} firstByte=${rawPublic[0]}`);
+  }
+  const x = uint8ToB64url(rawPublic.slice(1, 33));
+  const y = uint8ToB64url(rawPublic.slice(33, 65));
+
+  let key: CryptoKey;
+  try {
+    key = await crypto.subtle.importKey(
+      'jwk',
+      { kty: 'EC', crv: 'P-256', x, y, d: VAPID_PRIVATE, ext: false } as JsonWebKey,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false, ['sign'],
+    );
+  } catch (e: any) {
+    throw new Error(`JWK_import: ${e?.name}: ${e?.message} | d_len=${VAPID_PRIVATE.length} x_len=${x.length} y_len=${y.length}`);
+  }
+
+  let sig: ArrayBuffer;
+  try {
+    sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(signingInput));
+  } catch (e: any) {
+    throw new Error(`SIGN: ${e?.name}: ${e?.message}`);
+  }
+
   return `${signingInput}.${uint8ToB64url(new Uint8Array(sig))}`;
 }
 
@@ -121,25 +163,36 @@ async function sendWebPush(
   payloadObj: object,
 ) {
   const url = new URL(subscription.endpoint);
-  const jwt = await buildVapidJwt(`${url.protocol}//${url.host}`);
+  let jwt: string;
+  try {
+    jwt = await buildVapidJwt(`${url.protocol}//${url.host}`);
+  } catch (e: any) {
+    throw new Error(`VAPID_JWT_FAIL: ${e?.name}: ${e?.message}`);
+  }
 
-  const body = await encryptPayload(
-    JSON.stringify(payloadObj),
-    subscription.p256dh,
-    subscription.auth,
-  );
+  let body: Uint8Array;
+  try {
+    body = await encryptPayload(JSON.stringify(payloadObj), subscription.p256dh, subscription.auth);
+  } catch (e: any) {
+    throw new Error(`ENCRYPT_FAIL: ${e?.name}: ${e?.message}`);
+  }
 
-  return fetch(subscription.endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization':    `vapid t=${jwt},k=${VAPID_PUBLIC}`,
-      'Content-Type':     'application/octet-stream',
-      'Content-Encoding': 'aes128gcm',
-      'TTL':              '86400',
-      'Content-Length':   String(body.length),
-    },
-    body,
-  });
+  console.log(`sendWebPush jwt.length=${jwt.length} body.length=${body.length} vapid_public.length=${VAPID_PUBLIC?.length}`);
+
+  try {
+    return await fetch(subscription.endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization':    `vapid t=${jwt},k=${VAPID_PUBLIC}`,
+        'Content-Type':     'application/octet-stream',
+        'Content-Encoding': 'aes128gcm',
+        'TTL':              '86400',
+      },
+      body,
+    });
+  } catch (e: any) {
+    throw new Error(`FETCH_FAIL: ${e?.name}: ${e?.message}`);
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -199,6 +252,32 @@ serve(async (req) => {
 
     const results = await Promise.allSettled(subs.map(s => sendWebPush(s, notifPayload)));
 
+    // Log Apple/Google response for every push attempt
+    const summary: any[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const ep = subs[i].endpoint;
+      const host = new URL(ep).host;
+      if (r.status === 'fulfilled') {
+        const body = await r.value.text().catch(() => '');
+        const detail = `${host} status=${r.value.status} body=${body.slice(0, 200)}`;
+        console.log('push result:', detail);
+        await supabase.from('push_debug_logs').insert({
+          phone, step: 'push_response', status: String(r.value.status),
+          detail, user_agent: 'edge-function', is_pwa: null,
+        });
+        summary.push({ host, status: r.value.status, body: body.slice(0, 200) });
+      } else {
+        const reason = String(r.reason).slice(0, 200);
+        console.error('push fetch failed:', host, reason);
+        await supabase.from('push_debug_logs').insert({
+          phone, step: 'push_response', status: 'fetch_error',
+          detail: `${host}: ${reason}`, user_agent: 'edge-function', is_pwa: null,
+        });
+        summary.push({ host, status: 'fetch_error', reason });
+      }
+    }
+
     // Clean up expired subscriptions (HTTP 410)
     const expired: string[] = [];
     for (let i = 0; i < results.length; i++) {
@@ -210,7 +289,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ sent: subs.length, expired: expired.length }),
+      JSON.stringify({ sent: subs.length, expired: expired.length, results: summary }),
       { headers: { 'Content-Type': 'application/json' } },
     );
   } catch (err) {

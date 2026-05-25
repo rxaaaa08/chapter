@@ -401,7 +401,7 @@ const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submission
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
 // VAPID public key in Uint8Array form — iOS Safari requires this, not a string.
-const VAPID_PUBLIC_KEY_B64 = 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU';
+const VAPID_PUBLIC_KEY_B64 = 'BDIel8slNslp_Wv2M3yv4ffMNwMSGIV1RB0PtMbQUG0tdzRvmAWW_1sx3LGMqwFBHP97-qWyX5BQ79DPBjlQi9Q';
 function urlBase64ToUint8Array(b64: string): Uint8Array {
   const padding = '='.repeat((4 - (b64.length % 4)) % 4);
   const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -1611,7 +1611,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       const existing = await reg.pushManager.getSubscription();
       const sub = existing ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU',
+        applicationServerKey: 'BDIel8slNslp_Wv2M3yv4ffMNwMSGIV1RB0PtMbQUG0tdzRvmAWW_1sx3LGMqwFBHP97-qWyX5BQ79DPBjlQi9Q',
       });
       const subJson = sub.toJSON();
       if (!subJson.keys) return;
