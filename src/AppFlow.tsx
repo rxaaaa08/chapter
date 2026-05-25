@@ -733,48 +733,60 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
 
   const isValid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender && form.whyJoin.trim();
 
+  // Track whether push subscribe already fired from the checkbox so we
+  // don't double-call (and double-alert) on submit.
+  const pushSubscribedRef = React.useRef(false);
+
   const handleSubmit = async () => {
     if (!isValid || submitting) return;
     setSubmitting(true);
     setError('');
+    try {
+      // Resolve the chosen pickup point details for storage
+      const chosenPoint = selectedPickupId
+        ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
+        : null;
 
-    // Resolve the chosen pickup point details for storage
-    const chosenPoint = selectedPickupId
-      ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
-      : null;
-
-    const { error: sbError } = await supabase.from('applications').insert({
-      event_slug: String(event.id ?? '').toLowerCase(),
-      name: form.name.trim(),
-      phone: form.phone,
-      gender: form.gender,
-      why_join: form.whyJoin.trim(),
-      attended_before: form.attendedBefore.trim(),
-      status: 'pending',
-      selected_date: selectedDate ?? null,
-      pickup_point_id: chosenPoint?.id ?? selectedPickupId ?? null,
-      pickup_label: chosenPoint?.label ?? null,
-      selected_city: selectedCity ?? null,
-    });
-
-    if (sbError) {
-      if (sbError.code === '23505') {
-        setAlreadyApplied(true);
-      } else {
-        setError('Something went wrong. Please try again.');
-      }
-      setSubmitting(false);
-      return;
-    }
-    // If user opted in but subscribe hasn't fired yet (e.g. they checked
-    // the box before entering a valid phone), fire it now on submit.
-    if (notifyOptIn) {
-      subscribeToPushForPwa(form.phone).then(status => {
-        try { alert(`Push: ${status}`); } catch {}
+      const { error: sbError } = await supabase.from('applications').insert({
+        event_slug: String(event.id ?? '').toLowerCase(),
+        name: form.name.trim(),
+        phone: form.phone,
+        gender: form.gender,
+        why_join: form.whyJoin.trim(),
+        attended_before: form.attendedBefore.trim(),
+        status: 'pending',
+        selected_date: selectedDate ?? null,
+        pickup_point_id: chosenPoint?.id ?? selectedPickupId ?? null,
+        pickup_label: chosenPoint?.label ?? null,
+        selected_city: selectedCity ?? null,
       });
+
+      if (sbError) {
+        if (sbError.code === '23505') {
+          setAlreadyApplied(true);
+        } else {
+          setError('Something went wrong. Please try again.');
+        }
+        return;
+      }
+
+      // Fire push subscribe on submit only if the checkbox is checked AND
+      // it hasn't already been triggered from the checkbox change handler.
+      if (notifyOptIn && !pushSubscribedRef.current) {
+        pushSubscribedRef.current = true;
+        subscribeToPushForPwa(form.phone).then(status => {
+          if (status !== 'OK' && !status.startsWith('Push not supported')) {
+            try { alert(`Push: ${status}`); } catch {}
+          }
+        });
+      }
+      setSubmitted(true);
+    } catch (err: any) {
+      setError('Something went wrong. Please try again.');
+      console.error('handleSubmit error:', err);
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitted(true);
-    setSubmitting(false);
   };
 
   if (submitted) return (
@@ -869,8 +881,15 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
             setNotifyOptIn(checked);
             if (checked && /^\d{10}$/.test(form.phone)) {
               // user gesture preserved — required for iOS push permission
+              pushSubscribedRef.current = true;
               subscribeToPushForPwa(form.phone).then(status => {
-                try { alert(`Push: ${status}`); } catch {}
+                // Only alert on actual success or unexpected errors —
+                // "Push not supported" is expected on iOS Safari (non-standalone)
+                if (status === 'OK') {
+                  try { alert(`Push: ${status}`); } catch {}
+                } else if (!status.startsWith('Push not supported') && !status.startsWith('Permission')) {
+                  try { alert(`Push: ${status}`); } catch {}
+                }
               });
             }
           }}
