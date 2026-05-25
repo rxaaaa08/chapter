@@ -400,27 +400,89 @@ const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submission
 
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
+// VAPID public key in Uint8Array form — iOS Safari requires this, not a string.
+const VAPID_PUBLIC_KEY_B64 = 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU';
+function urlBase64ToUint8Array(b64: string): Uint8Array {
+  const padding = '='.repeat((4 - (b64.length % 4)) % 4);
+  const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// Helper: write diagnostic log to Supabase. Fire-and-forget so it never blocks.
+function logPushStep(phone: string, step: string, status: string, detail?: string) {
+  const isPwa = typeof window !== 'undefined' && (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true
+  );
+  supabase.from('push_debug_logs').insert({
+    phone: phone.replace(/\D/g, '').slice(-10) || null,
+    step,
+    status,
+    detail: detail ? String(detail).slice(0, 500) : null,
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 300) : null,
+    is_pwa: isPwa,
+  }).then(() => {}, () => {});
+}
+
 // Module-level helper so ApplicationForm can subscribe without prop-drilling.
-// Only does anything when called inside a PWA (standalone mode) — the caller
-// should gate on isPwa so we never pop a browser permission prompt unexpectedly.
-async function subscribeToPushForPwa(phone: string) {
+// Returns a status string for the caller to show in the UI.
+async function subscribeToPushForPwa(phone: string): Promise<string> {
+  logPushStep(phone, 'start', 'called');
   try {
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const hasNotif = 'Notification' in window;
+    const hasSW = 'serviceWorker' in navigator;
+    const hasPM = 'PushManager' in window;
+    logPushStep(phone, 'feature_check', `notif=${hasNotif} sw=${hasSW} pm=${hasPM}`);
+    if (!hasNotif || !hasSW || !hasPM) {
+      return `Push not supported (notif=${hasNotif}, sw=${hasSW}, pm=${hasPM})`;
+    }
+
+    logPushStep(phone, 'permission_request', 'requesting');
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return;
+    logPushStep(phone, 'permission_result', permission);
+    if (permission !== 'granted') return `Permission ${permission}`;
+
+    logPushStep(phone, 'sw_ready', 'awaiting');
     const reg = await navigator.serviceWorker.ready;
-    const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU',
-    });
+    logPushStep(phone, 'sw_ready', 'ready', reg.scope);
+
+    logPushStep(phone, 'get_existing_sub', 'checking');
+    let sub = await reg.pushManager.getSubscription();
+    logPushStep(phone, 'get_existing_sub', sub ? 'found' : 'none');
+
+    if (!sub) {
+      logPushStep(phone, 'subscribe', 'starting');
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY_B64),
+      });
+      logPushStep(phone, 'subscribe', 'success', sub.endpoint.slice(0, 80));
+    }
+
     const j = sub.toJSON();
-    if (!j.keys) return;
-    await supabase.from('push_subscriptions').upsert(
+    if (!j.keys) {
+      logPushStep(phone, 'tojson', 'no_keys');
+      return 'Subscription has no keys';
+    }
+
+    logPushStep(phone, 'db_upsert', 'starting');
+    const { error: upsertErr } = await supabase.from('push_subscriptions').upsert(
       { phone: phone.replace(/\D/g, '').slice(-10), endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
       { onConflict: 'phone,endpoint' },
     );
-  } catch (err) {
-    console.warn('[push] subscribe failed:', err);
+    if (upsertErr) {
+      logPushStep(phone, 'db_upsert', 'error', upsertErr.message);
+      return `DB error: ${upsertErr.message}`;
+    }
+    logPushStep(phone, 'db_upsert', 'success');
+    return 'OK';
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    logPushStep(phone, 'exception', 'caught', `${err?.name || 'Error'}: ${msg}`);
+    return `Error: ${err?.name || 'Error'} — ${msg}`;
   }
 }
 
@@ -510,7 +572,11 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
 
     // Must be called before any await — iOS requires PushManager.subscribe()
     // to originate from a user gesture context (the button tap).
-    subscribeToPushForPwa(form.phone);
+    // TEMP: show the result in an alert so we can see what's happening on iOS
+    // without needing a Mac-tethered debugger. Remove once stable.
+    subscribeToPushForPwa(form.phone).then(status => {
+      try { alert(`Push: ${status}`); } catch {}
+    });
 
     // Resolve the chosen pickup point details for storage
     const chosenPoint = selectedPickupId
