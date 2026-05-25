@@ -680,10 +680,14 @@ const LIGHTHOUSE_FLOAT = {
 
 function JoinLetterPage({
   onContinue,
+  ctaLabel = 'Tap to Enter',
+  ctaIcon = 'arrow',
   layers = POSTER_LAYER_SRC,
   theme = LIFESTYLE_POSTER_THEME,
 }: {
   onContinue: () => void;
+  ctaLabel?: string;
+  ctaIcon?: 'arrow' | 'download';
   layers?: PosterLayerSrc;
   theme?: PosterTheme;
 }) {
@@ -1048,9 +1052,9 @@ function JoinLetterPage({
                   color: theme.ctaTextColor,
                 }}
               >
-                <span>Tap to Enter</span>
+                <span>{ctaLabel}</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  <ArrowRight size={20} strokeWidth={3} />
+                  {ctaIcon === 'download' ? <Download size={20} strokeWidth={3} /> : <ArrowRight size={20} strokeWidth={3} />}
                 </span>
               </span>
             </button>
@@ -4993,9 +4997,11 @@ function InAppBrowserNudge() {
   const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
   const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isInApp = isInstagram || isFacebook;
+  const routePath = typeof window !== 'undefined' ? window.location.pathname : '';
+  const suppressAndroidPosterNudge = isAndroid && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode');
 
   useEffect(() => {
-    if (!isInApp) return;
+    if (!isInApp || suppressAndroidPosterNudge) return;
     // iOS Safari / Instagram WebView ignores overflow:hidden on body.
     // The only reliable fix is position:fixed + capturing the scroll offset.
     const scrollY = window.scrollY;
@@ -5023,9 +5029,9 @@ function InAppBrowserNudge() {
       window.scrollTo(0, scrollY);
       window.removeEventListener('touchmove', preventTouch);
     };
-  }, [isInApp]);
+  }, [isInApp, suppressAndroidPosterNudge]);
 
-  if (!isInApp) return null;
+  if (!isInApp || suppressAndroidPosterNudge) return null;
 
   const openInBrowser = () => {
     // Append ?pwa_install=1 so Chrome auto-triggers the install prompt on load
@@ -6011,11 +6017,26 @@ export default function App() {
 
   const continueFromJoin = () => {
     if (typeof window === 'undefined') return;
+    const isInstagram = /Instagram/i.test(navigator.userAgent);
+    const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode')) {
+      const search = '?pwa_install=1';
+      const fallback = `https://${window.location.host}/plans${search}`;
+      window.location.href =
+        `intent://${window.location.host}/plans${search}` +
+        `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+      return;
+    }
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     window.history.pushState({}, '', '/plans');
     setRoutePath('/plans');
     setRouteSearch('');
   };
+  const isAndroidMetaPosterPage = typeof navigator !== 'undefined'
+    && /Android/i.test(navigator.userAgent)
+    && (/Instagram/i.test(navigator.userAgent) || /FBAN|FBAV/i.test(navigator.userAgent))
+    && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode');
 
   const openPwaPlansHome = (path: '/invite' | '/plans') => {
     if (typeof window === 'undefined') return;
@@ -6106,7 +6127,11 @@ export default function App() {
         <LandscapeBlocker />
         <InAppBrowserNudge />
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
-        <JoinLetterPage onContinue={continueFromJoin} />
+        <JoinLetterPage
+          onContinue={continueFromJoin}
+          ctaLabel={isAndroidMetaPosterPage ? 'Install App' : undefined}
+          ctaIcon={isAndroidMetaPosterPage ? 'download' : undefined}
+        />
       </>
     );
   }
@@ -6117,7 +6142,13 @@ export default function App() {
         <LandscapeBlocker />
         <InAppBrowserNudge />
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
-        <JoinLetterPage onContinue={continueFromJoin} layers={GALCODE_POSTER_LAYER_SRC} theme={GALCODE_POSTER_THEME} />
+        <JoinLetterPage
+          onContinue={continueFromJoin}
+          ctaLabel={isAndroidMetaPosterPage ? 'Install App' : undefined}
+          ctaIcon={isAndroidMetaPosterPage ? 'download' : undefined}
+          layers={GALCODE_POSTER_LAYER_SRC}
+          theme={GALCODE_POSTER_THEME}
+        />
       </>
     );
   }
