@@ -4744,11 +4744,13 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
   // fires the event anywhere from ~100ms to 2–3s after page load.
   const [showFallback, setShowFallback] = useState(false);
   const [installed, setInstalled] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     if (!visible) {
       setShowFallback(false);
       setInstalled(false);
+      setInstalling(false);
       return;
     }
     const t = setTimeout(() => setShowFallback(true), 3000);
@@ -4756,7 +4758,10 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
   }, [visible]);
 
   useEffect(() => {
-    const handler = () => setInstalled(true);
+    const handler = () => {
+      setInstalling(false);
+      setInstalled(true);
+    };
     window.addEventListener('appinstalled', handler);
     return () => window.removeEventListener('appinstalled', handler);
   }, []);
@@ -4774,10 +4779,11 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
       await prompt.prompt();
       const choice = await prompt.userChoice;
       if (choice?.outcome === 'accepted') {
-        setInstalled(true);
+        setInstalling(true);
         return;
       }
     } catch { /* ignore */ }
+    setInstalling(false);
     onDismiss();
   };
 
@@ -4802,11 +4808,13 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
             <img src="/icon-192.png" alt="chapter அ app icon" className="w-full h-full object-cover" />
           </div>
           <h2 className="text-center font-black text-xl text-gray-900 mb-2">
-            {installed ? 'chapter அ is installed' : 'Install chapter அ'}
+            {installed ? 'chapter அ is installed' : installing ? 'Finishing install' : 'Install chapter அ'}
           </h2>
           <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
             {installed
               ? 'Open it from your home screen or app drawer whenever you want instant access.'
+              : installing
+                ? 'Chrome is adding the app to your phone. This can take a few seconds.'
               : 'Add to your home screen for instant access — no browser needed.'}
           </p>
 
@@ -4826,6 +4834,22 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
                   </div>
                   <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
                 </div>
+              </motion.div>
+            ) : installing ? (
+              <motion.div key="installing"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex flex-col items-center gap-3 py-3"
+              >
+                <div className="flex gap-1.5">
+                  {[0, 1, 2].map(i => (
+                    <motion.div key={i}
+                      className="w-2 h-2 rounded-full bg-[#FFD700]"
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400">Waiting for install to complete…</p>
               </motion.div>
             ) : prompt ? (
               /* ── Native install prompt ready → one-tap button ── */
@@ -4895,7 +4919,7 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
             )}
           </AnimatePresence>
 
-          {!installed && (
+          {!installed && !installing && (
             <button
               onClick={onDismiss}
               className="w-full py-3 text-gray-400 text-sm mt-2"
