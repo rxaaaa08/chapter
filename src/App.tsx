@@ -4732,8 +4732,29 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
 // Shown when user arrives in Chrome via the IG/FB Android intent URL (?pwa_install=1).
 // visible = true as soon as the param is detected — never gated on beforeinstallprompt.
-// prompt = the deferred BeforeInstallPromptEvent if Chrome has it ready; null = show manual steps.
+// prompt = the BeforeInstallPromptEvent once Chrome fires it; null until then.
+//
+// States:
+//   prompt ready           → Install button (one tap)
+//   prompt not ready yet   → loading pulse (Chrome is still evaluating, give it 3s)
+//   3s elapsed, no prompt  → manual steps fallback (⋮ menu)
 function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolean; prompt: any; onDismiss: () => void }) {
+  // Wait up to 3s for Chrome to fire beforeinstallprompt before showing manual steps.
+  // Chrome evaluates PWA criteria asynchronously — manifest fetch, SW check, etc. — and
+  // fires the event anywhere from ~100ms to 2–3s after page load.
+  const [showFallback, setShowFallback] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    const t = setTimeout(() => setShowFallback(true), 3000);
+    return () => clearTimeout(t);
+  }, [visible]);
+
+  // If prompt arrives, cancel the fallback timer (already handled by clearing timeout above,
+  // but also reset showFallback so it doesn't flash manual steps then switch to button)
+  useEffect(() => {
+    if (prompt) setShowFallback(false);
+  }, [prompt]);
+
   if (!visible) return null;
 
   const handleInstall = async () => {
@@ -4770,45 +4791,74 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
             Add to your home screen for instant access — no browser needed.
           </p>
 
-          {prompt ? (
-            /* Native install prompt is ready — one tap install */
-            <button
-              onClick={handleInstall}
-              className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
-            >
-              <motion.span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
-                animate={{ x: ['0%', '240%'] }}
-                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
-              />
-              <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                Install App
-                <Download size={18} strokeWidth={2.8} />
-              </span>
-            </button>
-          ) : (
-            /* beforeinstallprompt didn't fire — show Chrome manual steps */
-            <div className="space-y-2 mb-1">
-              {[
-                { step: '1', label: 'Tap the', bold: '⋮ menu', sub: 'Top right of Chrome' },
-                { step: '2', label: 'Tap', bold: '"Add to Home Screen"', sub: '' },
-                { step: '3', label: 'Tap', bold: '"Add"', sub: 'In the confirmation dialog' },
-              ].map(({ step, label, bold, sub }) => (
-                <div key={step} className="bg-gray-50 rounded-2xl p-3.5 flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">
-                    {step}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm text-gray-800">
-                      {label} <span className="font-black">{bold}</span>
-                    </p>
-                    {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-                  </div>
+          <AnimatePresence mode="wait">
+            {prompt ? (
+              /* ── Native install prompt ready → one-tap button ── */
+              <motion.div key="install-btn"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <button
+                  onClick={handleInstall}
+                  className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
+                >
+                  <motion.span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+                    animate={{ x: ['0%', '240%'] }}
+                    transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
+                  />
+                  <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                    Install App
+                    <Download size={18} strokeWidth={2.8} />
+                  </span>
+                </button>
+              </motion.div>
+            ) : !showFallback ? (
+              /* ── Waiting for Chrome to evaluate PWA criteria (~1–3s) ── */
+              <motion.div key="loading"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex flex-col items-center gap-3 py-3"
+              >
+                <div className="flex gap-1.5">
+                  {[0, 1, 2].map(i => (
+                    <motion.div key={i}
+                      className="w-2 h-2 rounded-full bg-[#FFD700]"
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+                <p className="text-xs text-gray-400">Setting up install…</p>
+              </motion.div>
+            ) : (
+              /* ── Fallback: Chrome didn't fire beforeinstallprompt → manual steps ── */
+              <motion.div key="manual"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="space-y-2 mb-1">
+                  {[
+                    { step: '1', label: 'Tap the', bold: '⋮ menu', sub: 'Top right of Chrome' },
+                    { step: '2', label: 'Tap', bold: '"Add to Home Screen"', sub: '' },
+                    { step: '3', label: 'Tap', bold: '"Add"', sub: 'In the confirmation dialog' },
+                  ].map(({ step, label, bold, sub }) => (
+                    <div key={step} className="bg-gray-50 rounded-2xl p-3.5 flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">
+                        {step}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm text-gray-800">
+                          {label} <span className="font-black">{bold}</span>
+                        </p>
+                        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <button
             onClick={onDismiss}
