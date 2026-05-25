@@ -699,6 +699,9 @@ export default function AdminPanel() {
       invite_slug: String(trip.invite_slug || autoSlug).toLowerCase(),
     };
     const { event_dates, event_media, event_reviews, faqs, id, ...fields } = tripWithSlug;
+    const normalizedEventDates = tripWithSlug.booking_url === 'native-application'
+      ? (event_dates ?? []).map(d => ({ ...d, status: 'available' as TripDate['status'] }))
+      : event_dates;
 
     let eventId = id;
     if (id) {
@@ -710,11 +713,11 @@ export default function AdminPanel() {
       eventId = data?.id;
     }
 
-    if (eventId && event_dates) {
+    if (eventId && normalizedEventDates) {
       await supabase.from('event_dates').delete().eq('event_id', eventId);
-      if (event_dates.length > 0) {
+      if (normalizedEventDates.length > 0) {
         await supabase.from('event_dates').insert(
-          event_dates.map(d => ({ event_id: eventId, start_date: d.start_date, status: d.status, label: d.label, whatsapp_group_url: d.whatsapp_group_url ?? null }))
+          normalizedEventDates.map(d => ({ event_id: eventId, start_date: d.start_date, status: d.status, label: d.label, whatsapp_group_url: d.whatsapp_group_url ?? null }))
         );
       }
     }
@@ -4109,13 +4112,19 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, padding: '10px 12px', background: '#f9f9f9', borderRadius: 10, border: '1px solid #eee' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isNativeAppEvent ? '1fr auto auto' : '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
               <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
-              <select style={s.input} value={d.status} onChange={e => setDate(i, 'status', e.target.value as TripDate['status'])}>
-                <option value="available">Available</option>
-                <option value="selling_out">Selling Out</option>
-                <option value="sold_out">Sold Out</option>
-              </select>
+              {isNativeAppEvent ? (
+                <div style={{ color: '#16a34a', background: '#dcfce7', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '9px 12px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  Spots auto
+                </div>
+              ) : (
+                <select style={s.input} value={d.status} onChange={e => setDate(i, 'status', e.target.value as TripDate['status'])}>
+                  <option value="available">Available</option>
+                  <option value="selling_out">Selling Out</option>
+                  <option value="sold_out">Sold Out</option>
+                </select>
+              )}
               <button onClick={() => removeDate(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
             </div>
             <input
