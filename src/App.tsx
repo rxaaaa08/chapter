@@ -4730,19 +4730,18 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 
 // ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
-function PwaAutoInstallOverlay({ prompt, onDismiss }: { prompt: any; onDismiss: () => void }) {
-  if (!prompt) return null;
+// Shown when user arrives in Chrome via the IG/FB Android intent URL (?pwa_install=1).
+// visible = true as soon as the param is detected — never gated on beforeinstallprompt.
+// prompt = the deferred BeforeInstallPromptEvent if Chrome has it ready; null = show manual steps.
+function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolean; prompt: any; onDismiss: () => void }) {
+  if (!visible) return null;
 
   const handleInstall = async () => {
     try {
       await prompt.prompt();
-      const choice = await prompt.userChoice;
-      if (choice?.outcome === 'accepted' || choice?.outcome === 'dismissed') {
-        onDismiss();
-      }
-    } catch {
-      onDismiss();
-    }
+      await prompt.userChoice;
+    } catch { /* ignore */ }
+    onDismiss();
   };
 
   return (
@@ -4762,32 +4761,58 @@ function PwaAutoInstallOverlay({ prompt, onDismiss }: { prompt: any; onDismiss: 
         <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-6 pb-8 shadow-2xl">
           {/* Drag handle */}
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-          {/* App icon placeholder */}
+          {/* App icon */}
           <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 shadow-lg">
             <span className="text-white text-2xl font-black">அ</span>
           </div>
           <h2 className="text-center font-black text-xl text-gray-900 mb-2">Install chapter அ</h2>
-          <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
+          <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
             Add to your home screen for instant access — no browser needed.
           </p>
-          <button
-            onClick={handleInstall}
-            className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
-          >
-            <motion.span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
-              animate={{ x: ['0%', '240%'] }}
-              transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
-            />
-            <span className="relative z-10 inline-flex items-center justify-center gap-2">
-              Install App
-              <Download size={18} strokeWidth={2.8} />
-            </span>
-          </button>
+
+          {prompt ? (
+            /* Native install prompt is ready — one tap install */
+            <button
+              onClick={handleInstall}
+              className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
+            >
+              <motion.span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+                animate={{ x: ['0%', '240%'] }}
+                transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
+              />
+              <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                Install App
+                <Download size={18} strokeWidth={2.8} />
+              </span>
+            </button>
+          ) : (
+            /* beforeinstallprompt didn't fire — show Chrome manual steps */
+            <div className="space-y-2 mb-1">
+              {[
+                { step: '1', label: 'Tap the', bold: '⋮ menu', sub: 'Top right of Chrome' },
+                { step: '2', label: 'Tap', bold: '"Add to Home Screen"', sub: '' },
+                { step: '3', label: 'Tap', bold: '"Add"', sub: 'In the confirmation dialog' },
+              ].map(({ step, label, bold, sub }) => (
+                <div key={step} className="bg-gray-50 rounded-2xl p-3.5 flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">
+                    {step}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm text-gray-800">
+                      {label} <span className="font-black">{bold}</span>
+                    </p>
+                    {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             onClick={onDismiss}
-            className="w-full py-3 text-gray-400 text-sm mt-1"
+            className="w-full py-3 text-gray-400 text-sm mt-2"
           >
             Maybe later
           </button>
@@ -5660,38 +5685,44 @@ export default function App() {
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
   const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
 
-  // Holds the deferred BeforeInstallPromptEvent when user arrives via ?pwa_install=1 from IG nudge
-  const [pwaAutoInstallPrompt, setPwaAutoInstallPrompt] = useState<any>(null);
+  // pwaInstallVisible: true as soon as ?pwa_install=1 is detected — overlay shows immediately.
+  // pwaInstallPrompt: the BeforeInstallPromptEvent if Chrome provides it; null = show manual steps.
+  const [pwaInstallVisible, setPwaInstallVisible] = useState(false);
+  const [pwaInstallPrompt, setPwaInstallPrompt] = useState<any>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isAdmin) trackEvent('page_view');
   }, []);
 
-  // Capture ?pwa_install=1 from IG/FB Android nudge.
-  // We do NOT call .prompt() here — Chrome requires it to be called inside a user-gesture
-  // handler (a click/tap). Calling it from useEffect silently fails.
-  // Instead we store the prompt in state and render a tap-to-install overlay.
+  // Handle ?pwa_install=1 param set by the IG/FB Android intent URL.
+  // Show the overlay immediately (don't wait for beforeinstallprompt — it may not fire right away
+  // or at all). If Chrome's deferred prompt is available, the overlay shows a one-tap Install
+  // button; otherwise it shows manual Chrome steps as a fallback.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (!params.has('pwa_install')) return;
-    // Clean the param from the URL so it doesn't persist on refresh
+
+    // Clean the param from the URL immediately
     params.delete('pwa_install');
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
 
-    // Event may have already fired before React mounted — captured in index.html
+    // Show the overlay right away — content adapts based on prompt availability
+    setPwaInstallVisible(true);
+
+    // Check if beforeinstallprompt already fired (captured early in index.html)
     const already = (window as any).__deferredInstallPrompt;
     if (already) {
-      setPwaAutoInstallPrompt(already);
+      setPwaInstallPrompt(already);
       delete (window as any).__deferredInstallPrompt;
       return;
     }
-    // Otherwise wait for it and store it in state when it arrives
+    // Otherwise wait for it — overlay is already showing manual steps in the meantime
     const capture = (e: any) => {
       e.preventDefault();
-      setPwaAutoInstallPrompt(e);
+      setPwaInstallPrompt(e);
       window.removeEventListener('beforeinstallprompt', capture as any);
     };
     window.addEventListener('beforeinstallprompt', capture as any);
@@ -5812,7 +5843,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
+        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
     );
@@ -5823,7 +5854,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
+        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <InviteFlow slug={inviteSlug} />
       </>
     );
@@ -5834,7 +5865,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
+        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage onContinue={continueFromJoin} />
       </>
     );
@@ -5845,7 +5876,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
+        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage onContinue={continueFromJoin} layers={GALCODE_POSTER_LAYER_SRC} theme={GALCODE_POSTER_THEME} />
       </>
     );
@@ -5856,7 +5887,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
-        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
+        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <AnimatePresence>
           <motion.div
             key="homepage"
@@ -5875,7 +5906,7 @@ export default function App() {
     <>
       <LandscapeBlocker />
       <InAppBrowserNudge />
-      <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
+      <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
       <AppFlow />
     </>
   );
