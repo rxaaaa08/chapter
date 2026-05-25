@@ -724,7 +724,7 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
   const [error, setError] = useState('');
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [notifyOptIn, setNotifyOptIn] = useState(true);
+  const [notifyOptIn, setNotifyOptIn] = useState(false);
 
   const inviteSpots = typeof event?.inviteSpots === 'number' ? event.inviteSpots : null;
   const spotsLeft = inviteSpots != null && typeof reservedCount === 'number'
@@ -765,6 +765,13 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       }
       setSubmitting(false);
       return;
+    }
+    // If user opted in but subscribe hasn't fired yet (e.g. they checked
+    // the box before entering a valid phone), fire it now on submit.
+    if (notifyOptIn) {
+      subscribeToPushForPwa(form.phone).then(status => {
+        try { alert(`Push: ${status}`); } catch {}
+      });
     }
     setSubmitted(true);
     setSubmitting(false);
@@ -1102,7 +1109,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'install' | 'chat' | 'submitted'>('form');
-  const [notifyOptInDoubt, setNotifyOptInDoubt] = useState(true);
+  const [notifyOptInDoubt, setNotifyOptInDoubt] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [pwaInstallState, setPwaInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
   const pwaInstallCompleteTimerRef = useRef<number | null>(null);
@@ -2185,7 +2192,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 <span className="truncate whitespace-normal text-left">{faq.question}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
-            <button onClick={() => { setShowDoubtPopup(true); setDoubtSheetView(liveConversationId ? 'chat' : isPwa ? 'form' : 'install'); }} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
+            <button onClick={() => { setShowDoubtPopup(true); setDoubtSheetView(liveConversationId ? 'chat' : 'form'); }} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
               <span className="truncate whitespace-normal text-left">{doubtCtaLabel}</span> <MessageCircle size={16} className="flex-shrink-0" />
             </button>
@@ -3523,7 +3530,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
                 </div>
 
-                <form onSubmit={isPwa ? submitDoubtAsPwaChat : (e) => { e.preventDefault(); setDoubtSheetView('install'); }}>
+                <form onSubmit={handleDoubtSubmit}>
                   <div className="px-6 space-y-3">
                     <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                       <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Name</label>
