@@ -4792,12 +4792,12 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 //
 // States:
 //   prompt ready           → Install button (one tap)
-//   prompt not ready yet   → loading pulse (Chrome is still evaluating, give it up to 12s)
+//   prompt not ready yet   → loading pulse (Chrome is still evaluating, give it 3s)
 //   3s elapsed, no prompt  → manual steps fallback (⋮ menu)
 function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolean; prompt: any; onDismiss: () => void }) {
-  // Wait up to 12s for Chrome to fire beforeinstallprompt before showing manual steps.
+  // Wait up to 3s for Chrome to fire beforeinstallprompt before showing manual steps.
   // Chrome evaluates PWA criteria asynchronously — manifest fetch, SW check, etc. — and
-  // on first Chrome loads the service worker may need several seconds before installability is ready.
+  // fires the event anywhere from ~100ms to 2–3s after page load.
   const [showFallback, setShowFallback] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -4812,7 +4812,7 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
       setInstalling(false);
       return;
     }
-    const t = setTimeout(() => setShowFallback(true), 12000);
+    const t = setTimeout(() => setShowFallback(true), 3000);
     return () => clearTimeout(t);
   }, [visible]);
 
@@ -5979,7 +5979,7 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', capture as any);
     const pollStartedAt = Date.now();
     const poll = window.setInterval(() => {
-      if (useDeferredPrompt((window as any).__deferredInstallPrompt) || Date.now() - pollStartedAt > 12000) {
+      if (useDeferredPrompt((window as any).__deferredInstallPrompt) || Date.now() - pollStartedAt > 3000) {
         window.clearInterval(poll);
       }
     }, 250);
@@ -6045,10 +6045,11 @@ export default function App() {
     const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
     const isAndroid = /Android/i.test(navigator.userAgent);
     if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode')) {
+      const targetPath = '/plans';
       const search = '?pwa_install=1';
-      const fallback = `https://${window.location.host}/plans${search}`;
+      const fallback = `https://${window.location.host}${targetPath}${search}`;
       window.location.href =
-        `intent://${window.location.host}/plans${search}` +
+        `intent://${window.location.host}${targetPath}${search}` +
         `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
       return;
     }
