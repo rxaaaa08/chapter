@@ -1471,6 +1471,32 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     return () => window.removeEventListener('beforeinstallprompt', handler as any);
   }, []);
 
+  // ── Push notification subscription ────────────────────────────────────────
+  const subscribeToPush = async (phone: string) => {
+    try {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing ?? await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU',
+      });
+      const subJson = sub.toJSON();
+      if (!subJson.keys) return;
+      const tenDigit = phone.replace(/\D/g, '').slice(-10);
+      await supabase.from('push_subscriptions').upsert({
+        phone: tenDigit,
+        endpoint: sub.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth,
+      }, { onConflict: 'phone,endpoint' });
+    } catch (err) {
+      console.warn('[push] subscribe failed:', err);
+    }
+  };
+
   // ── Live chat: load messages + Realtime ────────────────────────────────────
   useEffect(() => {
     if (!liveConversationId) return;
@@ -1523,6 +1549,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setLiveConversationId(convData.id);
     setLiveChatSending(false);
     setDoubtSheetView('chat');
+    // Request push permission now that they're engaged
+    subscribeToPush(phone);
   };
 
   const sendLiveChatMessage = async () => {
