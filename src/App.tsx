@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
-import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download } from 'lucide-react';
+import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download, Ticket } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -5814,6 +5814,66 @@ function LiveChatScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
+function PwaHomeScreen({ onViewPlans, onExplorePlans }: { onViewPlans: () => void; onExplorePlans: () => void }) {
+  return (
+    <div className="min-h-[100dvh] bg-[#F4F4F6] font-sans text-gray-950 px-5 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-12 h-12 rounded-2xl bg-black overflow-hidden shadow-sm shrink-0">
+            <img src="/icon-192.png" alt="chapter அ" className="w-full h-full object-cover" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[12px] text-gray-400 font-bold uppercase tracking-[0.16em]">chapter அ</p>
+            <h1 className="text-[24px] font-black tracking-tight leading-none mt-1">Home</h1>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <p className="text-[13px] font-bold text-gray-400 uppercase tracking-[0.16em] px-1 mb-3">Quick actions</p>
+        <div className="grid gap-3">
+          <button
+            type="button"
+            onClick={onViewPlans}
+            className="w-full bg-white rounded-2xl px-4 py-4 flex items-center gap-4 text-left shadow-sm active:scale-[0.99] transition-transform"
+          >
+            <span className="w-12 h-12 rounded-2xl bg-black text-white flex items-center justify-center shrink-0">
+              <Ticket size={22} strokeWidth={2.4} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[17px] font-black leading-tight">View my plans</span>
+              <span className="block text-[13px] text-gray-400 mt-1 leading-snug">Check bookings, invites, and payment updates.</span>
+            </span>
+            <ChevronRight size={20} strokeWidth={2.6} className="text-gray-300 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onExplorePlans}
+            className="w-full bg-white rounded-2xl px-4 py-4 flex items-center gap-4 text-left shadow-sm active:scale-[0.99] transition-transform"
+          >
+            <span className="w-12 h-12 rounded-2xl bg-[#FFD700] text-black flex items-center justify-center shrink-0">
+              <MapPin size={22} strokeWidth={2.4} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[17px] font-black leading-tight">Explore plans</span>
+              <span className="block text-[13px] text-gray-400 mt-1 leading-snug">Browse upcoming trips, activities, and events.</span>
+            </span>
+            <ChevronRight size={20} strokeWidth={2.6} className="text-gray-300 shrink-0" />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-auto pt-8">
+        <div className="bg-white rounded-2xl px-4 py-4 flex items-center gap-3">
+          <MessageCircle size={20} strokeWidth={2.4} className="text-gray-400 shrink-0" />
+          <p className="text-[13px] text-gray-500 leading-snug">Replies and booking updates will open here when you have an active chat.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
   // ── Live chat intercept: if user has an open conversation, show it immediately
@@ -5826,6 +5886,8 @@ export default function App() {
 
   const [routePath, setRoutePath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/');
   const [routeSearch, setRouteSearch] = useState(typeof window !== 'undefined' ? window.location.search : '');
+  const isStandaloneApp = typeof window !== 'undefined'
+    && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
   const isAdmin = routePath === '/admin';
   const isLegacyJoinPage = routePath === '/join';
   const isLifestylePage = routePath === '/lifestyle' || isLegacyJoinPage;
@@ -5847,9 +5909,10 @@ export default function App() {
   });
   const isPayUReturn = !!payuReturnStatus;
   const isMyPlansPage = routePath === '/myplans';
+  const isPwaHomePage = isStandaloneApp && (routePath === '/' || routePath === '/aboutus') && !hasPreviewParam && !isPayUReturn;
   // /plans and /myplans both suppress the homepage (myplans redirects to /invite, plans renders AppFlow)
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
-  const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
+  const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
 
   // pwaInstallVisible: true as soon as ?pwa_install=1 is detected — overlay shows immediately.
   // pwaInstallPrompt: the BeforeInstallPromptEvent if Chrome provides it; null = show manual steps.
@@ -5916,7 +5979,8 @@ export default function App() {
       syncRoute();
       return () => window.removeEventListener('popstate', syncRoute);
     }
-    if (window.location.pathname === '/' && !window.location.search.includes('preview_event') && !window.location.search.includes('payment_status')) {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    if (!isStandalone && window.location.pathname === '/' && !window.location.search.includes('preview_event') && !window.location.search.includes('payment_status')) {
       window.history.replaceState({}, '', '/aboutus');
       syncRoute();
     }
@@ -5953,10 +6017,19 @@ export default function App() {
     setRouteSearch('');
   };
 
+  const openPwaPlansHome = (path: '/invite' | '/plans') => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    window.history.pushState({}, '', path);
+    setRoutePath(path);
+    setRouteSearch('');
+    setShowHomepage(false);
+  };
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const isLetterPage = (isLifestylePage || isGalcodePage) && !hasPreviewParam;
-    if (isAdmin || showHomepage || isLetterPage || isSharedInvitePage || isInvitePage) {
+    if (isAdmin || showHomepage || isPwaHomePage || isLetterPage || isSharedInvitePage || isInvitePage) {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
       return;
@@ -5968,7 +6041,7 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
+  }, [showHomepage, isPwaHomePage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
 
   if (isPayUReturn) return (
     <PayUReturnScreen
@@ -6045,6 +6118,18 @@ export default function App() {
         <InAppBrowserNudge />
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage onContinue={continueFromJoin} layers={GALCODE_POSTER_LAYER_SRC} theme={GALCODE_POSTER_THEME} />
+      </>
+    );
+  }
+
+  if (isPwaHomePage) {
+    return (
+      <>
+        <LandscapeBlocker />
+        <PwaHomeScreen
+          onViewPlans={() => openPwaPlansHome('/invite')}
+          onExplorePlans={() => openPwaPlansHome('/plans')}
+        />
       </>
     );
   }
