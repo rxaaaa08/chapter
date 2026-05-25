@@ -621,6 +621,22 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
   );
 }
 
+function AppFlowIosChromeCopyButton() {
+  const [copied, setCopied] = React.useState(false);
+  return (
+    <button
+      onClick={async () => {
+        try { await navigator.clipboard.writeText(window.location.href); } catch (_) {}
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }}
+      className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80 flex items-center justify-center gap-2"
+    >
+      {copied ? '✓ Link Copied!' : 'Copy Link'}
+    </button>
+  );
+}
+
 export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [events, setEvents] = useState<Event[]>(FALLBACK_EVENTS);
   const [eventsLoaded, setEventsLoaded] = useState(false);
@@ -1466,6 +1482,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     || (window.navigator as any).standalone === true;
   const isAndroid = /Android/i.test(navigator.userAgent);
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
 
   useEffect(() => {
     const handler = (e: any) => { e.preventDefault(); setDeferredInstallPrompt(e); };
@@ -3081,7 +3098,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <>
                     <div className="px-6 pt-7 pb-2">
                       <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                      <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
+                      <p className="text-[14px] text-gray-500 mt-1">
+                        {isIOSChrome
+                          ? 'Our chat only works in Safari. Copy the link and open it there to install.'
+                          : 'Add our app to get replies directly here & get notified instantly.'}
+                      </p>
                     </div>
 
                     <div className="px-6 pb-6 space-y-3 mt-2">
@@ -3110,6 +3131,31 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             Install App
                           </button>
                         </>
+                      ) : isIOSChrome ? (
+                        /* iOS Chrome: must switch to Safari */
+                        <>
+                          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                            {[
+                              { label: 'copy this link', value: 'Tap the button below', badge: null },
+                              { label: 'open safari', value: 'Paste & open the link', badge: '← use Safari' },
+                              { label: 'install from there', value: 'Tap Share → Add to Home Screen', badge: null },
+                            ].map((step, i, arr) => (
+                              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                                <div className="flex items-center gap-3">
+                                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                                  <div>
+                                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                                  </div>
+                                </div>
+                                {step.badge && (
+                                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <AppFlowIosChromeCopyButton />
+                        </>
                       ) : isAndroid ? (
                         /* Android fallback: Chrome menu step */
                         <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
@@ -3133,7 +3179,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           ))}
                         </div>
                       ) : (
-                        /* iOS: Safari share steps */
+                        /* iOS Safari: share steps */
                         <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
                           {[
                             { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
@@ -3155,37 +3201,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           ))}
                         </div>
                       )}
-
-                      <button
-                        onClick={async () => {
-                          const { name, phone, message } = doubtFormData;
-                          const pickup = getSelectedPickupForVars();
-                          const selectedDate = getSelectedDateForVars();
-                          try {
-                            await supabase.from('doubt_submissions').insert({
-                              name, phone, doubt: message,
-                              event_title: selectedEvent?.title ?? '',
-                              event_category: selectedEvent?.category ?? selectedCategory ?? '',
-                              city: selectedCity ? formatCityLabel(selectedCity) : '',
-                              selected_date: selectedDate || null,
-                              reporting_date: selectedDate ? formatFullDate(selectedDate) : null,
-                              reporting_time: pickup.reportingTime || null,
-                              submitted_at: new Date().toISOString(),
-                            });
-                          } catch (_) {}
-                          setShowDoubtPopup(false);
-                          setDoubtFormData({ name: '', phone: '', message: '' });
-                          setDoubtSheetView('form');
-                          addUserMessage(message);
-                          simulateBotTyping(() => {
-                            addBotMessage(fillMsgForSelectedEvent('contact_success', getTemplateVars({ name, phone, doubt: message }), `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
-                            setStep('DONE');
-                          }, 1000);
-                        }}
-                        className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
-                      >
-                        I'll do it later — send via WhatsApp instead
-                      </button>
                     </div>
                   </>
                 )}
