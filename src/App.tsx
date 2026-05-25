@@ -6041,18 +6041,19 @@ export default function App() {
 
   const continueFromJoin = () => {
     if (typeof window === 'undefined') return;
-    const isInstagram = /Instagram/i.test(navigator.userAgent);
-    const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode')) {
-      const targetPath = window.location.pathname;
-      const search = '?pwa_install=1';
-      const fallback = `https://${window.location.host}${targetPath}${search}`;
-      window.location.href =
-        `intent://${window.location.host}${targetPath}${search}` +
-        `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
-      return;
-    }
+    // REPOSITIONED: PWA upsell now lives inside post-submit sheets, not on poster CTAs.
+    // const isInstagram = /Instagram/i.test(navigator.userAgent);
+    // const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
+    // const isAndroid = /Android/i.test(navigator.userAgent);
+    // if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode')) {
+    //   const targetPath = window.location.pathname;
+    //   const search = '?pwa_install=1';
+    //   const fallback = `https://${window.location.host}${targetPath}${search}`;
+    //   window.location.href =
+    //     `intent://${window.location.host}${targetPath}${search}` +
+    //     `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+    //   return;
+    // }
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     window.history.pushState({}, '', '/plans');
     setRoutePath('/plans');
@@ -6128,7 +6129,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        <InAppBrowserNudge />
+        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
@@ -6139,7 +6140,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        <InAppBrowserNudge />
+        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <InviteFlow slug={inviteSlug} />
       </>
@@ -6150,7 +6151,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        <InAppBrowserNudge />
+        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage
           onContinue={continueFromJoin}
@@ -6165,7 +6166,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        <InAppBrowserNudge />
+        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage
           onContinue={continueFromJoin}
@@ -6194,7 +6195,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        <InAppBrowserNudge />
+        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
         <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <AnimatePresence>
           <motion.div
@@ -6213,7 +6214,7 @@ export default function App() {
   return (
     <>
       <LandscapeBlocker />
-      <InAppBrowserNudge />
+      {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
       <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
       <AppFlow />
     </>

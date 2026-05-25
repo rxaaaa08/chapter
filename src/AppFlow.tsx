@@ -551,12 +551,180 @@ function PayUCheckout({ paymentContext, onError }: {
   );
 }
 
+// ─── PWA UPSELL CARD ───────────────────────────────────────────────────────────
+function PwaUpsellCard({ headline = "You're in! Get notified when you're invited." }: { headline?: string }) {
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
+
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(() =>
+    typeof window !== 'undefined' ? (window as any).__deferredInstallPrompt ?? null : null
+  );
+  const [installState, setInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
+  const installTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const onBip = (e: any) => {
+      e.preventDefault();
+      (window as any).__deferredInstallPrompt = e;
+      setDeferredPrompt(e);
+    };
+    const onInstalled = () => {
+      setInstallState('installing');
+      if (installTimerRef.current) window.clearTimeout(installTimerRef.current);
+      installTimerRef.current = window.setTimeout(() => {
+        setInstallState('installed');
+        installTimerRef.current = null;
+      }, 15000);
+    };
+    window.addEventListener('beforeinstallprompt', onBip as any);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBip as any);
+      window.removeEventListener('appinstalled', onInstalled);
+      if (installTimerRef.current) window.clearTimeout(installTimerRef.current);
+    };
+  }, []);
+
+  const startInstall = async () => {
+    if (!deferredPrompt) return;
+    try {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setInstallState('installing');
+        setDeferredPrompt(null);
+      }
+    } catch {
+      setInstallState('idle');
+    }
+  };
+
+  return (
+    <>
+      <div className="px-6 pt-7 pb-2">
+        <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">{headline}</p>
+        <p className="text-[14px] text-gray-500 mt-1">Add chapter அ to your home screen so you don't miss your invitation.</p>
+      </div>
+
+      <div className="px-6 pb-6 space-y-3 mt-2">
+        {installState === 'installed' ? (
+          <div className="bg-[#F2F2F7] rounded-3xl p-4 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+              <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
+              <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
+            </div>
+            <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
+          </div>
+        ) : installState === 'installing' ? (
+          <div className="bg-[#F2F2F7] rounded-3xl p-5 flex flex-col items-center gap-3">
+            <motion.div
+              className="w-9 h-9 rounded-full border-[3px] border-gray-300 border-t-black"
+              animate={{ rotate: 360 }}
+              transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
+            />
+            <p className="text-xs text-gray-500 font-medium">Waiting for install to complete…</p>
+          </div>
+        ) : deferredPrompt ? (
+          <>
+            <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+              <div className="px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
+                  <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
+                  <span className="text-white text-base font-black">அ</span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={startInstall}
+              className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
+            >
+              Install App
+            </button>
+          </>
+        ) : isIOSChrome ? (
+          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+            {[
+              { label: 'open chrome menu', value: 'Tap ··· at the bottom right', badge: 'Chrome bottom bar' },
+              { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
+              { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+            ].map((step, i, arr) => (
+              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                  <div>
+                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                  </div>
+                </div>
+                {step.badge && (
+                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : isAndroid ? (
+          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+            {[
+              { label: 'open chrome menu', value: 'Tap ⋮ at the top right', badge: 'Chrome top bar' },
+              { label: 'install the app', value: 'Tap "Add to Home Screen"', badge: null },
+              { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+            ].map((step, i, arr) => (
+              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                  <div>
+                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                  </div>
+                </div>
+                {step.badge && (
+                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+            {[
+              { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
+              { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
+              { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+            ].map((step, i, arr) => (
+              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                  <div>
+                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                  </div>
+                </div>
+                {step.badge && (
+                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── APPLICATION FORM ──────────────────────────────────────────────────────────
 function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, reservedCount, onClose }: { event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string; reservedCount: number | null; onClose: () => void }) {
   const [form, setForm] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [alreadyApplied, setAlreadyApplied] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [notifyOptIn, setNotifyOptIn] = useState(true);
 
   const inviteSpots = typeof event?.inviteSpots === 'number' ? event.inviteSpots : null;
   const spotsLeft = inviteSpots != null && typeof reservedCount === 'number'
@@ -569,14 +737,6 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
     if (!isValid || submitting) return;
     setSubmitting(true);
     setError('');
-
-    // Must be called before any await — iOS requires PushManager.subscribe()
-    // to originate from a user gesture context (the button tap).
-    // TEMP: show the result in an alert so we can see what's happening on iOS
-    // without needing a Mac-tethered debugger. Remove once stable.
-    subscribeToPushForPwa(form.phone).then(status => {
-      try { alert(`Push: ${status}`); } catch {}
-    });
 
     // Resolve the chosen pickup point details for storage
     const chosenPoint = selectedPickupId
@@ -606,21 +766,21 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       setSubmitting(false);
       return;
     }
-    const dateStr = selectedDate || event.dates?.[0]?.date || '';
-    const formattedDate = (() => {
-      if (!dateStr) return '';
-      const d = new Date(`${dateStr}T00:00:00`);
-      if (isNaN(d.getTime())) return '';
-      const month = d.toLocaleDateString('en-US', { month: 'long' });
-      const day = d.getDate();
-      const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
-      return `${month} ${day}${suffix}`;
-    })();
-    // TODO: restore WhatsApp redirect once push notification testing is complete
-    // const waText = `Hi, I'm ${form.name.trim()}. I have registered for ${event.title}${formattedDate ? ` on ${formattedDate}` : ''}.`;
-    // window.open(`https://wa.me/919940111564?text=${encodeURIComponent(waText)}`, '_blank');
-    onClose();
+    setSubmitted(true);
+    setSubmitting(false);
   };
+
+  if (submitted) return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="px-5 pt-6 pb-2 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-[#34C759] flex items-center justify-center shrink-0">
+          <CheckCircle2 size={22} className="text-white" strokeWidth={2.8} />
+        </div>
+        <p className="text-[18px] font-black text-gray-900">Application sent</p>
+      </div>
+      <PwaUpsellCard headline="You're in! Get notified when you're invited." />
+    </div>
+  );
 
   if (alreadyApplied) return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-4 text-center">
@@ -692,6 +852,25 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       </div>
 
       {error && <p className="text-[13px] text-red-500 text-center">{error}</p>}
+
+      <label className="flex items-center gap-3 px-4 py-3 bg-[#F2F2F7] rounded-2xl cursor-pointer">
+        <input
+          type="checkbox"
+          checked={notifyOptIn}
+          onChange={e => {
+            const checked = e.target.checked;
+            setNotifyOptIn(checked);
+            if (checked && /^\d{10}$/.test(form.phone)) {
+              // user gesture preserved — required for iOS push permission
+              subscribeToPushForPwa(form.phone).then(status => {
+                try { alert(`Push: ${status}`); } catch {}
+              });
+            }
+          }}
+          className="w-5 h-5 accent-black"
+        />
+        <span className="text-[14px] font-semibold text-gray-900">Notify me when I'm invited 🔔</span>
+      </label>
 
       {/* Submit */}
       <div className="pb-6 pt-2">
@@ -922,7 +1101,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
-  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'install' | 'chat'>('form');
+  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'install' | 'chat' | 'submitted'>('form');
+  const [notifyOptInDoubt, setNotifyOptInDoubt] = useState(true);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [pwaInstallState, setPwaInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
   const pwaInstallCompleteTimerRef = useRef<number | null>(null);
@@ -1724,14 +1904,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         submitted_at: new Date().toISOString(),
       });
     } catch (_) {}
-    setShowDoubtPopup(false);
-    setDoubtFormData({ name: '', phone: '', message: '' });
-    setStep('PROCESSING');
-    addUserMessage(message);
-    simulateBotTyping(() => {
-      addBotMessage(fillMsgForSelectedEvent('contact_success', getTemplateVars({ name, phone, doubt: message }), `Got it, ${name}! Our team will reach out to you on WhatsApp at ${phone} shortly.`));
-      setStep('DONE');
-    }, 1000);
+    setDoubtSheetView('submitted');
   };
 
   const handleGoogleSignIn = async () => {
@@ -3208,6 +3381,20 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   </>
                 )}
 
+                {doubtSheetView === 'submitted' && (
+                  <>
+                    <div className="px-6 pt-7 pb-2 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-[#34C759] flex items-center justify-center shrink-0">
+                        <CheckCircle2 size={22} className="text-white" strokeWidth={2.8} />
+                      </div>
+                      <p className="text-[20px] font-black text-gray-900">Doubt sent</p>
+                    </div>
+                    <div className="px-2 pb-6">
+                      <PwaUpsellCard headline="We'll reply soon. Get notified when we do." />
+                    </div>
+                  </>
+                )}
+
                 {/* ── INSTALL PROMPT VIEW ── */}
                 {doubtSheetView === 'install' && (
                   <>
@@ -3380,7 +3567,27 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </div>
                   </div>
 
-                  <div className="px-6 pt-6 pb-5">
+                  <div className="px-6 pt-4">
+                    <label className="flex items-center gap-3 px-4 py-3 bg-[#F2F2F7] rounded-2xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifyOptInDoubt}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setNotifyOptInDoubt(checked);
+                          if (checked && /^\d{10}$/.test(doubtFormData.phone)) {
+                            subscribeToPushForPwa(doubtFormData.phone).then(status => {
+                              try { alert(`Push: ${status}`); } catch {}
+                            });
+                          }
+                        }}
+                        className="w-5 h-5 accent-black"
+                      />
+                      <span className="text-[14px] font-semibold text-gray-900">Notify me when we reply 🔔</span>
+                    </label>
+                  </div>
+
+                  <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
                       disabled={liveChatSending}
