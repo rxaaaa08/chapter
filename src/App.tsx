@@ -4730,6 +4730,73 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 
 // ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
+function PwaAutoInstallOverlay({ prompt, onDismiss }: { prompt: any; onDismiss: () => void }) {
+  if (!prompt) return null;
+
+  const handleInstall = async () => {
+    try {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice?.outcome === 'accepted' || choice?.outcome === 'dismissed') {
+        onDismiss();
+      }
+    } catch {
+      onDismiss();
+    }
+  };
+
+  return (
+    <>
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-black/60 z-[9998] backdrop-blur-sm"
+      />
+      {/* Bottom sheet */}
+      <motion.div
+        initial={{ y: 80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: 'spring', damping: 24, stiffness: 260 }}
+        className="fixed bottom-0 left-0 right-0 z-[9999] flex justify-center px-4 pb-6"
+      >
+        <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-6 pb-8 shadow-2xl">
+          {/* Drag handle */}
+          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+          {/* App icon placeholder */}
+          <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <span className="text-white text-2xl font-black">அ</span>
+          </div>
+          <h2 className="text-center font-black text-xl text-gray-900 mb-2">Install chapter அ</h2>
+          <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
+            Add to your home screen for instant access — no browser needed.
+          </p>
+          <button
+            onClick={handleInstall}
+            className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
+          >
+            <motion.span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+              animate={{ x: ['0%', '240%'] }}
+              transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
+            />
+            <span className="relative z-10 inline-flex items-center justify-center gap-2">
+              Install App
+              <Download size={18} strokeWidth={2.8} />
+            </span>
+          </button>
+          <button
+            onClick={onDismiss}
+            className="w-full py-3 text-gray-400 text-sm mt-1"
+          >
+            Maybe later
+          </button>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
 function InAppBrowserNudge() {
   const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
   const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
@@ -5593,12 +5660,18 @@ export default function App() {
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
   const [showHomepage, setShowHomepage] = useState(!isAdmin && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
 
+  // Holds the deferred BeforeInstallPromptEvent when user arrives via ?pwa_install=1 from IG nudge
+  const [pwaAutoInstallPrompt, setPwaAutoInstallPrompt] = useState<any>(null);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isAdmin) trackEvent('page_view');
   }, []);
 
-  // Auto-trigger PWA install if redirected from IG/FB in-app browser via ?pwa_install=1
+  // Capture ?pwa_install=1 from IG/FB Android nudge.
+  // We do NOT call .prompt() here — Chrome requires it to be called inside a user-gesture
+  // handler (a click/tap). Calling it from useEffect silently fails.
+  // Instead we store the prompt in state and render a tap-to-install overlay.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -5608,18 +5681,21 @@ export default function App() {
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
 
-    const trigger = (e: any) => { e.preventDefault(); e.prompt(); };
-
     // Event may have already fired before React mounted — captured in index.html
     const already = (window as any).__deferredInstallPrompt;
     if (already) {
-      already.prompt();
+      setPwaAutoInstallPrompt(already);
       delete (window as any).__deferredInstallPrompt;
       return;
     }
-    // Otherwise wait for it
-    window.addEventListener('beforeinstallprompt', trigger as any);
-    return () => window.removeEventListener('beforeinstallprompt', trigger as any);
+    // Otherwise wait for it and store it in state when it arrives
+    const capture = (e: any) => {
+      e.preventDefault();
+      setPwaAutoInstallPrompt(e);
+      window.removeEventListener('beforeinstallprompt', capture as any);
+    };
+    window.addEventListener('beforeinstallprompt', capture as any);
+    return () => window.removeEventListener('beforeinstallprompt', capture as any);
   }, []);
 
   useEffect(() => {
@@ -5736,6 +5812,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
+        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
         <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
     );
@@ -5746,6 +5823,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
+        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
         <InviteFlow slug={inviteSlug} />
       </>
     );
@@ -5756,6 +5834,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
+        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
         <JoinLetterPage onContinue={continueFromJoin} />
       </>
     );
@@ -5766,6 +5845,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
+        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
         <JoinLetterPage onContinue={continueFromJoin} layers={GALCODE_POSTER_LAYER_SRC} theme={GALCODE_POSTER_THEME} />
       </>
     );
@@ -5776,6 +5856,7 @@ export default function App() {
       <>
         <LandscapeBlocker />
         <InAppBrowserNudge />
+        <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
         <AnimatePresence>
           <motion.div
             key="homepage"
@@ -5794,6 +5875,7 @@ export default function App() {
     <>
       <LandscapeBlocker />
       <InAppBrowserNudge />
+      <PwaAutoInstallOverlay prompt={pwaAutoInstallPrompt} onDismiss={() => setPwaAutoInstallPrompt(null)} />
       <AppFlow />
     </>
   );
