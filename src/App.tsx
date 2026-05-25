@@ -4768,7 +4768,7 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
         setInstalling(false);
         setInstalled(true);
         installCompleteTimerRef.current = null;
-      }, 4500);
+      }, 15000);
     };
     window.addEventListener('appinstalled', handler);
     return () => {
