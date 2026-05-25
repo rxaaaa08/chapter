@@ -546,15 +546,14 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
       return `${month} ${day}${suffix}`;
     })();
-    const waText = `Hi, I'm ${form.name.trim()}. I have registered for ${event.title}${formattedDate ? ` on ${formattedDate}` : ''}.`;
+    // Subscribe to push notifications so admin-approval notifications reach this device.
+    // No isPwa gate here — we let subscribeToPushForPwa's own PushManager check handle it,
+    // which only succeeds in the installed PWA anyway.
+    subscribeToPushForPwa(form.phone); // fire-and-forget
 
-    // Subscribe to push notifications when submitting from the installed PWA so
-    // admin-approval notifications can reach this device without any extra step.
-    const isPwaCtx = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as any).standalone === true;
-    if (isPwaCtx) subscribeToPushForPwa(form.phone); // fire-and-forget
-
-    window.open(`https://wa.me/919940111564?text=${encodeURIComponent(waText)}`, '_blank');
+    // TODO: restore WhatsApp redirect once push notification testing is complete
+    // const waText = `Hi, I'm ${form.name.trim()}. I have registered for ${event.title}${formattedDate ? ` on ${formattedDate}` : ''}.`;
+    // window.open(`https://wa.me/919940111564?text=${encodeURIComponent(waText)}`, '_blank');
     onClose();
   };
 
