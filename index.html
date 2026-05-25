@@ -11,6 +11,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="chapter அ" />
     <link rel="apple-touch-icon" href="/icon.png" />
+    <script>
+      // Capture beforeinstallprompt before React mounts so it's never missed.
+      // React reads it from window.__deferredInstallPrompt.
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__deferredInstallPrompt = e;
+      });
+    </script>
     <script src="https://t.contentsquare.net/uxa/02bde574cbdd5.js" async></script>
     <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S"></script>

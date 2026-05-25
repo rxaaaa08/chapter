@@ -5603,18 +5603,23 @@ export default function App() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (!params.has('pwa_install')) return;
-    // Clean the param from the URL so it doesn't persist
+    // Clean the param from the URL so it doesn't persist on refresh
     params.delete('pwa_install');
     const newSearch = params.toString();
-    const cleanUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
-    window.history.replaceState({}, '', cleanUrl);
-    // Wait for beforeinstallprompt then auto-show the install dialog
-    const handler = (e: any) => {
-      e.preventDefault(); // required before calling .prompt()
-      e.prompt();         // shows the "Add to Home Screen" dialog
-    };
-    window.addEventListener('beforeinstallprompt', handler as any);
-    return () => window.removeEventListener('beforeinstallprompt', handler as any);
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+
+    const trigger = (e: any) => { e.preventDefault(); e.prompt(); };
+
+    // Event may have already fired before React mounted — captured in index.html
+    const already = (window as any).__deferredInstallPrompt;
+    if (already) {
+      already.prompt();
+      delete (window as any).__deferredInstallPrompt;
+      return;
+    }
+    // Otherwise wait for it
+    window.addEventListener('beforeinstallprompt', trigger as any);
+    return () => window.removeEventListener('beforeinstallprompt', trigger as any);
   }, []);
 
   useEffect(() => {
