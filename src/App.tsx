@@ -4745,9 +4745,12 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
   const [showFallback, setShowFallback] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const installCompleteTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!visible) {
+      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
+      installCompleteTimerRef.current = null;
       setShowFallback(false);
       setInstalled(false);
       setInstalling(false);
@@ -4759,11 +4762,19 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
 
   useEffect(() => {
     const handler = () => {
-      setInstalling(false);
-      setInstalled(true);
+      setInstalling(true);
+      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
+      installCompleteTimerRef.current = window.setTimeout(() => {
+        setInstalling(false);
+        setInstalled(true);
+        installCompleteTimerRef.current = null;
+      }, 4500);
     };
     window.addEventListener('appinstalled', handler);
-    return () => window.removeEventListener('appinstalled', handler);
+    return () => {
+      window.removeEventListener('appinstalled', handler);
+      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
+    };
   }, []);
 
   // If prompt arrives, cancel the fallback timer (already handled by clearing timeout above,
@@ -4840,15 +4851,11 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="flex flex-col items-center gap-3 py-3"
               >
-                <div className="flex gap-1.5">
-                  {[0, 1, 2].map(i => (
-                    <motion.div key={i}
-                      className="w-2 h-2 rounded-full bg-[#FFD700]"
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                    />
-                  ))}
-                </div>
+                <motion.div
+                  className="w-9 h-9 rounded-full border-[3px] border-gray-200 border-t-[#FFD700]"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
+                />
                 <p className="text-xs text-gray-400">Waiting for install to complete…</p>
               </motion.div>
             ) : prompt ? (
@@ -5833,6 +5840,7 @@ export default function App() {
     // Otherwise wait for it — overlay is already showing manual steps in the meantime
     const capture = (e: any) => {
       e.preventDefault();
+      e.stopImmediatePropagation?.();
       setPwaInstallPrompt(e);
       window.removeEventListener('beforeinstallprompt', capture as any);
     };
