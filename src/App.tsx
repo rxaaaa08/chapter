@@ -4743,11 +4743,23 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
   // Chrome evaluates PWA criteria asynchronously — manifest fetch, SW check, etc. — and
   // fires the event anywhere from ~100ms to 2–3s after page load.
   const [showFallback, setShowFallback] = useState(false);
+  const [installed, setInstalled] = useState(false);
+
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setShowFallback(false);
+      setInstalled(false);
+      return;
+    }
     const t = setTimeout(() => setShowFallback(true), 3000);
     return () => clearTimeout(t);
   }, [visible]);
+
+  useEffect(() => {
+    const handler = () => setInstalled(true);
+    window.addEventListener('appinstalled', handler);
+    return () => window.removeEventListener('appinstalled', handler);
+  }, []);
 
   // If prompt arrives, cancel the fallback timer (already handled by clearing timeout above,
   // but also reset showFallback so it doesn't flash manual steps then switch to button)
@@ -4760,7 +4772,11 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
   const handleInstall = async () => {
     try {
       await prompt.prompt();
-      await prompt.userChoice;
+      const choice = await prompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        setInstalled(true);
+        return;
+      }
     } catch { /* ignore */ }
     onDismiss();
   };
@@ -4782,17 +4798,36 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
         <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-6 pb-8 shadow-2xl">
           {/* Drag handle */}
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-          {/* App icon */}
-          <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-white text-2xl font-black">அ</span>
+          <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
+            <img src="/icon-192.png" alt="chapter அ app icon" className="w-full h-full object-cover" />
           </div>
-          <h2 className="text-center font-black text-xl text-gray-900 mb-2">Install chapter அ</h2>
+          <h2 className="text-center font-black text-xl text-gray-900 mb-2">
+            {installed ? 'chapter அ is installed' : 'Install chapter அ'}
+          </h2>
           <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
-            Add to your home screen for instant access — no browser needed.
+            {installed
+              ? 'Open it from your home screen or app drawer whenever you want instant access.'
+              : 'Add to your home screen for instant access — no browser needed.'}
           </p>
 
           <AnimatePresence mode="wait">
-            {prompt ? (
+            {installed ? (
+              <motion.div key="installed"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+                    <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
+                    <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
+                  </div>
+                  <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
+                </div>
+              </motion.div>
+            ) : prompt ? (
               /* ── Native install prompt ready → one-tap button ── */
               <motion.div key="install-btn"
                 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -4860,12 +4895,14 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
             )}
           </AnimatePresence>
 
-          <button
-            onClick={onDismiss}
-            className="w-full py-3 text-gray-400 text-sm mt-2"
-          >
-            Maybe later
-          </button>
+          {!installed && (
+            <button
+              onClick={onDismiss}
+              className="w-full py-3 text-gray-400 text-sm mt-2"
+            >
+              Maybe later
+            </button>
+          )}
         </div>
       </motion.div>
     </>
