@@ -429,7 +429,23 @@ function logPushStep(phone: string, step: string, status: string, detail?: strin
 
 // Module-level helper so ApplicationForm can subscribe without prop-drilling.
 // Returns a status string for the caller to show in the UI.
+// Centralized push subscribe. Internally decides whether to surface an
+// alert — only meaningful outcomes (success, unexpected errors) are
+// shown. Expected non-events (iOS Safari without PushManager, permission
+// denied/dismissed) are logged silently to push_debug_logs only.
 async function subscribeToPushForPwa(phone: string): Promise<string> {
+  const result = await runPushSubscribe(phone);
+  // Show alert ONLY for meaningful results during testing
+  const isExpectedNonEvent =
+    result.startsWith('Push not supported') ||
+    result.startsWith('Permission');
+  if (!isExpectedNonEvent) {
+    try { alert(`Push: ${result}`); } catch {}
+  }
+  return result;
+}
+
+async function runPushSubscribe(phone: string): Promise<string> {
   logPushStep(phone, 'start', 'called');
   try {
     const hasNotif = 'Notification' in window;
@@ -774,11 +790,7 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       // it hasn't already been triggered from the checkbox change handler.
       if (notifyOptIn && !pushSubscribedRef.current) {
         pushSubscribedRef.current = true;
-        subscribeToPushForPwa(form.phone).then(status => {
-          if (status !== 'OK' && !status.startsWith('Push not supported')) {
-            try { alert(`Push: ${status}`); } catch {}
-          }
-        });
+        subscribeToPushForPwa(form.phone);
       }
       setSubmitted(true);
     } catch (err: any) {
@@ -882,15 +894,7 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
             if (checked && /^\d{10}$/.test(form.phone)) {
               // user gesture preserved — required for iOS push permission
               pushSubscribedRef.current = true;
-              subscribeToPushForPwa(form.phone).then(status => {
-                // Only alert on actual success or unexpected errors —
-                // "Push not supported" is expected on iOS Safari (non-standalone)
-                if (status === 'OK') {
-                  try { alert(`Push: ${status}`); } catch {}
-                } else if (!status.startsWith('Push not supported') && !status.startsWith('Permission')) {
-                  try { alert(`Push: ${status}`); } catch {}
-                }
-              });
+              subscribeToPushForPwa(form.phone);
             }
           }}
           className="w-5 h-5 accent-black"
@@ -3602,9 +3606,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           const checked = e.target.checked;
                           setNotifyOptInDoubt(checked);
                           if (checked && /^\d{10}$/.test(doubtFormData.phone)) {
-                            subscribeToPushForPwa(doubtFormData.phone).then(status => {
-                              try { alert(`Push: ${status}`); } catch {}
-                            });
+                            subscribeToPushForPwa(doubtFormData.phone);
                           }
                         }}
                         className="w-5 h-5 accent-black"
