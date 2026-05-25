@@ -2081,6 +2081,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
   const isPwa = window.matchMedia('(display-mode: standalone)').matches
     || (window.navigator as any).standalone === true;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   // ── Live chat: load messages + Realtime subscription ───────────────────────
   useEffect(() => {
@@ -3260,6 +3262,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                             </div>
                             <div className="px-6 pb-8 space-y-3 mt-2">
                               {deferredInstallPrompt ? (
+                                /* Android: native one-tap install */
                                 <>
                                   <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
                                     <div className="px-5 py-4 flex items-center justify-between">
@@ -3280,10 +3283,33 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                     }}
                                     className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
                                   >
-                                    Add to Home Screen
+                                    Install App
                                   </button>
                                 </>
+                              ) : isAndroid ? (
+                                /* Android fallback: Chrome menu step */
+                                <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
+                                  {[
+                                    { label: 'open chrome menu', value: 'Tap ⋮ at the top right', badge: 'Chrome top bar' },
+                                    { label: 'install the app', value: 'Tap "Add to Home Screen"', badge: null },
+                                    { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
+                                  ].map((step, i, arr) => (
+                                    <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
+                                      <div className="flex items-center gap-3">
+                                        <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                                        <div>
+                                          <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
+                                          <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
+                                        </div>
+                                      </div>
+                                      {step.badge && (
+                                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               ) : (
+                                /* iOS: Safari share steps */
                                 <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
                                   {[
                                     { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
