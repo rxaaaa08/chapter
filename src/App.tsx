@@ -4736,6 +4736,132 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 }
 
 // ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
+// ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
+function InAppBrowserNudge() {
+  const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
+  const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
+  const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  const isInApp = isInstagram || isFacebook;
+
+  useEffect(() => {
+    if (!isInApp) return;
+    // iOS Safari / Instagram WebView ignores overflow:hidden on body.
+    // The only reliable fix is position:fixed + capturing the scroll offset.
+    const scrollY = window.scrollY;
+    const prevPosition    = document.body.style.position;
+    const prevTop         = document.body.style.top;
+    const prevWidth       = document.body.style.width;
+    const prevOverflow    = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow  = 'hidden';
+    document.body.style.position  = 'fixed';
+    document.body.style.top       = `-${scrollY}px`;
+    document.body.style.width     = '100%';
+
+    const preventTouch = (e: TouchEvent) => e.preventDefault();
+    window.addEventListener('touchmove', preventTouch, { passive: false });
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow  = prevOverflow;
+      document.body.style.position  = prevPosition;
+      document.body.style.top       = prevTop;
+      document.body.style.width     = prevWidth;
+      window.scrollTo(0, scrollY);
+      window.removeEventListener('touchmove', preventTouch);
+    };
+  }, [isInApp]);
+
+  if (!isInApp) return null;
+
+  const openInBrowser = () => {
+    const url = window.location.href;
+    // Android: fire a Chrome intent; falls back to the raw URL if Chrome isn't default
+    window.location.href =
+      `intent://${window.location.host}${window.location.pathname}${window.location.search}` +
+      `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+  };
+
+  return (
+    <>
+      {/* Non-dismissible backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
+        onClick={e => { e.preventDefault(); e.stopPropagation(); }}
+      />
+
+      {/* iOS: bouncing arrow pointing to the ··· button top-right */}
+      {!isAndroid && (
+        <motion.div
+          className="fixed z-[10001] pointer-events-none flex flex-col items-center"
+          style={{ top: 52, right: 18 }}
+          animate={{ y: [0, -7, 0] }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          <svg width="24" height="32" viewBox="0 0 24 32" fill="none">
+            <path d="M12 2 L12 28M12 2 L4 12M12 2 L20 12" stroke="#FFD700" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span className="text-white text-xs font-bold mt-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.7)' }}>tap here</span>
+        </motion.div>
+      )}
+
+      {/* Centered card */}
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center px-6 pointer-events-none">
+        <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-7 pb-8 shadow-2xl pointer-events-auto">
+          {isAndroid ? (
+            /* Android: one-tap open-in-browser button */
+            <>
+              <h2 className="text-center font-black text-lg text-gray-900 mb-2">Wait a minute!</h2>
+              <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
+                Instagram's browser doesn't fully support our site
+              </p>
+              <button
+                onClick={openInBrowser}
+                className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
+              >
+                <motion.span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+                  animate={{ x: ['0%', '240%'] }}
+                  transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
+                />
+                <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                  Open in Browser
+                  <ArrowRight size={18} strokeWidth={2.8} />
+                </span>
+              </button>
+            </>
+          ) : (
+            /* iOS: manual ··· steps */
+            <>
+              <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
+              <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
+                Instagram's browser doesn't fully support our website, follow steps to continue.
+              </p>
+              <div className="bg-gray-50 rounded-2xl p-4 mb-3 flex items-start gap-3">
+                <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">1</div>
+                <div>
+                  <p className="font-bold text-sm text-gray-800">Tap the <span className="font-black">···</span> menu</p>
+                  <p className="text-xs text-gray-500 mt-0.5">See top right of your screen</p>
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">2</div>
+                <div>
+                  <p className="font-bold text-sm text-gray-800">Tap <span className="italic">"Open in external browser"</span></p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function LandscapeBlocker() {
   const [isLandscape, setIsLandscape] = useState(false);
 
@@ -5607,6 +5733,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
+        <InAppBrowserNudge />
         <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
     );
@@ -5616,6 +5743,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
+        <InAppBrowserNudge />
         <InviteFlow slug={inviteSlug} />
       </>
     );
@@ -5625,6 +5753,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
+        <InAppBrowserNudge />
         <JoinLetterPage onContinue={continueFromJoin} />
       </>
     );
@@ -5634,6 +5763,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
+        <InAppBrowserNudge />
         <JoinLetterPage onContinue={continueFromJoin} layers={GALCODE_POSTER_LAYER_SRC} theme={GALCODE_POSTER_THEME} />
       </>
     );
@@ -5643,6 +5773,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
+        <InAppBrowserNudge />
         <AnimatePresence>
           <motion.div
             key="homepage"
@@ -5660,6 +5791,7 @@ export default function App() {
   return (
     <>
       <LandscapeBlocker />
+      <InAppBrowserNudge />
       <AppFlow />
     </>
   );
