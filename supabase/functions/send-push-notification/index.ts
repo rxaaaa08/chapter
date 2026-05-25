@@ -3,9 +3,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // ── VAPID helpers ─────────────────────────────────────────────────────────────
 
-const VAPID_PUBLIC  = Deno.env.get('VAPID_PUBLIC_KEY')!;
-const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY')!;
-const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:krutesh08@gmail.com';
+// Trim leading/trailing whitespace — copy-paste from the Supabase dashboard
+// often introduces stray tabs or newlines that silently corrupt the keys.
+const VAPID_PUBLIC  = (Deno.env.get('VAPID_PUBLIC_KEY')  ?? '').trim();
+const VAPID_PRIVATE = (Deno.env.get('VAPID_PRIVATE_KEY') ?? '').trim();
+const VAPID_SUBJECT = (Deno.env.get('VAPID_SUBJECT') ?? 'mailto:krutesh08@gmail.com').trim();
 
 function b64urlToUint8(b64: string): Uint8Array {
   const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
