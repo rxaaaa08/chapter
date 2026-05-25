@@ -4993,9 +4993,11 @@ function InAppBrowserNudge() {
   const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
   const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isInApp = isInstagram || isFacebook;
+  const routePath = typeof window !== 'undefined' ? window.location.pathname : '';
+  const suppressAndroidLifestyleNudge = isAndroid && (routePath === '/lifestyle' || routePath === '/join');
 
   useEffect(() => {
-    if (!isInApp) return;
+    if (!isInApp || suppressAndroidLifestyleNudge) return;
     // iOS Safari / Instagram WebView ignores overflow:hidden on body.
     // The only reliable fix is position:fixed + capturing the scroll offset.
     const scrollY = window.scrollY;
@@ -5023,9 +5025,9 @@ function InAppBrowserNudge() {
       window.scrollTo(0, scrollY);
       window.removeEventListener('touchmove', preventTouch);
     };
-  }, [isInApp]);
+  }, [isInApp, suppressAndroidLifestyleNudge]);
 
-  if (!isInApp) return null;
+  if (!isInApp || suppressAndroidLifestyleNudge) return null;
 
   const openInBrowser = () => {
     // Append ?pwa_install=1 so Chrome auto-triggers the install prompt on load
@@ -6011,6 +6013,17 @@ export default function App() {
 
   const continueFromJoin = () => {
     if (typeof window === 'undefined') return;
+    const isInstagram = /Instagram/i.test(navigator.userAgent);
+    const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join')) {
+      const search = '?pwa_install=1';
+      const fallback = `https://${window.location.host}/plans${search}`;
+      window.location.href =
+        `intent://${window.location.host}/plans${search}` +
+        `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+      return;
+    }
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     window.history.pushState({}, '', '/plans');
     setRoutePath('/plans');
