@@ -633,6 +633,25 @@ export default function AdminPanel() {
       showToast('✅ Approved — status set to invited');
     }
 
+    // 3. Send push notification to the user if they have the PWA installed
+    if (app) {
+      const appSlugLower = String(app.event_slug ?? '').toLowerCase();
+      const trip = trips.find(t => String(t.slug ?? t.id ?? '').toLowerCase() === appSlugLower);
+      const eventName = trip?.title ?? app.event_slug ?? '';
+      const inviteSlug = trip?.invite_slug;
+      try {
+        await supabase.functions.invoke('send-push-notification', {
+          body: {
+            type: 'direct',
+            phone: String(app.phone).replace(/\D/g, '').slice(-10),
+            title: "You're invited! 🎉",
+            body: `Your spot on ${eventName} is confirmed. Open the app to see your invite.`,
+            url: inviteSlug ? `/invite/${inviteSlug}` : '/',
+          },
+        });
+      } catch { /* push is non-critical — WhatsApp is the primary channel */ }
+    }
+
     setApprovingId(null);
   };
 

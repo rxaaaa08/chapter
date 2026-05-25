@@ -400,6 +400,30 @@ const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submission
 
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
+// Module-level helper so ApplicationForm can subscribe without prop-drilling.
+// Only does anything when called inside a PWA (standalone mode) — the caller
+// should gate on isPwa so we never pop a browser permission prompt unexpectedly.
+async function subscribeToPushForPwa(phone: string) {
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU',
+    });
+    const j = sub.toJSON();
+    if (!j.keys) return;
+    await supabase.from('push_subscriptions').upsert(
+      { phone: phone.replace(/\D/g, '').slice(-10), endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
+      { onConflict: 'phone,endpoint' },
+    );
+  } catch (err) {
+    console.warn('[push] subscribe failed:', err);
+  }
+}
+
 function PayUCheckout({ paymentContext, onError }: {
   paymentContext: { name: string; phone: string; email?: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string; whatsappGroupUrl?: string };
   onError: () => void;
@@ -523,6 +547,13 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       return `${month} ${day}${suffix}`;
     })();
     const waText = `Hi, I'm ${form.name.trim()}. I have registered for ${event.title}${formattedDate ? ` on ${formattedDate}` : ''}.`;
+
+    // Subscribe to push notifications when submitting from the installed PWA so
+    // admin-approval notifications can reach this device without any extra step.
+    const isPwaCtx = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as any).standalone === true;
+    if (isPwaCtx) subscribeToPushForPwa(form.phone); // fire-and-forget
+
     window.open(`https://wa.me/919940111564?text=${encodeURIComponent(waText)}`, '_blank');
     onClose();
   };

@@ -126,39 +126,54 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    // Triggered by DB webhook: new message inserted in doubt_messages
-    const record = body.record ?? body;
-    if (!record || record.sender !== 'agent') {
-      return new Response('not an agent message', { status: 200 });
-    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Get the conversation to find the user's phone
-    const { data: conv } = await supabase
-      .from('doubt_conversations')
-      .select('phone, event_slug')
-      .eq('id', record.conversation_id)
-      .single();
+    let phone: string;
+    let notifPayload: { title: string; body: string; url: string };
 
-    if (!conv?.phone) return new Response('no phone', { status: 200 });
+    if (body.type === 'direct') {
+      // ── Direct call from admin panel (approval / custom notifications) ──
+      if (!body.phone) return new Response('no phone', { status: 200 });
+      phone = String(body.phone).replace(/\D/g, '').slice(-10);
+      notifPayload = {
+        title: body.title ?? 'chapter அ',
+        body: body.body ?? '',
+        url: body.url ?? '/',
+      };
+    } else {
+      // ── DB webhook: new agent message in doubt_messages ──
+      const record = body.record ?? body;
+      if (!record || record.sender !== 'agent') {
+        return new Response('not an agent message', { status: 200 });
+      }
+
+      // Get the conversation to find the user's phone
+      const { data: conv } = await supabase
+        .from('doubt_conversations')
+        .select('phone, event_slug')
+        .eq('id', record.conversation_id)
+        .single();
+
+      if (!conv?.phone) return new Response('no phone', { status: 200 });
+      phone = conv.phone;
+      notifPayload = {
+        title: 'chapter அ replied',
+        body: record.body.length > 80 ? record.body.slice(0, 80) + '…' : record.body,
+        url: '/',
+      };
+    }
 
     // Get all push subscriptions for this phone
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth')
-      .eq('phone', conv.phone);
+      .eq('phone', phone);
 
     if (!subs || subs.length === 0) return new Response('no subscriptions', { status: 200 });
-
-    const notifPayload = {
-      title: 'chapter அ replied',
-      body: record.body.length > 80 ? record.body.slice(0, 80) + '…' : record.body,
-      url: '/',
-    };
 
     const results = await Promise.allSettled(
       subs.map(sub => sendWebPush(sub, notifPayload))
