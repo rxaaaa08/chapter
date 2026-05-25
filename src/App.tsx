@@ -1544,7 +1544,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
   const [showPwaSheet, setShowPwaSheet] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [doubtPwaInstallState, setDoubtPwaInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
   const liveChatEndRef = useRef<HTMLDivElement>(null);
+  const doubtPwaInstallCompleteTimerRef = useRef<number | null>(null);
   const [askedFaqs, setAskedFaqs] = useState<number[]>([]);
   const [inviteAnnouncementIndex, setInviteAnnouncementIndex] = useState(0);
   const [showPlanDetailsSheet, setShowPlanDetailsSheet] = useState(false);
@@ -2078,6 +2080,36 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     window.addEventListener('beforeinstallprompt', handler as any);
     return () => window.removeEventListener('beforeinstallprompt', handler as any);
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      setDoubtPwaInstallState('installing');
+      if (doubtPwaInstallCompleteTimerRef.current) window.clearTimeout(doubtPwaInstallCompleteTimerRef.current);
+      doubtPwaInstallCompleteTimerRef.current = window.setTimeout(() => {
+        setDoubtPwaInstallState('installed');
+        doubtPwaInstallCompleteTimerRef.current = null;
+      }, 15000);
+    };
+    window.addEventListener('appinstalled', handler);
+    return () => {
+      window.removeEventListener('appinstalled', handler);
+      if (doubtPwaInstallCompleteTimerRef.current) window.clearTimeout(doubtPwaInstallCompleteTimerRef.current);
+    };
+  }, []);
+
+  const startDoubtPwaInstall = async () => {
+    if (!deferredInstallPrompt) return;
+    try {
+      await deferredInstallPrompt.prompt();
+      const { outcome } = await deferredInstallPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDoubtPwaInstallState('installing');
+        setDeferredInstallPrompt(null);
+      }
+    } catch {
+      setDoubtPwaInstallState('idle');
+    }
+  };
 
   const isPwa = window.matchMedia('(display-mode: standalone)').matches
     || (window.navigator as any).standalone === true;
@@ -3256,7 +3288,27 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
                             </div>
                             <div className="px-6 pb-8 space-y-3 mt-2">
-                              {deferredInstallPrompt ? (
+                              {doubtPwaInstallState === 'installed' ? (
+                                <div className="bg-[#F2F2F7] rounded-3xl p-4 flex items-center gap-3">
+                                  <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+                                    <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
+                                    <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
+                                  </div>
+                                  <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
+                                </div>
+                              ) : doubtPwaInstallState === 'installing' ? (
+                                <div className="bg-[#F2F2F7] rounded-3xl p-5 flex flex-col items-center gap-3">
+                                  <motion.div
+                                    className="w-9 h-9 rounded-full border-[3px] border-gray-300 border-t-black"
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
+                                  />
+                                  <p className="text-xs text-gray-500 font-medium">Waiting for install to complete…</p>
+                                </div>
+                              ) : deferredInstallPrompt ? (
                                 /* Android: native one-tap install */
                                 <>
                                   <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
@@ -3271,11 +3323,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                     </div>
                                   </div>
                                   <button
-                                    onClick={async () => {
-                                      deferredInstallPrompt.prompt();
-                                      const { outcome } = await deferredInstallPrompt.userChoice;
-                                      if (outcome === 'accepted') setDeferredInstallPrompt(null);
-                                    }}
+                                    onClick={startDoubtPwaInstall}
                                     className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
                                   >
                                     Install App
