@@ -195,6 +195,7 @@ export default function AdminPanel() {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [planDoubts, setPlanDoubts] = useState<any[]>([]);
+  const [doubtsLoadError, setDoubtsLoadError] = useState('');
   const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
@@ -495,8 +496,13 @@ export default function AdminPanel() {
       supabase.from('events').select('slug, invite_slug'),
       supabase.from('plan_doubts').select('*').order('created_at', { ascending: false }),
     ]);
-    console.log('[loadApplications] applications:', data?.length ?? 0, 'doubt_submissions:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message})` : '');
-    if (doubtsErr) showToast(`⚠️ Could not load doubts: ${doubtsErr.message}`);
+    console.log('[loadApplications] applications:', data?.length ?? 0, 'doubt_submissions:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message} | ${doubtsErr.details} | ${doubtsErr.hint})` : '');
+    if (doubtsErr) {
+      console.error('[loadApplications] doubt_submissions error:', doubtsErr);
+      setDoubtsLoadError(`${doubtsErr.message}${doubtsErr.hint ? ` — ${doubtsErr.hint}` : ''}`);
+    } else {
+      setDoubtsLoadError('');
+    }
     if (doubtsRows) setPlanDoubts(doubtsRows);
     if (error) {
       showToast(`❌ Failed to load applications: ${error.message}`);
@@ -2384,7 +2390,13 @@ export default function AdminPanel() {
               {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length === 0 && (
                 <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>No people match the current filters.</div>
               )}
-              {!applicationsLoading && peopleMode === 'doubts' && filteredDoubtSubmissions.length === 0 && (
+              {!applicationsLoading && peopleMode === 'doubts' && doubtsLoadError && (
+                <div style={{ ...s.card, background: '#fff5f5', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, padding: '12px 16px' }}>
+                  <strong>⚠️ Could not load doubts</strong><br />
+                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{doubtsLoadError}</span>
+                </div>
+              )}
+              {!applicationsLoading && peopleMode === 'doubts' && !doubtsLoadError && filteredDoubtSubmissions.length === 0 && (
                 <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>No doubt submissions match the current filters.</div>
               )}
 

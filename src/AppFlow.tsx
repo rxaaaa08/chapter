@@ -836,6 +836,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat' | 'submitted'>('form');
+  const [doubtSubmitError, setDoubtSubmitError] = useState('');
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
     () => localStorage.getItem('liveConversationId')
   );
@@ -1510,25 +1511,32 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const handleDoubtSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDoubtSubmitError('');
     const name = doubtFormData.name;
     const phone = doubtFormData.phone;
     const message = doubtFormData.message;
     const pickup = getSelectedPickupForVars();
     const selectedDate = getSelectedDateForVars();
-    try {
-      await supabase.from('doubt_submissions').insert({
-        name,
-        phone,
-        doubt: message,
-        event_title: selectedEvent?.title ?? '',
-        event_category: selectedEvent?.category ?? selectedCategory ?? '',
-        city: selectedCity ? formatCityLabel(selectedCity) : '',
-        selected_date: selectedDate || null,
-        reporting_date: selectedDate ? formatFullDate(selectedDate) : null,
-        reporting_time: pickup.reportingTime || null,
-        submitted_at: new Date().toISOString(),
-      });
-    } catch (_) {}
+    const payload = {
+      name,
+      phone,
+      doubt: message,
+      event_title: selectedEvent?.title ?? '',
+      event_category: selectedEvent?.category ?? selectedCategory ?? '',
+      city: selectedCity ? formatCityLabel(selectedCity) : '',
+      selected_date: selectedDate || null,
+      reporting_date: selectedDate ? formatFullDate(selectedDate) : null,
+      reporting_time: pickup.reportingTime || null,
+      submitted_at: new Date().toISOString(),
+    };
+    console.log('[handleDoubtSubmit] inserting payload:', payload);
+    const { error } = await supabase.from('doubt_submissions').insert(payload);
+    if (error) {
+      console.error('[handleDoubtSubmit] insert failed:', error.message, error.details, error.hint, error);
+      setDoubtSubmitError(`Failed to send: ${error.message}`);
+      return;
+    }
+    console.log('[handleDoubtSubmit] insert succeeded');
     setDoubtSheetView('submitted');
   };
 
@@ -3069,6 +3077,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </div>
                   </div>
 
+                  {doubtSubmitError && (
+                    <div className="mx-6 mb-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+                      <span className="text-red-500 text-[13px] font-medium leading-snug">⚠️ {doubtSubmitError}</span>
+                    </div>
+                  )}
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
