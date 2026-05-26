@@ -491,6 +491,22 @@ function ApplicationForm({
     if (!step2Valid || submitting) return;
     setSubmitting(true);
     setError('');
+
+    // Build the WhatsApp URL and open a blank window SYNCHRONOUSLY while still
+    // inside the user-gesture event — iOS Safari blocks window.open after any await.
+    const formatEventDate = (d?: string) => {
+      if (!d) return 'TBD';
+      const date = new Date(d + 'T00:00:00');
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const day = date.getDate();
+      const suffix = [11,12,13].includes(day) ? 'th' : day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
+      return `${days[date.getDay()]}, ${months[date.getMonth()]} ${day}${suffix}`;
+    };
+    const waMessage = encodeURIComponent(`Hi, I have applied for ${event.title} on ${formatEventDate(selectedDate)}`);
+    const waUrl = `https://wa.me/919940111564?text=${waMessage}`;
+    const waWindow = window.open('', '_blank');
+
     try {
       const chosenPoint = selectedPickupId
         ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
@@ -511,24 +527,18 @@ function ApplicationForm({
       });
 
       if (sbError) {
+        waWindow?.close();
         if (sbError.code === '23505') { setAlreadyApplied(true); }
         else { setError(`${sbError.code}: ${sbError.message}`); }
         return;
       }
       setSubmitted(true);
       onSubmitted();
-      const formatEventDate = (d?: string) => {
-        if (!d) return 'TBD';
-        const date = new Date(d + 'T00:00:00');
-        const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-        const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-        const day = date.getDate();
-        const suffix = [11,12,13].includes(day) ? 'th' : day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
-        return `${days[date.getDay()]}, ${months[date.getMonth()]} ${day}${suffix}`;
-      };
-      const waMessage = encodeURIComponent(`Hi, I have applied for ${event.title} on ${formatEventDate(selectedDate)}`);
-      window.open(`https://wa.me/919940111564?text=${waMessage}`, '_blank');
+      // Navigate the already-opened window to WhatsApp
+      if (waWindow) waWindow.location.href = waUrl;
+      else window.open(waUrl, '_blank'); // fallback if open was blocked
     } catch (err: any) {
+      waWindow?.close();
       setError('Something went wrong. Please try again.');
       console.error('handleSubmit error:', err);
     } finally {
