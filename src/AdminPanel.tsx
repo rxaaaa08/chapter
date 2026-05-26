@@ -196,6 +196,8 @@ export default function AdminPanel() {
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [planDoubts, setPlanDoubts] = useState<any[]>([]);
   const [doubtsLoadError, setDoubtsLoadError] = useState('');
+  const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
+  const [approvedDoubtIds, setApprovedDoubtIds] = useState<Set<string>>(new Set());
   const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
@@ -662,6 +664,78 @@ export default function AdminPanel() {
     }
 
     setApprovingId(null);
+  };
+
+  const approveDoubtSubmission = async (submission: any) => {
+    const id = submission.id ?? `${submission.phone}-${submission.submitted_at}`;
+    setApprovingDoubtId(id);
+
+    // Resolve event_slug from the stored event_title
+    const rawTitle = (submission.event_title || '').trim();
+    const matchedTrip = trips.find(t =>
+      t.title === rawTitle || t.slug === rawTitle || t.invite_slug === rawTitle
+    );
+    const eventSlug = matchedTrip?.slug ?? rawTitle;
+
+    if (!eventSlug) {
+      showToast('⚠️ Could not determine event slug for this submission.');
+      setApprovingDoubtId(null);
+      return;
+    }
+
+    const phone = (submission.phone ?? '').replace(/\D/g, '').slice(-10);
+
+    // Check for existing application to avoid duplicates
+    const { data: existing } = await supabase
+      .from('applications')
+      .select('id, status')
+      .eq('phone', phone)
+      .eq('event_slug', eventSlug)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.status === 'invited' || existing.status === 'advance_paid' || existing.status === 'fully_paid') {
+        showToast(`ℹ️ Already ${existing.status.replace('_', ' ')} — no change needed.`);
+        setApprovedDoubtIds(prev => new Set(prev).add(id));
+        setApprovingDoubtId(null);
+        return;
+      }
+      // Update existing application to invited
+      const { error } = await supabase
+        .from('applications')
+        .update({ status: 'invited' })
+        .eq('id', existing.id);
+      if (error) {
+        showToast(`❌ Could not update application: ${error.message}`);
+      } else {
+        showToast(`✅ ${submission.name || 'Person'} updated to invited!`);
+        setApprovedDoubtIds(prev => new Set(prev).add(id));
+      }
+      setApprovingDoubtId(null);
+      return;
+    }
+
+    // Create a new application row
+    const { error } = await supabase.from('applications').insert({
+      event_slug: eventSlug,
+      name: (submission.name ?? '').trim() || 'Unknown',
+      phone,
+      gender: '',
+      why_join: submission.doubt || submission.message || 'Via doubt submission',
+      selected_date: submission.selected_date ?? null,
+      selected_city: submission.city ?? null,
+      status: 'invited',
+      call_status: 'called',
+      call_notes: `Approved via doubt: "${(submission.doubt || submission.message || '').slice(0, 80)}"`,
+    });
+
+    if (error) {
+      showToast(`❌ Could not create application: ${error.message}`);
+    } else {
+      showToast(`✅ ${submission.name || 'Person'} approved & invited!`);
+      setApprovedDoubtIds(prev => new Set(prev).add(id));
+    }
+    setApprovingDoubtId(null);
   };
 
   const saveCallInfo = async (id: string) => {
@@ -2456,6 +2530,32 @@ export default function AdminPanel() {
                             ) : (
                               <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
                             )}
+                            {(() => {
+                              const sid = submission.id ?? `${submission.phone}-${submission.submitted_at}`;
+                              const alreadyApproved = approvedDoubtIds.has(sid);
+                              const isApproving = approvingDoubtId === sid;
+                              return (
+                                <button
+                                  onClick={() => approveDoubtSubmission(submission)}
+                                  disabled={isApproving || alreadyApproved}
+                                  title="Approve & create invite"
+                                  style={{
+                                    padding: '5px 12px',
+                                    fontSize: 12,
+                                    borderRadius: 8,
+                                    border: '1px solid #d1d5db',
+                                    background: alreadyApproved ? '#f0fdf4' : '#fafafa',
+                                    color: alreadyApproved ? '#16a34a' : '#6b7280',
+                                    cursor: isApproving || alreadyApproved ? 'default' : 'pointer',
+                                    fontWeight: 500,
+                                    opacity: isApproving ? 0.6 : 1,
+                                    transition: 'all 0.15s',
+                                  }}
+                                >
+                                  {isApproving ? '…' : alreadyApproved ? '✓ Approved' : 'Approve'}
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
