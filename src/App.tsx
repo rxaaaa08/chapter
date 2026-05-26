@@ -4785,349 +4785,6 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
 }
 
 // ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
-// ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
-// Shown when user arrives in Chrome via the IG/FB Android intent URL (?pwa_install=1).
-// visible = true as soon as the param is detected — never gated on beforeinstallprompt.
-// prompt = the BeforeInstallPromptEvent once Chrome fires it; null until then.
-//
-// States:
-//   prompt ready           → Install button (one tap)
-//   prompt not ready yet   → loading pulse (Chrome is still evaluating, give it 3s)
-//   3s elapsed, no prompt  → manual steps fallback (⋮ menu)
-function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolean; prompt: any; onDismiss: () => void }) {
-  // Wait up to 3s for Chrome to fire beforeinstallprompt before showing manual steps.
-  // Chrome evaluates PWA criteria asynchronously — manifest fetch, SW check, etc. — and
-  // fires the event anywhere from ~100ms to 2–3s after page load.
-  const [showFallback, setShowFallback] = useState(false);
-  const [installed, setInstalled] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const installCompleteTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!visible) {
-      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
-      installCompleteTimerRef.current = null;
-      setShowFallback(false);
-      setInstalled(false);
-      setInstalling(false);
-      return;
-    }
-    const t = setTimeout(() => setShowFallback(true), 3000);
-    return () => clearTimeout(t);
-  }, [visible]);
-
-  useEffect(() => {
-    const handler = () => {
-      setInstalling(true);
-      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
-      installCompleteTimerRef.current = window.setTimeout(() => {
-        setInstalling(false);
-        setInstalled(true);
-        installCompleteTimerRef.current = null;
-      }, 15000);
-    };
-    window.addEventListener('appinstalled', handler);
-    return () => {
-      window.removeEventListener('appinstalled', handler);
-      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
-    };
-  }, []);
-
-  // If prompt arrives, cancel the fallback timer (already handled by clearing timeout above,
-  // but also reset showFallback so it doesn't flash manual steps then switch to button)
-  useEffect(() => {
-    if (prompt) setShowFallback(false);
-  }, [prompt]);
-
-  if (!visible) return null;
-
-  const handleInstall = async () => {
-    try {
-      await prompt.prompt();
-      const choice = await prompt.userChoice;
-      if ((window as any).__deferredInstallPrompt === prompt) {
-        delete (window as any).__deferredInstallPrompt;
-      }
-      if (choice?.outcome === 'accepted') {
-        setInstalling(true);
-        return;
-      }
-    } catch { /* ignore */ }
-    setInstalling(false);
-    onDismiss();
-  };
-
-  return (
-    <>
-      {/* Backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        className="fixed inset-0 bg-black/60 z-[9998] backdrop-blur-sm"
-      />
-      {/* Bottom sheet */}
-      <motion.div
-        initial={{ y: 80, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ type: 'spring', damping: 24, stiffness: 260 }}
-        className="fixed bottom-0 left-0 right-0 z-[9999] flex justify-center px-4 pb-6"
-      >
-        <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-6 pb-8 shadow-2xl">
-          {/* Drag handle */}
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-          <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
-            <img src="/icon-192.png" alt="chapter அ app icon" className="w-full h-full object-cover" />
-          </div>
-          <h2 className="text-center font-black text-xl text-gray-900 mb-2">
-            {installed ? 'chapter அ is installed' : installing ? 'Finishing install' : 'Install chapter அ'}
-          </h2>
-          <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
-            {installed
-              ? 'Open it from your home screen or app drawer whenever you want instant access.'
-              : installing
-                ? 'Chrome is adding the app to your phone. This can take a few seconds.'
-              : 'Add to your home screen for instant access — no browser needed.'}
-          </p>
-
-          <AnimatePresence mode="wait">
-            {installed ? (
-              <motion.div key="installed"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
-                    <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
-                    <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
-                  </div>
-                  <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
-                </div>
-              </motion.div>
-            ) : installing ? (
-              <motion.div key="installing"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex flex-col items-center gap-3 py-3"
-              >
-                <motion.div
-                  className="w-9 h-9 rounded-full border-[3px] border-gray-200 border-t-[#FFD700]"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
-                />
-                <p className="text-xs text-gray-400">Waiting for install to complete…</p>
-              </motion.div>
-            ) : prompt ? (
-              /* ── Native install prompt ready → one-tap button ── */
-              <motion.div key="install-btn"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <button
-                  onClick={handleInstall}
-                  className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
-                >
-                  <motion.span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
-                    animate={{ x: ['0%', '240%'] }}
-                    transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
-                  />
-                  <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                    Install App
-                    <Download size={18} strokeWidth={2.8} />
-                  </span>
-                </button>
-              </motion.div>
-            ) : !showFallback ? (
-              /* ── Waiting for Chrome to evaluate PWA criteria (~1–3s) ── */
-              <motion.div key="loading"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex flex-col items-center gap-3 py-3"
-              >
-                <div className="flex gap-1.5">
-                  {[0, 1, 2].map(i => (
-                    <motion.div key={i}
-                      className="w-2 h-2 rounded-full bg-[#FFD700]"
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                    />
-                  ))}
-                </div>
-                <p className="text-xs text-gray-400">Setting up install…</p>
-              </motion.div>
-            ) : (
-              /* ── Fallback: Chrome didn't fire beforeinstallprompt → manual steps ── */
-              <motion.div key="manual"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-              >
-                <div className="space-y-2 mb-1">
-                  {[
-                    { step: '1', label: 'Tap the', bold: '⋮ menu', sub: 'Top right of Chrome' },
-                    { step: '2', label: 'Tap', bold: '"Add to Home Screen"', sub: '' },
-                    { step: '3', label: 'Tap', bold: '"Add"', sub: 'In the confirmation dialog' },
-                  ].map(({ step, label, bold, sub }) => (
-                    <div key={step} className="bg-gray-50 rounded-2xl p-3.5 flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">
-                        {step}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-sm text-gray-800">
-                          {label} <span className="font-black">{bold}</span>
-                        </p>
-                        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {!installed && !installing && (
-            <button
-              onClick={onDismiss}
-              className="w-full py-3 text-gray-400 text-sm mt-2"
-            >
-              Maybe later
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </>
-  );
-}
-
-function InAppBrowserNudge() {
-  const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
-  const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
-  const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-  const isInApp = isInstagram || isFacebook;
-  const routePath = typeof window !== 'undefined' ? window.location.pathname : '';
-  const suppressAndroidPosterNudge = isAndroid && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode');
-
-  useEffect(() => {
-    if (!isInApp || suppressAndroidPosterNudge) return;
-    // iOS Safari / Instagram WebView ignores overflow:hidden on body.
-    // The only reliable fix is position:fixed + capturing the scroll offset.
-    const scrollY = window.scrollY;
-    const prevPosition    = document.body.style.position;
-    const prevTop         = document.body.style.top;
-    const prevWidth       = document.body.style.width;
-    const prevOverflow    = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow  = 'hidden';
-    document.body.style.position  = 'fixed';
-    document.body.style.top       = `-${scrollY}px`;
-    document.body.style.width     = '100%';
-
-    const preventTouch = (e: TouchEvent) => e.preventDefault();
-    window.addEventListener('touchmove', preventTouch, { passive: false });
-
-    return () => {
-      document.documentElement.style.overflow = prevHtmlOverflow;
-      document.body.style.overflow  = prevOverflow;
-      document.body.style.position  = prevPosition;
-      document.body.style.top       = prevTop;
-      document.body.style.width     = prevWidth;
-      window.scrollTo(0, scrollY);
-      window.removeEventListener('touchmove', preventTouch);
-    };
-  }, [isInApp, suppressAndroidPosterNudge]);
-
-  if (!isInApp || suppressAndroidPosterNudge) return null;
-
-  const openInBrowser = () => {
-    // Append ?pwa_install=1 so Chrome auto-triggers the install prompt on load
-    const sep = window.location.search ? '&' : '?';
-    const search = `${window.location.search}${sep}pwa_install=1`;
-    const fallback = `https://${window.location.host}${window.location.pathname}${search}`;
-    window.location.href =
-      `intent://${window.location.host}${window.location.pathname}${search}` +
-      `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
-  };
-
-  return (
-    <>
-      {/* Non-dismissible backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
-        onClick={e => { e.preventDefault(); e.stopPropagation(); }}
-      />
-
-      {/* iOS: bouncing arrow pointing to the ··· button top-right */}
-      {!isAndroid && (
-        <motion.div
-          className="fixed z-[10001] pointer-events-none flex flex-col items-center"
-          style={{ top: 52, right: 18 }}
-          animate={{ y: [0, -7, 0] }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          <svg width="24" height="32" viewBox="0 0 24 32" fill="none">
-            <path d="M12 2 L12 28M12 2 L4 12M12 2 L20 12" stroke="#FFD700" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <span className="text-white text-xs font-bold mt-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.7)' }}>tap here</span>
-        </motion.div>
-      )}
-
-      {/* Centered card */}
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center px-6 pointer-events-none">
-        <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-7 pb-8 shadow-2xl pointer-events-auto">
-          {isAndroid ? (
-            /* Android: one-tap install app button */
-            <>
-              <h2 className="text-center font-black text-lg text-gray-900 mb-2">Install our App</h2>
-              <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
-                Add chapter அ to your home screen for the best experience
-              </p>
-              <button
-                onClick={openInBrowser}
-                className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
-              >
-                <motion.span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
-                  animate={{ x: ['0%', '240%'] }}
-                  transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
-                />
-                <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                  Install App
-                  <Download size={18} strokeWidth={2.8} />
-                </span>
-              </button>
-            </>
-          ) : (
-            /* iOS: manual ··· steps */
-            <>
-              <h2 className="text-center font-black text-lg text-gray-900 mb-1">Wait a minute!</h2>
-              <p className="text-center text-sm text-gray-500 leading-relaxed mb-6">
-                Instagram's browser doesn't fully support our website, follow steps to continue.
-              </p>
-              <div className="bg-gray-50 rounded-2xl p-4 mb-3 flex items-start gap-3">
-                <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black mt-0.5">1</div>
-                <div>
-                  <p className="font-bold text-sm text-gray-800">Tap the <span className="font-black">···</span> menu</p>
-                  <p className="text-xs text-gray-500 mt-0.5">See top right of your screen</p>
-                </div>
-              </div>
-              <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-                <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">2</div>
-                <div>
-                  <p className="font-bold text-sm text-gray-800">Tap <span className="italic">"Open in external browser"</span></p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function LandscapeBlocker() {
   const [isLandscape, setIsLandscape] = useState(false);
 
@@ -5157,78 +4814,6 @@ function LandscapeBlocker() {
 
 
 // ─── PAYU RETURN SCREEN ────────────────────────────────────────────────────────
-function PwaInstallCard() {
-  const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
-  const [done, setDone] = React.useState(false);
-
-  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
-
-  React.useEffect(() => {
-    if (isStandalone) return;
-    const handler = (e: any) => {
-      e.preventDefault();
-      (window as any).__deferredInstallPrompt = e;
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  if (isStandalone || done) return null;
-
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    setDone(true);
-    setDeferredPrompt(null);
-  };
-
-  if (isIos) {
-    return (
-      <div className="bg-gray-950 rounded-3xl px-5 py-5 flex flex-col gap-4">
-        <div>
-          <p className="text-[13px] font-black text-white leading-tight">Save to Home Screen</p>
-          <p className="text-[12px] text-white/50 mt-1 leading-relaxed">Check your booking status &amp; pay your balance anytime — no link needed.</p>
-        </div>
-        <div className="flex flex-col gap-2.5">
-          {[
-            'Tap the Share button at the bottom of Safari',
-            'Scroll down and tap Add to Home Screen',
-            'Tap Add — done!',
-          ].map((step, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <span className="w-5 h-5 rounded-full bg-white/15 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">{i + 1}</span>
-              <span className="text-[12px] text-white/70 leading-snug">{step}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (!deferredPrompt) return null;
-
-  return (
-    <button
-      onClick={handleInstall}
-      className="w-full bg-gray-950 rounded-3xl px-5 py-5 flex items-center gap-4 active:opacity-80 transition-all text-left"
-    >
-      <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center flex-shrink-0">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 3v13"/><path d="M8 12l4 4 4-4"/><path d="M3 19h18"/>
-        </svg>
-      </div>
-      <div>
-        <p className="text-[13px] font-black text-white leading-tight">Add to Home Screen</p>
-        <p className="text-[11px] text-white/50 mt-0.5">Check booking &amp; pay balance anytime</p>
-      </div>
-      <svg className="ml-auto flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeOpacity="0.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-    </button>
-  );
-}
-
 function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'failed'; txnid: string; onDone: (nextPath?: string) => void }) {
   const [payment, setPayment] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
@@ -5470,9 +5055,6 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
             </a>
           </div>
         )}
-
-        {/* PWA install prompt */}
-        <PwaInstallCard />
 
         {/* Invoice card */}
         <div id="payu-receipt-card" className="bg-white rounded-3xl overflow-hidden border border-gray-200 shadow-sm">
@@ -5831,66 +5413,6 @@ function LiveChatScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-function PwaHomeScreen({ onViewPlans, onExplorePlans }: { onViewPlans: () => void; onExplorePlans: () => void }) {
-  return (
-    <div className="min-h-[100dvh] bg-[#F4F4F6] font-sans text-gray-950 px-5 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-12 h-12 rounded-2xl bg-black overflow-hidden shadow-sm shrink-0">
-            <img src="/icon-192.png" alt="chapter அ" className="w-full h-full object-cover" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[12px] text-gray-400 font-bold uppercase tracking-[0.16em]">chapter அ</p>
-            <h1 className="text-[24px] font-black tracking-tight leading-none mt-1">Home</h1>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-8">
-        <p className="text-[13px] font-bold text-gray-400 uppercase tracking-[0.16em] px-1 mb-3">Quick actions</p>
-        <div className="grid gap-3">
-          <button
-            type="button"
-            onClick={onViewPlans}
-            className="w-full bg-white rounded-2xl px-4 py-4 flex items-center gap-4 text-left shadow-sm active:scale-[0.99] transition-transform"
-          >
-            <span className="w-12 h-12 rounded-2xl bg-black text-white flex items-center justify-center shrink-0">
-              <Ticket size={22} strokeWidth={2.4} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[17px] font-black leading-tight">View my plans</span>
-              <span className="block text-[13px] text-gray-400 mt-1 leading-snug">Check bookings, invites, and payment updates.</span>
-            </span>
-            <ChevronRight size={20} strokeWidth={2.6} className="text-gray-300 shrink-0" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onExplorePlans}
-            className="w-full bg-white rounded-2xl px-4 py-4 flex items-center gap-4 text-left shadow-sm active:scale-[0.99] transition-transform"
-          >
-            <span className="w-12 h-12 rounded-2xl bg-[#FFD700] text-black flex items-center justify-center shrink-0">
-              <MapPin size={22} strokeWidth={2.4} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[17px] font-black leading-tight">Explore plans</span>
-              <span className="block text-[13px] text-gray-400 mt-1 leading-snug">Browse upcoming trips, activities, and events.</span>
-            </span>
-            <ChevronRight size={20} strokeWidth={2.6} className="text-gray-300 shrink-0" />
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-auto pt-8">
-        <div className="bg-white rounded-2xl px-4 py-4 flex items-center gap-3">
-          <MessageCircle size={20} strokeWidth={2.4} className="text-gray-400 shrink-0" />
-          <p className="text-[13px] text-gray-500 leading-snug">Replies and booking updates will open here when you have an active chat.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
   // ── Live chat intercept: if user has an open conversation, show it immediately
@@ -5926,67 +5448,13 @@ export default function App() {
   });
   const isPayUReturn = !!payuReturnStatus;
   const isMyPlansPage = routePath === '/myplans';
-  const isPwaHomePage = isStandaloneApp && (routePath === '/' || routePath === '/aboutus') && !hasPreviewParam && !isPayUReturn;
   // /plans and /myplans both suppress the homepage (myplans redirects to /invite, plans renders AppFlow)
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
   const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
 
-  // pwaInstallVisible: true as soon as ?pwa_install=1 is detected — overlay shows immediately.
-  // pwaInstallPrompt: the BeforeInstallPromptEvent if Chrome provides it; null = show manual steps.
-  const [pwaInstallVisible, setPwaInstallVisible] = useState(false);
-  const [pwaInstallPrompt, setPwaInstallPrompt] = useState<any>(null);
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isAdmin) trackEvent('page_view');
-  }, []);
-
-  // Handle ?pwa_install=1 param set by the IG/FB Android intent URL.
-  // Show the overlay immediately (don't wait for beforeinstallprompt — it may not fire right away
-  // or at all). If Chrome's deferred prompt is available, the overlay shows a one-tap Install
-  // button; otherwise it shows manual Chrome steps as a fallback.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has('pwa_install')) return;
-
-    // Clean the param from the URL immediately
-    params.delete('pwa_install');
-    const newSearch = params.toString();
-    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
-
-    // Show the overlay right away — content adapts based on prompt availability
-    setPwaInstallVisible(true);
-
-    // Check if beforeinstallprompt already fired (captured early in index.html)
-    const useDeferredPrompt = (prompt: any) => {
-      if (!prompt) return false;
-      setPwaInstallPrompt(prompt);
-      return true;
-    };
-    const already = (window as any).__deferredInstallPrompt;
-    if (useDeferredPrompt(already)) {
-      return;
-    }
-    // Otherwise wait for it — overlay is already showing manual steps in the meantime
-    const capture = (e: any) => {
-      e.preventDefault();
-      e.stopImmediatePropagation?.();
-      (window as any).__deferredInstallPrompt = e;
-      setPwaInstallPrompt(e);
-      window.removeEventListener('beforeinstallprompt', capture as any);
-    };
-    window.addEventListener('beforeinstallprompt', capture as any);
-    const pollStartedAt = Date.now();
-    const poll = window.setInterval(() => {
-      if (useDeferredPrompt((window as any).__deferredInstallPrompt) || Date.now() - pollStartedAt > 3000) {
-        window.clearInterval(poll);
-      }
-    }, 250);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', capture as any);
-      window.clearInterval(poll);
-    };
   }, []);
 
   useEffect(() => {
@@ -6041,42 +5509,16 @@ export default function App() {
 
   const continueFromJoin = () => {
     if (typeof window === 'undefined') return;
-    // REPOSITIONED: PWA upsell now lives inside post-submit sheets, not on poster CTAs.
-    // const isInstagram = /Instagram/i.test(navigator.userAgent);
-    // const isFacebook = /FBAN|FBAV/i.test(navigator.userAgent);
-    // const isAndroid = /Android/i.test(navigator.userAgent);
-    // if (isAndroid && (isInstagram || isFacebook) && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode')) {
-    //   const targetPath = window.location.pathname;
-    //   const search = '?pwa_install=1';
-    //   const fallback = `https://${window.location.host}${targetPath}${search}`;
-    //   window.location.href =
-    //     `intent://${window.location.host}${targetPath}${search}` +
-    //     `#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
-    //   return;
-    // }
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     window.history.pushState({}, '', '/plans');
     setRoutePath('/plans');
     setRouteSearch('');
   };
-  const isAndroidMetaPosterPage = typeof navigator !== 'undefined'
-    && /Android/i.test(navigator.userAgent)
-    && (/Instagram/i.test(navigator.userAgent) || /FBAN|FBAV/i.test(navigator.userAgent))
-    && (routePath === '/lifestyle' || routePath === '/join' || routePath === '/galcode');
-
-  const openPwaPlansHome = (path: '/invite' | '/plans') => {
-    if (typeof window === 'undefined') return;
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    window.history.pushState({}, '', path);
-    setRoutePath(path);
-    setRouteSearch('');
-    setShowHomepage(false);
-  };
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const isLetterPage = (isLifestylePage || isGalcodePage) && !hasPreviewParam;
-    if (isAdmin || showHomepage || isPwaHomePage || isLetterPage || isSharedInvitePage || isInvitePage) {
+    if (isAdmin || showHomepage || isLetterPage || isSharedInvitePage || isInvitePage) {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
       return;
@@ -6088,7 +5530,7 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isPwaHomePage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
+  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
 
   if (isPayUReturn) return (
     <PayUReturnScreen
@@ -6129,8 +5571,6 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
-        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
     );
@@ -6140,8 +5580,6 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
-        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <InviteFlow slug={inviteSlug} />
       </>
     );
@@ -6151,12 +5589,8 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
-        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage
           onContinue={continueFromJoin}
-          ctaLabel={isAndroidMetaPosterPage ? 'Install App' : undefined}
-          ctaIcon={isAndroidMetaPosterPage ? 'download' : undefined}
         />
       </>
     );
@@ -6166,26 +5600,10 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
-        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage
           onContinue={continueFromJoin}
-          ctaLabel={isAndroidMetaPosterPage ? 'Install App' : undefined}
-          ctaIcon={isAndroidMetaPosterPage ? 'download' : undefined}
           layers={GALCODE_POSTER_LAYER_SRC}
           theme={GALCODE_POSTER_THEME}
-        />
-      </>
-    );
-  }
-
-  if (isPwaHomePage) {
-    return (
-      <>
-        <LandscapeBlocker />
-        <PwaHomeScreen
-          onViewPlans={() => openPwaPlansHome('/invite')}
-          onExplorePlans={() => openPwaPlansHome('/plans')}
         />
       </>
     );
@@ -6195,8 +5613,6 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
-        {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
-        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <AnimatePresence>
           <motion.div
             key="homepage"
@@ -6214,8 +5630,6 @@ export default function App() {
   return (
     <>
       <LandscapeBlocker />
-      {/* REPOSITIONED: nudge no longer shown — PWA introduced post-submit only */}
-      <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
       <AppFlow />
     </>
   );
