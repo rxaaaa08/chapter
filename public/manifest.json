@@ -2,10 +2,16 @@
   "name": "chapter அ",
   "short_name": "chapter அ",
   "description": "Curated experiences for people who want to step out and connect.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#000000",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["travel", "lifestyle", "social"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -17,7 +23,29 @@
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Browse trips",
+      "short_name": "Trips",
+      "description": "Discover upcoming chapter அ experiences",
+      "url": "/plans",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My invites",
+      "short_name": "Invites",
+      "description": "View your active trip invitations",
+      "url": "/invite",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
