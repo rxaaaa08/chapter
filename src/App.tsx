@@ -4784,6 +4784,210 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
   );
 }
 
+// ─── PWA INSTALL OVERLAY ──────────────────────────────────────────────────────
+// Triggered by ?pwa_install=1 param (set in WhatsApp welcome message link).
+// Users arrive via WhatsApp → native Chrome (Android) or Safari (iOS).
+function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolean; prompt: any; onDismiss: () => void }) {
+  const isIos = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const [showFallback, setShowFallback] = useState(false);
+  const [installed, setInstalled] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const installCompleteTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!visible) {
+      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
+      installCompleteTimerRef.current = null;
+      setShowFallback(false);
+      setInstalled(false);
+      setInstalling(false);
+      return;
+    }
+    // iOS Safari never fires beforeinstallprompt — show steps immediately
+    const t = setTimeout(() => setShowFallback(true), isIos ? 0 : 3000);
+    return () => clearTimeout(t);
+  }, [visible, isIos]);
+
+  useEffect(() => {
+    const handler = () => {
+      setInstalling(true);
+      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
+      installCompleteTimerRef.current = window.setTimeout(() => {
+        setInstalling(false);
+        setInstalled(true);
+        installCompleteTimerRef.current = null;
+      }, 15000);
+    };
+    window.addEventListener('appinstalled', handler);
+    return () => {
+      window.removeEventListener('appinstalled', handler);
+      if (installCompleteTimerRef.current) window.clearTimeout(installCompleteTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (prompt) setShowFallback(false);
+  }, [prompt]);
+
+  if (!visible) return null;
+
+  const handleInstall = async () => {
+    try {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      if ((window as any).__deferredInstallPrompt === prompt) {
+        delete (window as any).__deferredInstallPrompt;
+      }
+      if (choice?.outcome === 'accepted') {
+        setInstalling(true);
+        return;
+      }
+    } catch { /* ignore */ }
+    setInstalling(false);
+    onDismiss();
+  };
+
+  const iosSteps = [
+    { step: '1', label: 'Tap the', bold: 'Share button', sub: 'Bottom of Safari' },
+    { step: '2', label: 'Tap', bold: '"Add to Home Screen"', sub: '' },
+    { step: '3', label: 'Tap', bold: '"Add"', sub: 'Top right corner' },
+  ];
+
+  const androidSteps = [
+    { step: '1', label: 'Tap the', bold: '⋮ menu', sub: 'Top right of Chrome' },
+    { step: '2', label: 'Tap', bold: '"Add to Home Screen"', sub: '' },
+    { step: '3', label: 'Tap', bold: '"Add"', sub: 'In the confirmation dialog' },
+  ];
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-black/60 z-[9998] backdrop-blur-sm"
+      />
+      <motion.div
+        initial={{ y: 80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: 'spring', damping: 24, stiffness: 260 }}
+        className="fixed bottom-0 left-0 right-0 z-[9999] flex justify-center px-4 pb-6"
+      >
+        <div className="w-full max-w-sm bg-white rounded-3xl px-6 pt-6 pb-8 shadow-2xl">
+          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+          <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden">
+            <img src="/icon-192.png" alt="chapter அ app icon" className="w-full h-full object-cover" />
+          </div>
+          <h2 className="text-center font-black text-xl text-gray-900 mb-2">
+            {installed ? 'chapter அ is installed' : installing ? 'Finishing install' : 'Install chapter அ'}
+          </h2>
+          <p className="text-center text-sm text-gray-500 leading-relaxed mb-5">
+            {installed
+              ? 'Open it from your home screen whenever you want instant access.'
+              : installing
+                ? 'Adding the app to your phone. This takes a few seconds.'
+              : 'Add to your home screen for instant access — no browser needed.'}
+          </p>
+
+          <AnimatePresence mode="wait">
+            {installed ? (
+              <motion.div key="installed"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+                    <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
+                    <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
+                  </div>
+                  <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
+                </div>
+              </motion.div>
+            ) : installing ? (
+              <motion.div key="installing"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex flex-col items-center gap-3 py-3"
+              >
+                <motion.div
+                  className="w-9 h-9 rounded-full border-[3px] border-gray-200 border-t-[#FFD700]"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
+                />
+                <p className="text-xs text-gray-400">Waiting for install to complete…</p>
+              </motion.div>
+            ) : prompt ? (
+              <motion.div key="install-btn"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <button
+                  onClick={handleInstall}
+                  className="relative w-full py-4 rounded-2xl bg-[#FFD700] text-black font-bold text-base active:opacity-80 transition-opacity overflow-hidden"
+                >
+                  <motion.span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+                    animate={{ x: ['0%', '240%'] }}
+                    transition={{ duration: 0.8, ease: 'easeInOut', repeat: Infinity, repeatDelay: 2.4 }}
+                  />
+                  <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                    Install App
+                    <Download size={18} strokeWidth={2.8} />
+                  </span>
+                </button>
+              </motion.div>
+            ) : showFallback ? (
+              <motion.div key="manual"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="space-y-2 mb-1">
+                  {(isIos ? iosSteps : androidSteps).map(({ step, label, bold, sub }) => (
+                    <div key={step} className="bg-gray-50 rounded-2xl p-3.5 flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-[#FFD700] flex-shrink-0 flex items-center justify-center font-black text-sm text-black">
+                        {step}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm text-gray-800">
+                          {label} <span className="font-black">{bold}</span>
+                        </p>
+                        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="loading"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex flex-col items-center gap-3 py-3"
+              >
+                <div className="flex gap-1.5">
+                  {[0, 1, 2].map(i => (
+                    <motion.div key={i}
+                      className="w-2 h-2 rounded-full bg-[#FFD700]"
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400">Setting up install…</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!installed && !installing && (
+            <button onClick={onDismiss} className="w-full py-3 text-gray-400 text-sm mt-2">
+              Maybe later
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
 // ─── LANDSCAPE BLOCKER ────────────────────────────────────────────────────────
 function LandscapeBlocker() {
   const [isLandscape, setIsLandscape] = useState(false);
@@ -5452,6 +5656,44 @@ export default function App() {
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
   const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
 
+  // PWA install overlay — triggered by ?pwa_install=1 in WhatsApp welcome message link
+  const [pwaInstallVisible, setPwaInstallVisible] = useState(false);
+  const [pwaInstallPrompt, setPwaInstallPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('pwa_install')) return;
+    params.delete('pwa_install');
+    const newSearch = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+    setPwaInstallVisible(true);
+    const useDeferredPrompt = (prompt: any) => {
+      if (!prompt) return false;
+      setPwaInstallPrompt(prompt);
+      return true;
+    };
+    if (useDeferredPrompt((window as any).__deferredInstallPrompt)) return;
+    const capture = (e: any) => {
+      e.preventDefault();
+      e.stopImmediatePropagation?.();
+      (window as any).__deferredInstallPrompt = e;
+      setPwaInstallPrompt(e);
+      window.removeEventListener('beforeinstallprompt', capture as any);
+    };
+    window.addEventListener('beforeinstallprompt', capture as any);
+    const pollStartedAt = Date.now();
+    const poll = window.setInterval(() => {
+      if (useDeferredPrompt((window as any).__deferredInstallPrompt) || Date.now() - pollStartedAt > 3000) {
+        window.clearInterval(poll);
+      }
+    }, 250);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', capture as any);
+      window.clearInterval(poll);
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isAdmin) trackEvent('page_view');
@@ -5589,6 +5831,7 @@ export default function App() {
     return (
       <>
         <LandscapeBlocker />
+        <PwaAutoInstallOverlay visible={pwaInstallVisible} prompt={pwaInstallPrompt} onDismiss={() => setPwaInstallVisible(false)} />
         <JoinLetterPage
           onContinue={continueFromJoin}
         />
