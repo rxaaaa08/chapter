@@ -489,10 +489,11 @@ export default function AdminPanel() {
 
   const loadApplications = async () => {
     setApplicationsLoading(true);
-    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }] = await Promise.all([
+    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }] = await Promise.all([
       supabase.from('applications').select('*').order('created_at', { ascending: false }),
       supabase.from('doubt_submissions').select('*').order('created_at', { ascending: false }),
       supabase.from('events').select('slug, invite_slug'),
+      supabase.from('plan_doubts').select('*').order('created_at', { ascending: false }),
     ]);
     console.log('[loadApplications] applications:', data?.length ?? 0, 'doubt_submissions:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message})` : '');
     if (doubtsErr) showToast(`⚠️ Could not load doubts: ${doubtsErr.message}`);
@@ -511,9 +512,11 @@ export default function AdminPanel() {
       });
 
       // Index doubts by (phone, event_slug) so each application can carry its latest doubts.
-      // Older invite-chat rows may have stored events.invite_slug; applications use events.slug.
+      // plan_doubts (from invite "Other Topic" form) have phone + event_slug + message + status.
+      // doubt_submissions (from booking "Other topic" form) have no event_slug, so they don't
+      // attach here — they show in the standalone Doubts tab instead.
       const doubtsByKey = new Map<string, any[]>();
-      (doubtsRows ?? []).forEach((d: any) => {
+      (planDoubtsRows ?? []).forEach((d: any) => {
         // Normalize phone to last 10 digits to be resilient to country-code prefixes
         const normPhone = String(d.phone ?? '').replace(/\D/g, '').slice(-10);
         const key = `${normPhone}__${d.event_slug}`;

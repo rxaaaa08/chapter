@@ -1531,7 +1531,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [chatEventTransportPlan, setChatEventTransportPlan] = useState<any[]>([]);
   const [chatEventPickupPoints, setChatEventPickupPoints] = useState<any[]>([]);
   const [savedPickupPointId, setSavedPickupPointId] = useState<string | null>(null);
-  const [inviteChatStep, setInviteChatStep] = useState<'prompt' | 'has_doubt' | 'doubt_submitted' | 'waitlist'>('prompt');
+  const [inviteChatStep, setInviteChatStep] = useState<'prompt' | 'has_doubt' | 'other_topic' | 'doubt_submitted' | 'waitlist'>('prompt');
   const [isInviteTyping, setIsInviteTyping] = useState(false);
   const [inviteMessages, setInviteMessages] = useState<Array<{ id: string; sender: 'bot' | 'user'; text: string; time: string }>>([]);
   const [doubtText, setDoubtText] = useState('');
@@ -3038,8 +3038,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               onClick={() => {
                                 addInviteUserMsg('Other Topic');
                                 simulateInviteTyping(() => {
-                                  addInviteBotMsg("Sure! What's on your mind? 💬 We'll get back to you on WhatsApp.");
-                                  setInviteChatStep('has_doubt');
+                                  addInviteBotMsg("Sure! What's on your mind? 💬 Type your question below and we'll get back to you on WhatsApp.");
+                                  setInviteChatStep('other_topic');
                                 });
                               }}
                             >
@@ -3065,6 +3065,30 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               </button>
                             )}
                           </div>
+                        </motion.div>
+                      );
+                    }
+
+                    // other_topic — free-text doubt input
+                    if (inviteChatStep === 'other_topic') {
+                      return (
+                        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white rounded-2xl border border-gray-200 p-3 mb-4">
+                          <textarea
+                            value={doubtText}
+                            onChange={e => setDoubtText(e.target.value)}
+                            placeholder="Type your question…"
+                            rows={3}
+                            style={{ resize: 'none' }}
+                            className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-[14px] text-gray-800 placeholder:text-gray-400 focus:outline-none"
+                          />
+                          {doubtSubmitError && <p className="text-red-500 text-[11px] mt-1 px-1">{doubtSubmitError}</p>}
+                          <button
+                            onClick={submitDoubt}
+                            disabled={!doubtText.trim() || submittingDoubt}
+                            className="mt-2 w-full bg-[#FFD700] text-black rounded-xl py-2.5 text-[14px] font-semibold disabled:opacity-40 active:scale-[0.98] transition-all"
+                          >
+                            {submittingDoubt ? 'Sending…' : 'Send Message'}
+                          </button>
                         </motion.div>
                       );
                     }
