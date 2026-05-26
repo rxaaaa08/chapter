@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "in.chaptera.app",
+    "sha256_cert_fingerprints": ["E5:56:F9:21:23:B2:3B:C5:9A:67:A9:48:9F:CD:36:E5:4E:C5:34:24:7E:CD:AD:25:3E:AF:63:43:CF:CA:F2:47"]
+  }
+}]
