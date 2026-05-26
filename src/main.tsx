@@ -12,8 +12,21 @@ Sentry.init({
   sendDefaultPii: true,
 });
 
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
+
+// Remove the HTML pre-loader after React's first paint.
+// Double-rAF guarantees we're past the browser's first rendered frame.
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    const el = document.getElementById('html-preloader');
+    if (el) el.remove();
+  });
+});
