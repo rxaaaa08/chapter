@@ -4831,6 +4831,61 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
 
   if (!visible) return null;
 
+  // ── iOS compact sheet ──────────────────────────────────────────────────────
+  if (isIos) {
+    return (
+      <>
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="fixed inset-0 bg-black/40 z-[9998] backdrop-blur-sm"
+          onClick={onDismiss}
+        />
+        <motion.div
+          initial={{ y: 60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+          className="fixed bottom-0 left-0 right-0 z-[9999] px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+        >
+          <div className="w-full bg-white rounded-3xl px-5 pt-4 pb-5 shadow-2xl">
+            <div className="w-8 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+            {/* Header row */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+                <img src="/icon-192.png" alt="chapter அ" className="w-full h-full object-cover" />
+              </div>
+              <div>
+                <p className="text-[15px] font-black text-gray-900 leading-tight">Add to Home Screen</p>
+                <p className="text-[12px] text-gray-400 mt-0.5">Access chapter அ instantly, no browser needed</p>
+              </div>
+            </div>
+            {/* Compact steps */}
+            <div className="flex items-center gap-2 mb-4">
+              {[
+                { n: '1', text: 'Tap Share', sub: 'bottom of Safari' },
+                { n: '2', text: 'Add to Home Screen', sub: '' },
+                { n: '3', text: 'Tap Add', sub: 'top right' },
+              ].map(({ n, text, sub }, i, arr) => (
+                <React.Fragment key={n}>
+                  <div className="flex-1 bg-gray-50 rounded-2xl px-2.5 py-2.5 flex flex-col items-center text-center">
+                    <span className="w-5 h-5 rounded-full bg-[#FFD700] text-black text-[10px] font-black flex items-center justify-center mb-1.5">{n}</span>
+                    <p className="text-[11px] font-bold text-gray-800 leading-tight">{text}</p>
+                    {sub && <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{sub}</p>}
+                  </div>
+                  {i < arr.length - 1 && (
+                    <ChevronRight size={14} className="text-gray-300 shrink-0" strokeWidth={2.5} />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+            <button onClick={onDismiss} className="w-full py-2.5 text-gray-400 text-[13px]">
+              Maybe later
+            </button>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+
   const handleInstall = async () => {
     try {
       await prompt.prompt();
