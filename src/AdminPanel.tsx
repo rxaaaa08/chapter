@@ -363,7 +363,7 @@ export default function AdminPanel() {
     Promise.all([
       supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true }),
       supabase.from('chat_messages').select('*').order('sort_order', { ascending: true }),
-      supabase.from('doubt_submissions').select('*').order('created_at', { ascending: false }),
+      supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
       supabase.from('payu_payments').select('*').order('created_at', { ascending: false }),
     ]).then(([evRes, msgRes, doubtsRes, payuRes]) => {
       if (evRes.data) setTrips((evRes.data as Trip[]).map(normalizeCityDetails));
@@ -491,7 +491,7 @@ export default function AdminPanel() {
     setApplicationsLoading(true);
     const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }] = await Promise.all([
       supabase.from('applications').select('*').order('created_at', { ascending: false }),
-      supabase.from('doubt_submissions').select('*').order('created_at', { ascending: false }),
+      supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
       supabase.from('events').select('slug, invite_slug'),
       supabase.from('plan_doubts').select('*').order('created_at', { ascending: false }),
     ]);
