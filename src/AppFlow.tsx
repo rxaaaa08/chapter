@@ -467,26 +467,31 @@ function PayUCheckout({ paymentContext, onError }: {
 }
 
 // ─── APPLICATION FORM ──────────────────────────────────────────────────────────
-function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, reservedCount, onClose }: { event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string; reservedCount: number | null; onClose: () => void }) {
-  const [form, setForm] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
+function ApplicationForm({
+  event, selectedDate, selectedPickupId, selectedCity, reservedCount,
+  step, form, setForm, onNext, onBack, onClose, onSubmitted,
+}: {
+  event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string;
+  reservedCount: number | null; step: 1 | 2;
+  form: { name: string; phone: string; gender: string; whyJoin: string; attendedBefore: string };
+  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; gender: string; whyJoin: string; attendedBefore: string }>>;
+  onNext: () => void; onBack: () => void; onClose: () => void; onSubmitted: () => void;
+}) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [step1Attempted, setStep1Attempted] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
 
-  const inviteSpots = typeof event?.inviteSpots === 'number' ? event.inviteSpots : null;
-  const spotsLeft = inviteSpots != null && typeof reservedCount === 'number'
-    ? Math.max(0, inviteSpots - reservedCount)
-    : null;
-
-  const isValid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender && form.whyJoin.trim();
+  const step1Valid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender;
+  const step2Valid = form.whyJoin.trim() && form.attendedBefore;
 
   const handleSubmit = async () => {
-    if (!isValid || submitting) return;
+    if (!step2Valid || submitting) return;
     setSubmitting(true);
     setError('');
     try {
-      // Resolve the chosen pickup point details for storage
       const chosenPoint = selectedPickupId
         ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
         : null;
@@ -497,7 +502,7 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
         phone: form.phone,
         gender: form.gender,
         why_join: form.whyJoin.trim(),
-        attended_before: form.attendedBefore.trim(),
+        attended_before: form.attendedBefore,
         status: 'pending',
         selected_date: selectedDate ?? null,
         pickup_point_id: chosenPoint?.id ?? selectedPickupId ?? null,
@@ -506,15 +511,23 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       });
 
       if (sbError) {
-        if (sbError.code === '23505') {
-          setAlreadyApplied(true);
-        } else {
-          setError('Something went wrong. Please try again.');
-        }
+        if (sbError.code === '23505') { setAlreadyApplied(true); }
+        else { setError(`${sbError.code}: ${sbError.message}`); }
         return;
       }
-
       setSubmitted(true);
+      onSubmitted();
+      const formatEventDate = (d?: string) => {
+        if (!d) return 'TBD';
+        const date = new Date(d + 'T00:00:00');
+        const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const day = date.getDate();
+        const suffix = [11,12,13].includes(day) ? 'th' : day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
+        return `${days[date.getDay()]}, ${months[date.getMonth()]} ${day}${suffix}`;
+      };
+      const waMessage = encodeURIComponent(`Hi, I have applied for ${event.title} on ${formatEventDate(selectedDate)}`);
+      window.open(`https://wa.me/919940111564?text=${waMessage}`, '_blank');
     } catch (err: any) {
       setError('Something went wrong. Please try again.');
       console.error('handleSubmit error:', err);
@@ -524,14 +537,23 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
   };
 
   if (submitted) return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="px-5 pt-6 pb-2 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-[#34C759] flex items-center justify-center shrink-0">
-          <CheckCircle2 size={22} className="text-white" strokeWidth={2.8} />
-        </div>
-        <p className="text-[18px] font-black text-gray-900">Application sent</p>
-      </div>
-      <p className="text-[14px] text-gray-500 px-5 mt-2 leading-relaxed">We'll review your application and reach out on WhatsApp if you're selected.</p>
+    <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-4 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center text-3xl">🎉</div>
+      <p className="text-[20px] font-black text-gray-900">Application sent!</p>
+      <p className="text-[14px] text-gray-500 leading-relaxed w-full">We'll review your application.<br/>If selected, you'll get an invitation via WhatsApp.</p>
+      <button
+        onClick={() => { onClose(); window.location.href = '/plans'; }}
+        className="mt-2 w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
+      >
+        <motion.div
+          className="absolute inset-0 -skew-x-12"
+          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+          animate={{ x: ['-100%', '300%'] }}
+          transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+        />
+        Explore Other Plans
+        <ArrowRight size={20} strokeWidth={3} />
+      </button>
     </div>
   );
 
@@ -539,92 +561,141 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
     <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-4 text-center">
       <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">👋</div>
       <p className="text-[20px] font-black text-gray-900">Already Applied!</p>
-      <p className="text-[14px] text-gray-500 leading-relaxed max-w-[260px]">We already have your application for this plan. We'll reach out on WhatsApp if you're selected.</p>
-      <button onClick={onClose} className="mt-2 w-full py-4 rounded-2xl bg-black text-white font-bold text-[15px] active:opacity-80">Got it</button>
+      <p className="text-[14px] text-gray-500 leading-relaxed w-full">We already have your application for this plan.<br/>We'll reach out on WhatsApp if you're selected.</p>
+      <button
+        onClick={() => { onClose(); window.location.href = '/plans'; }}
+        className="mt-2 w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
+      >
+        <motion.div
+          className="absolute inset-0 -skew-x-12"
+          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
+          animate={{ x: ['-100%', '300%'] }}
+          transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+        />
+        Explore Other Plans
+        <ArrowRight size={20} strokeWidth={3} />
+      </button>
     </div>
   );
 
-
-  return (
-    <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
-
+  /* ── Step 1: Name + Phone ── */
+  if (step === 1) return (
+    <div className="px-5 pt-0 pb-6 flex flex-col gap-4">
       {/* Name */}
-      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label>
-        <input
-          type="text" value={form.name} placeholder="Your full name"
-          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-          className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-400 outline-none mt-1"
-        />
-      </div>
-
-      {/* Phone */}
-      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">WhatsApp Number</label>
-        <input
-          type="tel" value={form.phone} placeholder="10-digit number"
-          onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-          className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-400 outline-none mt-1"
-        />
-      </div>
-
-      {/* Gender */}
-      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Gender</label>
-        <div className="flex gap-2 mt-2">
-          {['Male', 'Female', 'Other'].map(g => (
-            <button
-              key={g} type="button"
-              onClick={() => setForm(f => ({ ...f, gender: g }))}
-              className={`flex-1 py-2 rounded-xl text-[13px] font-bold transition-all ${form.gender === g ? 'bg-black text-white' : 'bg-white text-gray-600 border border-gray-200'}`}
-            >{g}</button>
-          ))}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between px-1">
+          <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label>
+          {step1Attempted && !form.name.trim() && !nameFocused && (
+            <span className="text-[11px] text-amber-500 font-medium">Invalid Name</span>
+          )}
+        </div>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 transition-shadow ring-2 ${
+          nameFocused ? 'ring-[#FFD700]' : step1Attempted && !form.name.trim() ? 'ring-red-500' : 'ring-transparent'
+        }`}>
+          <input
+            type="text" value={form.name} placeholder="What do we call you?"
+            onChange={e => setForm(f => ({ ...f, name: e.target.value.slice(0, 24) }))}
+            onFocus={() => setNameFocused(true)}
+            onBlur={() => setNameFocused(false)}
+            className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
+          />
         </div>
       </div>
 
+      {/* Phone */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between px-1">
+          <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">WhatsApp Number</label>
+          {form.phone.length > 0 && !/^\d{10}$/.test(form.phone) && (
+            <span className="text-[11px] text-amber-500 font-medium">Invalid Number</span>
+          )}
+        </div>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${form.phone.length > 0 && !/^\d{10}$/.test(form.phone) ? 'ring-2 ring-red-500' : ''}`}>
+          <input
+            type="tel" value={form.phone} placeholder="We'll reach you here"
+            onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+            className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
+            inputMode="numeric"
+          />
+        </div>
+      </div>
+
+      {/* Gender */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Gender</label>
+        <div className="bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow">
+          <select
+            value={form.gender}
+            onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+            className={`w-full bg-transparent text-[16px] font-semibold outline-none appearance-none cursor-pointer pr-6 ${form.gender ? 'text-gray-900' : 'text-gray-300'}`}
+          >
+            <option value="" disabled>Select Option</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Non-Binary">Non-Binary</option>
+          </select>
+          <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+
+      {/* Next */}
+      <button
+        type="button"
+        onClick={() => { setStep1Attempted(true); if (step1Valid) onNext(); }}
+        className="w-full py-[17px] rounded-2xl font-black text-[17px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all bg-[#FFD700] text-black"
+      >
+        Next <ArrowRight size={18} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+
+  /* ── Step 2: Why Join + Attended Before ── */
+  return (
+    <div className="flex-1 overflow-y-auto px-5 pt-4 pb-6 flex flex-col gap-4">
       {/* Why join */}
-      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Why do you want to join us?</label>
-        <textarea
-          value={form.whyJoin} placeholder="Tell us a little about yourself and why this plan excites you..."
-          onChange={e => setForm(f => ({ ...f, whyJoin: e.target.value }))}
-          rows={3}
-          className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-400 outline-none mt-1 resize-none leading-relaxed"
-        />
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Why do you want to join us?</label>
+        <div className="bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow">
+          <textarea
+            value={form.whyJoin} placeholder="Tell us why this plan excites you..."
+            onChange={e => setForm(f => ({ ...f, whyJoin: e.target.value.slice(0, 300) }))}
+            rows={3}
+            className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-300 outline-none resize-none leading-relaxed"
+          />
+        </div>
       </div>
 
       {/* Attended before */}
-      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Attended a chapter அ event before?</label>
-        <textarea
-          value={form.attendedBefore} placeholder="If yes, which one? (Optional)"
-          onChange={e => setForm(f => ({ ...f, attendedBefore: e.target.value }))}
-          rows={2}
-          className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-400 outline-none mt-1 resize-none leading-relaxed"
-        />
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Have you attended a chapter <span className="text-[19px] font-normal">அ</span> event before?</label>
+        <div className="bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow">
+          <select
+            value={form.attendedBefore}
+            onChange={e => setForm(f => ({ ...f, attendedBefore: e.target.value }))}
+            className={`w-full bg-transparent text-[16px] font-semibold outline-none appearance-none cursor-pointer pr-6 ${form.attendedBefore ? 'text-gray-900' : 'text-gray-300'}`}
+          >
+            <option value="" disabled>Select an option</option>
+            <option value="Yes">Yesss!</option>
+            <option value="No">No :(</option>
+          </select>
+          <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
 
       {error && <p className="text-[13px] text-red-500 text-center">{error}</p>}
 
       {/* Submit */}
-      <div className="pb-6 pt-2">
-        <button
-          type="button" disabled={!isValid || submitting}
-          onClick={handleSubmit}
-          className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all disabled:opacity-40"
-        >
-          {submitting ? (
-            <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
-          ) : (
-            <>Submit Application <ArrowRight size={18} strokeWidth={2.5} /></>
-          )}
-        </button>
-        {spotsLeft !== null && (
-          <p className="mt-3 text-[12px] font-semibold text-center text-[#b45309]">
-            🔥 Only {spotsLeft} {spotsLeft === 1 ? 'spot' : 'spots'} left
-          </p>
+      <button
+        type="button" disabled={submitting}
+        onClick={handleSubmit}
+        className="w-full py-[17px] rounded-2xl font-black text-[17px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all bg-[#FFD700] text-black"
+      >
+        {submitting ? (
+          <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+        ) : (
+          <>Submit <ArrowRight size={18} strokeWidth={2.5} /></>
         )}
-      </div>
+      </button>
     </div>
   );
 }
@@ -761,6 +832,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
   const [showApplicationForm, setShowApplicationForm] = useState(false);
+  const [appFormStep, setAppFormStep] = useState<1 | 2>(1);
+  const [appFormData, setAppFormData] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
+  const [appFormSubmitted, setAppFormSubmitted] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [reservedCount, setReservedCount] = useState<number | null>(null);
   const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
@@ -835,8 +909,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
-  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat' | 'submitted'>('form');
-  const [doubtSubmitError, setDoubtSubmitError] = useState('');
+  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat'>('form');
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
     () => localStorage.getItem('liveConversationId')
   );
@@ -1123,8 +1196,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
-        setShowDetails(true);
-        setStep('EVENT_SELECTED');
+        setShowChat(true);
+        setShowDetails(false);
+        setStep('ASK_DOUBTS');
       } else if (activeHistoryLayer === 'post-details-chat') {
         setShowDetails(true);
         setStep('EVENT_SELECTED');
@@ -1407,9 +1481,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setStep('SHOW_FAQ');
       });
     } else {
-      addUserMessage((msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀");
-      // Skip extra questions and jump straight to booking timeline
-      setShowChat(false);
+      // Keep chat visible in background so it shows behind the timeline sheet
       setTimeout(() => setShowBookingTimeline(true), 150);
       setShowWaitlistForm(false);
       setStep('DONE');
@@ -1439,8 +1511,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   };
 
   const handleReadyToBook = () => {
-    addUserMessage((msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀");
-    setShowChat(false);
     trackEvent('book_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
     setTimeout(() => setShowBookingTimeline(true), 150);
     setShowWaitlistForm(false);
@@ -1509,12 +1579,28 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setLiveChatSending(false);
   };
 
+  const doubtSubmittingRef = React.useRef(false);
+
   const handleDoubtSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setDoubtSubmitError('');
+    if (doubtSubmittingRef.current) return; // guard against double-tap
+    doubtSubmittingRef.current = true;
+
+    // Capture values and close sheet immediately — don't wait for the network
     const name = doubtFormData.name;
     const phone = doubtFormData.phone;
     const message = doubtFormData.message;
+    setShowDoubtPopup(false);
+    setDoubtSheetView('form');
+    setDoubtFormData({ name: '', phone: '', message: '' });
+
+    // Inject chat messages right away
+    addUserMessage(message);
+    simulateBotTyping(() => {
+      addBotMessage(`Got it! We'll contact you soon via WhatsApp on +91 ${phone}. 👍`);
+    }, 1200);
+
+    // Persist to DB in the background
     const pickup = getSelectedPickupForVars();
     const selectedDate = getSelectedDateForVars();
     const payload = {
@@ -1533,11 +1619,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const { error } = await supabase.from('doubt_submissions').insert(payload);
     if (error) {
       console.error('[handleDoubtSubmit] insert failed:', error.message, error.details, error.hint, error);
-      setDoubtSubmitError(`Failed to send: ${error.message}`);
-      return;
+    } else {
+      console.log('[handleDoubtSubmit] insert succeeded');
     }
-    console.log('[handleDoubtSubmit] insert succeeded');
-    setDoubtSheetView('submitted');
+    doubtSubmittingRef.current = false;
   };
 
   const handleGoogleSignIn = async () => {
@@ -2143,7 +2228,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     type="button"
                     onClick={() => {
                       setShowBookingTimeline(false);
-                      if (selectedEvent) { setShowDetails(true); setShowChat(false); }
+                      setShowChat(true);
+                      setShowDetails(false);
+                      setStep('ASK_DOUBTS');
                     }}
                     className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                   >
@@ -2247,7 +2334,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     {isNativeApplicationFlow ? (
                       <>
                         <button
-                          onClick={() => { setShowBookingTimeline(false); setShowApplicationForm(true); }}
+                          onClick={() => { setShowBookingTimeline(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowApplicationForm(true); }}
                           className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
                         >
                           {selectedEvent.ctaLabel || 'Request Invitation'}
@@ -2608,7 +2695,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
         {/* ── Native Application Form ─────────────────────────────── */}
         <AnimatePresence>
-          {showApplicationForm && selectedEvent && (
+          {showApplicationForm && selectedEvent && appFormStep === 1 && (
             <>
               <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -2618,28 +2705,74 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               <motion.div
                 initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[56] bg-white rounded-t-[2rem] overflow-hidden flex flex-col"
-                style={{ maxHeight: '92%' }}
+                className="absolute bottom-0 left-0 right-0 z-[56] bg-white rounded-t-[2rem] flex flex-col"
               >
+                {/* Frosted close button floating above sheet */}
+                <button
+                  onClick={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
+                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
-                  <div>
-                    <p className="text-[18px] font-black text-gray-900">Apply for this Plan</p>
-                    <p className="text-[13px] text-gray-400 mt-0.5">{selectedEvent.title}</p>
-                  </div>
-                  <button onClick={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }} className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center active:opacity-60">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
+                <div className="px-6 pt-6 pb-6 flex-shrink-0">
+                  <p className="text-[13px] text-gray-900 leading-snug text-center">Not everyone gets in —&nbsp;<span className="font-black">but the right people always do.</span></p>
                 </div>
-
-                {/* Form */}
                 <ApplicationForm
                   event={selectedEvent}
                   selectedDate={bookingDate || selectedEvent?.dates?.[0]?.date}
                   selectedPickupId={journeyCardData?.meetingPoint}
                   selectedCity={selectedCity || undefined}
                   reservedCount={reservedCount}
+                  step={1}
+                  form={appFormData}
+                  setForm={setAppFormData}
+                  onNext={() => setAppFormStep(2)}
+                  onBack={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
                   onClose={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
+                  onSubmitted={() => setAppFormSubmitted(true)}
+                />
+              </motion.div>
+            </>
+          )}
+
+          {showApplicationForm && selectedEvent && appFormStep === 2 && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[56] bg-black/40 backdrop-blur-md"
+                onClick={() => setAppFormStep(1)}
+              />
+              <motion.div
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+                className="absolute bottom-0 left-0 right-0 z-[57] bg-white rounded-t-[2rem] flex flex-col"
+              >
+                {/* Header */}
+                {!appFormSubmitted && (
+                  <div className="px-6 pt-5 pb-4 flex-shrink-0">
+                    <button
+                      onClick={() => setAppFormStep(1)}
+                      className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-500 active:opacity-60"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                      Back
+                    </button>
+                  </div>
+                )}
+                <ApplicationForm
+                  event={selectedEvent}
+                  selectedDate={bookingDate || selectedEvent?.dates?.[0]?.date}
+                  selectedPickupId={journeyCardData?.meetingPoint}
+                  selectedCity={selectedCity || undefined}
+                  reservedCount={reservedCount}
+                  step={2}
+                  form={appFormData}
+                  setForm={setAppFormData}
+                  onNext={() => {}}
+                  onBack={() => setAppFormStep(1)}
+                  onClose={() => { setShowApplicationForm(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowBookingTimeline(true); }}
+                  onSubmitted={() => setAppFormSubmitted(true)}
                 />
               </motion.div>
             </>
@@ -3014,17 +3147,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   </>
                 )}
 
-                {doubtSheetView === 'submitted' && (
-                  <>
-                    <div className="px-6 pt-7 pb-2 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#34C759] flex items-center justify-center shrink-0">
-                        <CheckCircle2 size={22} className="text-white" strokeWidth={2.8} />
-                      </div>
-                      <p className="text-[20px] font-black text-gray-900">Doubt sent</p>
-                    </div>
-                    <p className="text-[14px] text-gray-500 px-6 mt-2 leading-relaxed">We'll get back to you on WhatsApp soon.</p>
-                  </>
-                )}
 
                 {/* ── FORM VIEW: default ── */}
                 {doubtSheetView === 'form' && (
@@ -3051,7 +3173,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       <div className="flex items-center justify-between mb-0.5">
                         <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
                         {doubtFormData.phone.length > 0 && doubtFormData.phone.length < 10 && (
-                          <span className="text-[11px] text-amber-500 font-medium">Need 10 digits</span>
+                          <span className="text-[11px] text-amber-500 font-medium">Invalid Number</span>
                         )}
                       </div>
                       <input
@@ -3081,11 +3203,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </div>
                   </div>
 
-                  {doubtSubmitError && (
-                    <div className="mx-6 mb-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
-                      <span className="text-red-500 text-[13px] font-medium leading-snug">⚠️ {doubtSubmitError}</span>
-                    </div>
-                  )}
+
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"

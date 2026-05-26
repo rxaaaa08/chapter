@@ -721,7 +721,7 @@ export default function AdminPanel() {
       name: (submission.name ?? '').trim() || 'Unknown',
       phone,
       gender: '',
-      why_join: submission.doubt || submission.message || 'Via doubt submission',
+      why_join: 'doubt resolved manually',
       selected_date: submission.selected_date ?? null,
       selected_city: submission.city ?? null,
       status: 'invited',
