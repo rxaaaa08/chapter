@@ -4878,7 +4878,7 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
               ))}
             </div>
             <button onClick={onDismiss} className="w-full py-2.5 text-gray-400 text-[13px]">
-              Maybe later
+              I'll do it later
             </button>
           </div>
         </motion.div>
@@ -5034,7 +5034,7 @@ function PwaAutoInstallOverlay({ visible, prompt, onDismiss }: { visible: boolea
 
           {!installed && !installing && (
             <button onClick={onDismiss} className="w-full py-3 text-gray-400 text-sm mt-2">
-              Maybe later
+              I'll do it later
             </button>
           )}
         </div>
