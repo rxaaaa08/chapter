@@ -400,107 +400,6 @@ const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submission
 
 const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
 
-// VAPID public key in Uint8Array form — iOS Safari requires this, not a string.
-const VAPID_PUBLIC_KEY_B64 = 'BDIel8slNslp_Wv2M3yv4ffMNwMSGIV1RB0PtMbQUG0tdzRvmAWW_1sx3LGMqwFBHP97-qWyX5BQ79DPBjlQi9Q';
-function urlBase64ToUint8Array(b64: string): Uint8Array {
-  const padding = '='.repeat((4 - (b64.length % 4)) % 4);
-  const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  const out = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
-}
-
-// Helper: write diagnostic log to Supabase. Fire-and-forget so it never blocks.
-function logPushStep(phone: string, step: string, status: string, detail?: string) {
-  const isPwa = typeof window !== 'undefined' && (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone === true
-  );
-  supabase.from('push_debug_logs').insert({
-    phone: phone.replace(/\D/g, '').slice(-10) || null,
-    step,
-    status,
-    detail: detail ? String(detail).slice(0, 500) : null,
-    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 300) : null,
-    is_pwa: isPwa,
-  }).then(() => {}, () => {});
-}
-
-// Module-level helper so ApplicationForm can subscribe without prop-drilling.
-// Returns a status string for the caller to show in the UI.
-// Centralized push subscribe. Internally decides whether to surface an
-// alert — only meaningful outcomes (success, unexpected errors) are
-// shown. Expected non-events (iOS Safari without PushManager, permission
-// denied/dismissed) are logged silently to push_debug_logs only.
-async function subscribeToPushForPwa(phone: string): Promise<string> {
-  const result = await runPushSubscribe(phone);
-  // Show alert ONLY for meaningful results during testing
-  const isExpectedNonEvent =
-    result.startsWith('Push not supported') ||
-    result.startsWith('Permission');
-  if (!isExpectedNonEvent) {
-    try { alert(`Push: ${result}`); } catch {}
-  }
-  return result;
-}
-
-async function runPushSubscribe(phone: string): Promise<string> {
-  logPushStep(phone, 'start', 'called');
-  try {
-    const hasNotif = 'Notification' in window;
-    const hasSW = 'serviceWorker' in navigator;
-    const hasPM = 'PushManager' in window;
-    logPushStep(phone, 'feature_check', `notif=${hasNotif} sw=${hasSW} pm=${hasPM}`);
-    if (!hasNotif || !hasSW || !hasPM) {
-      return `Push not supported (notif=${hasNotif}, sw=${hasSW}, pm=${hasPM})`;
-    }
-
-    logPushStep(phone, 'permission_request', 'requesting');
-    const permission = await Notification.requestPermission();
-    logPushStep(phone, 'permission_result', permission);
-    if (permission !== 'granted') return `Permission ${permission}`;
-
-    logPushStep(phone, 'sw_ready', 'awaiting');
-    const reg = await navigator.serviceWorker.ready;
-    logPushStep(phone, 'sw_ready', 'ready', reg.scope);
-
-    logPushStep(phone, 'get_existing_sub', 'checking');
-    let sub = await reg.pushManager.getSubscription();
-    logPushStep(phone, 'get_existing_sub', sub ? 'found' : 'none');
-
-    if (!sub) {
-      logPushStep(phone, 'subscribe', 'starting');
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY_B64),
-      });
-      logPushStep(phone, 'subscribe', 'success', sub.endpoint.slice(0, 80));
-    }
-
-    const j = sub.toJSON();
-    if (!j.keys) {
-      logPushStep(phone, 'tojson', 'no_keys');
-      return 'Subscription has no keys';
-    }
-
-    logPushStep(phone, 'db_upsert', 'starting');
-    const { error: upsertErr } = await supabase.from('push_subscriptions').upsert(
-      { phone: phone.replace(/\D/g, '').slice(-10), endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
-      { onConflict: 'phone,endpoint' },
-    );
-    if (upsertErr) {
-      logPushStep(phone, 'db_upsert', 'error', upsertErr.message);
-      return `DB error: ${upsertErr.message}`;
-    }
-    logPushStep(phone, 'db_upsert', 'success');
-    return 'OK';
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    logPushStep(phone, 'exception', 'caught', `${err?.name || 'Error'}: ${msg}`);
-    return `Error: ${err?.name || 'Error'} — ${msg}`;
-  }
-}
 
 function PayUCheckout({ paymentContext, onError }: {
   paymentContext: { name: string; phone: string; email?: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string; whatsappGroupUrl?: string };
@@ -567,172 +466,6 @@ function PayUCheckout({ paymentContext, onError }: {
   );
 }
 
-// ─── PWA UPSELL CARD ───────────────────────────────────────────────────────────
-function PwaUpsellCard({ headline = "You're in! Get notified when you're invited." }: { headline?: string }) {
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
-
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(() =>
-    typeof window !== 'undefined' ? (window as any).__deferredInstallPrompt ?? null : null
-  );
-  const [installState, setInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
-  const installTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const onBip = (e: any) => {
-      e.preventDefault();
-      (window as any).__deferredInstallPrompt = e;
-      setDeferredPrompt(e);
-    };
-    const onInstalled = () => {
-      setInstallState('installing');
-      if (installTimerRef.current) window.clearTimeout(installTimerRef.current);
-      installTimerRef.current = window.setTimeout(() => {
-        setInstallState('installed');
-        installTimerRef.current = null;
-      }, 15000);
-    };
-    window.addEventListener('beforeinstallprompt', onBip as any);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBip as any);
-      window.removeEventListener('appinstalled', onInstalled);
-      if (installTimerRef.current) window.clearTimeout(installTimerRef.current);
-    };
-  }, []);
-
-  const startInstall = async () => {
-    if (!deferredPrompt) return;
-    try {
-      await deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setInstallState('installing');
-        setDeferredPrompt(null);
-      }
-    } catch {
-      setInstallState('idle');
-    }
-  };
-
-  return (
-    <>
-      <div className="px-6 pt-7 pb-2">
-        <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">{headline}</p>
-        <p className="text-[14px] text-gray-500 mt-1">Add chapter அ to your home screen so you don't miss your invitation.</p>
-      </div>
-
-      <div className="px-6 pb-6 space-y-3 mt-2">
-        {installState === 'installed' ? (
-          <div className="bg-[#F2F2F7] rounded-3xl p-4 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
-              <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
-              <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
-            </div>
-            <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
-          </div>
-        ) : installState === 'installing' ? (
-          <div className="bg-[#F2F2F7] rounded-3xl p-5 flex flex-col items-center gap-3">
-            <motion.div
-              className="w-9 h-9 rounded-full border-[3px] border-gray-300 border-t-black"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
-            />
-            <p className="text-xs text-gray-500 font-medium">Waiting for install to complete…</p>
-          </div>
-        ) : deferredPrompt ? (
-          <>
-            <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-              <div className="px-5 py-4 flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
-                  <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
-                  <span className="text-white text-base font-black">அ</span>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={startInstall}
-              className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
-            >
-              Install App
-            </button>
-          </>
-        ) : isIOSChrome ? (
-          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-            {[
-              { label: 'open chrome menu', value: 'Tap ··· at the bottom right', badge: 'Chrome bottom bar' },
-              { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-              { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-            ].map((step, i, arr) => (
-              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                  </div>
-                </div>
-                {step.badge && (
-                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : isAndroid ? (
-          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-            {[
-              { label: 'open chrome menu', value: 'Tap ⋮ at the top right', badge: 'Chrome top bar' },
-              { label: 'install the app', value: 'Tap "Add to Home Screen"', badge: null },
-              { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-            ].map((step, i, arr) => (
-              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                  </div>
-                </div>
-                {step.badge && (
-                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-            {[
-              { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
-              { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-              { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-            ].map((step, i, arr) => (
-              <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                  <div>
-                    <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                    <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                  </div>
-                </div>
-                {step.badge && (
-                  <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
 // ─── APPLICATION FORM ──────────────────────────────────────────────────────────
 function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, reservedCount, onClose }: { event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string; reservedCount: number | null; onClose: () => void }) {
   const [form, setForm] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
@@ -740,7 +473,6 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
   const [error, setError] = useState('');
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [notifyOptIn, setNotifyOptIn] = useState(false);
 
   const inviteSpots = typeof event?.inviteSpots === 'number' ? event.inviteSpots : null;
   const spotsLeft = inviteSpots != null && typeof reservedCount === 'number'
@@ -748,10 +480,6 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
     : null;
 
   const isValid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender && form.whyJoin.trim();
-
-  // Track whether push subscribe already fired from the checkbox so we
-  // don't double-call (and double-alert) on submit.
-  const pushSubscribedRef = React.useRef(false);
 
   const handleSubmit = async () => {
     if (!isValid || submitting) return;
@@ -786,12 +514,6 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
         return;
       }
 
-      // Fire push subscribe on submit only if the checkbox is checked AND
-      // it hasn't already been triggered from the checkbox change handler.
-      if (notifyOptIn && !pushSubscribedRef.current) {
-        pushSubscribedRef.current = true;
-        subscribeToPushForPwa(form.phone);
-      }
       setSubmitted(true);
     } catch (err: any) {
       setError('Something went wrong. Please try again.');
@@ -809,7 +531,7 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
         </div>
         <p className="text-[18px] font-black text-gray-900">Application sent</p>
       </div>
-      <PwaUpsellCard headline="You're in! Get notified when you're invited." />
+      <p className="text-[14px] text-gray-500 px-5 mt-2 leading-relaxed">We'll review your application and reach out on WhatsApp if you're selected.</p>
     </div>
   );
 
@@ -883,24 +605,6 @@ function ApplicationForm({ event, selectedDate, selectedPickupId, selectedCity, 
       </div>
 
       {error && <p className="text-[13px] text-red-500 text-center">{error}</p>}
-
-      <label className="flex items-center gap-3 px-4 py-3 bg-[#F2F2F7] rounded-2xl cursor-pointer">
-        <input
-          type="checkbox"
-          checked={notifyOptIn}
-          onChange={e => {
-            const checked = e.target.checked;
-            setNotifyOptIn(checked);
-            if (checked && /^\d{10}$/.test(form.phone)) {
-              // user gesture preserved — required for iOS push permission
-              pushSubscribedRef.current = true;
-              subscribeToPushForPwa(form.phone);
-            }
-          }}
-          className="w-5 h-5 accent-black"
-        />
-        <span className="text-[14px] font-semibold text-gray-900">Notify me when I'm invited 🔔</span>
-      </label>
 
       {/* Submit */}
       <div className="pb-6 pt-2">
@@ -1131,11 +835,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
-  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'install' | 'chat' | 'submitted'>('form');
-  const [notifyOptInDoubt, setNotifyOptInDoubt] = useState(false);
-  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
-  const [pwaInstallState, setPwaInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
-  const pwaInstallCompleteTimerRef = useRef<number | null>(null);
+  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat' | 'submitted'>('form');
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
     () => localStorage.getItem('liveConversationId')
   );
@@ -1768,79 +1468,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     });
   };
 
-  // ── PWA detection & install prompt ────────────────────────────────────────
-  const isPwa = window.matchMedia('(display-mode: standalone)').matches
-    || (window.navigator as any).standalone === true;
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
-
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault();
-      (window as any).__deferredInstallPrompt = e;
-      setDeferredInstallPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler as any);
-    return () => window.removeEventListener('beforeinstallprompt', handler as any);
-  }, []);
-
-  useEffect(() => {
-    const handler = () => {
-      setPwaInstallState('installing');
-      if (pwaInstallCompleteTimerRef.current) window.clearTimeout(pwaInstallCompleteTimerRef.current);
-      pwaInstallCompleteTimerRef.current = window.setTimeout(() => {
-        setPwaInstallState('installed');
-        pwaInstallCompleteTimerRef.current = null;
-      }, 15000);
-    };
-    window.addEventListener('appinstalled', handler);
-    return () => {
-      window.removeEventListener('appinstalled', handler);
-      if (pwaInstallCompleteTimerRef.current) window.clearTimeout(pwaInstallCompleteTimerRef.current);
-    };
-  }, []);
-
-  const startPwaInstallFromDoubtSheet = async () => {
-    if (!deferredInstallPrompt) return;
-    try {
-      await deferredInstallPrompt.prompt();
-      const { outcome } = await deferredInstallPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setPwaInstallState('installing');
-        setDeferredInstallPrompt(null);
-      }
-    } catch {
-      setPwaInstallState('idle');
-    }
-  };
-
-  // ── Push notification subscription ────────────────────────────────────────
-  const subscribeToPush = async (phone: string) => {
-    try {
-      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-      const reg = await navigator.serviceWorker.ready;
-      const existing = await reg.pushManager.getSubscription();
-      const sub = existing ?? await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: 'BDIel8slNslp_Wv2M3yv4ffMNwMSGIV1RB0PtMbQUG0tdzRvmAWW_1sx3LGMqwFBHP97-qWyX5BQ79DPBjlQi9Q',
-      });
-      const subJson = sub.toJSON();
-      if (!subJson.keys) return;
-      const tenDigit = phone.replace(/\D/g, '').slice(-10);
-      await supabase.from('push_subscriptions').upsert({
-        phone: tenDigit,
-        endpoint: sub.endpoint,
-        p256dh: subJson.keys.p256dh,
-        auth: subJson.keys.auth,
-      }, { onConflict: 'phone,endpoint' });
-    } catch (err) {
-      console.warn('[push] subscribe failed:', err);
-    }
-  };
-
   // ── Live chat: load messages + Realtime ────────────────────────────────────
   useEffect(() => {
     if (!liveConversationId) return;
@@ -1867,38 +1494,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   useEffect(() => {
     liveChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [liveMessages]);
-
-  const submitDoubtAsPwaChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const { name, phone, message } = doubtFormData;
-    if (!name || !phone || !message) return;
-    setLiveChatSending(true);
-    const tenDigit = phone.replace(/\D/g, '').slice(-10);
-    const { data: convData, error } = await supabase
-      .from('doubt_conversations')
-      .insert({
-        phone: tenDigit,
-        name: name.trim(),
-        event_slug: selectedEvent?.slug ?? null,
-        status: 'open',
-      })
-      .select().single();
-    if (error || !convData) { setLiveChatSending(false); return; }
-    await supabase.from('doubt_messages').insert({
-      conversation_id: convData.id,
-      sender: 'user',
-      body: message.trim(),
-    });
-    localStorage.setItem('liveConversationId', convData.id);
-    localStorage.setItem('liveConvName', name.trim() || '');
-    localStorage.setItem('liveConvEventSlug', selectedEvent?.slug ?? '');
-    localStorage.setItem('liveConvEventTitle', selectedEvent?.title ?? '');
-    setLiveConversationId(convData.id);
-    setLiveChatSending(false);
-    setDoubtSheetView('chat');
-    // Request push permission now that they're engaged
-    subscribeToPush(phone);
-  };
 
   const sendLiveChatMessage = async () => {
     if (!liveConversationId || !liveChatInput.trim()) return;
@@ -3419,130 +3014,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       </div>
                       <p className="text-[20px] font-black text-gray-900">Doubt sent</p>
                     </div>
-                    <div className="px-2 pb-6">
-                      <PwaUpsellCard headline="We'll reply soon. Get notified when we do." />
-                    </div>
-                  </>
-                )}
-
-                {/* ── INSTALL PROMPT VIEW ── */}
-                {doubtSheetView === 'install' && (
-                  <>
-                    <div className="px-6 pt-7 pb-2">
-                      <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                      <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
-                    </div>
-
-                    <div className="px-6 pb-6 space-y-3 mt-2">
-                      {pwaInstallState === 'installed' ? (
-                        <div className="bg-[#F2F2F7] rounded-3xl p-4 flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
-                            <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
-                            <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
-                          </div>
-                          <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
-                        </div>
-                      ) : pwaInstallState === 'installing' ? (
-                        <div className="bg-[#F2F2F7] rounded-3xl p-5 flex flex-col items-center gap-3">
-                          <motion.div
-                            className="w-9 h-9 rounded-full border-[3px] border-gray-300 border-t-black"
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
-                          />
-                          <p className="text-xs text-gray-500 font-medium">Waiting for install to complete…</p>
-                        </div>
-                      ) : deferredInstallPrompt ? (
-                        /* Android: native one-tap install */
-                        <>
-                          <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                            <div className="px-5 py-4 flex items-center justify-between">
-                              <div>
-                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
-                                <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
-                              </div>
-                              <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
-                                <span className="text-white text-base font-black">அ</span>
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={startPwaInstallFromDoubtSheet}
-                            className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
-                          >
-                            Install App
-                          </button>
-                        </>
-                      ) : isIOSChrome ? (
-                        /* iOS Chrome: ··· menu at the bottom right → Add to Home Screen */
-                        <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                          {[
-                            { label: 'open chrome menu', value: 'Tap ··· at the bottom right', badge: 'Chrome bottom bar' },
-                            { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-                            { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                          ].map((step, i, arr) => (
-                            <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                              <div className="flex items-center gap-3">
-                                <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                <div>
-                                  <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                  <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                </div>
-                              </div>
-                              {step.badge && (
-                                <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : isAndroid ? (
-                        /* Android fallback: Chrome menu step */
-                        <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                          {[
-                            { label: 'open chrome menu', value: 'Tap ⋮ at the top right', badge: 'Chrome top bar' },
-                            { label: 'install the app', value: 'Tap "Add to Home Screen"', badge: null },
-                            { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                          ].map((step, i, arr) => (
-                            <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                              <div className="flex items-center gap-3">
-                                <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                <div>
-                                  <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                  <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                </div>
-                              </div>
-                              {step.badge && (
-                                <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        /* iOS Safari: share steps */
-                        <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                          {[
-                            { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
-                            { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-                            { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                          ].map((step, i, arr) => (
-                            <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                              <div className="flex items-center gap-3">
-                                <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                <div>
-                                  <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                  <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                </div>
-                              </div>
-                              {step.badge && (
-                                <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <p className="text-[14px] text-gray-500 px-6 mt-2 leading-relaxed">We'll get back to you on WhatsApp soon.</p>
                   </>
                 )}
 
@@ -3597,24 +3069,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </div>
                   </div>
 
-                  <div className="px-6 pt-4">
-                    <label className="flex items-center gap-3 px-4 py-3 bg-[#F2F2F7] rounded-2xl cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notifyOptInDoubt}
-                        onChange={e => {
-                          const checked = e.target.checked;
-                          setNotifyOptInDoubt(checked);
-                          if (checked && /^\d{10}$/.test(doubtFormData.phone)) {
-                            subscribeToPushForPwa(doubtFormData.phone);
-                          }
-                        }}
-                        className="w-5 h-5 accent-black"
-                      />
-                      <span className="text-[14px] font-semibold text-gray-900">Notify me when we reply 🔔</span>
-                    </label>
-                  </div>
-
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
@@ -3627,7 +3081,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         animate={{ x: ['-100%', '300%'] }}
                         transition={{ delay: 10, duration: 0.8, repeat: Infinity, repeatDelay: 7.0, ease: 'easeInOut' }}
                       />
-                      <span className="relative z-10">{liveChatSending ? 'Sending…' : isPwa ? 'Start Chat' : 'Send Message'}</span>
+                      <span className="relative z-10">{liveChatSending ? 'Sending…' : 'Send Message'}</span>
                     </button>
                   </div>
                 </form>

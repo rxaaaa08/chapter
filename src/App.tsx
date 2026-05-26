@@ -1537,7 +1537,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [doubtText, setDoubtText] = useState('');
   const [doubtSubmitError, setDoubtSubmitError] = useState('');
   const [submittingDoubt, setSubmittingDoubt] = useState(false);
-  // In-app live chat (PWA doubt channel)
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
     () => localStorage.getItem('liveConversationId')
   );
@@ -1545,12 +1544,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [liveChatInput, setLiveChatInput] = useState('');
   const [liveChatSending, setLiveChatSending] = useState(false);
   const [liveConvResolved, setLiveConvResolved] = useState(false);
-  const [showPwaPrompt, setShowPwaPrompt] = useState(false);
-  const [showPwaSheet, setShowPwaSheet] = useState(false);
-  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
-  const [doubtPwaInstallState, setDoubtPwaInstallState] = useState<'idle' | 'installing' | 'installed'>('idle');
   const liveChatEndRef = useRef<HTMLDivElement>(null);
-  const doubtPwaInstallCompleteTimerRef = useRef<number | null>(null);
   const [askedFaqs, setAskedFaqs] = useState<number[]>([]);
   const [inviteAnnouncementIndex, setInviteAnnouncementIndex] = useState(0);
   const [showPlanDetailsSheet, setShowPlanDetailsSheet] = useState(false);
@@ -2078,53 +2072,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── PWA install prompt capture ──────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault();
-      (window as any).__deferredInstallPrompt = e;
-      setDeferredInstallPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler as any);
-    return () => window.removeEventListener('beforeinstallprompt', handler as any);
-  }, []);
-
-  useEffect(() => {
-    const handler = () => {
-      setDoubtPwaInstallState('installing');
-      if (doubtPwaInstallCompleteTimerRef.current) window.clearTimeout(doubtPwaInstallCompleteTimerRef.current);
-      doubtPwaInstallCompleteTimerRef.current = window.setTimeout(() => {
-        setDoubtPwaInstallState('installed');
-        doubtPwaInstallCompleteTimerRef.current = null;
-      }, 15000);
-    };
-    window.addEventListener('appinstalled', handler);
-    return () => {
-      window.removeEventListener('appinstalled', handler);
-      if (doubtPwaInstallCompleteTimerRef.current) window.clearTimeout(doubtPwaInstallCompleteTimerRef.current);
-    };
-  }, []);
-
-  const startDoubtPwaInstall = async () => {
-    if (!deferredInstallPrompt) return;
-    try {
-      await deferredInstallPrompt.prompt();
-      const { outcome } = await deferredInstallPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDoubtPwaInstallState('installing');
-        setDeferredInstallPrompt(null);
-      }
-    } catch {
-      setDoubtPwaInstallState('idle');
-    }
-  };
-
-  const isPwa = window.matchMedia('(display-mode: standalone)').matches
-    || (window.navigator as any).standalone === true;
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
-
   // ── Live chat: load messages + Realtime subscription ───────────────────────
   useEffect(() => {
     if (!liveConversationId) return;
@@ -2160,32 +2107,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     liveChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [liveMessages]);
 
-  // ── Push subscription ──────────────────────────────────────────────────────
-  const subscribeToPush = async (phone: string) => {
-    try {
-      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-      const reg = await navigator.serviceWorker.ready;
-      const existing = await reg.pushManager.getSubscription();
-      const sub = existing ?? await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: 'BDIel8slNslp_Wv2M3yv4ffMNwMSGIV1RB0PtMbQUG0tdzRvmAWW_1sx3LGMqwFBHP97-qWyX5BQ79DPBjlQi9Q',
-      });
-      const subJson = sub.toJSON();
-      if (!subJson.keys) return;
-      const tenDigit = phone.replace(/\D/g, '').slice(-10);
-      await supabase.from('push_subscriptions').upsert({
-        phone: tenDigit,
-        endpoint: sub.endpoint,
-        p256dh: subJson.keys.p256dh,
-        auth: subJson.keys.auth,
-      }, { onConflict: 'phone,endpoint' });
-    } catch (err) {
-      console.warn('[push] subscribe failed:', err);
-    }
-  };
-
   const startLiveChat = async (firstMessage: string) => {
     if (!firstMessage.trim()) return;
     setLiveChatSending(true);
@@ -2216,8 +2137,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setLiveConversationId(convId);
     setDoubtText('');
     setLiveChatSending(false);
-    // Request push permission now that they're engaged
-    subscribeToPush(tenDigit);
   };
 
   const sendLiveChatMessage = async () => {
@@ -3116,7 +3035,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                             })}
                             <button
                               className="px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
-                              onClick={() => setShowPwaSheet(true)}
+                              onClick={() => {
+                                addInviteUserMsg('Other Topic');
+                                simulateInviteTyping(() => {
+                                  addInviteBotMsg("Sure! What's on your mind? 💬 We'll get back to you on WhatsApp.");
+                                  setInviteChatStep('has_doubt');
+                                });
+                              }}
                             >
                               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
                               <span>Other Topic</span>
@@ -3166,251 +3091,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   }}
                 />
 
-                {/* ── PWA / live-chat bottom sheet ── */}
-                <AnimatePresence>
-                  {showPwaSheet && (
-                    <>
-                      <motion.div
-                        key="pwa-backdrop"
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-[70] bg-black/40"
-                        onClick={() => setShowPwaSheet(false)}
-                      />
-                      <motion.div
-                        key="pwa-sheet"
-                        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-                        transition={{ duration: 0.32, ease: 'easeOut' }}
-                        className="absolute bottom-0 left-0 right-0 z-[71] bg-white rounded-t-[2rem]"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        {/* Close button */}
-                        <button
-                          type="button"
-                          onClick={() => setShowPwaSheet(false)}
-                          className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-                        </button>
-
-                        {/* ── View 1: existing live chat thread ── */}
-                        {liveConversationId ? (() => {
-                          const formatMsgTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-                          return (
-                            <>
-                              <div className="px-6 pt-7 pb-2 flex items-center justify-between">
-                                <div>
-                                  <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                                  <p className="text-[14px] text-gray-500 mt-1">
-                                    {liveConvResolved ? 'This conversation has been resolved.' : 'We\'re here — reply below.'}
-                                  </p>
-                                </div>
-                                {!liveConvResolved
-                                  ? <span className="flex items-center gap-1.5 text-[11px] text-green-600 font-semibold shrink-0 ml-3"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Open</span>
-                                  : <span className="text-[11px] text-gray-400 font-semibold shrink-0 ml-3">Resolved</span>
-                                }
-                              </div>
-                              <div className="px-4 pb-2">
-                                <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
-                                  <div className="flex flex-col gap-2 p-3 max-h-64 overflow-y-auto">
-                                    {liveMessages.map(msg => {
-                                      const isUser = msg.sender === 'user';
-                                      return (
-                                        <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                                          <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-[13px] leading-snug ${isUser ? 'bg-[#FFD700] text-black rounded-br-sm' : 'bg-white border border-gray-200 text-gray-900 rounded-bl-sm'}`}>
-                                            <div className="whitespace-pre-wrap break-words">{msg.body}</div>
-                                            <div className={`text-[10px] mt-1 ${isUser ? 'text-black/50 text-right' : 'text-gray-400'}`}>{formatMsgTime(msg.created_at)}</div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                    {liveMessages.length === 0 && (
-                                      <p className="text-[12px] text-gray-400 text-center py-2">Waiting for agent reply…</p>
-                                    )}
-                                    <div ref={liveChatEndRef} />
-                                  </div>
-                                </div>
-                              </div>
-                              {!liveConvResolved && (
-                                <div className="px-4 pb-8 flex gap-2 mt-2">
-                                  <input
-                                    type="text"
-                                    value={liveChatInput}
-                                    onChange={e => setLiveChatInput(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter') sendLiveChatMessage(); }}
-                                    placeholder="Type a message…"
-                                    className="flex-1 bg-white border border-gray-200 rounded-2xl px-4 py-3 text-[14px] outline-none focus:border-gray-400"
-                                  />
-                                  <button
-                                    onClick={sendLiveChatMessage}
-                                    disabled={!liveChatInput.trim() || liveChatSending}
-                                    className="px-4 py-3 bg-black text-white rounded-2xl text-[13px] font-bold disabled:opacity-30 flex items-center gap-1.5"
-                                  >
-                                    <Send size={14} />
-                                  </button>
-                                </div>
-                              )}
-                              {liveConvResolved && (
-                                <div className="px-4 pb-8 mt-2">
-                                  <button
-                                    onClick={() => setShowPwaSheet(false)}
-                                    className="w-full py-3.5 border border-gray-200 rounded-2xl text-[14px] font-semibold text-gray-500 active:opacity-70"
-                                  >
-                                    Close
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })() : isPwa ? (
-                          /* ── View 2: PWA — textarea to start conversation ── */
-                          <>
-                            <div className="px-6 pt-7 pb-2">
-                              <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                              <p className="text-[14px] text-gray-500 mt-1">What's on your mind? We'll reply as soon as possible.</p>
-                            </div>
-                            <div className="px-4 pb-8 space-y-3 mt-2">
-                              <textarea
-                                rows={4}
-                                value={doubtText}
-                                onChange={e => setDoubtText(e.target.value)}
-                                placeholder="Type your question here…"
-                                className="w-full bg-[#F2F2F7] rounded-2xl px-4 py-3 text-[15px] text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-black/10 resize-none"
-                              />
-                              <button
-                                onClick={async () => { await startLiveChat(doubtText); setShowPwaSheet(false); }}
-                                disabled={!doubtText.trim() || liveChatSending}
-                                className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80 disabled:opacity-30 flex items-center justify-center gap-2"
-                              >
-                                {liveChatSending
-                                  ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
-                                  : <><Send size={16} /> Send</>
-                                }
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          /* ── View 3: not on PWA — install instructions ── */
-                          <>
-                            <div className="px-6 pt-7 pb-2">
-                              <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">Chat with Us!</p>
-                              <p className="text-[14px] text-gray-500 mt-1">Add our app to get replies directly here & get notified instantly.</p>
-                            </div>
-                            <div className="px-6 pb-8 space-y-3 mt-2">
-                              {doubtPwaInstallState === 'installed' ? (
-                                <div className="bg-[#F2F2F7] rounded-3xl p-4 flex items-center gap-3">
-                                  <div className="w-11 h-11 rounded-xl bg-black flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
-                                    <img src="/icon-192.png" alt="" className="w-full h-full object-cover" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-[11px] text-gray-400 font-medium">ready on your phone</p>
-                                    <p className="text-[15px] font-black text-gray-900 leading-tight">Find chapter அ on your home screen</p>
-                                  </div>
-                                  <CheckCircle2 size={22} className="text-[#34C759] shrink-0 ml-auto" strokeWidth={2.8} />
-                                </div>
-                              ) : doubtPwaInstallState === 'installing' ? (
-                                <div className="bg-[#F2F2F7] rounded-3xl p-5 flex flex-col items-center gap-3">
-                                  <motion.div
-                                    className="w-9 h-9 rounded-full border-[3px] border-gray-300 border-t-black"
-                                    animate={{ rotate: 360 }}
-                                    transition={{ duration: 0.8, ease: 'linear', repeat: Infinity }}
-                                  />
-                                  <p className="text-xs text-gray-500 font-medium">Waiting for install to complete…</p>
-                                </div>
-                              ) : deferredInstallPrompt ? (
-                                /* Android: native one-tap install */
-                                <>
-                                  <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                                    <div className="px-5 py-4 flex items-center justify-between">
-                                      <div>
-                                        <p className="text-[11px] text-gray-400 font-medium mb-0.5">install the app</p>
-                                        <p className="text-[15px] font-black text-gray-900 leading-none">chapter அ</p>
-                                      </div>
-                                      <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0 ml-3">
-                                        <span className="text-white text-base font-black">அ</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={startDoubtPwaInstall}
-                                    className="w-full bg-black text-white font-bold py-[17px] rounded-2xl text-[17px] active:opacity-80"
-                                  >
-                                    Install App
-                                  </button>
-                                </>
-                              ) : isIOSChrome ? (
-                                /* iOS Chrome: use Chrome's ··· menu → Add to Home Screen */
-                                <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                                  {[
-                                    { label: 'open chrome menu', value: 'Tap ··· at the bottom right', badge: 'Chrome bottom bar' },
-                                    { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-                                    { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                                  ].map((step, i, arr) => (
-                                    <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                                      <div className="flex items-center gap-3">
-                                        <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                        <div>
-                                          <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                          <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                        </div>
-                                      </div>
-                                      {step.badge && (
-                                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : isAndroid ? (
-                                /* Android fallback: Chrome menu step */
-                                <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                                  {[
-                                    { label: 'open chrome menu', value: 'Tap ⋮ at the top right', badge: 'Chrome top bar' },
-                                    { label: 'install the app', value: 'Tap "Add to Home Screen"', badge: null },
-                                    { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                                  ].map((step, i, arr) => (
-                                    <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                                      <div className="flex items-center gap-3">
-                                        <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                        <div>
-                                          <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                          <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                        </div>
-                                      </div>
-                                      {step.badge && (
-                                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                /* iOS Safari: share steps */
-                                <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                                  {[
-                                    { label: 'open share menu', value: 'Tap the Share button', badge: '① Safari bottom bar' },
-                                    { label: 'add to your phone', value: 'Tap "Add to Home Screen"', badge: null },
-                                    { label: 'start chatting', value: 'Open the app', badge: '← chat will be here' },
-                                  ].map((step, i, arr) => (
-                                    <div key={i} className={`px-5 py-3.5 flex items-center justify-between ${i < arr.length - 1 ? 'border-b border-black/5' : ''}`}>
-                                      <div className="flex items-center gap-3">
-                                        <span className="w-6 h-6 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                                        <div>
-                                          <p className="text-[11px] text-gray-400 font-medium">{step.label}</p>
-                                          <p className="text-[15px] font-black text-gray-900 leading-tight">{step.value}</p>
-                                        </div>
-                                      </div>
-                                      {step.badge && (
-                                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full shrink-0 ml-2">{step.badge}</span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
               </div>
             );
           })()}
