@@ -2402,61 +2402,65 @@ export default function AdminPanel() {
 
               {!applicationsLoading && peopleMode === 'doubts' && filteredDoubtSubmissions.length > 0 && (
                 <div style={{ ...s.card, overflow: 'hidden', padding: 0 }}>
-                  <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#fafafa' }}>
-                        {headers.doubts.map((heading) => (
-                          <th key={heading} style={{ textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #ececec', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', color: '#888', fontWeight: 700 }}>
-                            {heading}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredDoubtSubmissions.map((submission, index) => {
-                        const eventName = getDoubtSubmissionPlanName(submission) || '-';
-                        const doubtText = submission.doubt || submission.message || '-';
-                        const submitterName = (submission.name ?? '').trim() || '-';
-                        const cityText = (submission.city ?? '').trim() || '-';
-                        const reportingDateText = (submission.reporting_date ?? '').trim() || '-';
-                        const submittedAt = submission.submitted_at || submission.created_at
-                          ? new Date(submission.submitted_at ?? submission.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-                          : '-';
-                        const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
-                        const contactMessage = `Hi ${submission.name ? submission.name.split(' ')[0] : 'there'}, we're reaching out from chapter அ regarding your doubt about ${eventName}.`;
-                        const contactHref = phoneDigits ? `https://wa.me/91${phoneDigits.slice(-10)}?text=${encodeURIComponent(contactMessage)}` : '';
+                  {filteredDoubtSubmissions.map((submission, index) => {
+                    const eventName = getDoubtSubmissionPlanName(submission) || '-';
+                    const doubtText = submission.doubt || submission.message || '-';
+                    const submitterName = (submission.name ?? '').trim() || '-';
+                    const cityText = (submission.city ?? '').trim() || '-';
+                    const reportingDateText = (submission.reporting_date ?? '').trim() || '-';
+                    const submittedAt = submission.submitted_at || submission.created_at
+                      ? new Date(submission.submitted_at ?? submission.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : '-';
+                    const phoneDigits = (submission.phone ?? '').replace(/\D/g, '');
+                    const contactMessage = `Hi ${submission.name ? submission.name.split(' ')[0] : 'there'}, we're reaching out from chapter அ regarding your doubt about ${eventName}.`;
+                    const contactHref = phoneDigits ? `https://wa.me/91${phoneDigits.slice(-10)}?text=${encodeURIComponent(contactMessage)}` : '';
+                    const isLast = index === filteredDoubtSubmissions.length - 1;
 
-                        return (
-                          <tr key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                            <td title={doubtText} style={{ width: '28%', padding: '10px 10px', fontSize: 13, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              <div style={{ fontWeight: 500 }}>{submitterName}</div>
-                              <div style={{ fontSize: 12, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{doubtText}</div>
-                            </td>
-                            <td style={{ width: '20%', padding: '10px 10px', fontSize: 13, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eventName}</td>
-                            <td style={{ width: '12%', padding: '10px 10px', fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cityText}</td>
-                            <td style={{ width: '18%', padding: '10px 10px', fontSize: 12, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              <div>{reportingDateText !== '-' ? reportingDateText : submittedAt}</div>
-                            </td>
-                            <td style={{ width: '14%', padding: '10px 10px', fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{phoneDigits ? `+91 ${phoneDigits.slice(-10)}` : '-'}</td>
-                            <td style={{ width: '8%', padding: '10px 10px', whiteSpace: 'nowrap' }}>
-                              {phoneDigits ? (
-                                <a
-                                  href={contactHref}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ ...s.outlineBtn, display: 'inline-block', padding: '6px 12px', fontSize: 12, textDecoration: 'none' }}
-                                >
-                                  Reply
-                                </a>
-                              ) : (
-                                <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                    return (
+                      <div
+                        key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`}
+                        style={{ padding: '14px 20px', borderBottom: isLast ? 'none' : '1px solid #f0f0f0' }}
+                      >
+                        {/* Doubt text — primary, full width, fully readable */}
+                        <p style={{ fontSize: 15, color: '#111', lineHeight: 1.55, margin: '0 0 10px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {doubtText}
+                        </p>
+
+                        {/* Meta row */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: '#888', minWidth: 0 }}>
+                            <span style={{ fontWeight: 600, color: '#444' }}>{submitterName}</span>
+                            <span style={{ color: '#ccc' }}>·</span>
+                            <span>{eventName}</span>
+                            {cityText !== '-' && <><span style={{ color: '#ccc' }}>·</span><span>{cityText}</span></>}
+                            {(reportingDateText !== '-' || submittedAt !== '-') && (
+                              <><span style={{ color: '#ccc' }}>·</span><span>{reportingDateText !== '-' ? reportingDateText : submittedAt}</span></>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                            {phoneDigits && (
+                              <span style={{ fontSize: 12, color: '#555', fontVariantNumeric: 'tabular-nums' }}>
+                                +91 {phoneDigits.slice(-10)}
+                              </span>
+                            )}
+                            {phoneDigits ? (
+                              <a
+                                href={contactHref}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ ...s.outlineBtn, display: 'inline-block', padding: '5px 14px', fontSize: 12, textDecoration: 'none' }}
+                              >
+                                Reply on WhatsApp
+                              </a>
+                            ) : (
+                              <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
