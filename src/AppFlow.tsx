@@ -2716,7 +2716,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 </button>
                 {/* Header */}
                 <div className="px-6 pt-6 pb-6 flex-shrink-0">
-                  <p className="text-[13px] text-gray-900 leading-snug text-center">Not everyone gets in —&nbsp;<span className="font-black">but the right people always do.</span></p>
+                  <p className="text-[13px] text-gray-900 leading-snug text-left">Not everyone gets in — but the right people<br /><span className="font-black">always do.</span></p>
                 </div>
                 <ApplicationForm
                   event={selectedEvent}
