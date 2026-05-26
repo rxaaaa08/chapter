@@ -3051,15 +3051,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       <div className="flex items-center justify-between mb-0.5">
                         <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">WhatsApp Number</label>
                         {doubtFormData.phone.length > 0 && doubtFormData.phone.length < 10 && (
-                          <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
+                          <span className="text-[11px] text-amber-500 font-medium">Need 10 digits</span>
                         )}
                       </div>
                       <input
                         type="tel"
                         inputMode="numeric"
                         required
+                        maxLength={10}
                         value={doubtFormData.phone}
-                        onChange={e => setDoubtFormData({...doubtFormData, phone: e.target.value.replace(/\D/g, '')})}
+                        onChange={e => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setDoubtFormData({...doubtFormData, phone: digits});
+                        }}
                         placeholder="We'll reach you here"
                         className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                       />
@@ -3085,7 +3089,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
-                      disabled={liveChatSending}
+                      disabled={liveChatSending || !doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !doubtFormData.message.trim()}
                       className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden disabled:opacity-50"
                     >
                       <motion.div
