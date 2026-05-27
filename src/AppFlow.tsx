@@ -499,11 +499,9 @@ function ApplicationForm({
       const date = new Date(d + 'T00:00:00');
       const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
       const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      const day = date.getDate();
-      const suffix = [11,12,13].includes(day) ? 'th' : day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
-      return `${days[date.getDay()]}, ${months[date.getMonth()]} ${day}${suffix}`;
+      return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
     };
-    const waMessage = encodeURIComponent(`Hi, I have applied for ${event.title} on ${formatEventDate(selectedDate)}`);
+    const waMessage = encodeURIComponent(`I have registered for ${event.title} on ${formatEventDate(selectedDate)}.`);
     const waUrl = `https://wa.me/919940111564?text=${waMessage}`;
     const waWindow = window.open('', '_blank');
 
