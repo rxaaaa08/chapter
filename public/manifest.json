@@ -1,9 +1,9 @@
 {
-  "name": "chapter அ",
+  "name": "chapter அ admin",
   "short_name": "chapter அ",
-  "description": "Curated experiences for people who want to step out and connect.",
-  "id": "/",
-  "start_url": "/",
+  "description": "Admin panel for chapter அ — manage applications, payments, and chats.",
+  "id": "/admin",
+  "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

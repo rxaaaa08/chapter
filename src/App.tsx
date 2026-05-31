@@ -5250,16 +5250,13 @@ export default function App() {
 
   const [routePath, setRoutePath] = useState(() => {
     if (typeof window === 'undefined') return '/';
-    // Synchronously redirect to /admin before first render if this is a standalone
-    // PWA opened at '/' on an admin device (adminTab key is set whenever someone
-    // has visited the admin panel on this device).
+    // The PWA is admin-only. Whenever it's launched in standalone mode, force
+    // the route to /admin. This handles iOS Safari (which uses the install-time
+    // URL instead of the manifest's start_url) and any case where the launch
+    // URL got stored as something other than /admin.
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || (window.navigator as any).standalone === true;
-    const isAdminDevice = !!localStorage.getItem('chaptera_admin_device');
-    // Redirect to /admin from any non-admin path when this is a standalone PWA
-    // on an admin device. Chrome may store the install-time URL (e.g. /plans)
-    // instead of the manifest's start_url, so we can't rely on pathname === '/'.
-    if (isStandalone && isAdminDevice && window.location.pathname !== '/admin') {
+    if (isStandalone && window.location.pathname !== '/admin') {
       window.history.replaceState({}, '', '/admin');
       return '/admin';
     }
