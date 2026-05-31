@@ -154,7 +154,7 @@ function buildNotification(type: string, record: any): { title: string; body: st
       return {
         title: '💬 New Doubt',
         body:  `${convName}: ${preview}`,
-        url:   adminUrl,
+        url:   `${adminUrl}?tab=chats`,
         tag:   'new-doubt',
       };
     }

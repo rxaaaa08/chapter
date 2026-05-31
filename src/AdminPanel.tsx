@@ -458,6 +458,12 @@ export default function AdminPanel() {
     }).then(() => {
       // For ops users the People tab is shown by default — load applications automatically
       if (adminRole === 'ops') loadApplications();
+      // If opened via a push notification deep-link (?tab=chats), switch to Chats tab
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'chats') {
+        switchTab('chats');
+        window.history.replaceState({}, '', window.location.pathname);
+      }
     }).catch(err => {
       console.error('Admin data load error:', err);
       setLoading(false);

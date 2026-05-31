@@ -5303,6 +5303,14 @@ export default function App() {
       return () => window.removeEventListener('popstate', syncRoute);
     }
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    // If the PWA is opened standalone on '/' and the user has an admin session,
+    // send them straight to /admin instead of the consumer home.
+    const hasAdminSession = Object.keys(localStorage).some(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (isStandalone && window.location.pathname === '/' && hasAdminSession) {
+      window.history.replaceState({}, '', '/admin');
+      syncRoute();
+      return () => window.removeEventListener('popstate', syncRoute);
+    }
     if (!isStandalone && window.location.pathname === '/' && !window.location.search.includes('preview_event') && !window.location.search.includes('payment_status')) {
       window.history.replaceState({}, '', '/aboutus');
       syncRoute();
