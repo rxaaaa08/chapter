@@ -287,7 +287,7 @@ Unique constraint on `(phone, endpoint)`.
 ```
 Public key:  BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU
 Private key: gTk_kUUDG6M8pSPd7T_0forHklEWs4GzkgVxavyVPdw
-Subject:     mailto:hello@chaptera.in
+Subject:     mailto:chapteraaa.official@gmail.com
 ```
 
 ---
@@ -302,7 +302,7 @@ Subject:     mailto:hello@chaptera.in
   ```
   VAPID_PUBLIC_KEY  = BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU
   VAPID_PRIVATE_KEY = gTk_kUUDG6M8pSPd7T_0forHklEWs4GzkgVxavyVPdw
-  VAPID_SUBJECT     = mailto:hello@chaptera.in
+  VAPID_SUBJECT     = mailto:chapteraaa.official@gmail.com
   ```
 
 - [ ] **Verify `pg_net` trigger is active in Supabase**

@@ -1,6 +1,6 @@
 // chaptera admin panel
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, parseHeroImages } from './supabase';
+import { supabase, parseHeroImages, fetchEventCounts } from './supabase';
 
 // ─── IMAGE UPLOAD ─────────────────────────────────────────────────────────────
 async function uploadImageToStorage(file: File, folder = 'general'): Promise<string | null> {
@@ -169,10 +169,10 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics' | 'chats'>(
-    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'chats') ?? 'people'
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics' | 'chats' | 'settings'>(
+    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'chats' | 'settings') ?? 'people'
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'chats') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'chats' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
   const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
   const [peopleSearch, setPeopleSearch] = useState('');
@@ -204,7 +204,68 @@ export default function AdminPanel() {
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
   const [doubtCtaLabel, setDoubtCtaLabel] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
+  // ── Dynamic announcements ──────────────────────────────────────────────────
+  const [announcementEventSlugs, setAnnouncementEventSlugs] = useState<string[]>([]);
+  const [announcementStaticText, setAnnouncementStaticText] = useState('plans we dream');
+  // counts keyed by event slug: { registered, reserved }
+  const [announcementCounts, setAnnouncementCounts] = useState<Record<string, { registered: number; reserved: number }>>({});
   const [savingDoubtSettings, setSavingDoubtSettings] = useState(false);
+  // ── NOTIFICATIONS (admin push) ────────────────────────────────────────────
+  const VAPID_PUBLIC_KEY = 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU';
+  const [notifStatus, setNotifStatus] = useState<'idle' | 'requesting' | 'subscribed' | 'error'>('idle');
+  const [notifLabel, setNotifLabel] = useState('');
+  const [notifDevices, setNotifDevices] = useState<{ id: string; label: string; created_at: string }[]>([]);
+  const [notifDevicesLoading, setNotifDevicesLoading] = useState(false);
+
+  const loadNotifDevices = React.useCallback(async () => {
+    setNotifDevicesLoading(true);
+    const { data } = await supabase.from('admin_push_subscriptions').select('id, label, created_at').order('created_at', { ascending: false });
+    setNotifDevices(data ?? []);
+    setNotifDevicesLoading(false);
+  }, []);
+
+  const subscribeThisDevice = async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      setNotifStatus('error');
+      showToast('Push notifications are not supported on this browser.');
+      return;
+    }
+    setNotifStatus('requesting');
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setNotifStatus('error');
+        showToast('Notification permission denied.');
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing ?? await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: VAPID_PUBLIC_KEY,
+      });
+      const subJson = sub.toJSON() as any;
+      const label = notifLabel.trim() || (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? 'iOS Device' : navigator.userAgent.includes('Android') ? 'Android Device' : 'Desktop');
+      await supabase.from('admin_push_subscriptions').upsert({
+        label,
+        endpoint: sub.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth,
+      }, { onConflict: 'endpoint' });
+      setNotifStatus('subscribed');
+      showToast('✅ Notifications enabled for this device!');
+      loadNotifDevices();
+    } catch (e: any) {
+      setNotifStatus('error');
+      showToast('Failed to enable notifications: ' + (e?.message ?? e));
+    }
+  };
+
+  const removeNotifDevice = async (id: string) => {
+    await supabase.from('admin_push_subscriptions').delete().eq('id', id);
+    setNotifDevices(prev => prev.filter(d => d.id !== id));
+  };
+
   // ── CHATS ─────────────────────────────────────────────────────────────────
   const [chatConversations, setChatConversations] = useState<any[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -382,6 +443,14 @@ export default function AdminPanel() {
         }
         const doubtLabelMsg = allMsgs.find(m => m.step_key === 'doubt_cta_label');
         setDoubtCtaLabel(doubtLabelMsg?.bot_message || '');
+        // Load dynamic announcement config
+        const slugsMsg = allMsgs.find(m => m.step_key === 'announcement_event_slugs');
+        if (slugsMsg?.bot_message) {
+          const slugs = slugsMsg.bot_message.split('\n').map(s => s.trim()).filter(Boolean);
+          setAnnouncementEventSlugs(slugs);
+        }
+        const staticMsg = allMsgs.find(m => m.step_key === 'announcement_static_text');
+        if (staticMsg?.bot_message) setAnnouncementStaticText(staticMsg.bot_message);
       }
       if (doubtsRes.data) setPlanDoubts(doubtsRes.data);
       if (payuRes.data) setPayuPayments(payuRes.data as PayuPayment[]);
@@ -1151,6 +1220,60 @@ export default function AdminPanel() {
     showToast('Global announcements saved!');
   };
 
+  // Compute the announcement string for a given event (same logic as AppFlow)
+  const computeAnnouncementText = (slug: string): string => {
+    const event = trips.find(t => t.slug === slug);
+    if (!event) return slug;
+    const capacity = event.total_capacity ?? null;
+    if (!capacity) return `⚠ ${event.title} — no Group Size set (announcement won't show)`;
+    const counts = announcementCounts[slug];
+    const reserved = counts?.reserved ?? 0;
+    const registered = counts?.registered ?? 0;
+    const title = (event.title ?? slug).toLowerCase();
+    if (reserved >= capacity) return `${title} - sold out`;
+    if (reserved / capacity >= 0.5) return `${title} - ${capacity - reserved} spots left`;
+    const displayed = (capacity * 3) + registered;
+    return `${title} - ${displayed} people have registered`;
+  };
+
+  // Fetch counts for all selected announcement event slugs
+  React.useEffect(() => {
+    if (announcementEventSlugs.length === 0) return;
+    announcementEventSlugs.forEach(slug => {
+      if (!slug || announcementCounts[slug]) return;
+      fetchEventCounts(slug).then(counts => {
+        setAnnouncementCounts(prev => ({ ...prev, [slug]: counts }));
+      });
+    });
+  }, [announcementEventSlugs]);
+
+  const saveAnnouncementConfig = async () => {
+    setSavingGeneralAnnouncements(true);
+    const slugsValue = announcementEventSlugs.filter(Boolean).join('\n');
+    const staticValue = announcementStaticText.trim() || 'plans we dream';
+
+    const saveChatMsgKey = async (key: string, value: string) => {
+      const existing = msgs.find(m => m.step_key === key);
+      const maxSort = msgs.length > 0 ? Math.max(...msgs.map((m: any) => Number((m as any).sort_order) || 0)) : 0;
+      if (existing?.id) {
+        await supabase.from('chat_messages').update({ bot_message: value }).eq('id', existing.id);
+        setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: value } : m));
+      } else {
+        const { data } = await supabase.from('chat_messages').insert({
+          step_key: key, bot_message: value, flow: 'global', options: [], sort_order: maxSort + 1,
+        }).select('*').single();
+        if (data) setMsgs(prev => [...prev, data as ChatMsg]);
+      }
+    };
+
+    await Promise.all([
+      saveChatMsgKey('announcement_event_slugs', slugsValue),
+      saveChatMsgKey('announcement_static_text', staticValue),
+    ]);
+    setSavingGeneralAnnouncements(false);
+    showToast('Announcements saved!');
+  };
+
   const saveDoubtFormSettings = async () => {
     setSavingDoubtSettings(true);
     const saveSetting = async (stepKey: string, value: string): Promise<boolean> => {
@@ -1268,6 +1391,7 @@ export default function AdminPanel() {
           )}
         </button>
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
+        <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
 
@@ -2262,7 +2386,12 @@ export default function AdminPanel() {
 
         {/* ── PEOPLE TAB (unified: applications + payments + receipts) ──────── */}
         {!loading && tab === 'people' && (() => {
-          const nativeEventSlugs = [...new Set(applications.map(a => a.event_slug).filter(Boolean))] as string[];
+          // Build slug list from invite-only trips so events with 0 applications still appear.
+          // Only include slugs that map to a known trip title — this prevents deleted/renamed
+          // events from showing up as raw slugs when they still have old applications in the DB.
+          const nativeEventSlugs = trips
+            .filter(t => (t.invite_only || t.booking_url === 'native-application') && t.slug && t.title)
+            .map(t => t.slug as string);
 
           // Build a phone+event → payu payment index
           const successPayments = payuPayments.filter(p => p.status === 'success');
@@ -2740,27 +2869,69 @@ export default function AdminPanel() {
               You can use dynamic variables like <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{city}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{category}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{title}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{reporting_date}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{meeting_spot}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{transport}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{reporting_time}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{name}'}</code>, <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{phone}'}</code> and <code style={{ background: '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{'{doubt}'}</code>.
             </div>
             <CollapsibleSection title="Global Announcements" defaultOpen={true}>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {[0, 1, 2].map((idx) => (
-                  <input
-                    key={idx}
-                    style={s.input}
-                    value={globalAnnouncementsFields[idx]}
-                    onChange={e => setGlobalAnnouncementsFields(prev => {
-                      const next: [string, string, string] = [...prev] as [string, string, string];
-                      next[idx] = e.target.value;
-                      return next;
-                    })}
-                    placeholder={[
-                      'Chennai-based social club with 4000+ members',
-                      'Weekend plans drop every week',
-                      'Spots fill fast - book early to lock your seat',
-                    ][idx]}
-                  />
-                ))}
+              {/* Event slots — dynamic, computed from live data */}
+              <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
+                {announcementEventSlugs.map((slug, idx) => {
+                  const inviteOnlyEvents = trips.filter(t => t.invite_only || t.booking_url === 'native-application');
+                  const preview = slug ? computeAnnouncementText(slug) : null;
+                  return (
+                    <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <select
+                          style={{ ...s.input, marginBottom: 4 }}
+                          value={slug}
+                          onChange={e => {
+                            const newSlug = e.target.value;
+                            setAnnouncementEventSlugs(prev => prev.map((s, i) => i === idx ? newSlug : s));
+                            // fetch counts for newly selected event
+                            if (newSlug && !announcementCounts[newSlug]) {
+                              fetchEventCounts(newSlug).then(counts =>
+                                setAnnouncementCounts(prev => ({ ...prev, [newSlug]: counts }))
+                              );
+                            }
+                          }}
+                        >
+                          <option value="">— select an event —</option>
+                          {inviteOnlyEvents.map(t => (
+                            <option key={t.slug} value={t.slug}>{t.title}</option>
+                          ))}
+                        </select>
+                        {preview && (
+                          <div style={{ fontSize: 11, color: '#666', padding: '3px 8px', background: '#f5f5f5', borderRadius: 6, fontFamily: 'monospace' }}>
+                            preview: {preview}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        style={{ ...s.btn('#dc2626'), padding: '6px 10px', fontSize: 13, marginTop: 2, flexShrink: 0 }}
+                        onClick={() => setAnnouncementEventSlugs(prev => prev.filter((_, i) => i !== idx))}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
+              <button
+                style={{ ...s.btn('#111'), padding: '6px 14px', fontSize: 13, marginBottom: 16 }}
+                onClick={() => setAnnouncementEventSlugs(prev => [...prev, ''])}
+              >
+                + Add Event Slot
+              </button>
+
+              {/* Static text field */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>Static announcement (always shown)</label>
+                <input
+                  style={s.input}
+                  value={announcementStaticText}
+                  onChange={e => setAnnouncementStaticText(e.target.value)}
+                  placeholder="plans we dream"
+                />
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                <button style={s.btn(savingGeneralAnnouncements ? '#aaa' : '#111')} disabled={savingGeneralAnnouncements} onClick={saveGeneralAnnouncements}>
+                <button style={s.btn(savingGeneralAnnouncements ? '#aaa' : '#111')} disabled={savingGeneralAnnouncements} onClick={saveAnnouncementConfig}>
                   {savingGeneralAnnouncements ? 'Saving…' : 'Save Global Announcements'}
                 </button>
               </div>
@@ -3574,6 +3745,85 @@ export default function AdminPanel() {
           );
         })()}
 
+        {/* ── SETTINGS TAB ─────────────────────────────────────────────────── */}
+        {tab === 'settings' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+            {/* Push Notifications */}
+            <CollapsibleSection title="Push Notifications" defaultOpen={true}>
+              <p style={{ fontSize: 13, color: '#555', marginBottom: 16, lineHeight: 1.6 }}>
+                Enable push notifications on this device to get alerted when:<br />
+                <strong>📋 New application</strong> submitted · <strong>💛 Advance paid</strong> · <strong>✅ Fully paid</strong> · <strong>💬 New doubt</strong> message from a user
+              </p>
+
+              {/* Subscribe this device */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
+                <input
+                  style={{ ...s.input, flex: 1, minWidth: 160, maxWidth: 260, marginBottom: 0 }}
+                  placeholder='Device label (e.g. "Krutesh iPhone")'
+                  value={notifLabel}
+                  onChange={e => setNotifLabel(e.target.value)}
+                />
+                <button
+                  style={{
+                    ...s.btn(notifStatus === 'subscribed' ? '#16a34a' : notifStatus === 'error' ? '#dc2626' : '#111'),
+                    padding: '9px 18px', fontSize: 14, flexShrink: 0,
+                    opacity: notifStatus === 'requesting' ? 0.6 : 1,
+                  }}
+                  disabled={notifStatus === 'requesting'}
+                  onClick={subscribeThisDevice}
+                >
+                  {notifStatus === 'requesting' ? '…' :
+                   notifStatus === 'subscribed' ? '✓ Notifications On' :
+                   notifStatus === 'error'      ? 'Retry' :
+                   '🔔 Enable on This Device'}
+                </button>
+              </div>
+
+              {/* Subscribed devices list */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: '#888', letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0 }}>
+                    Subscribed Devices {notifDevices.length > 0 && `(${notifDevices.length})`}
+                  </p>
+                  <button style={{ fontSize: 12, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={loadNotifDevices}>
+                    {notifDevicesLoading ? 'Loading…' : 'Refresh'}
+                  </button>
+                </div>
+                {notifDevices.length === 0 && !notifDevicesLoading && (
+                  <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>No devices subscribed yet.</p>
+                )}
+                {notifDevices.map(d => (
+                  <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: '#f5f5f5', marginBottom: 6 }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{d.label}</span>
+                      <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
+                        {new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <button
+                      style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+                      onClick={() => removeNotifDevice(d.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 16, padding: 12, background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
+                <p style={{ fontSize: 12, color: '#92400e', margin: 0, lineHeight: 1.6 }}>
+                  <strong>One-time setup required:</strong> Run this in the Supabase SQL editor once to wire up the DB triggers, replacing with your actual service role key (found at Supabase Dashboard → Settings → API):<br />
+                  <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: '#fff', borderRadius: 6, fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>
+                    ALTER DATABASE postgres SET app.settings.service_role_key = 'your-service-role-key-here';
+                  </code>
+                  Also add <strong>VAPID_PUBLIC_KEY</strong>, <strong>VAPID_PRIVATE_KEY</strong>, and <strong>VAPID_SUBJECT</strong> secrets to the <code>send-admin-push</code> Edge Function (same values as <code>send-push-notification</code>).
+                </p>
+              </div>
+            </CollapsibleSection>
+
+          </div>
+        )}
 
       </div>
     </div>

@@ -845,6 +845,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [appFormSubmitted, setAppFormSubmitted] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [reservedCount, setReservedCount] = useState<number | null>(null);
+  // Dynamic global announcements computed from invite-only events
+  const [dynamicAnnouncements, setDynamicAnnouncements] = useState<string[]>([]);
   const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
@@ -964,6 +966,34 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
   const isNativeApplicationFlow = selectedEvent?.bookingUrl === 'native-application';
 
+  // Compute dynamic global announcements from invite-only events once msgs + events are ready
+  useEffect(() => {
+    if (!msgsReady || !eventsLoaded) return;
+    const slugs = (msgs.announcement_event_slugs || '')
+      .split('\n').map((s: string) => s.trim()).filter(Boolean);
+    const staticText = (msgs.announcement_static_text || '').trim() || 'plans we dream';
+    if (slugs.length === 0) {
+      setDynamicAnnouncements([staticText]);
+      return;
+    }
+    Promise.all(
+      slugs.map(async (slug: string) => {
+        const event = events.find(e => e.id === slug);
+        const capacity = (event as any)?.totalCapacity ?? null;
+        if (!event || !capacity) return null;
+        const { registered, reserved } = await fetchEventCounts(slug);
+        const title = (event.title ?? slug).toLowerCase();
+        if (reserved >= capacity) return `${title} - sold out`;
+        if (reserved / capacity >= 0.5) return `${title} - ${capacity - reserved} spots left`;
+        const displayed = (capacity * 3) + registered;
+        return `${title} - ${displayed} people have registered`;
+      })
+    ).then(lines => {
+      const valid = lines.filter(Boolean) as string[];
+      setDynamicAnnouncements([...valid, staticText]);
+    });
+  }, [msgsReady, eventsLoaded]);
+
   // Fetch application count for native-application events
   useEffect(() => {
     if (!isNativeApplicationFlow || !selectedEvent?.id) {
@@ -1056,20 +1086,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
+  // Use dynamically computed announcements (from invite-only event data + static text).
+  // Fall back to the old general_announcements field, then hardcoded defaults.
   const parsedGeneralAnnouncements = (msgs.general_announcements || '')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean);
-  // Fallback: pull live announcements from fetched events instead of stale hardcoded strings
-  const eventDerivedAnnouncements = events
-    .filter(e => !e.inviteOnly)
-    .flatMap(e => e.announcements ?? [])
-    .filter(Boolean)
-    .slice(0, 8);
-  const globalAnnouncements = parsedGeneralAnnouncements.length > 0
-    ? parsedGeneralAnnouncements
-    : eventDerivedAnnouncements.length > 0
-      ? eventDerivedAnnouncements
+    .split('\n').map((line: string) => line.trim()).filter(Boolean);
+  const globalAnnouncements = dynamicAnnouncements.length > 0
+    ? dynamicAnnouncements
+    : parsedGeneralAnnouncements.length > 0
+      ? parsedGeneralAnnouncements
       : GENERAL_ANNOUNCEMENTS;
 
   // Determine which announcements to show
