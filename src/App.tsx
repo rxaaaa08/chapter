@@ -5248,7 +5248,20 @@ export default function App() {
     return <LiveChatScreen onBack={() => setShowLiveChat(false)} />;
   }
 
-  const [routePath, setRoutePath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/');
+  const [routePath, setRoutePath] = useState(() => {
+    if (typeof window === 'undefined') return '/';
+    // Synchronously redirect to /admin before first render if this is a standalone
+    // PWA opened at '/' on an admin device (adminTab key is set whenever someone
+    // has visited the admin panel on this device).
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as any).standalone === true;
+    const isAdminDevice = !!localStorage.getItem('adminTab');
+    if (isStandalone && window.location.pathname === '/' && isAdminDevice) {
+      window.history.replaceState({}, '', '/admin');
+      return '/admin';
+    }
+    return window.location.pathname;
+  });
   const [routeSearch, setRouteSearch] = useState(typeof window !== 'undefined' ? window.location.search : '');
   const isStandaloneApp = typeof window !== 'undefined'
     && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
@@ -5303,14 +5316,6 @@ export default function App() {
       return () => window.removeEventListener('popstate', syncRoute);
     }
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-    // If the PWA is opened standalone on '/' and the user has an admin session,
-    // send them straight to /admin instead of the consumer home.
-    const hasAdminSession = Object.keys(localStorage).some(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
-    if (isStandalone && window.location.pathname === '/' && hasAdminSession) {
-      window.history.replaceState({}, '', '/admin');
-      syncRoute();
-      return () => window.removeEventListener('popstate', syncRoute);
-    }
     if (!isStandalone && window.location.pathname === '/' && !window.location.search.includes('preview_event') && !window.location.search.includes('payment_status')) {
       window.history.replaceState({}, '', '/aboutus');
       syncRoute();
