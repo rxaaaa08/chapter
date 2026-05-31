@@ -389,6 +389,9 @@ export default function AdminPanel() {
       const role = (data?.role as 'admin' | 'ops') ?? null;
       setAdminRole(role);
       setAuthDenied(!role); // logged in via Google but not in admin_users
+      // Mark this device as an admin device so the PWA always opens at /admin
+      if (role) localStorage.setItem('chaptera_admin_device', '1');
+      else localStorage.removeItem('chaptera_admin_device');
       if (!localStorage.getItem('adminTab')) {
         if (role === 'ops') setTab('people');
         else if (role === 'admin') setTab('trips');
@@ -416,6 +419,7 @@ export default function AdminPanel() {
 
   const logout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('chaptera_admin_device');
     setAdminRole(null);
     setAuthDenied(false);
   };

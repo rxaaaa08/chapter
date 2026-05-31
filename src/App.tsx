@@ -5255,7 +5255,7 @@ export default function App() {
     // has visited the admin panel on this device).
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || (window.navigator as any).standalone === true;
-    const isAdminDevice = !!localStorage.getItem('adminTab');
+    const isAdminDevice = !!localStorage.getItem('chaptera_admin_device');
     // Redirect to /admin from any non-admin path when this is a standalone PWA
     // on an admin device. Chrome may store the install-time URL (e.g. /plans)
     // instead of the manifest's start_url, so we can't rely on pathname === '/'.
