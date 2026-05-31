@@ -158,6 +158,16 @@ function buildNotification(type: string, record: any): { title: string; body: st
         tag:   'new-doubt',
       };
     }
+    case 'new_doubt_submission': {
+      const preview = String(record.doubt ?? '').slice(0, 80);
+      const eventPart = record.event_title ? ` (${record.event_title})` : '';
+      return {
+        title: '💬 New Doubt (form)',
+        body:  `${name}${eventPart}: ${preview}`,
+        url:   adminUrl,
+        tag:   'new-doubt-submission',
+      };
+    }
     default:
       return null;
   }
