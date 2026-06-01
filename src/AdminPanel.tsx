@@ -169,10 +169,10 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics' | 'chats' | 'settings'>(
-    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'chats' | 'settings') ?? 'people'
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics' | 'settings'>(
+    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'settings') ?? 'people'
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'chats' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
   const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
   const [peopleSearch, setPeopleSearch] = useState('');
@@ -265,15 +265,6 @@ export default function AdminPanel() {
     await supabase.from('admin_push_subscriptions').delete().eq('id', id);
     setNotifDevices(prev => prev.filter(d => d.id !== id));
   };
-
-  // ── CHATS ─────────────────────────────────────────────────────────────────
-  const [chatConversations, setChatConversations] = useState<any[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
-  const [chatReply, setChatReply] = useState('');
-  const [chatSending, setChatSending] = useState(false);
-  const [chatsLoading, setChatsLoading] = useState(false);
-  const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -462,104 +453,11 @@ export default function AdminPanel() {
     }).then(() => {
       // For ops users the People tab is shown by default — load applications automatically
       if (adminRole === 'ops') loadApplications();
-      // If opened via a push notification deep-link (?tab=chats), switch to Chats tab
-      const tabParam = new URLSearchParams(window.location.search).get('tab');
-      if (tabParam === 'chats') {
-        switchTab('chats');
-        window.history.replaceState({}, '', window.location.pathname);
-      }
     }).catch(err => {
       console.error('Admin data load error:', err);
       setLoading(false);
     });
   }, [adminRole]);
-
-  // ── CHATS: load conversations ──────────────────────────────────────────────
-  const loadChats = async () => {
-    setChatsLoading(true);
-    const { data } = await supabase
-      .from('doubt_conversations')
-      .select('*')
-      .order('updated_at', { ascending: false });
-    if (data) setChatConversations(data);
-    setChatsLoading(false);
-  };
-
-  const loadChatMessages = async (conversationId: string) => {
-    const { data } = await supabase
-      .from('doubt_messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
-    if (data) setChatMessages(data);
-  };
-
-  const sendAgentReply = async () => {
-    if (!activeChatId || !chatReply.trim()) return;
-    setChatSending(true);
-    const body = chatReply.trim();
-    setChatReply('');
-    await supabase.from('doubt_messages').insert({
-      conversation_id: activeChatId,
-      sender: 'agent',
-      body,
-    });
-    setChatSending(false);
-  };
-
-  // Open a conversation — load its messages and subscribe to new ones
-  const openConversation = (conv: any) => {
-    setActiveChatId(conv.id);
-    loadChatMessages(conv.id);
-  };
-
-  const markResolved = async (id: string) => {
-    await supabase.from('doubt_conversations').update({ status: 'resolved' }).eq('id', id);
-    setChatConversations(prev => prev.map(c => c.id === id ? { ...c, status: 'resolved' } : c));
-    if (activeChatId === id) setActiveChatId(null);
-  };
-
-  const reopenConversation = async (id: string) => {
-    await supabase.from('doubt_conversations').update({ status: 'open' }).eq('id', id);
-    setChatConversations(prev => prev.map(c => c.id === id ? { ...c, status: 'open' } : c));
-  };
-
-  // Realtime: subscribe when on chats tab
-  useEffect(() => {
-    if (tab !== 'chats' || !adminRole) return;
-    loadChats();
-
-    const convSub = supabase
-      .channel('admin-doubt-conversations')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doubt_conversations' }, () => {
-        loadChats();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(convSub); };
-  }, [tab, adminRole]);
-
-  // Realtime: subscribe to messages of active conversation
-  useEffect(() => {
-    if (!activeChatId) return;
-    const msgSub = supabase
-      .channel(`admin-chat-msgs-${activeChatId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'doubt_messages',
-        filter: `conversation_id=eq.${activeChatId}`,
-      }, (payload) => {
-        setChatMessages(prev => [...prev, payload.new]);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(msgSub); };
-  }, [activeChatId]);
-
-  // Scroll to bottom when messages update
-  useEffect(() => {
-    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
 
   const refreshPayuPayments = async () => {
     const { data } = await supabase
@@ -1394,18 +1292,12 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        <button style={{ ...s.tab(tab === 'chats'), position: 'relative' }} onClick={() => switchTab('chats')}>
-          Chats
-          {chatConversations.filter(c => c.status === 'open').length > 0 && (
-            <span style={{ position: 'absolute', top: 2, right: 2, width: 7, height: 7, borderRadius: '50%', background: '#22c55e', border: '1.5px solid #fff' }} />
-          )}
-        </button>
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
 
-      <div style={{ maxWidth: tab === 'people' ? 1280 : tab === 'chats' ? 1100 : 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: tab === 'people' ? 1280 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
@@ -3098,183 +2990,6 @@ export default function AdminPanel() {
 
           </>
         )}
-
-        {/* ── CHATS TAB ────────────────────────────────────────────────────── */}
-        {tab === 'chats' && (() => {
-          const activeConv = chatConversations.find(c => c.id === activeChatId) ?? null;
-          const openConvs = chatConversations.filter(c => c.status === 'open');
-          const resolvedConvs = chatConversations.filter(c => c.status === 'resolved');
-
-          const formatChatTime = (iso: string) => {
-            const d = new Date(iso);
-            const now = new Date();
-            const isToday = d.toDateString() === now.toDateString();
-            if (isToday) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-            return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-          };
-
-          const ConvList = ({ convs, label }: { convs: any[]; label: string }) => (
-            <>
-              {convs.length > 0 && (
-                <div style={{ padding: '6px 14px 4px', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#aaa', textTransform: 'uppercase' }}>{label}</div>
-              )}
-              {convs.map(conv => {
-                const isActive = conv.id === activeChatId;
-                const planName = trips.find(t => t.slug === conv.event_slug || t.invite_slug === conv.event_slug)?.title ?? conv.event_slug ?? '—';
-                return (
-                  <div
-                    key={conv.id}
-                    onClick={() => openConversation(conv)}
-                    style={{
-                      padding: '12px 14px',
-                      cursor: 'pointer',
-                      background: isActive ? '#f0f9ff' : 'transparent',
-                      borderLeft: isActive ? '3px solid #3b82f6' : '3px solid transparent',
-                      borderBottom: '1px solid #f3f3f3',
-                      transition: 'background 0.12s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: '#111' }}>{conv.name || `+91 ${(conv.phone ?? '').slice(-10)}`}</div>
-                      <div style={{ fontSize: 11, color: '#aaa', flexShrink: 0, marginLeft: 8 }}>{formatChatTime(conv.updated_at)}</div>
-                    </div>
-                    <div style={{ fontSize: 11, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{planName}</div>
-                    {conv.status === 'open' && (
-                      <div style={{ display: 'inline-block', marginTop: 4, padding: '1px 7px', borderRadius: 99, background: '#dcfce7', color: '#16a34a', fontSize: 10, fontWeight: 700 }}>open</div>
-                    )}
-                  </div>
-                );
-              })}
-            </>
-          );
-
-          return (
-            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, height: 'calc(100vh - 120px)', minHeight: 500 }}>
-
-              {/* ── Left: conversation list ── */}
-              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #ececec', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>Chats</div>
-                  <button
-                    onClick={loadChats}
-                    style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16, padding: 2 }}
-                    title="Refresh"
-                  >↻</button>
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto' }}>
-                  {chatsLoading && <div style={{ padding: 20, color: '#aaa', fontSize: 13, textAlign: 'center' }}>Loading…</div>}
-                  {!chatsLoading && chatConversations.length === 0 && (
-                    <div style={{ padding: 24, color: '#bbb', fontSize: 13, textAlign: 'center' }}>No conversations yet</div>
-                  )}
-                  <ConvList convs={openConvs} label="Open" />
-                  <ConvList convs={resolvedConvs} label="Resolved" />
-                </div>
-              </div>
-
-              {/* ── Right: thread view ── */}
-              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #ececec', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {!activeConv ? (
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc', fontSize: 14 }}>
-                    Select a conversation
-                  </div>
-                ) : (
-                  <>
-                    {/* Thread header */}
-                    <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>{activeConv.name || 'Unknown'}</div>
-                        <div style={{ fontSize: 12, color: '#888' }}>
-                          {activeConv.phone ? `+91 ${activeConv.phone.slice(-10)}` : ''}
-                          {activeConv.event_slug && (
-                            <> · {trips.find(t => t.slug === activeConv.event_slug || t.invite_slug === activeConv.event_slug)?.title ?? activeConv.event_slug}</>
-                          )}
-                        </div>
-                      </div>
-                      {activeConv.status === 'open' ? (
-                        <button
-                          onClick={() => markResolved(activeConv.id)}
-                          style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #16a34a', background: '#fff', color: '#16a34a', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                        >
-                          ✓ Mark Resolved
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => reopenConversation(activeConv.id)}
-                          style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #d0d0d0', background: '#fff', color: '#888', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                        >
-                          Reopen
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Messages */}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, background: '#fafafa' }}>
-                      {chatMessages.map(msg => {
-                        const isAgent = msg.sender === 'agent';
-                        return (
-                          <div key={msg.id} style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
-                            <div style={{
-                              maxWidth: '70%',
-                              padding: '9px 13px',
-                              borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                              background: isAgent ? '#3b82f6' : '#fff',
-                              color: isAgent ? '#fff' : '#111',
-                              fontSize: 13,
-                              lineHeight: 1.5,
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
-                              border: isAgent ? 'none' : '1px solid #ececec',
-                            }}>
-                              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.body}</div>
-                              <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: 'right' }}>
-                                {formatChatTime(msg.created_at)}
-                                {isAgent && <> · agent</>}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div ref={chatMessagesEndRef} />
-                    </div>
-
-                    {/* Reply input */}
-                    {activeConv.status === 'open' ? (
-                      <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                        <textarea
-                          value={chatReply}
-                          onChange={e => setChatReply(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgentReply(); } }}
-                          placeholder="Type a reply… (Enter to send, Shift+Enter for new line)"
-                          rows={2}
-                          style={{
-                            flex: 1, padding: '10px 13px', borderRadius: 10, border: '1.5px solid #e0e0e0',
-                            fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5,
-                          }}
-                        />
-                        <button
-                          onClick={sendAgentReply}
-                          disabled={!chatReply.trim() || chatSending}
-                          style={{
-                            padding: '10px 18px', borderRadius: 10, border: 'none',
-                            background: chatReply.trim() ? '#3b82f6' : '#e0e0e0',
-                            color: chatReply.trim() ? '#fff' : '#aaa',
-                            fontWeight: 700, fontSize: 13, cursor: chatReply.trim() ? 'pointer' : 'default',
-                            transition: 'all 0.15s', flexShrink: 0,
-                          }}
-                        >
-                          {chatSending ? '…' : 'Send'}
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0', textAlign: 'center', color: '#aaa', fontSize: 13 }}>
-                        Conversation resolved — reopen to reply
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })()}
 
         {/* ── ANALYTICS TAB ────────────────────────────────────────────────── */}
         {tab === 'analytics' && (() => {

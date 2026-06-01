@@ -1,8 +1,14 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://txcmismkdttgsyhbnexf.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4Y21pc21rZHR0Z3N5aGJuZXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMzEyMzksImV4cCI6MjA5MDkwNzIzOX0.0GTg30cJz28QiTzadCjCAAxa8ZPRkV5EptNXNMjTRI0';
+// Fail loudly if env vars aren't wired up. We used to fall back to the
+// production URL + anon key on a misconfigured preview deploy, which
+// meant preview builds would silently write to the prod DB.
+const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl)     throw new Error('VITE_SUPABASE_URL is not set');
+if (!supabaseAnonKey) throw new Error('VITE_SUPABASE_ANON_KEY is not set');
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
