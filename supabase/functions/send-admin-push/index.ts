@@ -120,52 +120,65 @@ async function sendWebPush(
 
 // ── Notification builders ─────────────────────────────────────────────────────
 
+function formatEventDate(raw: any): string {
+  if (!raw) return '';
+  const s = String(raw);
+  // ISO YYYY-MM-DD → "26 Sep"
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const day = parseInt(m[3], 10);
+  const monIdx = parseInt(m[2], 10) - 1;
+  if (monIdx < 0 || monIdx > 11) return s;
+  return `${day} ${months[monIdx]}`;
+}
+
 function buildNotification(type: string, record: any): { title: string; body: string; url: string; tag: string } | null {
-  // Resolve event title — use event_title field if present, otherwise event_slug
   const eventLabel = (record.event_title ?? record.event_slug ?? '').replace(/-/g, ' ');
   const name = record.name ?? record.applicant_name ?? 'Someone';
+  const eventDate = formatEventDate(record.selected_date);
+  const datePart = eventDate ? ` (${eventDate})` : '';
   const adminUrl = 'https://chaptera.in/admin';
 
   switch (type) {
     case 'new_application':
       return {
-        title: '📋 New Application',
-        body:  `${name} applied for ${eventLabel}`,
+        title: '🤠 New Application',
+        body:  `${name} - ${eventLabel}${datePart}`,
         url:   adminUrl,
         tag:   'new-application',
       };
     case 'advance_paid':
       return {
-        title: '💛 Advance Paid',
-        body:  `${name} paid advance for ${eventLabel}`,
+        title: '✨ Advance Paid',
+        body:  `${name} - ${eventLabel}${datePart}`,
         url:   adminUrl,
         tag:   'advance-paid',
       };
     case 'fully_paid':
       return {
         title: '✅ Fully Paid',
-        body:  `${name} settled full payment for ${eventLabel}`,
+        body:  `${name} - ${eventLabel}${datePart}`,
         url:   adminUrl,
         tag:   'fully-paid',
       };
-    case 'new_doubt': {
-      const preview = String(record.body ?? '').slice(0, 80);
-      const convName = record.conv_name ?? 'Someone';
+    case 'new_invite_doubt': {
+      const preview = String(record.message ?? '').slice(0, 80);
       return {
-        title: '💬 New Doubt',
-        body:  `${convName}: ${preview}`,
-        url:   `${adminUrl}?tab=chats`,
-        tag:   'new-doubt',
+        title: '🚨 Invitation Doubt',
+        body:  `${eventLabel}: ${preview}`,
+        url:   adminUrl,
+        tag:   'new-invite-doubt',
       };
     }
-    case 'new_doubt_submission': {
+    case 'new_booking_doubt': {
       const preview = String(record.doubt ?? '').slice(0, 80);
-      const eventPart = record.event_title ? ` (${record.event_title})` : '';
+      const label = record.event_title ?? eventLabel;
       return {
-        title: '💬 New Doubt (form)',
-        body:  `${name}${eventPart}: ${preview}`,
+        title: '🤓 Booking Doubt',
+        body:  `${label}: ${preview}`,
         url:   adminUrl,
-        tag:   'new-doubt-submission',
+        tag:   'new-booking-doubt',
       };
     }
     default:
@@ -192,14 +205,14 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // For doubt messages we need to join the conversation to get the sender's name
-    if (type === 'new_doubt' && record.conversation_id) {
-      const { data: conv } = await supabase
-        .from('doubt_conversations')
-        .select('name')
-        .eq('id', record.conversation_id)
-        .single();
-      if (conv?.name) record.conv_name = conv.name;
+    // Look up event title from events table if only slug is present
+    if (!record.event_title && record.event_slug) {
+      const { data: ev } = await supabase
+        .from('events')
+        .select('title')
+        .eq('slug', record.event_slug)
+        .maybeSingle();
+      if (ev?.title) record.event_title = ev.title;
     }
 
     const notif = buildNotification(type, record);
@@ -223,18 +236,19 @@ serve(async (req) => {
 
     const results = await Promise.allSettled(subs.map(s => sendWebPush(s, notif)));
 
-    // Clean up expired (410) subscriptions
+    const perDevice: any[] = [];
     const expired: string[] = [];
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      if (r.status === 'fulfilled' && r.value.status === 410) {
-        expired.push(subs[i].endpoint);
-      }
+      const host = (() => { try { return new URL(subs[i].endpoint).host; } catch { return '?'; } })();
       if (r.status === 'fulfilled') {
         const txt = await r.value.text().catch(() => '');
-        console.log(`push result [${i}]: status=${r.value.status} body=${txt.slice(0, 100)}`);
+        console.log(`push result [${i}]: host=${host} status=${r.value.status} body=${txt.slice(0, 100)}`);
+        perDevice.push({ i, host, status: r.value.status, body: txt.slice(0, 200) });
+        if (r.value.status === 410) expired.push(subs[i].endpoint);
       } else {
         console.error(`push error [${i}]:`, r.reason);
+        perDevice.push({ i, host, error: String(r.reason).slice(0, 200) });
       }
     }
     if (expired.length > 0) {
@@ -243,7 +257,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ sent: subs.length, expired: expired.length }),
+      JSON.stringify({ sent: subs.length, expired: expired.length, perDevice }),
       { headers: { 'Content-Type': 'application/json' } },
     );
   } catch (err) {

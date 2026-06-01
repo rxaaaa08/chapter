@@ -10,10 +10,11 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: '/apple-touch-icon.png',
-      badge: '/apple-touch-icon.png',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
       tag: payload.tag,
       renotify: true,
+      requireInteraction: true,
       data: { url: payload.url },
     })
   );
