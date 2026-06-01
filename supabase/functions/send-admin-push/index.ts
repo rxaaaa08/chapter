@@ -193,12 +193,30 @@ serve(async (req) => {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } });
   }
 
+  // ── Shared-secret gate ─────────────────────────────────────────────────────
+  // The function is deployed with verify_jwt=false because it's invoked via
+  // pg_net from a DB trigger (no JWT context). To stop random internet POSTs
+  // from spamming admins, every call must carry X-Admin-Push-Secret matching
+  // the ADMIN_PUSH_SECRET env var. notify_admin_push() in the DB injects this
+  // header automatically.
+  const expectedSecret = (Deno.env.get('ADMIN_PUSH_SECRET') ?? '').trim();
+  const providedSecret = (req.headers.get('x-admin-push-secret') ?? '').trim();
+  if (!expectedSecret) {
+    console.error('send-admin-push: ADMIN_PUSH_SECRET env var is not set; refusing all traffic');
+    return new Response('not configured', { status: 503 });
+  }
+  if (providedSecret !== expectedSecret) {
+    console.warn('send-admin-push: rejected request with missing/wrong X-Admin-Push-Secret');
+    return new Response('unauthorized', { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const type   = body.type as string;
     const record = body.record ?? {};
 
     console.log(`send-admin-push: type=${type} record_keys=${Object.keys(record).join(',')}`);
+    console.log(`vapid_check: pub_len=${VAPID_PUBLIC.length} priv_len=${VAPID_PRIVATE.length} sub=${VAPID_SUBJECT} pub_head=${VAPID_PUBLIC.slice(0,8)} pub_tail=${VAPID_PUBLIC.slice(-8)}`);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -257,7 +275,10 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ sent: subs.length, expired: expired.length, perDevice }),
+      JSON.stringify({
+        sent: subs.length, expired: expired.length, perDevice,
+        vapid: { pub_len: VAPID_PUBLIC.length, priv_len: VAPID_PRIVATE.length, pub_head: VAPID_PUBLIC.slice(0,8), pub_tail: VAPID_PUBLIC.slice(-8) },
+      }),
       { headers: { 'Content-Type': 'application/json' } },
     );
   } catch (err) {
