@@ -163,6 +163,30 @@ function Badge({ status }: { status: TripDate['status'] }) {
   );
 }
 
+// ─── AUDIT LOG HELPER (H10) ─────────────────────────────────────────────────
+//
+// Fire-and-forget audit logger used by every state-changing admin action.
+// The server-side log_admin_action() function re-validates is_admin()
+// against the caller's JWT, so a tampered client call can't fake entries.
+// Failures are swallowed — logging must never block the real action.
+async function logAdminAction(
+  action: string,
+  targetTable?: string | null,
+  targetId?: string | null,
+  details: Record<string, unknown> = {},
+) {
+  try {
+    await supabase.rpc('log_admin_action', {
+      p_action:       action,
+      p_target_table: targetTable ?? null,
+      p_target_id:    targetId    ?? null,
+      p_details:      details,
+    });
+  } catch (e) {
+    console.warn('[audit] log_admin_action failed:', e);
+  }
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const [adminRole, setAdminRole] = useState<'admin' | 'ops' | null>(null);
@@ -554,6 +578,12 @@ export default function AdminPanel() {
     }
 
     setApplications(prev => prev.map(a => a.id === id ? { ...a, ...updatedApp } : a));
+    logAdminAction('application_approve', 'applications', id, {
+      name: app?.name ?? null,
+      phone: app?.phone ?? null,
+      event_slug: app?.event_slug ?? null,
+      previous_status: app?.status ?? null,
+    });
 
     // 2. Fire AiSensy invite message
     if (app) {
@@ -582,6 +612,12 @@ export default function AdminPanel() {
           event_slug: inviteSlug,
           phone: String(app.phone).replace(/\D/g, '').slice(-10),
         }).select();
+        logAdminAction('invited_number_add', 'invited_numbers', null, {
+          event_slug: inviteSlug,
+          phone: String(app.phone).replace(/\D/g, '').slice(-10),
+          via: 'approveApplication',
+          application_id: id,
+        });
       }
 
       try {
@@ -692,13 +728,16 @@ export default function AdminPanel() {
       } else {
         showToast(`✅ ${submission.name || 'Person'} updated to invited!`);
         setApprovedDoubtIds(prev => new Set(prev).add(id));
+        logAdminAction('application_approve_from_doubt', 'applications', existing.id, {
+          phone, event_slug: eventSlug, previous_status: existing.status, doubt_id: id,
+        });
       }
       setApprovingDoubtId(null);
       return;
     }
 
     // Create a new application row
-    const { error } = await supabase.from('applications').insert({
+    const { data: createdApp, error } = await supabase.from('applications').insert({
       event_slug: eventSlug,
       name: (submission.name ?? '').trim() || 'Unknown',
       phone,
@@ -709,13 +748,16 @@ export default function AdminPanel() {
       status: 'invited',
       call_status: 'called',
       call_notes: `Approved via doubt: "${(submission.doubt || submission.message || '').slice(0, 80)}"`,
-    });
+    }).select('id').maybeSingle();
 
     if (error) {
       showToast(`❌ Could not create application: ${error.message}`);
     } else {
       showToast(`✅ ${submission.name || 'Person'} approved & invited!`);
       setApprovedDoubtIds(prev => new Set(prev).add(id));
+      logAdminAction('application_create_from_doubt', 'applications', createdApp?.id ?? null, {
+        phone, event_slug: eventSlug, doubt_id: id, name: submission.name ?? null,
+      });
     }
     setApprovingDoubtId(null);
   };
@@ -772,10 +814,20 @@ export default function AdminPanel() {
     if (id) {
       const { error: updateError } = await supabase.from('events').update(fields).eq('id', id);
       if (updateError) { console.error('Update error:', updateError); showToast('Save failed: ' + updateError.message); setSaving(null); return; }
+      logAdminAction('event_update', 'events', id, {
+        title: tripWithSlug.title, slug: tripWithSlug.slug,
+        price_advance: tripWithSlug.price_advance, price_full: tripWithSlug.price_full,
+        is_active: tripWithSlug.is_active, invite_only: tripWithSlug.invite_only,
+      });
     } else {
       const { data, error: insertError } = await supabase.from('events').insert(fields).select('id').single();
       if (insertError) { console.error('Insert error:', insertError); showToast('Save failed: ' + insertError.message); setSaving(null); return; }
       eventId = data?.id;
+      logAdminAction('event_create', 'events', eventId ?? null, {
+        title: tripWithSlug.title, slug: tripWithSlug.slug,
+        price_advance: tripWithSlug.price_advance, price_full: tripWithSlug.price_full,
+        invite_only: tripWithSlug.invite_only,
+      });
     }
 
     if (eventId && normalizedEventDates) {
@@ -901,6 +953,7 @@ export default function AdminPanel() {
     await supabase.from('events').delete().eq('id', id);
     setTrips(prev => prev.filter(t => t.id !== id));
     showToast('Deleted.');
+    logAdminAction('event_delete', 'events', id, { title });
   };
 
   const duplicateTrip = async (trip: Trip) => {
@@ -945,11 +998,17 @@ export default function AdminPanel() {
       .eq('id', data.id).single();
     if (fresh) setTrips(prev => [...prev, fresh as Trip]);
     showToast(`"${trip.title}" duplicated ✓`);
+    logAdminAction('event_duplicate', 'events', data.id, {
+      source_id: trip.id ?? null, source_title: trip.title, new_slug: newSlug,
+    });
   };
 
   const setLiveState = async (trip: Trip, live: boolean) => {
     await supabase.from('events').update({ is_active: live }).eq('id', trip.id!);
     setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, is_active: live } : t));
+    logAdminAction(live ? 'event_set_live' : 'event_set_offline', 'events', trip.id ?? null, {
+      title: trip.title,
+    });
   };
   const handlePlanAction = async (trip: Trip, action: string) => {
     if (!trip.id) return;
@@ -4806,6 +4865,11 @@ function InvitedNumbersSection({ eventSlug, applicationEventSlug, cities = [], s
       else saved += batch.length;
     }
     const { synced, error: syncError } = await syncApplicationsForInvites(phones, cityValue);
+    if (saved > 0) {
+      logAdminAction('invited_numbers_bulk_add', 'invited_numbers', null, {
+        event_slug: eventSlug, city: cityValue, count: saved, applications_synced: synced,
+      });
+    }
     return { saved, synced, error: lastError || syncError };
   };
 
@@ -4847,11 +4911,15 @@ function InvitedNumbersSection({ eventSlug, applicationEventSlug, cities = [], s
     const scopeLabel = (hasCityTabs && selectedCity !== 'All') ? `${selectedCity} numbers` : 'ALL invited numbers';
     if (!window.confirm(`Clear ${scopeLabel} for "${eventSlug}"? This cannot be undone.`)) return;
     setClearing(true);
+    const cityScope = (hasCityTabs && selectedCity !== 'All') ? selectedCity : null;
     let q: any = supabase.from('invited_numbers').delete().eq('event_slug', eventSlug);
-    if (hasCityTabs && selectedCity !== 'All') q = q.eq('city', selectedCity);
+    if (cityScope) q = q.eq('city', cityScope);
     await q;
     await fetchCount();
     setClearing(false);
+    logAdminAction('invited_numbers_bulk_delete', 'invited_numbers', null, {
+      event_slug: eventSlug, city: cityScope, scope: scopeLabel,
+    });
   };
 
   const cityTabs = ['All', ...namedCities];

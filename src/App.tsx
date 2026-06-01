@@ -2051,24 +2051,36 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   // Bill restore: user pressed browser back from the PayU payment page.
   // The form POST disables bfcache, so we save bill state before submitting
   // and restore it here so the bill overlay re-opens instead of showing the form.
+  //
+  // H6: we only trust { name, phone, verifiedSlug } from sessionStorage —
+  // these aren't security-sensitive on their own. The full nativeEventData
+  // (prices, dates, plan details) is re-fetched fresh from the DB via
+  // prepareNativeInviteFlow so a tampered sessionStorage can't display a
+  // bogus price or substitute a different event before the user clicks
+  // Pay. (The actual PayU amount is server-trusted in create-payu-order,
+  // but a fake display price is still a UX/trust problem.)
   useEffect(() => {
     const raw = sessionStorage.getItem('ca_payu_bill');
     if (!raw) return;
     sessionStorage.removeItem('ca_payu_bill');
-    try {
-      const { name, phone, verifiedSlug: slug, nativeEventData: ned } = JSON.parse(raw);
+    let restored: { name?: string; phone?: string; verifiedSlug?: string } = {};
+    try { restored = JSON.parse(raw); } catch { setIsBillRestoreLoading(false); return; }
+    const name = String(restored.name ?? '').trim();
+    const phone = String(restored.phone ?? '').replace(/\D/g, '').slice(-10);
+    const slug = String(restored.verifiedSlug ?? '').trim();
+    if (!name || phone.length !== 10 || !slug) { setIsBillRestoreLoading(false); return; }
+
+    prepareNativeInviteFlow(slug, phone).then(ready => {
+      if (!ready) { setIsBillRestoreLoading(false); return; }
       setForm({ name, phone });
       setVerifiedSlug(slug);
-      setNativeEventData(ned);
       setTcAccepted(true);
-      setPosterLoaded(true); // skip poster loading — bill overlay covers the screen
-      setChatEventQuickInfo(ned.planDetails?.quickInfo ?? []);
-      setChatEventTransportPlan(ned.transportPlan ?? []);
-      setChatOpen(true);     // restore chat so back-from-bill shows timeline over chat, not bare poster
-      setBillRestored(true); // triggers backdrop so poster never shows during slide-up
+      setPosterLoaded(true);  // skip poster loading — bill overlay covers the screen
+      setChatOpen(true);      // restore chat so back-from-bill shows timeline over chat
+      setBillRestored(true);  // triggers backdrop so poster never shows during slide-up
       setShowNativeBill(true);
-    } catch { /* ignore */ }
-    setIsBillRestoreLoading(false);
+      setIsBillRestoreLoading(false);
+    }).catch(() => setIsBillRestoreLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3138,11 +3150,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                 }
                 // Save bill state now so a page refresh (or browser-back from PayU) restores the overlay
                 if (nativeEventData) {
+                  // H6: only persist minimal identifiers — full nativeEventData
+                  // is re-fetched from DB on restore so a tampered sessionStorage
+                  // can't inject fake prices / event swap.
                   sessionStorage.setItem('ca_payu_bill', JSON.stringify({
                     name: form.name.trim(),
                     phone: form.phone,
                     verifiedSlug,
-                    nativeEventData,
                   }));
                 }
                 setShowNativeTimeline(false);
@@ -3170,11 +3184,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               skipEntrance={billRestored}
               onBeforePayU={() => {
                 if (nativeEventData) {
+                  // H6: only persist minimal identifiers — full nativeEventData
+                  // is re-fetched from DB on restore so a tampered sessionStorage
+                  // can't inject fake prices / event swap.
                   sessionStorage.setItem('ca_payu_bill', JSON.stringify({
                     name: form.name.trim(),
                     phone: form.phone,
                     verifiedSlug,
-                    nativeEventData,
                   }));
                 }
               }}
