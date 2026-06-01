@@ -190,7 +190,11 @@ function buildNotification(type: string, record: any): { title: string; body: st
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } });
+    // send-admin-push is invoked only by pg_net from a DB trigger, never
+    // from a browser, so OPTIONS preflights shouldn't happen in practice.
+    // Return an empty response with no CORS headers — if a browser does
+    // try to hit this, the missing Allow-Origin makes the request fail.
+    return new Response(null, { status: 204 });
   }
 
   // ── Shared-secret gate ─────────────────────────────────────────────────────

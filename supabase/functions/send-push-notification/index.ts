@@ -197,12 +197,25 @@ async function sendWebPush(
   }
 }
 
+// ── CORS allowlist (H4) ──────────────────────────────────────────────────────
+
+const ALLOWED_ORIGIN = /^https:\/\/(?:[a-z0-9-]+\.)?chaptera\.in$|^https:\/\/chapter-[a-z0-9-]+\.vercel\.app$|^http:\/\/localhost:\d{4,5}$/;
+
+function corsFor(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') ?? '';
+  const allow  = ALLOWED_ORIGIN.test(origin) ? origin : 'null';
+  return {
+    'Access-Control-Allow-Origin':  allow,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
+  };
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } });
-  }
+  const cors = corsFor(req);
+  if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
 
   try {
     const body = await req.json();

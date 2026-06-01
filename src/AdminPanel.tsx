@@ -585,21 +585,26 @@ export default function AdminPanel() {
       }
 
       try {
-        const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+        // The AiSensy JWT used to live in this file and was shipped to every
+        // visitor's browser. It now lives in the AISENSY_API_KEY secret on
+        // the send-aisensy-invite edge function, which verifies the caller
+        // is an admin before forwarding to AiSensy.
+        const { data: { session } } = await supabase.auth.getSession();
+        const aiRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-aisensy-invite`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token ?? ''}`,
+          },
           body: JSON.stringify({
-            apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZDY1Yjk2MmFiNTdlMGUzNjJiNzA2ZCIsIm5hbWUiOiJjaGFwdGVyIEEgMzA2MyIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OWQ2NWI5NjJhYjU3ZTBlMzYyYjcwNjciLCJhY3RpdmVQbGFuIjoiRlJFRV9GT1JFVkVSIiwiaWF0IjoxNzc1NjU1ODMwfQ.vYeRHCDeP-U5VPhsUrbLfIgkS2hIK1-adr0NrNtYfEI',
-            campaignName: 'invitation_with_contact',
-            destination: phone,
+            phone: phone.replace(/^91/, ''),
             userName: app.name ?? '',
-            source: 'chapter-admin-dashboard',
-            templateParams: [eventName, eventDate],
-            tags: ['chapter-invite'],
-            attributes: { name: app.name ?? '', event_name: eventName, event_date: eventDate },
+            eventName,
+            eventDate,
           }),
         });
-        const ok = aiRes.status >= 200 && aiRes.status < 300;
+        const aiJson = await aiRes.json().catch(() => ({}));
+        const ok = aiRes.ok && aiJson.ok;
         // Mark aisensy_invite_sent on the row
         const { data: sentApp, error: sentError } = await supabase
           .from('applications')
