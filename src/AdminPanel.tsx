@@ -2,49 +2,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, parseHeroImages, fetchEventCounts } from './supabase';
 
-// ─── IMAGE UPLOAD ─────────────────────────────────────────────────────────────
-async function uploadImageToStorage(file: File, folder = 'general'): Promise<string | null> {
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage.from('event-images').upload(path, file, { upsert: true });
-  if (error) { console.error('Upload error:', error); return null; }
-  const { data } = supabase.storage.from('event-images').getPublicUrl(path);
-  return data.publicUrl;
-}
-
+// ─── IMAGE INPUT ──────────────────────────────────────────────────────────────
+// We use Cloudinary for image hosting and paste the resulting URL here. The
+// earlier file-upload-to-Supabase-Storage button was removed in the security
+// hardening pass: the storage.objects policies that backed it had been left
+// wide-open to anon (anyone could delete/replace any image in the bucket).
+// The `folder` prop is retained for call-site compatibility but unused.
 function ImageUploadInput({
-  value, onChange, placeholder, folder = 'general', style: extraStyle,
+  value, onChange, placeholder, style: extraStyle,
 }: {
   value: string; onChange: (url: string) => void; placeholder?: string; folder?: string; style?: React.CSSProperties;
 }) {
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    const url = await uploadImageToStorage(file, folder);
-    setUploading(false);
-    if (url) onChange(url);
-    e.target.value = '';
-  };
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...extraStyle }}>
       <input
         style={{ flex: 1, padding: '9px 12px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fafafa', outline: 'none', minWidth: 0 }}
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder={placeholder ?? 'Paste URL or upload ↑'}
+        placeholder={placeholder ?? 'Paste Cloudinary URL'}
       />
-      <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
-      <button
-        type="button"
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-        style={{ padding: '8px 13px', borderRadius: 8, border: '1.5px solid #d0d0d0', background: uploading ? '#f0f0f0' : '#fff', fontWeight: 600, fontSize: 12, cursor: uploading ? 'default' : 'pointer', whiteSpace: 'nowrap', color: uploading ? '#aaa' : '#444', flexShrink: 0, transition: 'all 0.15s' }}
-      >
-        {uploading ? '⏳ Uploading…' : '⬆ Upload'}
-      </button>
     </div>
   );
 }
@@ -197,6 +173,18 @@ export default function AdminPanel() {
     () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'settings') ?? 'people'
   );
   const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  // L4: probe whether the deployed create-payu-order function is pointed at
+  // PayU's test or live gateway. Surfaced as a badge in the header so it's
+  // immediately obvious whether real money is at stake.
+  const [payuMode, setPayuMode] = useState<'live' | 'test' | 'unknown' | 'loading'>('loading');
+  useEffect(() => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) { setPayuMode('unknown'); return; }
+    fetch(`${supabaseUrl}/functions/v1/create-payu-order?probe=mode`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then((d: { mode?: string }) => setPayuMode(d.mode === 'live' || d.mode === 'test' ? d.mode : 'unknown'))
+      .catch(() => setPayuMode('unknown'));
+  }, []);
   const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
   const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
   const [peopleSearch, setPeopleSearch] = useState('');
@@ -921,6 +909,12 @@ export default function AdminPanel() {
     setCtaEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
     setSavingTimeline(null);
     showToast('Timeline saved!');
+    logAdminAction('event_timeline_save', 'events', trip.id ?? null, {
+      slug: trip.slug ?? null,
+      for_date: forDate ?? null,
+      step_count: steps.length,
+      cta_label_changed: ctaLabel !== undefined,
+    });
   };
 
   const loadAnalytics = async () => {
@@ -1052,6 +1046,9 @@ export default function AdminPanel() {
       : currentCities.filter(c => c !== 'Other');
     await supabase.from('events').update({ cities: nextCities }).eq('id', trip.id);
     setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, cities: nextCities } : t));
+    logAdminAction(enabled ? 'event_other_city_enable' : 'event_other_city_disable', 'events', trip.id, {
+      slug: trip.slug ?? null,
+    });
   };
   const handleOtherAction = async (trip: Trip, action: string) => {
     if (!trip.id) return;
@@ -1120,6 +1117,7 @@ export default function AdminPanel() {
     setSaving(null);
     if (error) { showToast('❌ Save failed — check your connection'); return; }
     showToast('Message saved!');
+    logAdminAction('chat_message_update', 'chat_messages', msg.id, { step_key: msg.step_key });
   };
 
   const saveGlobalStepTemplate = async (stepKey: string) => {
@@ -1158,6 +1156,11 @@ export default function AdminPanel() {
 
     setSaving(null);
     showToast('Message saved!');
+    logAdminAction('chat_step_template_save', 'chat_messages', existing?.id ?? null, {
+      step_key: stepKey,
+      had_existing: !!existing?.id,
+      draft_empty: !draft,
+    });
   };
 
   const saveGeneralAnnouncements = async () => {
@@ -1190,6 +1193,9 @@ export default function AdminPanel() {
     }
     setSavingGeneralAnnouncements(false);
     showToast('Global announcements saved!');
+    logAdminAction('general_announcements_save', 'chat_messages', existing?.id ?? null, {
+      lines: globalAnnouncementsFields.filter(v => v.trim()).length,
+    });
   };
 
   // Compute the announcement string for a given event (same logic as AppFlow)
@@ -1244,6 +1250,10 @@ export default function AdminPanel() {
     ]);
     setSavingGeneralAnnouncements(false);
     showToast('Announcements saved!');
+    logAdminAction('announcement_config_save', 'chat_messages', null, {
+      event_slugs: announcementEventSlugs.filter(Boolean),
+      static_text: staticValue,
+    });
   };
 
   const saveDoubtFormSettings = async () => {
@@ -1286,6 +1296,9 @@ export default function AdminPanel() {
     setSavingDoubtSettings(false);
     if (!ok1) { showToast('❌ Save failed — check your connection'); return; }
     showToast('Doubt form settings saved!');
+    logAdminAction('doubt_form_settings_save', 'chat_messages', null, {
+      doubt_cta_label: doubtCtaLabel,
+    });
   };
 
   // ─── LOGIN SCREEN ────────────────────────────────────────────────────────────
@@ -1352,6 +1365,21 @@ export default function AdminPanel() {
       {/* Header */}
       <div style={s.header}>
         <div style={{ fontWeight: 700, fontSize: 18 }}>chapter அ &nbsp;<span style={{ color: '#aaa', fontWeight: 400 }}>Admin</span></div>
+        <div
+          title={payuMode === 'live' ? 'PayU is pointed at the production gateway — real money' : payuMode === 'test' ? 'PayU is pointed at the sandbox — no real money' : 'PayU mode could not be determined'}
+          style={{
+            marginLeft: 10,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: 0.5,
+            padding: '3px 8px',
+            borderRadius: 4,
+            background: payuMode === 'live' ? '#10b981' : payuMode === 'test' ? '#f59e0b' : '#9ca3af',
+            color: '#fff',
+          }}
+        >
+          PayU: {payuMode === 'live' ? 'LIVE' : payuMode === 'test' ? 'TEST' : payuMode === 'loading' ? '…' : '?'}
+        </div>
         <div style={{ flex: 1 }} />
         {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}

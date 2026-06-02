@@ -284,9 +284,15 @@ Unique constraint on `(phone, endpoint)`.
 
 ## VAPID Keys
 
+> ⚠️ **DO NOT COMMIT THE PRIVATE KEY HERE.** Earlier revisions of this doc
+> included the raw private key — it should be considered leaked and rotated.
+> The public key is fine in source (it's transmitted to the browser anyway).
+> Store the active private key only in Supabase Edge Function secrets and
+> 1Password/your secrets manager.
+
 ```
 Public key:  BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU
-Private key: gTk_kUUDG6M8pSPd7T_0forHklEWs4GzkgVxavyVPdw
+Private key: <REDACTED — stored in Supabase secrets only; see SECRETS.md for rotation steps>
 Subject:     mailto:chapteraaa.official@gmail.com
 ```
 
@@ -298,10 +304,10 @@ Subject:     mailto:chapteraaa.official@gmail.com
 
 - [ ] **Add VAPID secrets to Supabase Edge Function**
   Go to: Supabase Dashboard → Project → Edge Functions → `send-push-notification` → Secrets
-  Add three secrets:
+  Add three secrets (pull values from your password manager, not this doc):
   ```
-  VAPID_PUBLIC_KEY  = BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU
-  VAPID_PRIVATE_KEY = gTk_kUUDG6M8pSPd7T_0forHklEWs4GzkgVxavyVPdw
+  VAPID_PUBLIC_KEY  = <from secrets manager>
+  VAPID_PRIVATE_KEY = <from secrets manager — never paste here>
   VAPID_SUBJECT     = mailto:chapteraaa.official@gmail.com
   ```
 

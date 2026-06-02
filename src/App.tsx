@@ -6,7 +6,10 @@ import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
 import { trackEvent, supabase, fetchEventCounts } from './supabase';
 
-const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
+// Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
+// call prod edge functions. supabase.ts already throws if the env var is
+// missing, so by the time we reach here it is guaranteed to be set.
+const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 // Types
 type Message = {
@@ -1537,8 +1540,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [doubtText, setDoubtText] = useState('');
   const [doubtSubmitError, setDoubtSubmitError] = useState('');
   const [submittingDoubt, setSubmittingDoubt] = useState(false);
+  // liveConversationId path is deprecated (consumer live chat retired —
+  // 0 rows ever in doubt_conversations/doubt_messages in prod; RLS denies
+  // anon INSERTs anyway). State retained for JSX compatibility but no
+  // longer rehydrates from localStorage so stale IDs don't leak across
+  // sessions on shared devices.
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
-    () => localStorage.getItem('liveConversationId')
+    () => null
   );
   const [liveMessages, setLiveMessages] = useState<any[]>([]);
   const [liveChatInput, setLiveChatInput] = useState('');
@@ -1800,19 +1808,29 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     restoreInvitePickerOnChatBackRef.current = false;
 
     // Query invited_numbers + applications so the plan picker can show the user's
-    // real state for every plan tied to this phone.
-    const [{ data: inviteRows, error: inviteError }, { data: appRows, error: appError }] = await Promise.all([
-      supabase
-        .from('invited_numbers')
-        .select('event_slug')
-        .eq('phone', tenDigit),
-      supabase
-        .from('applications')
-        .select('event_slug, status')
-        .eq('phone', tenDigit),
-    ]);
-
-    if (inviteError || appError) {
+    // real state for every plan tied to this phone. Both tables are now
+    // RLS-locked to admins (C5), so we go through the get-user-context edge
+    // function which uses service_role + filters by the caller-supplied phone.
+    let inviteRows: { event_slug: string }[] = [];
+    let appRows: { event_slug: string; status: string }[] = [];
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ phone: tenDigit }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      inviteRows = json.invites      ?? [];
+      appRows    = json.applications ?? [];
+    } catch (err) {
       setError('Could not check invites right now. Please try again.');
       setLoading(false);
       return;
@@ -2142,7 +2160,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       sender: 'user',
       body: firstMessage.trim(),
     });
-    localStorage.setItem('liveConversationId', convId);
+    // Deprecated: no longer persisting conversation IDs in localStorage.
+    // RLS on doubt_conversations.INSERT denies anon writes, so the upstream
+    // .insert above always returns no row (convId is null) — this is a no-op
+    // in practice and the code is kept only until the JSX path is removed.
+    // localStorage.setItem('liveConversationId', convId);
     localStorage.setItem('liveConvName', form.name.trim() || '');
     localStorage.setItem('liveConvEventSlug', nativeEventData?.eventSlug ?? verifiedSlug ?? '');
     localStorage.setItem('liveConvEventTitle', nativeEventData?.title ?? '');
@@ -3754,11 +3776,19 @@ function PaymentMethodSheet({
   selected,
   onSelect,
   onClose,
+  feeRates,
 }: {
   selected: PayMethod | null;
   onSelect: (m: PayMethod) => void;
   onClose: () => void;
+  // Server-canonical map keyed by method.id. Falls back to method.feeRate
+  // if a method isn't in the live table (e.g., new method, stale server).
+  feeRates: Record<string, number>;
 }) {
+  const labelFor = (m: PayMethod) => {
+    const r = feeRates[m.id] ?? m.feeRate;
+    return `${(r * 100).toFixed(2)}%`;
+  };
   return (
     <motion.div
       initial={{ y: '100%' }}
@@ -3809,7 +3839,7 @@ function PaymentMethodSheet({
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-[11px] text-gray-400 font-medium bg-gray-200 rounded-full px-2 py-0.5">
-                      {method.feeLabel} fee
+                      {labelFor(method)} fee
                     </span>
                     {selected?.id === method.id ? (
                       <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
@@ -3870,6 +3900,24 @@ function NativePaymentOverlay({
     PAYMENT_METHOD_GROUPS[0].methods[0] // default: UPI
   );
   const [showMethodPicker, setShowMethodPicker] = useState(false);
+  // Server-canonical fee rates. PAYMENT_METHOD_GROUPS values are only the
+  // initial fallback; on mount we ask create-payu-order for the live table
+  // and rely on those for both display and the amount we send to PayU. Drift
+  // between client display and what PayU actually charges becomes impossible
+  // because the same FEE_RATES table on the server backs both.
+  const [feeRates, setFeeRates] = useState<Record<string, number>>(() => {
+    const seed: Record<string, number> = {};
+    for (const g of PAYMENT_METHOD_GROUPS) for (const m of g.methods) seed[m.id] = m.feeRate;
+    return seed;
+  });
+  useEffect(() => {
+    fetch(`${SUPABASE_FUNCTIONS_URL}/create-payu-order?probe=fees`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => { if (d?.rates && typeof d.rates === 'object') setFeeRates(d.rates); })
+      .catch(() => { /* keep fallback — bill still works, charge stays correct because server side does its own lookup */ });
+  }, []);
+  const liveFeeRate  = selectedMethod ? (feeRates[selectedMethod.id] ?? selectedMethod.feeRate) : 0;
+  const liveFeeLabel = `${(liveFeeRate * 100).toFixed(2)}%`;
   const formRef = useRef<HTMLFormElement>(null);
   // Tracks intentional PayU navigation so beforeunload doesn't block it
   const navigatingToPayU = useRef(false);
@@ -3889,8 +3937,10 @@ function NativePaymentOverlay({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Advance breakdown: exact PayU cost passed through (2% PFF + 18% GST on that = 2.36%)
-  const platformFee = selectedMethod ? priceAdvance * selectedMethod.feeRate : 0;
+  // Advance breakdown: liveFeeRate comes from the server-canonical table
+  // (with a baked-in fallback). Whatever the bill shows is exactly what the
+  // server will charge.
+  const platformFee = selectedMethod ? priceAdvance * liveFeeRate : 0;
   const totalPayNow = priceAdvance + platformFee;
   const fmtFee = (n: number) => n % 1 === 0 ? `₹${n.toLocaleString('en-IN')}` : `₹${n.toFixed(2)}`;
   const [showFeeInfo, setShowFeeInfo] = useState(false);
@@ -3922,11 +3972,17 @@ function NativePaymentOverlay({
         body: JSON.stringify({
           name: name.trim(),
           phone: tenDigit,
+          // amount is informational only — the server recomputes from
+          // price_advance + the fee rate for preferred_method below.
           amount: totalPayNow,
           event_title: eventTitle,
           event_slug: eventSlug || undefined,
           trip_date: formattedDate,
           payment_type: paymentType,
+          // Server uses this to (1) charge the right fee on top of the base
+          // and (2) emit enforce_paymethod so PayU's page is bound to the
+          // method the customer was priced for.
+          preferred_method: selectedMethod?.id,
         }),
       });
       const data = await res.json();
@@ -4033,7 +4089,7 @@ function NativePaymentOverlay({
               <span className="text-[14px] text-gray-700 border-b border-dashed border-gray-400">
                 Transaction fee
               </span>
-              {selectedMethod && <span className="text-gray-400 text-[12px]">({selectedMethod.feeLabel})</span>}
+              {selectedMethod && <span className="text-gray-400 text-[12px]">({liveFeeLabel})</span>}
             </button>
             <span className={`text-[14px] font-medium ${selectedMethod ? 'text-gray-900' : 'text-gray-300'}`}>
               {selectedMethod ? fmtFee(platformFee) : '—'}
@@ -4090,7 +4146,7 @@ function NativePaymentOverlay({
             </div>
             {selectedMethod && (
               <span className="text-[12px] text-gray-400 flex-shrink-0 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5">
-                {selectedMethod.feeLabel} fee
+                {liveFeeLabel} fee
               </span>
             )}
           </button>
@@ -4174,15 +4230,14 @@ function NativePaymentOverlay({
         </div>
       </div>
 
-      {/* Hidden PayU form */}
+      {/* Hidden PayU form. enforce_paymethod is now included in `fields` by
+          the server (see create-payu-order) so it's bound to the same amount
+          the fee was priced for. No client-side hidden input needed. */}
       {payuData && (
         <form ref={formRef} method="POST" action={payuData.url} className="hidden">
           {Object.entries(payuData.fields).map(([key, value]) => (
             <input key={key} type="hidden" name={key} value={value} />
           ))}
-          {selectedMethod && (
-            <input type="hidden" name="enforce_paymethod" value={selectedMethod.enforcePaymethod} />
-          )}
         </form>
       )}
 
@@ -4193,6 +4248,7 @@ function NativePaymentOverlay({
             selected={selectedMethod}
             onSelect={m => setSelectedMethod(m)}
             onClose={() => setShowMethodPicker(false)}
+            feeRates={feeRates}
           />
         )}
       </AnimatePresence>
@@ -4539,16 +4595,65 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   const [loading, setLoading] = React.useState(true);
   const [dlLoading, setDlLoading] = React.useState(false);
   const [showRetryBill, setShowRetryBill] = React.useState(false);
+  // Phone-input fallback for when the user lands on the receipt page in a
+  // cold/cross-origin session (e.g. cleared cache, different device, opened
+  // the success URL from email). sessionStorage.bookingPhone is the happy
+  // path; this fallback lets the legitimate buyer prove ownership by
+  // re-entering the phone they booked with.
+  const [phoneInput, setPhoneInput] = React.useState('');
+  const [phoneError, setPhoneError] = React.useState('');
+  const [submittingPhone, setSubmittingPhone] = React.useState(false);
+
+  // get-user-context cross-checks the supplied phone against the stored phone
+  // on the txnid (server-side). Returns the payment row only on match,
+  // otherwise null. Anyone with the txnid alone cannot view someone else's
+  // receipt without also knowing the correct phone.
+  const fetchReceipt = React.useCallback(async (phone: string): Promise<any> => {
+    if (phone.length !== 10) return null;
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ phone, txnid }),
+        },
+      );
+      if (!res.ok) return null;
+      const d = await res.json();
+      return d.payment ?? null;
+    } catch { return null; }
+  }, [txnid]);
 
   React.useEffect(() => {
     if (!txnid) { setLoading(false); return; }
-    supabase
-      .from('payu_payments')
-      .select('*')
-      .eq('txnid', txnid)
-      .maybeSingle()
-      .then(({ data }) => { setPayment(data); setLoading(false); });
-  }, [txnid, status]);
+    // Read from sessionStorage (tab-scoped) — see comment in AppFlow.tsx
+    // for the rationale (PII shouldn't outlive the booking tab).
+    const storedPhone = (typeof window !== 'undefined' && sessionStorage.getItem('bookingPhone')) || '';
+    const tenDigit = storedPhone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    if (tenDigit.length !== 10) { setLoading(false); return; }
+    fetchReceipt(tenDigit).then(p => { setPayment(p); setLoading(false); });
+  }, [txnid, status, fetchReceipt]);
+
+  const handleSubmitPhone = async () => {
+    const t = phoneInput.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    if (t.length !== 10) { setPhoneError('Please enter a valid 10-digit phone number.'); return; }
+    setPhoneError('');
+    setSubmittingPhone(true);
+    const p = await fetchReceipt(t);
+    setSubmittingPhone(false);
+    if (p) {
+      // Remember for next time so future receipt views skip this step.
+      try { sessionStorage.setItem('bookingPhone', t); } catch { /* ignore quota errors */ }
+      setPayment(p);
+    } else {
+      setPhoneError("We couldn't find a receipt under that phone. Double-check the number you used to book.");
+    }
+  };
 
   const phoneFrame = (children: React.ReactNode) => (
     <div className="h-[100dvh] bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4">
@@ -4629,6 +4734,44 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     );
   }
 
+  // Success but no payment in state → ask the buyer to re-enter their phone.
+  // Hits when sessionStorage.bookingPhone is missing (different device, cleared
+  // cache, success URL shared by email). The server-side check still verifies
+  // phone == stored phone on the txnid, so this can't leak someone else's
+  // receipt to a guesser.
+  if (status === 'success' && !payment) {
+    return phoneFrame(
+      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
+        <div className="w-[68px] h-[68px] rounded-full bg-green-50 flex items-center justify-center">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-[22px] font-bold text-gray-900 tracking-tight">Payment Successful</h2>
+          <p className="text-sm text-gray-500 mt-1 px-2 leading-relaxed">Enter the phone number you used to book to view your receipt.</p>
+        </div>
+        <div className="w-full max-w-xs flex flex-col gap-2">
+          <input
+            type="tel"
+            inputMode="numeric"
+            placeholder="10-digit phone number"
+            value={phoneInput}
+            onChange={e => { setPhoneInput(e.target.value); if (phoneError) setPhoneError(''); }}
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmitPhone(); }}
+            className="w-full px-4 py-3 rounded-xl border border-gray-300 text-base outline-none focus:border-gray-900"
+          />
+          {phoneError && <p className="text-xs text-red-500 text-left">{phoneError}</p>}
+          <button
+            onClick={handleSubmitPhone}
+            disabled={submittingPhone}
+            className="mt-1 px-6 py-3 rounded-2xl bg-black text-white font-bold text-sm active:opacity-80 transition-all disabled:opacity-50"
+          >{submittingPhone ? 'Loading…' : 'View Receipt'}</button>
+        </div>
+      </div>
+    );
+  }
+
   const paidOn = payment?.created_at
     ? new Date(payment.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
     : 'Just now';
@@ -4637,7 +4780,7 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     : null;
   const paymentType = String(payment?.payment_type || urlPaymentType || '').toLowerCase();
   const paymentForLabel = paymentType === 'advance'
-    ? 'Advance Booking'
+    ? 'Advance'
     : paymentType === 'balance'
       ? 'Remaining Balance'
       : 'Full Payment';
@@ -4896,10 +5039,59 @@ function PrivacyScreen() {
               </div>
             ))}
 
+            {/* DPDP rights */}
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-1 mt-2">Your Rights Under the DPDP Act</p>
+
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Access &amp; Correction</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">You can request a copy of the personal data we hold about you, or ask us to correct any information that is inaccurate. Email <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> from the email address linked to your booking, or message us on WhatsApp at +91 8838111564.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Erasure (Delete My Data)</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">You can request deletion of your personal data once your booking obligations are complete. Send an email titled <span className="text-gray-800 font-medium">&ldquo;Delete My Data&rdquo;</span> to <a href="mailto:chapteraaa.official@gmail.com?subject=Delete%20My%20Data" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> with your registered phone number. We will action the request within 30 days. Note: information required for legal/financial recordkeeping (e.g. payment receipts) may be retained for the period mandated by Indian tax and consumer protection law.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Withdraw Consent</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">You may withdraw consent for non-essential communications (marketing, reminders) at any time by emailing us. Withdrawing consent does not affect the legality of processing carried out before withdrawal.</p>
+            </div>
+
+            {/* Retention */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Data Retention</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">Booking and contact records are retained for up to 36 months after the completed experience to support refunds, customer service, and statutory requirements. Payment records are retained as long as required by Indian tax and accounting law (typically 8 years). After these periods, data is deleted or anonymised.</p>
+            </div>
+
+            {/* Cross-border transfer */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Where Your Data Is Stored</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">Our primary database is hosted in India (Mumbai region). Some operational tools — including error monitoring (Sentry), analytics (Google Analytics), and customer experience tracking (Contentsquare) — may process limited data on servers outside India. We only share what is necessary for these services to function, and these providers act under their own privacy commitments.</p>
+            </div>
+
+            {/* Children */}
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">Children &amp; Minors</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">Our experiences are intended for adults aged 18 and above. If we discover that we have collected information from anyone under 18 without verifiable parental consent, we will delete that information promptly. If you believe we hold information about a minor, contact us immediately.</p>
+            </div>
+
             {/* DND */}
             <div className="bg-white rounded-2xl px-4 py-4">
               <p className="text-[13px] font-bold text-gray-900 mb-1">DND / Opt-Out</p>
               <p className="text-[13px] text-gray-500 leading-relaxed">If you wish to stop receiving SMS, email alerts or any other communication from us, send an email to <span className="text-gray-800 font-medium">chapteraaa.official@gmail.com</span> with your mobile number and you will be removed from our alerts list.</p>
+            </div>
+
+            {/* Grievance Officer */}
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-1 mt-2">Grievance Officer</p>
+
+            <div className="bg-white rounded-2xl px-4 py-4">
+              <p className="text-[13px] font-bold text-gray-900 mb-1">For DPDP Complaints</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">As required by the Digital Personal Data Protection Act, 2023, we have designated a Grievance Officer to receive privacy complaints.</p>
+              <div className="mt-3 space-y-1">
+                <p className="text-[13px] text-gray-700"><span className="text-gray-400">Email:</span> <a href="mailto:chapteraaa.official@gmail.com?subject=DPDP%20Grievance" className="text-blue-600 underline">chapteraaa.official@gmail.com</a></p>
+                <p className="text-[13px] text-gray-700"><span className="text-gray-400">WhatsApp:</span> <a href="https://wa.me/918838111564" className="text-blue-600 underline">+91 8838111564</a></p>
+              </div>
+              <p className="text-[12px] text-gray-400 leading-relaxed mt-3">We will acknowledge your complaint within 7 working days and respond substantively within 30 days. If you are not satisfied with our response, you may approach the Data Protection Board of India.</p>
             </div>
 
             {/* Changes */}
@@ -4915,7 +5107,7 @@ function PrivacyScreen() {
             </div>
 
             {/* Footer note */}
-            <p className="text-center text-[11px] text-gray-400 pb-4">Last updated: May 2026 · chaptera.in</p>
+            <p className="text-center text-[11px] text-gray-400 pb-4">Last updated: June 2026 · chaptera.in</p>
           </div>
         </div>
       </div>

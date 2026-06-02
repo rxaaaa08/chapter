@@ -218,12 +218,42 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
 
   try {
-    const body = await req.json();
+    // ── Auth gate ────────────────────────────────────────────────────────────
+    // Without this, anyone with the function URL could POST a 'direct' push
+    // payload and have us deliver a phishing notification to any subscribed
+    // phone. Deployment also sets verify_jwt=true so non-JWT calls die at
+    // Supabase's gateway before reaching this code; this is the second layer.
+    const authHeader = req.headers.get('authorization') ?? '';
+    const userClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } },
+    );
+    const { data: userData, error: userErr } = await userClient.auth.getUser();
+    if (userErr || !userData?.user?.email) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { 'Content-Type': 'application/json', ...cors },
+      });
+    }
+    const callerEmail = userData.user.email;
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
+
+    const { data: adminRow } = await supabase
+      .from('admin_users')
+      .select('role')
+      .eq('email', callerEmail)
+      .maybeSingle();
+    if (!adminRow) {
+      return new Response(JSON.stringify({ error: 'not an admin' }), {
+        status: 403, headers: { 'Content-Type': 'application/json', ...cors },
+      });
+    }
+
+    const body = await req.json();
 
     let phone: string;
     let notifPayload: { title: string; body: string; url: string };

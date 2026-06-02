@@ -64,6 +64,19 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!adminRow) return json(403, { error: 'not an admin' }, cors);
 
+    // H1: Rate limit per admin email — 30 invite sends per hour. Even
+    // a compromised admin JWT can't burn through the AiSensy WhatsApp
+    // template quota or spam invitees.
+    {
+      const { data: ok } = await supabase.rpc('check_rate_limit', {
+        p_kind: 'send-aisensy-invite:admin',
+        p_key: callerEmail,
+        p_window_seconds: 3600,
+        p_max_requests: 30,
+      });
+      if (ok === false) return json(429, { error: 'rate limit exceeded' }, cors);
+    }
+
     // 2. Validate inputs from client
     const body = await req.json().catch(() => ({}));
     const phone     = String(body.phone     ?? '').replace(/\D/g, '').slice(-10);
@@ -91,7 +104,14 @@ Deno.serve(async (req) => {
     });
     const aiBody = await aiRes.text().catch(() => '');
 
-    console.log('[send-aisensy-invite]', { caller: callerEmail, phone, status: aiRes.status, body: aiBody.slice(0, 300) });
+    // Log without full phone — log tail-4 only to keep correlation while
+    // not shipping customer phone numbers to Supabase log retention.
+    console.log('[send-aisensy-invite]', {
+      caller: callerEmail,
+      phone_tail: phone.slice(-4),
+      status: aiRes.status,
+      body: aiBody.slice(0, 100),
+    });
 
     return json(200, { ok: aiRes.ok, status: aiRes.status }, cors);
   } catch (err) {

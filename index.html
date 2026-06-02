@@ -19,14 +19,28 @@
         window.__deferredInstallPrompt = e;
       });
     </script>
+    <!-- Contentsquare: configure privacy before tracker loads. Hash IPs and
+         disable advertising signals so session replays + analytics events
+         carry less identifying data. Forms also use data-cs-mask="true" on
+         phone/name fields (added in component files) so input values are
+         scrubbed from replays. -->
+    <script>
+      window._uxa = window._uxa || [];
+      window._uxa.push(['setPrivacyAttributes', { ipHashing: true, denyAdvertising: true }]);
+    </script>
     <script src="https://t.contentsquare.net/uxa/02bde574cbdd5.js" async></script>
-    <!-- Google Analytics -->
+    <!-- Google Analytics: anonymize_ip strips the last IP octet; ad_*_signals
+         off prevents GA from sharing data with Google Ads. -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', 'G-3MLZ9S6M2S');
+      gtag('config', 'G-3MLZ9S6M2S', {
+        anonymize_ip: true,
+        allow_google_signals: false,
+        allow_ad_personalization_signals: false,
+      });
     </script>
     <style>
       @keyframes ca-glow {

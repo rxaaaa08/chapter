@@ -398,7 +398,10 @@ const GENERAL_ANNOUNCEMENTS = [
 const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
-const SUPABASE_FUNCTIONS_URL = 'https://txcmismkdttgsyhbnexf.supabase.co/functions/v1';
+// Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
+// call prod edge functions. supabase.ts already throws if the env var is
+// missing, so by the time we reach here it is guaranteed to be set.
+const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 
 function PayUCheckout({ paymentContext, onError }: {
@@ -920,8 +923,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', message: '' });
   const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat'>('form');
+  // Deprecated — see App.tsx for the rationale.
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
-    () => localStorage.getItem('liveConversationId')
+    () => null
   );
   const [liveMessages, setLiveMessages] = useState<any[]>([]);
   const [liveChatInput, setLiveChatInput] = useState('');
@@ -1715,9 +1719,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
       email: googleUser?.email ?? undefined,
     };
+    // sessionStorage instead of localStorage so the buyer's phone/name
+    // doesn't outlive the booking tab on a shared/borrowed device. The
+    // PayU redirect stays inside the same tab so this survives the
+    // round-trip; closing the tab clears it. The post-PayU receipt page
+    // has a phone-input fallback for users who reopen the success URL.
     try {
-      localStorage.setItem('bookingName', ctx.name);
-      localStorage.setItem('bookingPhone', ctx.phone);
+      sessionStorage.setItem('bookingName', ctx.name);
+      sessionStorage.setItem('bookingPhone', ctx.phone);
     } catch (err) {
       // ignore storage errors in restricted environments
     }
@@ -1739,7 +1748,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         customer_name: paymentContext.name,
         contact: paymentContext.phone,
         amount_paid: paymentContext.amount,
-        payment_for: paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance Booking',
+        payment_for: paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance',
         payment_mode: 'Mock BillDesk Gateway',
         status: 'successful',
         paid_on: paymentContext.issuedAt,
@@ -2377,7 +2386,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-                          window.open(selectedEvent.bookingUrl, '_blank');
+                          // noopener,noreferrer: bookingUrl is admin-configurable; treat it
+                          // like any third-party link to prevent tabnabbing.
+                          window.open(selectedEvent.bookingUrl, '_blank', 'noopener,noreferrer');
                         }}
                         className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
                       >
@@ -2413,7 +2424,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         onClick={() => {
                           setShowBookingTimeline(false);
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-                          if (selectedEvent.bookingUrl) window.open(selectedEvent.bookingUrl, '_blank');
+                          // noopener,noreferrer: see comment above on the invite-only path.
+                          if (selectedEvent.bookingUrl) window.open(selectedEvent.bookingUrl, '_blank', 'noopener,noreferrer');
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
@@ -2928,7 +2940,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Payment For</p>
-                      <p className="mt-0.5 text-[14px] font-black text-gray-900">{paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance Booking'}</p>
+                      <p className="mt-0.5 text-[14px] font-black text-gray-900">{paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance'}</p>
                     </div>
                     <p className="text-[22px] font-black text-gray-950 leading-none">{formatINR(paymentContext.amount)}</p>
                   </div>

@@ -5,6 +5,7 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const isProd = mode === 'production';
   return {
     plugins: [react(), tailwindcss()],
     define: {
@@ -14,6 +15,14 @@ export default defineConfig(({mode}) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    // L1: strip console.* and debugger statements from production bundles to
+    // prevent PII (phones, names, payment ids) leaking via the browser console.
+    // L2: source maps default to false but make it explicit so a future flip
+    // to `sourcemap: true` for debugging doesn't accidentally land in prod.
+    esbuild: isProd ? { drop: ['console', 'debugger'] } : {},
+    build: {
+      sourcemap: false,
     },
     server: {
       port: 5175,

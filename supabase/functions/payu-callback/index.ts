@@ -174,8 +174,23 @@ Deno.serve(async (req) => {
     }
 
     // ── 1. Verify hash ──
-    const reverseStr =
-      `${PAYU_MERCHANT_SALT}|${status}|${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${PAYU_MERCHANT_KEY}`;
+    //
+    // PayU reverse hash format (per docs):
+    //   sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+    //
+    // The five empty fields between status and udf5 correspond to udf10..udf6
+    // (PayU's response includes them even though the request never sent any).
+    // Previous version omitted them and silently failed every hash check.
+    //
+    // If PayU surfaces an additionalCharges field on a transaction, it gets
+    // prepended to the same string. Our current event prices never trigger
+    // this but it's cheap to support both shapes.
+    const additionalCharges = (p.additionalCharges ?? '').toString();
+    const baseReverse =
+      `${PAYU_MERCHANT_SALT}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${PAYU_MERCHANT_KEY}`;
+    const reverseStr = additionalCharges
+      ? `${additionalCharges}|${baseReverse}`
+      : baseReverse;
     const calculatedHash = await sha512(reverseStr);
     const hashMatches = calculatedHash === receivedHash;
 
