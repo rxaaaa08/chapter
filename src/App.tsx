@@ -1153,7 +1153,7 @@ function InviteChatEssentialsCard({
                   <MapPin size={9} className="text-gray-400" />
                   <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField.label}</span>
                 </div>
-                <span className="text-[13px] font-bold text-gray-900 leading-tight">{resolvedMeetingSpot}</span>
+                <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedMeetingSpot}</span>
               </div>
             )}
             {transportField && (
@@ -1162,7 +1162,7 @@ function InviteChatEssentialsCard({
                   <Bus size={9} className="text-gray-400" />
                   <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField.label}</span>
                 </div>
-                <span className="text-[13px] font-bold text-gray-900 leading-tight">{transportField.value}</span>
+                <span className="text-[13px] font-black text-gray-900 leading-tight">{transportField.value}</span>
               </div>
             )}
           </div>
