@@ -3098,6 +3098,17 @@ export default function AdminPanel() {
           // (a session that tapped more than one CTA counts once).
           const convertedByEvent = stageMap('converted_any');
           const redirectedByEvent = stageMap('external_redirect_initiated');
+          // Application funnel stages (per resolved event)
+          const appStartedByEvent = stageMap('application_started');
+          const appSubmittedByEvent = stageMap('application_submitted');
+          // Per-event application status counts (from apps_per_event in the RPC).
+          // Keyed by event id (string) so it joins with the funnel-stage maps.
+          const appsApprovedByEvent: Record<string, number> = {};
+          const appsAdvancePaidByEvent: Record<string, number> = {};
+          ((summary?.apps_per_event ?? []) as Array<{ event_id: string; approved: number; advance_paid: number }>).forEach((row) => {
+            appsApprovedByEvent[row.event_id] = row.approved || 0;
+            appsAdvancePaidByEvent[row.event_id] = row.advance_paid || 0;
+          });
 
           // Cities pie (count of city_selected rows per city). The tracked
           // value is often a pickup-point phrasing — "I'll join in Chennai",
@@ -3188,12 +3199,38 @@ export default function AdminPanel() {
           const avgPricingConvPct = roundAvg(pricingConvRates);
           const avgHandoffPct = roundAvg(handoffRates);
 
+          // POOLED global rates for the JOURNEY funnel at the top. Pool means
+          // total numerator across events / total denominator across events
+          // (not per-event averaged) — more robust against small/test events.
+          const sumStage = (m: Record<string, number>) => Object.values(m).reduce((s, n) => s + n, 0);
+          const totalDetailViews     = sumStage(detailsOpenedByEvent);
+          const totalCalendarOpens   = sumStage(calendarOpenedByEvent);
+          const totalDatePicks       = sumStage(datePickedByEvent);
+          const totalReachedPricing  = sumStage(reachedByEvent);
+          const totalCtaClicked      = sumStage(convertedByEvent);
+          const totalAppStarted      = sumStage(appStartedByEvent);
+          const totalAppSubmitted    = sumStage(appSubmittedByEvent);
+          const totalApproved        = sumStage(appsApprovedByEvent);
+          const totalAdvancePaid     = sumStage(appsAdvancePaidByEvent);
+          const pooledPct = (num: number, den: number) => den > 0 ? Math.round((num / den) * 100) : null;
+          const pooledJoinPlanPct    = pooledPct(totalCalendarOpens,  totalDetailViews);
+          const pooledDatePickPct    = pooledPct(totalDatePicks,      totalCalendarOpens);
+          const pooledPricingConvPct = pooledPct(totalCtaClicked,     totalReachedPricing);
+          const pooledAppComplPct    = pooledPct(totalAppSubmitted,   totalAppStarted);
+          const pooledPaymentConvPct = pooledPct(totalAdvancePaid,    totalApproved);
+
           const allJoinPlanEvents = Array.from(new Set([...Object.keys(detailsOpenedByEvent), ...Object.keys(calendarOpenedByEvent)]));
           const allCalendarEvents = Array.from(new Set([...Object.keys(calendarOpenedByEvent), ...Object.keys(datePickedByEvent)]));
-          const allDropoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
-          const allHandoffEvents = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(redirectedByEvent)]));
+          const allDropoffEvents  = Array.from(new Set([...Object.keys(reachedByEvent), ...Object.keys(convertedByEvent)]));
+          // The Application Completion + Payment Conversion sections also show
+          // events that have application/payment data even if no analytics events
+          // were tracked for them yet.
+          const allAppFunnelEvents = Array.from(new Set([
+            ...Object.keys(appStartedByEvent), ...Object.keys(appSubmittedByEvent),
+            ...Object.keys(appsApprovedByEvent), ...Object.keys(appsAdvancePaidByEvent),
+          ]));
           const allFunnelEventOptions = Array.from(
-            new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allHandoffEvents])
+            new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allAppFunnelEvents])
           ).sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
           // Split into active (shown by default) vs hidden/inactive (opt-in via
           // checkboxes). A funnel event id is a resolved events-table id, so
@@ -3201,7 +3238,7 @@ export default function AdminPanel() {
           const activeFunnelEvents = allFunnelEventOptions.filter(id => tripById.get(id)?.is_active);
           const hiddenFunnelEvents = allFunnelEventOptions.filter(id => !tripById.get(id)?.is_active);
           // Default selection (when funnelSelected is null) = active events only.
-          const effectiveSelected = funnelSelected ?? new Set(activeFunnelEvents);
+          const effectiveSelected: Set<string> = funnelSelected ?? new Set<string>(activeFunnelEvents);
           const toggleFunnelEvent = (id: string) => {
             const base = new Set(funnelSelected ?? activeFunnelEvents);
             if (base.has(id)) base.delete(id); else base.add(id);
@@ -3210,8 +3247,11 @@ export default function AdminPanel() {
           const filterFunnelEvents = (eventIds: string[]) => eventIds.filter(id => effectiveSelected.has(id));
           const visibleJoinPlanEvents = filterFunnelEvents(allJoinPlanEvents);
           const visibleCalendarEvents = filterFunnelEvents(allCalendarEvents);
-          const visibleDropoffEvents = filterFunnelEvents(allDropoffEvents);
-          const visibleHandoffEvents = filterFunnelEvents(allHandoffEvents);
+          const visibleDropoffEvents  = filterFunnelEvents(allDropoffEvents);
+          // For Application Completion + Payment Conversion: iterate ALL selected
+          // events (even those without data); each row shows "—" + "no data yet"
+          // if its denominator is 0. Sorted alphabetically for stability.
+          const visibleAppEvents = Array.from(effectiveSelected).sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
 
           const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
@@ -3251,58 +3291,66 @@ export default function AdminPanel() {
 
               {!analyticsLoading && (
                 <>
-                  {/* FUNNEL — single section that merges the old Visitors row,
-                      the horizontal bar chart, and the post-application metrics
-                      into one grid of cards in journey order. Each card is big-%
-                      + small-absolute below, except Visitors (just the count). */}
+                  {/* JOURNEY — vertical bar funnel, 6 steps, all rates POOLED
+                      globally (sum across events / sum across events). Visitors
+                      is shown as a count (no bar). Application Completion shows
+                      "—" until app-open tracking populates. Time to Payment is
+                      shown inline as part of the Payment Conversion sub-text. */}
                   {(() => {
-                    const cf = conversionFunnel;
                     const fmt = (n: number) => Number(n || 0).toLocaleString('en-IN');
-                    const visitorsCount = visitors;
-                    const reachedCount  = cf?.reached_pricing ?? 0;
-                    const appliedCount  = cf?.applied          ?? 0;
-                    const approvedCount = cf?.approved         ?? 0;
-                    const advPaidCount  = cf?.advance_paid     ?? 0;
-                    const pct = (num: number, den: number) => den > 0 ? Math.round((num / den) * 100) : 0;
-                    const pctReached     = pct(reachedCount,  visitorsCount);
-                    const pctApplied     = pct(appliedCount,  reachedCount);
-                    const pctApproved    = pct(approvedCount, appliedCount);
-                    const pctAdvancePaid = pct(advPaidCount,  approvedCount);
-                    const started   = cf?.app_started   ?? 0;
-                    const submitted = cf?.app_submitted ?? 0;
-                    const completionPct = started > 0 ? Math.round((submitted / started) * 100) : null;
+                    const cf = conversionFunnel;
                     const ttpHours = cf?.time_to_payment_median_hours ?? null;
                     const ttpN     = cf?.time_to_payment_n ?? 0;
-                    const ttpLabel = ttpHours == null ? '—'
+                    const ttpLabel = ttpHours == null ? null
                       : ttpHours < 1  ? `${Math.round(ttpHours * 60)} min`
                       : ttpHours < 48 ? `${ttpHours} hrs`
                       : `${(ttpHours / 24).toFixed(1)} days`;
+                    type Step = { label: string; pct: number | null; num: number; den: number; descr: string; emptyText?: string; extra?: string };
+                    const steps: Step[] = [
+                      { label: 'Join Plan Rate',        pct: pooledJoinPlanPct,    num: totalCalendarOpens,  den: totalDetailViews,    descr: 'who reached event details clicked Join Our Plan' },
+                      { label: 'Date Pick Rate',        pct: pooledDatePickPct,    num: totalDatePicks,      den: totalCalendarOpens,  descr: 'who opened the calendar picked a date' },
+                      { label: 'Pricing Conversion',    pct: pooledPricingConvPct, num: totalCtaClicked,     den: totalReachedPricing, descr: 'who reached pricing tapped a CTA' },
+                      { label: 'Application Completion',pct: pooledAppComplPct,    num: totalAppSubmitted,   den: totalAppStarted,     descr: 'who opened the form submitted', emptyText: 'collecting data — form opens tracked from now' },
+                      { label: 'Payment Conversion',    pct: pooledPaymentConvPct, num: totalAdvancePaid,    den: totalApproved,       descr: 'approved paid the advance', extra: ttpLabel ? ` · median ${ttpLabel} (n=${ttpN})` : '' },
+                    ];
                     return (
                       <>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Funnel</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Journey</div>
                         <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                          The full journey, all events combined, in order of how a user moves through the site. Each rate card shows where the biggest drop-offs happen.
+                          The full customer journey, all events combined for {windowLabel.toLowerCase()}. Each bar width = the rate at that step. Where the bar is narrow is where you're losing people.
                         </div>
-                        <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                          {/* 1. Visitors — absolute count only */}
-                          <StatCard label="Visitors" value={fmt(visitorsCount)} sub={`${windowLabel.toLowerCase()} · unique sessions`} />
-                          {/* 2-3. Pre-pricing engagement rates (multi-event averages) */}
-                          <StatCard label="Join Plan Rate" value={`${avgJoinPlanPct}%`} sub={joinPlanRates.length > 0 ? `avg across ${joinPlanRates.length} live events with data` : 'clicked Join Our Plan on the details page'} />
-                          <StatCard label="Date Pick Rate" value={`${avgDatePickPct}%`} sub={datePickRates.length > 0 ? `avg across ${datePickRates.length} live events with data` : 'picked a date after opening calendar'} />
-                          {/* 4. Reached Pricing — % of visitors */}
-                          <StatCard label="Reached Pricing" value={`${pctReached}%`} sub={visitorsCount > 0 ? `${fmt(reachedCount)} of ${fmt(visitorsCount)} visitors saw a price` : 'saw a price'} />
-                          {/* 5. Pricing Conversion — % who tapped a CTA at the price screen */}
-                          <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={pricingConvRates.length > 0 ? `avg across ${pricingConvRates.length} live events with data` : 'continued booking after seeing price'} />
-                          {/* 6. Applied — % of reached pricing */}
-                          <StatCard label="Applied" value={`${pctApplied}%`} sub={reachedCount > 0 ? `${fmt(appliedCount)} of ${fmt(reachedCount)} who saw a price submitted` : 'submitted an application'} />
-                          {/* 7. Approved — % of applied */}
-                          <StatCard label="Approved" value={`${pctApproved}%`} sub={appliedCount > 0 ? `${fmt(approvedCount)} of ${fmt(appliedCount)} applied accepted` : 'accepted by you'} />
-                          {/* 8. Advance Paid — % of approved (same metric as the old "Approval → Advance Paid" card) */}
-                          <StatCard label="Advance Paid" value={`${pctAdvancePaid}%`} sub={approvedCount > 0 ? `${fmt(advPaidCount)} of ${fmt(approvedCount)} approved paid the advance` : 'paid the advance'} />
-                          {/* 9. Application Completion — % of form opens that completed (collecting from now) */}
-                          <StatCard label="Application Completion" value={completionPct == null ? '—' : `${completionPct}%`} sub={started > 0 ? `${fmt(submitted)} of ${fmt(started)} who opened the form submitted` : 'collecting data — form opens tracked from now'} />
-                          {/* 10. Time to Payment — median application → advance */}
-                          <StatCard label="Time to Payment" value={ttpLabel} sub={ttpN > 0 ? `median, application → advance (n=${ttpN})` : 'no advance payments yet'} />
+                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '20px 22px', marginBottom: 24 }}>
+                          {/* Step 1: Visitors — count, no bar, no top border */}
+                          <div style={{ marginBottom: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>Visitors</span>
+                              <span style={{ fontSize: 24, fontWeight: 800, color: '#111' }}>{fmt(visitors)}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#bbb' }}>
+                              {windowLabel.toLowerCase()} · unique sessions
+                            </div>
+                          </div>
+                          {/* Steps 2-6: each is a pooled rate with a bar */}
+                          {steps.map((step, i, arr) => {
+                            const isLast = i === arr.length - 1;
+                            const isEmpty = step.pct === null;
+                            return (
+                              <div key={step.label} style={{ marginBottom: isLast ? 0 : 16, paddingTop: 16, borderTop: '1px solid #f0f0ea' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{step.label}</span>
+                                  <span style={{ fontSize: 22, fontWeight: 800, color: isEmpty ? '#bbb' : '#111' }}>{isEmpty ? '—' : `${step.pct}%`}</span>
+                                </div>
+                                <div style={{ height: 8, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden', marginBottom: 6 }}>
+                                  <div style={{ width: isEmpty ? '4%' : `${Math.min(100, step.pct as number)}%`, height: '100%', background: isEmpty ? '#e5e5e5' : '#bbf7d0', borderRadius: 99, transition: 'width 0.4s' }} />
+                                </div>
+                                <div style={{ fontSize: 11, color: '#bbb' }}>
+                                  {isEmpty
+                                    ? (step.emptyText || 'no data yet')
+                                    : `${fmt(step.num)} of ${fmt(step.den)} ${step.descr}${step.extra ?? ''}`}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </>
                     );
@@ -3562,34 +3610,68 @@ export default function AdminPanel() {
                     })}
                   </div>
 
-                  {/* Payment Handoff — % of users who saw price AND got redirected to external payment/waitlist */}
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Payment Handoff Rate</div>
+                  {/* Application Completion Rate — per event: app_submitted / app_started.
+                      Tracks form-open → form-submit. Iterates ALL selected events so
+                      newly-tracked plans without data still appear with '—'. */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Application Completion Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                    Of users who reached the pricing screen, how many were actually redirected to BillDesk or the waitlist link (i.e. physically left our site to pay). The gap vs Pricing Conversion = people who tapped the CTA but didn't complete the redirect.
+                    Of users who opened the application form, how many actually submitted it. A low rate means the form is losing people halfway through — consider shortening it or making the friction earlier (e.g. phone+name on step 1, longer questions later).
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
-                    {visibleHandoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
-                    {visibleHandoffEvents.map((eventId, idx) => {
-                      const reached = reachedByEvent[eventId] || 0;
-                      const redirected = redirectedByEvent[eventId] || 0;
-                      const ctaTapped = convertedByEvent[eventId] || 0;
-                      const pct = reached > 0 ? Math.round((redirected / reached) * 100) : 0;
+                    {visibleAppEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No events selected</div>}
+                    {visibleAppEvents.map((eventId, idx) => {
+                      const started   = appStartedByEvent[eventId]   || 0;
+                      const submitted = appSubmittedByEvent[eventId] || 0;
+                      const hasData = started > 0;
+                      const pct = hasData ? Math.round((submitted / started) * 100) : null;
+                      const last = idx === visibleAppEvents.length - 1;
                       return (
-                        <div key={eventId} style={{ marginBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleHandoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleHandoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
+                        <div key={eventId} style={{ marginBottom: last ? 0 : 14, paddingBottom: last ? 0 : 14, borderBottom: last ? 'none' : '1px solid #f0f0ea' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
-                            <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
-                              {pct}%
+                            <span style={{ fontSize: 20, fontWeight: 800, color: !hasData ? '#bbb' : pct! >= 50 ? '#4ade80' : pct! >= 25 ? '#fcd34d' : '#fca5a5' }}>
+                              {hasData ? `${pct}%` : '—%'}
                             </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
-                            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                            <div style={{ width: hasData ? `${Math.min(100, pct!)}%` : '4%', height: '100%', background: !hasData ? '#e5e5e5' : pct! >= 50 ? '#bbf7d0' : pct! >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
-                            {redirected} of {reached} who reached pricing were redirected to BillDesk / waitlist
-                            {ctaTapped > redirected && (
-                              <span style={{ marginLeft: 4, color: '#d4b483' }}>· {ctaTapped - redirected} tapped CTA but didn't complete redirect</span>
-                            )}
+                            {hasData ? `${submitted} of ${started} who opened the form submitted` : 'no data yet'}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Payment Conversion Rate — per event: advance_paid / approved.
+                      Tracks how good your post-approval follow-up is (whatsapp nudges,
+                      timely receipts, etc). Replaces the legacy Payment Handoff Rate. */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Payment Conversion Rate</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
+                    Of users you've approved, how many actually paid the advance. A low rate means people are losing interest between approval and payment — consider faster WhatsApp follow-ups or reminders.
+                  </div>
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                    {visibleAppEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No events selected</div>}
+                    {visibleAppEvents.map((eventId, idx) => {
+                      const approved = appsApprovedByEvent[eventId]    || 0;
+                      const paid     = appsAdvancePaidByEvent[eventId] || 0;
+                      const hasData = approved > 0;
+                      const pct = hasData ? Math.round((paid / approved) * 100) : null;
+                      const last = idx === visibleAppEvents.length - 1;
+                      return (
+                        <div key={eventId} style={{ marginBottom: last ? 0 : 14, paddingBottom: last ? 0 : 14, borderBottom: last ? 'none' : '1px solid #f0f0ea' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: !hasData ? '#bbb' : pct! >= 70 ? '#4ade80' : pct! >= 40 ? '#fcd34d' : '#fca5a5' }}>
+                              {hasData ? `${pct}%` : '—%'}
+                            </span>
+                          </div>
+                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ width: hasData ? `${Math.min(100, pct!)}%` : '4%', height: '100%', background: !hasData ? '#e5e5e5' : pct! >= 70 ? '#bbf7d0' : pct! >= 40 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                            {hasData ? `${paid} of ${approved} approved paid the advance` : 'no data yet'}
                           </div>
                         </div>
                       );
