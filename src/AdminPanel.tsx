@@ -296,7 +296,11 @@ export default function AdminPanel() {
   const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month' | '90d'>('week');
-  const [analyticsFunnelEventFilter, setAnalyticsFunnelEventFilter] = useState<'all' | string>('all');
+  // Funnel event filter. null = default (active events only). A Set = the
+  // explicit set of event ids the admin has chosen to show (lets them toggle
+  // hidden/inactive events on via checkboxes).
+  const [funnelSelected, setFunnelSelected] = useState<Set<string> | null>(null);
+  const [funnelDropdownOpen, setFunnelDropdownOpen] = useState(false);
   const [applications, setApplications] = useState<any[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
@@ -3174,10 +3178,19 @@ export default function AdminPanel() {
           // Group case-insensitively so "Galore - Board Game Meetup" and
           // "galore - board game meetup" merge; display the casing from the
           // most-clicked variant.
+          // Group key collapses known aliases of the same plan that were
+          // tracked under different titles over time. Board Game Meetup /
+          // Galore - Board Game Meetup / Board Games by Galcode are the same
+          // event. Everything else groups case-insensitively by title.
+          const planGroupKey = (title: string): string => {
+            const l = title.toLowerCase();
+            if (l.includes('board game') || l.includes('galcode')) return '__board_games__';
+            return l;
+          };
           const planAgg: Record<string, { label: string; count: number; topVariant: number }> = {};
           popEntries.forEach(({ event_id, title, count }) => {
             const display = (title && title.trim()) ? title.trim() : event_id;
-            const key = display.toLowerCase();
+            const key = planGroupKey(display);
             const cur = planAgg[key] || { label: display, count: 0, topVariant: -1 };
             cur.count += count;
             if (count > cur.topVariant) { cur.label = display; cur.topVariant = count; }
@@ -3224,10 +3237,19 @@ export default function AdminPanel() {
           const allFunnelEventOptions = Array.from(
             new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allHandoffEvents])
           ).sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
-          const filterFunnelEvents = (eventIds: string[]) =>
-            analyticsFunnelEventFilter === 'all'
-              ? eventIds
-              : eventIds.filter(eventId => eventId === analyticsFunnelEventFilter);
+          // Split into active (shown by default) vs hidden/inactive (opt-in via
+          // checkboxes). A funnel event id is a resolved events-table id, so
+          // tripById knows its is_active flag.
+          const activeFunnelEvents = allFunnelEventOptions.filter(id => tripById.get(id)?.is_active);
+          const hiddenFunnelEvents = allFunnelEventOptions.filter(id => !tripById.get(id)?.is_active);
+          // Default selection (when funnelSelected is null) = active events only.
+          const effectiveSelected = funnelSelected ?? new Set(activeFunnelEvents);
+          const toggleFunnelEvent = (id: string) => {
+            const base = new Set(funnelSelected ?? activeFunnelEvents);
+            if (base.has(id)) base.delete(id); else base.add(id);
+            setFunnelSelected(base);
+          };
+          const filterFunnelEvents = (eventIds: string[]) => eventIds.filter(id => effectiveSelected.has(id));
           const visibleJoinPlanEvents = filterFunnelEvents(allJoinPlanEvents);
           const visibleCalendarEvents = filterFunnelEvents(allCalendarEvents);
           const visibleDropoffEvents = filterFunnelEvents(allDropoffEvents);
@@ -3376,22 +3398,59 @@ export default function AdminPanel() {
                     })()}
                   </div>
 
-                  {/* Join Plan Rate — landed on details vs clicked Join Our Plan */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-                    <div style={{ position: 'relative', minWidth: 220 }}>
-                      <select
-                        value={analyticsFunnelEventFilter}
-                        onChange={e => setAnalyticsFunnelEventFilter(e.target.value)}
-                        style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', width: '100%' }}
-                      >
-                        <option value="all">All Events</option>
-                        {allFunnelEventOptions.map((eventId) => (
-                          <option key={eventId} value={eventId}>{eventLabelById(eventId)}</option>
-                        ))}
-                      </select>
-                      <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
-                    </div>
-                  </div>
+                  {/* Funnel event filter — multi-select with checkboxes so the
+                      admin can toggle hidden (inactive) events into the rate
+                      sections below. Active events are shown by default. */}
+                  {(() => {
+                    const allSelected = funnelSelected === null;
+                    const btnLabel = allSelected
+                      ? 'All Events'
+                      : `${effectiveSelected.size} event${effectiveSelected.size === 1 ? '' : 's'} selected`;
+                    const checkRow = (id: string) => (
+                      <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}
+                        onMouseDown={e => e.preventDefault()}>
+                        <input type="checkbox" checked={effectiveSelected.has(id)} onChange={() => toggleFunnelEvent(id)} style={{ cursor: 'pointer' }} />
+                        <span style={{ color: '#222' }}>{eventLabelById(id)}</span>
+                      </label>
+                    );
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                        <div style={{ position: 'relative', minWidth: 220 }}>
+                          <button
+                            type="button"
+                            onClick={() => setFunnelDropdownOpen(o => !o)}
+                            style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, cursor: 'pointer', width: '100%', textAlign: 'left', background: '#fff' }}
+                          >
+                            {btnLabel}
+                          </button>
+                          <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
+                          {funnelDropdownOpen && (
+                            <>
+                              <div onClick={() => setFunnelDropdownOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                              <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 50, background: '#fff', border: '1px solid #e6e6e6', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.14)', padding: 8, minWidth: 280, maxHeight: 340, overflowY: 'auto' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setFunnelSelected(null)}
+                                  style={{ width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 8, border: 'none', background: allSelected ? '#f1f1ee' : 'transparent', fontSize: 12, fontWeight: 700, color: '#555', cursor: 'pointer' }}
+                                >
+                                  ↺ Reset to active events
+                                </button>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, padding: '8px 10px 4px' }}>Active</div>
+                                {activeFunnelEvents.length === 0 && <div style={{ padding: '4px 10px', fontSize: 12, color: '#bbb' }}>None with data</div>}
+                                {activeFunnelEvents.map(id => checkRow(id))}
+                                {hiddenFunnelEvents.length > 0 && (
+                                  <>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, padding: '10px 10px 4px', borderTop: '1px solid #f0f0ec', marginTop: 4 }}>Hidden (inactive)</div>
+                                    {hiddenFunnelEvents.map(id => checkRow(id))}
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Join Plan Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
                     Of users who landed on the event details page, how many clicked Join Our Plan. A low rate may mean the details page isn't selling — consider improving copy, photos or reviews.
@@ -3412,7 +3471,7 @@ export default function AdminPanel() {
                             </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
                             {opened} of {viewed} who landed on details clicked Join Our Plan
@@ -3446,7 +3505,7 @@ export default function AdminPanel() {
                             </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
                             {picked} of {opened} who opened the calendar picked a date
@@ -3483,7 +3542,7 @@ export default function AdminPanel() {
                             </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden', marginBottom: 6 }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#aaa', flexWrap: 'wrap' }}>
                             <span>✅ <strong style={{ color: '#111' }}>{booked}</strong> tapped Book Now ({bookPct}%)</span>
@@ -3519,7 +3578,7 @@ export default function AdminPanel() {
                             </span>
                           </div>
                           <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: pct >= 50 ? '#bbf7d0' : pct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
                           </div>
                           <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
                             {redirected} of {reached} who reached pricing were redirected to BillDesk / waitlist
