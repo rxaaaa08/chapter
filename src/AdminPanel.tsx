@@ -294,6 +294,7 @@ export default function AdminPanel() {
   const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
   const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
+  const [conversionFunnel, setConversionFunnel] = useState<any | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month' | '90d'>('week');
   // Funnel event filter. null = default (active events only). A Set = the
@@ -957,14 +958,18 @@ export default function AdminPanel() {
     // retention, so it's the full span of analytics we keep.
     const hours = win === '24h' ? 24 : win === 'week' ? 24 * 7 : win === 'month' ? 24 * 30 : 24 * 90;
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-    const { data, error } = await supabase.rpc('get_analytics_summary', { p_since: since });
-    if (error) {
-      console.error('[loadAnalytics] RPC error:', error.message);
-      showToast(`❌ Failed to load analytics: ${error.message}`);
+    const [summaryRes, funnelRes] = await Promise.all([
+      supabase.rpc('get_analytics_summary', { p_since: since }),
+      supabase.rpc('get_conversion_funnel', { p_since: since }),
+    ]);
+    if (summaryRes.error) {
+      console.error('[loadAnalytics] summary RPC error:', summaryRes.error.message);
+      showToast(`❌ Failed to load analytics: ${summaryRes.error.message}`);
       setAnalyticsSummary(null);
     } else {
-      setAnalyticsSummary(data);
+      setAnalyticsSummary(summaryRes.data);
     }
+    setConversionFunnel(funnelRes.error ? null : funnelRes.data);
     setAnalyticsLoading(false);
   };
 
@@ -3255,6 +3260,64 @@ export default function AdminPanel() {
                     <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={pricingConvRates.length > 0 ? `avg across ${pricingConvRates.length} live events with data` : 'continued booking after seeing price'} />
                     <StatCard label="Payment Handoff" value={`${avgHandoffPct}%`} sub={handoffRates.length > 0 ? `avg across ${handoffRates.length} live events with data` : 'reached external payment / waitlist'} />
                   </div>
+
+                  {/* Conversion Funnel — Visitors → Reached Pricing → Applied → Approved → Advance Paid */}
+                  {(() => {
+                    const cf = conversionFunnel;
+                    const fmt = (n: number) => Number(n || 0).toLocaleString('en-IN');
+                    const steps = [
+                      { label: 'Visitors', value: visitors, note: 'unique sessions' },
+                      { label: 'Reached Pricing', value: cf?.reached_pricing ?? 0, note: 'saw a price' },
+                      { label: 'Applied', value: cf?.applied ?? 0, note: 'submitted an application' },
+                      { label: 'Approved', value: cf?.approved ?? 0, note: 'accepted by you' },
+                      { label: 'Advance Paid', value: cf?.advance_paid ?? 0, note: 'paid the advance' },
+                    ];
+                    const started = cf?.app_started ?? 0;
+                    const submitted = cf?.app_submitted ?? 0;
+                    const completionPct = started > 0 ? Math.round((submitted / started) * 100) : null;
+                    const approved = cf?.approved ?? 0;
+                    const advPaid = cf?.advance_paid ?? 0;
+                    const approvalPaidPct = approved > 0 ? Math.round((advPaid / approved) * 100) : null;
+                    const ttpHours = cf?.time_to_payment_median_hours ?? null;
+                    const ttpN = cf?.time_to_payment_n ?? 0;
+                    const ttpLabel = ttpHours == null ? '—'
+                      : ttpHours < 1 ? `${Math.round(ttpHours * 60)} min`
+                      : ttpHours < 48 ? `${ttpHours} hrs`
+                      : `${(ttpHours / 24).toFixed(1)} days`;
+                    return (
+                      <>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Conversion Funnel</div>
+                        <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
+                          The full journey, all events combined. Each bar shows how many carried over from the step above — where it narrows is where you lose people. (Top two are website sessions; bottom three are applications.)
+                        </div>
+                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '18px 20px', marginBottom: 16 }}>
+                          {steps.map((st, i) => {
+                            const prev = i === 0 ? st.value : steps[i - 1].value;
+                            const pctOfPrev = i === 0 ? 100 : prev > 0 ? Math.round((st.value / prev) * 100) : 0;
+                            return (
+                              <div key={st.label} style={{ marginBottom: i < steps.length - 1 ? 14 : 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{st.label}</span>
+                                  <span style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>{fmt(st.value)}</span>
+                                </div>
+                                <div style={{ height: 8, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                                  <div style={{ width: `${Math.min(100, pctOfPrev)}%`, height: '100%', background: '#bbf7d0', borderRadius: 99, transition: 'width 0.4s' }} />
+                                </div>
+                                <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                                  {i === 0 ? st.note : `${pctOfPrev}% of ${steps[i - 1].label} · ${st.note}`}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+                          <StatCard label="Application Completion" value={completionPct == null ? '—' : `${completionPct}%`} sub={started > 0 ? `${fmt(submitted)} of ${fmt(started)} who opened the form submitted` : 'collecting data — form opens tracked from now'} />
+                          <StatCard label="Approval → Advance Paid" value={approvalPaidPct == null ? '—' : `${approvalPaidPct}%`} sub={approved > 0 ? `${fmt(advPaid)} of ${fmt(approved)} approved paid the advance` : 'no approved applications yet'} />
+                          <StatCard label="Time to Payment" value={ttpLabel} sub={ttpN > 0 ? `median, application → advance (n=${ttpN})` : 'no advance payments yet'} />
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* City */}
                   {/* Shared pie chart renderer */}
