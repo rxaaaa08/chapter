@@ -3251,68 +3251,57 @@ export default function AdminPanel() {
 
               {!analyticsLoading && (
                 <>
-                  {/* Visitors */}
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Visitors</div>
-                  <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                    <StatCard label={windowLabel} value={visitors} sub="unique sessions" />
-                    <StatCard label="Join Plan Rate" value={`${avgJoinPlanPct}%`} sub={joinPlanRates.length > 0 ? `avg across ${joinPlanRates.length} live events with data` : 'clicked Join Our Plan on the details page'} />
-                    <StatCard label="Date Pick Rate" value={`${avgDatePickPct}%`} sub={datePickRates.length > 0 ? `avg across ${datePickRates.length} live events with data` : 'picked a date after opening calendar'} />
-                    <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={pricingConvRates.length > 0 ? `avg across ${pricingConvRates.length} live events with data` : 'continued booking after seeing price'} />
-                    <StatCard label="Payment Handoff" value={`${avgHandoffPct}%`} sub={handoffRates.length > 0 ? `avg across ${handoffRates.length} live events with data` : 'reached external payment / waitlist'} />
-                  </div>
-
-                  {/* Conversion Funnel — Visitors → Reached Pricing → Applied → Approved → Advance Paid */}
+                  {/* FUNNEL — single section that merges the old Visitors row,
+                      the horizontal bar chart, and the post-application metrics
+                      into one grid of cards in journey order. Each card is big-%
+                      + small-absolute below, except Visitors (just the count). */}
                   {(() => {
                     const cf = conversionFunnel;
                     const fmt = (n: number) => Number(n || 0).toLocaleString('en-IN');
-                    const steps = [
-                      { label: 'Visitors', value: visitors, note: 'unique sessions' },
-                      { label: 'Reached Pricing', value: cf?.reached_pricing ?? 0, note: 'saw a price' },
-                      { label: 'Applied', value: cf?.applied ?? 0, note: 'submitted an application' },
-                      { label: 'Approved', value: cf?.approved ?? 0, note: 'accepted by you' },
-                      { label: 'Advance Paid', value: cf?.advance_paid ?? 0, note: 'paid the advance' },
-                    ];
-                    const started = cf?.app_started ?? 0;
+                    const visitorsCount = visitors;
+                    const reachedCount  = cf?.reached_pricing ?? 0;
+                    const appliedCount  = cf?.applied          ?? 0;
+                    const approvedCount = cf?.approved         ?? 0;
+                    const advPaidCount  = cf?.advance_paid     ?? 0;
+                    const pct = (num: number, den: number) => den > 0 ? Math.round((num / den) * 100) : 0;
+                    const pctReached     = pct(reachedCount,  visitorsCount);
+                    const pctApplied     = pct(appliedCount,  reachedCount);
+                    const pctApproved    = pct(approvedCount, appliedCount);
+                    const pctAdvancePaid = pct(advPaidCount,  approvedCount);
+                    const started   = cf?.app_started   ?? 0;
                     const submitted = cf?.app_submitted ?? 0;
                     const completionPct = started > 0 ? Math.round((submitted / started) * 100) : null;
-                    const approved = cf?.approved ?? 0;
-                    const advPaid = cf?.advance_paid ?? 0;
-                    const approvalPaidPct = approved > 0 ? Math.round((advPaid / approved) * 100) : null;
                     const ttpHours = cf?.time_to_payment_median_hours ?? null;
-                    const ttpN = cf?.time_to_payment_n ?? 0;
+                    const ttpN     = cf?.time_to_payment_n ?? 0;
                     const ttpLabel = ttpHours == null ? '—'
-                      : ttpHours < 1 ? `${Math.round(ttpHours * 60)} min`
+                      : ttpHours < 1  ? `${Math.round(ttpHours * 60)} min`
                       : ttpHours < 48 ? `${ttpHours} hrs`
                       : `${(ttpHours / 24).toFixed(1)} days`;
                     return (
                       <>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Conversion Funnel</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Funnel</div>
                         <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                          The full journey, all events combined. Each bar shows how many carried over from the step above — where it narrows is where you lose people. (Top two are website sessions; bottom three are applications.)
-                        </div>
-                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '18px 20px', marginBottom: 16 }}>
-                          {steps.map((st, i) => {
-                            const prev = i === 0 ? st.value : steps[i - 1].value;
-                            const pctOfPrev = i === 0 ? 100 : prev > 0 ? Math.round((st.value / prev) * 100) : 0;
-                            return (
-                              <div key={st.label} style={{ marginBottom: i < steps.length - 1 ? 14 : 0 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
-                                  <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{st.label}</span>
-                                  <span style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>{fmt(st.value)}</span>
-                                </div>
-                                <div style={{ height: 8, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
-                                  <div style={{ width: `${Math.min(100, pctOfPrev)}%`, height: '100%', background: '#bbf7d0', borderRadius: 99, transition: 'width 0.4s' }} />
-                                </div>
-                                <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
-                                  {i === 0 ? st.note : `${pctOfPrev}% of ${steps[i - 1].label} · ${st.note}`}
-                                </div>
-                              </div>
-                            );
-                          })}
+                          The full journey, all events combined, in order of how a user moves through the site. Each rate card shows where the biggest drop-offs happen.
                         </div>
                         <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+                          {/* 1. Visitors — absolute count only */}
+                          <StatCard label="Visitors" value={fmt(visitorsCount)} sub={`${windowLabel.toLowerCase()} · unique sessions`} />
+                          {/* 2-3. Pre-pricing engagement rates (multi-event averages) */}
+                          <StatCard label="Join Plan Rate" value={`${avgJoinPlanPct}%`} sub={joinPlanRates.length > 0 ? `avg across ${joinPlanRates.length} live events with data` : 'clicked Join Our Plan on the details page'} />
+                          <StatCard label="Date Pick Rate" value={`${avgDatePickPct}%`} sub={datePickRates.length > 0 ? `avg across ${datePickRates.length} live events with data` : 'picked a date after opening calendar'} />
+                          {/* 4. Reached Pricing — % of visitors */}
+                          <StatCard label="Reached Pricing" value={`${pctReached}%`} sub={visitorsCount > 0 ? `${fmt(reachedCount)} of ${fmt(visitorsCount)} visitors saw a price` : 'saw a price'} />
+                          {/* 5. Pricing Conversion — % who tapped a CTA at the price screen */}
+                          <StatCard label="Pricing Conversion" value={`${avgPricingConvPct}%`} sub={pricingConvRates.length > 0 ? `avg across ${pricingConvRates.length} live events with data` : 'continued booking after seeing price'} />
+                          {/* 6. Applied — % of reached pricing */}
+                          <StatCard label="Applied" value={`${pctApplied}%`} sub={reachedCount > 0 ? `${fmt(appliedCount)} of ${fmt(reachedCount)} who saw a price submitted` : 'submitted an application'} />
+                          {/* 7. Approved — % of applied */}
+                          <StatCard label="Approved" value={`${pctApproved}%`} sub={appliedCount > 0 ? `${fmt(approvedCount)} of ${fmt(appliedCount)} applied accepted` : 'accepted by you'} />
+                          {/* 8. Advance Paid — % of approved (same metric as the old "Approval → Advance Paid" card) */}
+                          <StatCard label="Advance Paid" value={`${pctAdvancePaid}%`} sub={approvedCount > 0 ? `${fmt(advPaidCount)} of ${fmt(approvedCount)} approved paid the advance` : 'paid the advance'} />
+                          {/* 9. Application Completion — % of form opens that completed (collecting from now) */}
                           <StatCard label="Application Completion" value={completionPct == null ? '—' : `${completionPct}%`} sub={started > 0 ? `${fmt(submitted)} of ${fmt(started)} who opened the form submitted` : 'collecting data — form opens tracked from now'} />
-                          <StatCard label="Approval → Advance Paid" value={approvalPaidPct == null ? '—' : `${approvalPaidPct}%`} sub={approved > 0 ? `${fmt(advPaid)} of ${fmt(approved)} approved paid the advance` : 'no approved applications yet'} />
+                          {/* 10. Time to Payment — median application → advance */}
                           <StatCard label="Time to Payment" value={ttpLabel} sub={ttpN > 0 ? `median, application → advance (n=${ttpN})` : 'no advance payments yet'} />
                         </div>
                       </>
