@@ -3162,12 +3162,31 @@ export default function AdminPanel() {
           const sortedCities: [string, number][] = Object.entries(cityMerged).sort((a, b) => b[1] - a[1]);
           const cityTotal = sortedCities.reduce((s, [, c]) => s + c, 0) || 1;
 
-          // Chosen-plan pie (event popularity — raw event_selected counts)
+          // Chosen-plan pie. Group by plan TITLE, not the raw tracked event_id.
+          // Slugs change over time (duplicated events get "-copy-…" slugs), so
+          // one plan can be tracked under several event_ids — that's why
+          // "Sunrise at Kolukumalai" showed up twice (one slug matched a live
+          // trip, the other didn't → "(Unknown City)"). Grouping by title merges
+          // them into a single slice and drops the misleading city suffix.
           const popEntries: Array<{ event_id: string; title?: string; count: number }> = summary?.event_popularity ?? [];
           const popTitleById = new Map<string, string>();
           popEntries.forEach(p => { if (p.title) popTitleById.set(p.event_id, p.title); });
-          const sortedEvents: [string, number][] = popEntries.map(p => [p.event_id, p.count]);
-          const eventTotal = popEntries.reduce((s, p) => s + p.count, 0) || 1;
+          // Group case-insensitively so "Galore - Board Game Meetup" and
+          // "galore - board game meetup" merge; display the casing from the
+          // most-clicked variant.
+          const planAgg: Record<string, { label: string; count: number; topVariant: number }> = {};
+          popEntries.forEach(({ event_id, title, count }) => {
+            const display = (title && title.trim()) ? title.trim() : event_id;
+            const key = display.toLowerCase();
+            const cur = planAgg[key] || { label: display, count: 0, topVariant: -1 };
+            cur.count += count;
+            if (count > cur.topVariant) { cur.label = display; cur.topVariant = count; }
+            planAgg[key] = cur;
+          });
+          const sortedEvents: [string, number][] = Object.values(planAgg)
+            .map(v => [v.label, v.count] as [string, number])
+            .sort((a, b) => b[1] - a[1]);
+          const eventTotal = sortedEvents.reduce((s, [, c]) => s + c, 0) || 1;
 
           // Labels resolved client-side from live trips state.
           const tripById = new Map<string, Trip>();
@@ -3308,7 +3327,7 @@ export default function AdminPanel() {
                       <>
                         <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Chosen City</div>
                         <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
-                          <PieChart entries={sortedCities} total={cityTotal} />
+                          <PieChart entries={sortedCities.filter(([, c]) => Math.round((c / cityTotal) * 100) >= 1)} total={cityTotal} />
                         </div>
                       </>
                     );
@@ -3322,7 +3341,7 @@ export default function AdminPanel() {
                       if (sortedEvents.length === 0) return <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>;
                       const R = 72, CX = 82, CY = 82;
                       let cum = -Math.PI / 2;
-                      const slices = sortedEvents.map(([eventId, count], idx) => {
+                      const slices = sortedEvents.filter(([, count]) => Math.round((count / (eventTotal || 1)) * 100) >= 1).map(([label, count], idx) => {
                         const angle = (count / (eventTotal || 1)) * 2 * Math.PI;
                         const x1 = CX + R * Math.cos(cum);
                         const y1 = CY + R * Math.sin(cum);
@@ -3330,7 +3349,7 @@ export default function AdminPanel() {
                         const x2 = CX + R * Math.cos(cum);
                         const y2 = CY + R * Math.sin(cum);
                         const d = `M${CX},${CY} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${angle > Math.PI ? 1 : 0} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
-                        return { label: eventLabelById(eventId), count, d, color: PASTEL[idx % PASTEL.length] };
+                        return { label, count, d, color: PASTEL[idx % PASTEL.length] };
                       });
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
