@@ -293,7 +293,7 @@ export default function AdminPanel() {
   const [expandedTimelineId, setExpandedTimelineId] = useState<string | null>(null);
   const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
-  const [analyticsData, setAnalyticsData] = useState<any[]>([]);
+  const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
   const [analyticsFunnelEventFilter, setAnalyticsFunnelEventFilter] = useState<'all' | string>('all');
@@ -479,13 +479,37 @@ export default function AdminPanel() {
     if (data) setPayuPayments(data as PayuPayment[]);
   };
 
+  // Fetch ALL rows from a table, paging past PostgREST's 1000-row response
+  // cap. Without this the People tab silently showed only the most recent
+  // 1000 applications across all trips — older applicants would vanish once
+  // total exceeded 1000 (e.g. a few busy trips at 500+ each). Applications
+  // are bounded by real humans (thousands at most), so fetching all and
+  // filtering client-side stays fast; we just must not let the cap truncate.
+  const fetchAllRows = async (table: string, orderCol: string): Promise<{ data: any[]; error: any }> => {
+    const PAGE = 1000;
+    let from = 0;
+    const all: any[] = [];
+    for (;;) {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .order(orderCol, { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) return { data: all, error };
+      all.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return { data: all, error: null };
+  };
+
   const loadApplications = async () => {
     setApplicationsLoading(true);
     const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }] = await Promise.all([
-      supabase.from('applications').select('*').order('created_at', { ascending: false }),
-      supabase.from('doubt_submissions').select('*').order('submitted_at', { ascending: false }),
+      fetchAllRows('applications', 'created_at'),
+      fetchAllRows('doubt_submissions', 'submitted_at'),
       supabase.from('events').select('slug, invite_slug'),
-      supabase.from('plan_doubts').select('*').order('created_at', { ascending: false }),
+      fetchAllRows('plan_doubts', 'created_at'),
     ]);
     console.log('[loadApplications] applications:', data?.length ?? 0, 'doubt_submissions:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message} | ${doubtsErr.details} | ${doubtsErr.hint})` : '');
     if (doubtsErr) {
@@ -917,29 +941,25 @@ export default function AdminPanel() {
     });
   };
 
-  const loadAnalytics = async () => {
+  // Analytics now aggregates server-side via the get_analytics_summary RPC.
+  // The old approach (SELECT * then aggregate in the browser) silently hit
+  // PostgREST's 1000-row cap and undercounted badly as traffic grew. The RPC
+  // computes everything in Postgres for the requested window and returns just
+  // the summary numbers — correct at any scale, and a few KB instead of MBs.
+  // The 30-day purge moved to a nightly pg_cron job, off this read path.
+  const loadAnalytics = async (win: '24h' | 'week' | 'month' = analyticsWindow) => {
     setAnalyticsLoading(true);
-    // Purge rows older than 30 days to keep storage lean
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    await supabase.from('flow_analytics').delete().lt('created_at', cutoff);
-    const { data } = await supabase.from('flow_analytics').select('*').order('created_at', { ascending: false });
-    setAnalyticsData(data ?? []);
+    const hours = win === '24h' ? 24 : win === 'week' ? 24 * 7 : 24 * 30;
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase.rpc('get_analytics_summary', { p_since: since });
+    if (error) {
+      console.error('[loadAnalytics] RPC error:', error.message);
+      showToast(`❌ Failed to load analytics: ${error.message}`);
+      setAnalyticsSummary(null);
+    } else {
+      setAnalyticsSummary(data);
+    }
     setAnalyticsLoading(false);
-  };
-
-  // Compute top-level analytics aggregates from a pre-filtered slice of rows.
-  // Per-event funnel rates are computed separately in the analytics tab, keyed
-  // by live event ID — so this function only handles visitor count + city split.
-  const computeAnalytics = (rows: any[]) => {
-    const pageViews = rows.filter(r => r.event_type === 'page_view');
-    const visitors = new Set(pageViews.map(r => r.session_id)).size;
-
-    const cityRows = rows.filter(r => r.event_type === 'city_selected' && r.city);
-    const cityCounts: Record<string, number> = {};
-    cityRows.forEach(r => { cityCounts[r.city] = (cityCounts[r.city] || 0) + 1; });
-    const cityTotal = cityRows.length || 1;
-
-    return { visitors, cityCounts, cityTotal };
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -3085,105 +3105,49 @@ export default function AdminPanel() {
 
         {/* ── ANALYTICS TAB ────────────────────────────────────────────────── */}
         {tab === 'analytics' && (() => {
-          const windowMs = analyticsWindow === '24h' ? 24 * 60 * 60 * 1000 : analyticsWindow === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
-          const filteredData = analyticsData.filter(r => Date.now() - new Date(r.created_at).getTime() < windowMs);
-          const { visitors, cityCounts, cityTotal } = computeAnalytics(filteredData);
-          const liveEvents = trips.filter(t => t.is_active && t.id);
-          const liveEventCount = liveEvents.length;
-          const liveCanonicalByTrackedId = new Map<string, string>();
-          liveEvents.forEach((t) => {
-            const canonicalId = t.id as string;
-            liveCanonicalByTrackedId.set(canonicalId, canonicalId);
-            if (t.slug) liveCanonicalByTrackedId.set(t.slug, canonicalId);
-          });
-          const liveIdsByTitle = new Map<string, string[]>();
-          liveEvents.forEach((t) => {
-            const titleKey = (t.title ?? '').trim().toLowerCase();
-            if (!titleKey) return;
-            if (!liveIdsByTitle.has(titleKey)) liveIdsByTitle.set(titleKey, []);
-            liveIdsByTitle.get(titleKey)!.push(t.id as string);
-          });
-          const resolveLiveEventId = (row: any): string | null => {
-            if (row?.event_id && liveCanonicalByTrackedId.has(row.event_id)) return liveCanonicalByTrackedId.get(row.event_id)!;
-            const titleKey = (row?.event_title ?? '').trim().toLowerCase();
-            if (!titleKey) return null;
-            const matches = liveIdsByTitle.get(titleKey) ?? [];
-            return matches.length > 0 ? matches[0] : null;
+
+          // All figures come from the get_analytics_summary RPC (server-side,
+          // uncapped). The previous client-side aggregation over raw rows hit
+          // PostgREST's 1000-row response cap and silently undercounted — e.g.
+          // "Last Month" showed ~328 visitors when the true figure was ~9,000.
+          const summary: any = analyticsSummary;
+          const visitors = summary?.visitors ?? 0;
+
+          // Per-event stage maps, rebuilt from the flat funnel array the RPC
+          // returns. Each entry is distinct sessions for that resolved live
+          // event at that funnel stage.
+          const funnelRows: Array<{ event_id: string; stage: string; sessions: number }> = summary?.funnel ?? [];
+          const stageMap = (stage: string): Record<string, number> => {
+            const m: Record<string, number> = {};
+            funnelRows.forEach(r => { if (r.stage === stage) m[r.event_id] = r.sessions; });
+            return m;
           };
-          const collectPairs = (eventType: string) => {
-            const keys = new Set<string>();
-            filteredData.forEach((row: any) => {
-              if (row?.event_type !== eventType || !row?.session_id) return;
-              const liveId = resolveLiveEventId(row);
-              if (!liveId) return;
-              keys.add(`${row.session_id}::${liveId}`);
-            });
-            return keys;
-          };
-          const detailsKeysByLive = collectPairs('event_selected');
-          const calendarKeysByLive = collectPairs('calendar_opened');
-          const dateKeysByLive = collectPairs('date_selected');
-          const reachedKeysByLive = collectPairs('reached_pricing');
-          // Union old pricing_cta_clicked (historical) + new split events so
-          // the overview card stays accurate across the migration boundary.
-          const convertedKeysByLive = new Set<string>([
-            ...collectPairs('pricing_cta_clicked'),
-            ...collectPairs('book_cta_clicked'),
-            ...collectPairs('contact_cta_clicked'),
-          ]);
-          const redirectedKeysByLive = collectPairs('external_redirect_initiated');
-          const toCountMap = (keys: Set<string>) => {
-            const map: Record<string, number> = {};
-            keys.forEach((key) => {
-              const id = key.split('::')[1];
-              map[id] = (map[id] || 0) + 1;
-            });
-            return map;
-          };
-          const detailsByLiveId = toCountMap(detailsKeysByLive);
-          const calendarByLiveId = toCountMap(calendarKeysByLive);
-          const dateByLiveId = toCountMap(dateKeysByLive);
-          const reachedByLiveId = toCountMap(reachedKeysByLive);
-          const convertedByLiveId = toCountMap(convertedKeysByLive);
-          const redirectedByLiveId = toCountMap(redirectedKeysByLive);
-          const roundAvg = (nums: number[]) => nums.length > 0 ? Math.round(nums.reduce((sum, n) => sum + n, 0) / nums.length) : 0;
-          const joinPlanRates = liveEvents.flatMap((t) => {
-            const id = t.id as string;
-            const details = detailsByLiveId[id] || 0;
-            if (details <= 0) return [];
-            const opened = calendarByLiveId[id] || 0;
-            return [(opened / details) * 100];
-          });
-          const datePickRates = liveEvents.flatMap((t) => {
-            const id = t.id as string;
-            const opened = calendarByLiveId[id] || 0;
-            if (opened <= 0) return [];
-            const picked = dateByLiveId[id] || 0;
-            return [(picked / opened) * 100];
-          });
-          const pricingConvRates = liveEvents.flatMap((t) => {
-            const id = t.id as string;
-            const reached = reachedByLiveId[id] || 0;
-            if (reached <= 0) return [];
-            const converted = convertedByLiveId[id] || 0;
-            return [(converted / reached) * 100];
-          });
-          const handoffRates = liveEvents.flatMap((t) => {
-            const id = t.id as string;
-            const reached = reachedByLiveId[id] || 0;
-            if (reached <= 0) return [];
-            const redirected = redirectedByLiveId[id] || 0;
-            return [(redirected / reached) * 100];
-          });
-          // Unweighted averages across per-event rates — fallback is 0, not a
-          // weighted total, so the cards honestly reflect "no data yet" instead
-          // of showing a misleading aggregate.
-          const avgJoinPlanPct = roundAvg(joinPlanRates);
-          const avgDatePickPct = roundAvg(datePickRates);
-          const avgPricingConvPct = roundAvg(pricingConvRates);
-          const avgHandoffPct = roundAvg(handoffRates);
-          const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
+          const detailsOpenedByEvent = stageMap('event_selected');
+          const calendarOpenedByEvent = stageMap('calendar_opened');
+          const datePickedByEvent = stageMap('date_selected');
+          const reachedByEvent = stageMap('reached_pricing');
+          const bookCtaByEvent = stageMap('book_cta_clicked');
+          const contactCtaByEvent = stageMap('contact_cta_clicked');
+          const legacyCtaByEvent = stageMap('pricing_cta_clicked');
+          // 'converted_any' is the server-deduped union of the three CTA types
+          // (a session that tapped more than one CTA counts once).
+          const convertedByEvent = stageMap('converted_any');
+          const redirectedByEvent = stageMap('external_redirect_initiated');
+
+          // Cities pie (count of city_selected rows per city)
+          const cityEntries: Array<{ city: string; count: number }> = summary?.cities ?? [];
+          const sortedCities: [string, number][] = cityEntries.map(c => [c.city, c.count]);
+          const cityTotal = cityEntries.reduce((s, c) => s + c.count, 0) || 1;
+
+          // Chosen-plan pie (event popularity — raw event_selected counts)
+          const popEntries: Array<{ event_id: string; title?: string; count: number }> = summary?.event_popularity ?? [];
+          const popTitleById = new Map<string, string>();
+          popEntries.forEach(p => { if (p.title) popTitleById.set(p.event_id, p.title); });
+          const sortedEvents: [string, number][] = popEntries.map(p => [p.event_id, p.count]);
+          const eventTotal = popEntries.reduce((s, p) => s + p.count, 0) || 1;
+
+          // Labels resolved client-side from live trips state.
           const tripById = new Map<string, Trip>();
           trips.forEach((t) => {
             if (t.id) tripById.set(t.id as string, t);
@@ -3191,57 +3155,26 @@ export default function AdminPanel() {
           });
           const eventLabelById = (eventId: string, fallbackTitle?: string) => {
             const trip = tripById.get(eventId);
-            const title = trip?.title ?? fallbackTitle ?? 'Unknown Plan';
+            const title = trip?.title ?? fallbackTitle ?? popTitleById.get(eventId) ?? 'Unknown Plan';
             const cities = trip?.cities ?? [];
             const primaryCity = cities.find(c => (c ?? '').trim().toLowerCase() !== 'other') ?? cities[0] ?? 'Unknown City';
             return `${title} (${primaryCity})`;
           };
-          const eventSelectedRows = filteredData.filter((r: any) => r.event_type === 'event_selected' && r.event_id);
-          const eventCountsById: Record<string, number> = {};
-          eventSelectedRows.forEach((r: any) => {
-            const id = r.event_id as string;
-            eventCountsById[id] = (eventCountsById[id] || 0) + 1;
-          });
-          const sortedEvents = Object.entries(eventCountsById).sort((a, b) => b[1] - a[1]);
-          const eventTotal = eventSelectedRows.length || 1;
 
-          const buildEventMetricMap = (eventType: string) => {
-            const keys = new Set<string>();
-            filteredData.forEach((row: any) => {
-              if (row?.event_type !== eventType || !row?.session_id) return;
-              // Use the same ID normalization as the overview cards so that
-              // slug changes / title changes don't create phantom split rows
-              // (e.g. "2 of 0 who landed on details" impossible state).
-              const liveId = resolveLiveEventId(row);
-              if (!liveId) return;
-              keys.add(`${row.session_id}::${liveId}`);
-            });
-            const map: Record<string, number> = {};
-            keys.forEach((key) => {
-              const eventId = key.split('::')[1];
-              map[eventId] = (map[eventId] || 0) + 1;
-            });
-            return map;
-          };
-          const detailsOpenedByEvent = buildEventMetricMap('event_selected');
-          const calendarOpenedByEvent = buildEventMetricMap('calendar_opened');
-          const datePickedByEvent = buildEventMetricMap('date_selected');
-          const reachedByEvent = buildEventMetricMap('reached_pricing');
-          // Split CTA tracking: Contact Us vs Join Our Plan (book).
-          // Also keep legacy pricing_cta_clicked so historical rows still count.
-          const bookCtaByEvent = buildEventMetricMap('book_cta_clicked');
-          const contactCtaByEvent = buildEventMetricMap('contact_cta_clicked');
-          const legacyCtaByEvent = buildEventMetricMap('pricing_cta_clicked');
-          // Combined for Payment Handoff denominator parity
-          const convertedByEvent = (() => {
-            const allIds = new Set([...Object.keys(bookCtaByEvent), ...Object.keys(contactCtaByEvent), ...Object.keys(legacyCtaByEvent)]);
-            const map: Record<string, number> = {};
-            allIds.forEach(id => {
-              map[id] = (bookCtaByEvent[id] || 0) + (contactCtaByEvent[id] || 0) + (legacyCtaByEvent[id] || 0);
-            });
-            return map;
-          })();
-          const redirectedByEvent = buildEventMetricMap('external_redirect_initiated');
+          // Overview averages — unweighted across events that have data.
+          const roundAvg = (nums: number[]) => nums.length > 0 ? Math.round(nums.reduce((sum, n) => sum + n, 0) / nums.length) : 0;
+          const joinPlanRates = Object.entries(detailsOpenedByEvent).flatMap(([id, details]) =>
+            details > 0 ? [((calendarOpenedByEvent[id] || 0) / details) * 100] : []);
+          const datePickRates = Object.entries(calendarOpenedByEvent).flatMap(([id, opened]) =>
+            opened > 0 ? [((datePickedByEvent[id] || 0) / opened) * 100] : []);
+          const pricingConvRates = Object.entries(reachedByEvent).flatMap(([id, reached]) =>
+            reached > 0 ? [((convertedByEvent[id] || 0) / reached) * 100] : []);
+          const handoffRates = Object.entries(reachedByEvent).flatMap(([id, reached]) =>
+            reached > 0 ? [((redirectedByEvent[id] || 0) / reached) * 100] : []);
+          const avgJoinPlanPct = roundAvg(joinPlanRates);
+          const avgDatePickPct = roundAvg(datePickRates);
+          const avgPricingConvPct = roundAvg(pricingConvRates);
+          const avgHandoffPct = roundAvg(handoffRates);
 
           const allJoinPlanEvents = Array.from(new Set([...Object.keys(detailsOpenedByEvent), ...Object.keys(calendarOpenedByEvent)]));
           const allCalendarEvents = Array.from(new Set([...Object.keys(calendarOpenedByEvent), ...Object.keys(datePickedByEvent)]));
@@ -3274,7 +3207,7 @@ export default function AdminPanel() {
                 <div style={{ position: 'relative' }}>
                   <select
                     value={analyticsWindow}
-                    onChange={e => setAnalyticsWindow(e.target.value as any)}
+                    onChange={e => { const w = e.target.value as '24h' | 'week' | 'month'; setAnalyticsWindow(w); loadAnalytics(w); }}
                     style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', minWidth: 130 }}
                   >
                     <option value="24h">Last 24 Hours</option>

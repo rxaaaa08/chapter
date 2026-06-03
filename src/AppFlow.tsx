@@ -2376,8 +2376,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       <>
                         <button
                           onClick={() => { setShowBookingTimeline(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowApplicationForm(true); }}
-                          className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
+                          className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                         >
+                          <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                           {selectedEvent.ctaLabel || 'Request Invitation'}
                           <ArrowRight size={18} strokeWidth={3.0} />
                         </button>
@@ -2760,7 +2761,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 </button>
                 {/* Header */}
                 <div className="px-6 pt-6 pb-6 flex-shrink-0">
-                  <p className="text-[13px] text-gray-900 leading-snug text-left">Not everyone gets in — but the right people<br /><span className="font-black">always do.</span></p>
+                  <p className="text-[17px] text-gray-900 leading-snug text-left">Not everyone gets in — but the right people<br /><span className="font-black">always do.</span></p>
                 </div>
                 <ApplicationForm
                   event={selectedEvent}
