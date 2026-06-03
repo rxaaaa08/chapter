@@ -295,7 +295,7 @@ export default function AdminPanel() {
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
   const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month'>('week');
+  const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month' | 'lifetime'>('week');
   const [analyticsFunnelEventFilter, setAnalyticsFunnelEventFilter] = useState<'all' | string>('all');
   const [applications, setApplications] = useState<any[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
@@ -947,10 +947,15 @@ export default function AdminPanel() {
   // computes everything in Postgres for the requested window and returns just
   // the summary numbers — correct at any scale, and a few KB instead of MBs.
   // The 30-day purge moved to a nightly pg_cron job, off this read path.
-  const loadAnalytics = async (win: '24h' | 'week' | 'month' = analyticsWindow) => {
+  const loadAnalytics = async (win: '24h' | 'week' | 'month' | 'lifetime' = analyticsWindow) => {
     setAnalyticsLoading(true);
-    const hours = win === '24h' ? 24 : win === 'week' ? 24 * 7 : 24 * 30;
-    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    // 'lifetime' = all retained analytics. Raw events are purged at 90 days by
+    // the nightly pg_cron job, so lifetime effectively means "everything we
+    // still keep" (epoch start → now); the RPC scans the full table for it.
+    const hours = win === '24h' ? 24 : win === 'week' ? 24 * 7 : win === 'month' ? 24 * 30 : null;
+    const since = hours === null
+      ? new Date(0).toISOString()
+      : new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase.rpc('get_analytics_summary', { p_since: since });
     if (error) {
       console.error('[loadAnalytics] RPC error:', error.message);
@@ -3105,7 +3110,7 @@ export default function AdminPanel() {
 
         {/* ── ANALYTICS TAB ────────────────────────────────────────────────── */}
         {tab === 'analytics' && (() => {
-          const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : 'Last Month';
+          const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : analyticsWindow === 'month' ? 'Last Month' : 'Lifetime';
 
           // All figures come from the get_analytics_summary RPC (server-side,
           // uncapped). The previous client-side aggregation over raw rows hit
@@ -3207,12 +3212,13 @@ export default function AdminPanel() {
                 <div style={{ position: 'relative' }}>
                   <select
                     value={analyticsWindow}
-                    onChange={e => { const w = e.target.value as '24h' | 'week' | 'month'; setAnalyticsWindow(w); loadAnalytics(w); }}
+                    onChange={e => { const w = e.target.value as '24h' | 'week' | 'month' | 'lifetime'; setAnalyticsWindow(w); loadAnalytics(w); }}
                     style={{ ...s.input, fontSize: 13, fontWeight: 600, padding: '7px 32px 7px 12px', borderRadius: 999, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', minWidth: 130 }}
                   >
                     <option value="24h">Last 24 Hours</option>
                     <option value="week">Last Week</option>
                     <option value="month">Last Month</option>
+                    <option value="lifetime">Lifetime</option>
                   </select>
                   <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#777', pointerEvents: 'none' }}>▾</span>
                 </div>
