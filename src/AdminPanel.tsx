@@ -976,52 +976,10 @@ export default function AdminPanel() {
     logAdminAction('event_delete', 'events', id, { title });
   };
 
-  const duplicateTrip = async (trip: Trip) => {
-    const { id, slug, event_dates, event_media, event_reviews, faqs, ...rest } = trip as any;
-    const newSlug = `${trip.slug ?? trip.id ?? 'event'}-copy-${Date.now()}`;
-    const { data, error } = await supabase.from('events').insert({
-      ...rest,
-      title: `${trip.title} (duplicate)`,
-      slug: newSlug,
-      invite_slug: newSlug,
-      is_active: false,
-    }).select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').single();
-    if (error || !data) { console.error('Duplicate failed:', error); showToast('Duplicate failed: ' + (error?.message ?? 'unknown error')); return; }
-
-    // Copy related rows
-    const related: PromiseLike<any>[] = [];
-    if ((event_dates ?? []).length > 0) {
-      related.push(supabase.from('event_dates').insert(
-        event_dates.map(({ id: _id, ...d }: any) => ({ ...d, event_id: data.id }))
-      ));
-    }
-    if ((event_media ?? []).length > 0) {
-      related.push(supabase.from('event_media').insert(
-        event_media.map(({ id: _id, ...m }: any) => ({ ...m, event_id: data.id }))
-      ));
-    }
-    if ((event_reviews ?? []).length > 0) {
-      related.push(supabase.from('event_reviews').insert(
-        event_reviews.map(({ id: _id, ...r }: any) => ({ ...r, event_id: data.id }))
-      ));
-    }
-    if ((faqs ?? []).length > 0) {
-      related.push(supabase.from('faqs').insert(
-        faqs.map(({ id: _id, ...f }: any) => ({ ...f, event_id: data.id }))
-      ));
-    }
-    await Promise.all(related);
-
-    // Reload so related rows appear
-    const { data: fresh } = await supabase.from('events')
-      .select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)')
-      .eq('id', data.id).single();
-    if (fresh) setTrips(prev => [...prev, fresh as Trip]);
-    showToast(`"${trip.title}" duplicated ✓`);
-    logAdminAction('event_duplicate', 'events', data.id, {
-      source_id: trip.id ?? null, source_title: trip.title, new_slug: newSlug,
-    });
-  };
+  // duplicateTrip was removed: copying an event spawned a new "-copy-…" slug
+  // while keeping the old title, which fragmented analytics (the same plan
+  // showing up under multiple ids, some resolving to "Unknown City"). Build
+  // new plans fresh instead.
 
   const setLiveState = async (trip: Trip, live: boolean) => {
     await supabase.from('events').update({ is_active: live }).eq('id', trip.id!);
@@ -1054,10 +1012,6 @@ export default function AdminPanel() {
       }
       window.open(previewUrl, '_blank', 'noopener,noreferrer');
       showToast('Preview opened. Plan set to Hidden. URL copied.');
-      return;
-    }
-    if (action === 'duplicate') {
-      await duplicateTrip(trip);
       return;
     }
     if (action === 'delete') {
@@ -1535,7 +1489,6 @@ export default function AdminPanel() {
                                   <option value="live">Live</option>
                                   <option value="hide">Hide</option>
                                   <option value="preview">Preview</option>
-                                  <option value="duplicate">Duplicate</option>
                                   <option value="delete">Delete</option>
                                 </select>
                                 <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
