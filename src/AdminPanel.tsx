@@ -3137,10 +3137,30 @@ export default function AdminPanel() {
           const convertedByEvent = stageMap('converted_any');
           const redirectedByEvent = stageMap('external_redirect_initiated');
 
-          // Cities pie (count of city_selected rows per city)
+          // Cities pie (count of city_selected rows per city). The tracked
+          // value is often a pickup-point phrasing — "I'll join in Chennai",
+          // "Pick me up in Chennai", "I'll come to Chennai by own transport" —
+          // which all mean the same city. Normalize to the bare city name and
+          // merge the slices so the chart reads Chennai / Pondy / Delhi etc.
+          const normalizeCity = (raw: string): string => {
+            let c = (raw || '').trim();
+            let m: RegExpMatchArray | null;
+            if ((m = c.match(/^i['’]?ll join in (.+)$/i)))                 c = m[1];
+            else if ((m = c.match(/^pick me up in (.+)$/i)))                    c = m[1];
+            else if ((m = c.match(/^i['’]?ll come to (.+?) by .+$/i)))      c = m[1];
+            c = c.trim();
+            if (/^pondicherry$/i.test(c)) c = 'Pondy';
+            return c;
+          };
           const cityEntries: Array<{ city: string; count: number }> = summary?.cities ?? [];
-          const sortedCities: [string, number][] = cityEntries.map(c => [c.city, c.count]);
-          const cityTotal = cityEntries.reduce((s, c) => s + c.count, 0) || 1;
+          const cityMerged: Record<string, number> = {};
+          cityEntries.forEach(({ city, count }) => {
+            const key = normalizeCity(city);
+            if (!key) return;
+            cityMerged[key] = (cityMerged[key] || 0) + count;
+          });
+          const sortedCities: [string, number][] = Object.entries(cityMerged).sort((a, b) => b[1] - a[1]);
+          const cityTotal = sortedCities.reduce((s, [, c]) => s + c, 0) || 1;
 
           // Chosen-plan pie (event popularity — raw event_selected counts)
           const popEntries: Array<{ event_id: string; title?: string; count: number }> = summary?.event_popularity ?? [];
