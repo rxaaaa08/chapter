@@ -3711,18 +3711,21 @@ export default function AdminPanel() {
                   {storageReport && (() => {
                     const pct = storageReport.free_tier_pct;
                     const color = pct >= 80 ? '#dc2626' : pct >= 50 ? '#d97706' : '#9ca3af';
-                    const snappedAt = new Date(storageReport.taken_at);
-                    const daysAgo = Math.max(0, Math.round((Date.now() - snappedAt.getTime()) / (1000 * 60 * 60 * 24)));
+                    // Format snapshot timestamp as exact date in IST (Asia/Kolkata)
+                    // — e.g. "4 Jun 2026, 9:30 PM IST". en-IN formatting matches
+                    // the date style used elsewhere in the admin.
+                    const snappedIST = new Date(storageReport.taken_at).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
+                      day: 'numeric', month: 'short', year: 'numeric',
+                      hour: 'numeric', minute: '2-digit', hour12: true,
+                    });
                     return (
                       <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #ececec', display: 'flex', gap: 12, alignItems: 'center', fontSize: 11, color: '#aaa', flexWrap: 'wrap' }}>
                         <span>🗄️ Database</span>
                         <span style={{ color: '#666', fontWeight: 600 }}>{storageReport.total_db_size_pretty}</span>
                         <span style={{ color }}>· {pct}% of 500 MB free tier</span>
-                        {storageReport.biggest && (
-                          <span>· biggest: {storageReport.biggest.table} ({storageReport.biggest.pretty})</span>
-                        )}
                         <span style={{ marginLeft: 'auto', color: '#bbb' }}>
-                          snapshot {daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`} · auto-refresh weekly (Mon)
+                          snapshot {snappedIST} IST · auto-refresh weekly (Mon)
                         </span>
                       </div>
                     );
