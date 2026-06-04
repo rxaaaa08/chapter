@@ -295,6 +295,10 @@ export default function AdminPanel() {
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
   const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
   const [conversionFunnel, setConversionFunnel] = useState<any | null>(null);
+  // Most recent weekly DB-storage snapshot (cron writes one every Monday).
+  // Used by the small footer line in the analytics tab so the admin can
+  // catch unusual growth before the 500 MB Supabase free tier becomes tight.
+  const [storageReport, setStorageReport] = useState<{ total_db_size_pretty: string; free_tier_pct: number; taken_at: string; biggest?: { table: string; pretty: string } } | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month' | '90d'>('week');
   // Funnel event filter. null = default (active events only). A Set = the
@@ -970,6 +974,28 @@ export default function AdminPanel() {
       setAnalyticsSummary(summaryRes.data);
     }
     setConversionFunnel(funnelRes.error ? null : funnelRes.data);
+    // Latest weekly storage snapshot. Best-effort: silent on failure so a
+    // missing table or RLS issue doesn't break the analytics tab.
+    try {
+      const { data: srRows } = await supabase
+        .from('storage_reports')
+        .select('total_db_size_pretty, free_tier_pct, taken_at, table_sizes')
+        .order('taken_at', { ascending: false })
+        .limit(1);
+      const row = srRows?.[0];
+      if (row) {
+        const ts = Array.isArray(row.table_sizes) ? row.table_sizes : [];
+        const top = ts[0];
+        setStorageReport({
+          total_db_size_pretty: row.total_db_size_pretty,
+          free_tier_pct: Number(row.free_tier_pct ?? 0),
+          taken_at: row.taken_at,
+          biggest: top ? { table: top.table, pretty: `${Math.round(top.size_bytes / 1024 / 1024)} MB` } : undefined,
+        });
+      } else {
+        setStorageReport(null);
+      }
+    } catch (_) { /* silent — non-critical */ }
     setAnalyticsLoading(false);
   };
 
@@ -3677,6 +3703,30 @@ export default function AdminPanel() {
                       );
                     })}
                   </div>
+
+                  {/* DB-storage footer. Weekly cron writes a snapshot row; this
+                      reads the most recent one. Color tints amber > 50% and
+                      red > 80% of the 500 MB free tier so unusual growth gets
+                      noticed before anything actually breaks. */}
+                  {storageReport && (() => {
+                    const pct = storageReport.free_tier_pct;
+                    const color = pct >= 80 ? '#dc2626' : pct >= 50 ? '#d97706' : '#9ca3af';
+                    const snappedAt = new Date(storageReport.taken_at);
+                    const daysAgo = Math.max(0, Math.round((Date.now() - snappedAt.getTime()) / (1000 * 60 * 60 * 24)));
+                    return (
+                      <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #ececec', display: 'flex', gap: 12, alignItems: 'center', fontSize: 11, color: '#aaa', flexWrap: 'wrap' }}>
+                        <span>🗄️ Database</span>
+                        <span style={{ color: '#666', fontWeight: 600 }}>{storageReport.total_db_size_pretty}</span>
+                        <span style={{ color }}>· {pct}% of 500 MB free tier</span>
+                        {storageReport.biggest && (
+                          <span>· biggest: {storageReport.biggest.table} ({storageReport.biggest.pretty})</span>
+                        )}
+                        <span style={{ marginLeft: 'auto', color: '#bbb' }}>
+                          snapshot {daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`} · auto-refresh weekly (Mon)
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
             </div>
