@@ -2,9 +2,10 @@
 
 **Date:** 5 Jun 2026
 **Scope:** PayU status flow (callback + webhook) and all 5 AiSensy WhatsApp triggers.
-**Outcome:** Money paths are sound. Both MEDIUM issues FIXED + deployed on 5 Jun
-(payu-callback v22, payu-webhook v17, both verify_jwt:false). 2 CRITICAL issues
-(cart-abandonment hardcoded key + not-in-repo) remain — user deferred those.
+**Outcome:** Money paths are sound. ALL 4 issues (2 CRITICAL + 2 MEDIUM) FIXED +
+deployed on 5 Jun. payu-callback v22, payu-webhook v17, cart-abandonment v11 —
+all verify_jwt:false. Only remaining item: 🟡 rotate the AiSensy key (deferred,
+optional hygiene) + set CRON_SECRET env var if force-mode testing is wanted.
 
 ---
 
@@ -41,7 +42,7 @@
 
 ---
 
-## 🔴 CRITICAL #1 — cart-abandonment has a hardcoded, leaked AiSensy key
+## ✅ CRITICAL #1 — cart-abandonment hardcoded key — FIXED 5 Jun (cart-abandonment v11)
 
 The deployed `cart-abandonment` function (version 10) contains:
 ```js
@@ -67,7 +68,7 @@ migrated.
   payu-callback/webhook until corrected. Always re-check `list_edge_functions`
   after any deploy.
 
-## 🔴 CRITICAL #2 — cart-abandonment is not in the git repo
+## ✅ CRITICAL #2 — cart-abandonment not in git repo — FIXED 5 Jun
 
 It exists only as a deployed function; there is no `supabase/functions/cart-abandonment/`
 locally. Consequences: unversioned, no code review, and the pre-commit secret
@@ -147,12 +148,20 @@ cart-abandonment):**
 
 ## Priority order when you come back to this
 
-1. CRITICAL #1 + #2 together (env-var + commit cart-abandonment) — unblocks safe rotation.
-2. 🟡 Rotate the AiSensy key.
+1. ~~CRITICAL #1 + #2 (env-var + commit cart-abandonment)~~ — ✅ DONE 5 Jun.
+2. 🟡 Rotate the AiSensy key — OPTIONAL hygiene, now unblocked (all functions
+   read AISENSY_API_KEY from env). Steps below.
 3. ~~MEDIUM #1 (atomic claim)~~ — ✅ DONE 5 Jun.
 4. ~~MEDIUM #2 (webhook payment_failed)~~ — ✅ DONE 5 Jun.
 
-The 2 CRITICALs are independent and low-risk; neither blocks going live.
+🟢 Nothing critical remains. The only open item is optional key rotation.
+
+### Manual task: CRON_SECRET (only if you want force-mode testing)
+cart-abandonment's `?force=true&phone=...` test path now reads CRON_SECRET from
+env and is DISABLED (401) until you set it. The scheduled pg_cron run does not
+use it and works regardless. To re-enable manual testing: Supabase → Project
+Settings → Edge Functions → Secrets → add `CRON_SECRET` = any value, then call
+`?force=true&phone=XXXXXXXXXX&secret=<that value>`.
 
 ---
 
@@ -163,3 +172,9 @@ The 2 CRITICALs are independent and low-risk; neither blocks going live.
   added firePaymentFailedWhatsApp + failure else-branch to payu-webhook.
   Deployed payu-callback v22 + payu-webhook v17, both verify_jwt:false,
   both smoke-tested (boot OK), no payments stranded during the window.
+- **5 Jun 2026** — CRITICAL #1 + #2 fixed and deployed. cart-abandonment now
+  reads AISENSY_API_KEY + CRON_SECRET from env (was hardcoded/leaked); source
+  committed to supabase/functions/cart-abandonment/index.ts (was deploy-only).
+  Deployed cart-abandonment v11, verify_jwt:false. Smoke-tested: cron path
+  returns 200 {sent,total} (env key resolves), force-without-secret returns
+  401 (fail-closed).
