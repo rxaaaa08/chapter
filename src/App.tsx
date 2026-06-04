@@ -3476,26 +3476,20 @@ function NativeBookingTimeline({
     return () => clearInterval(t);
   }, [isBalancePayment]);
 
-  // Spots left = invite_spots − reserved (people with advance_paid OR fully_paid in applications).
-  // Only needed when advance not yet paid (balance payers already locked in their spot).
-  // Seeded immediately with inviteSpots so the badge never shows a loading spinner —
-  // it shows the total available right away then silently corrects once the count loads.
-  const [slotsLeft, setSlotsLeft] = useState<number | null>(
-    !isBalancePayment && inviteSpots != null ? inviteSpots : null
-  );
+  // Spots left = invite_spots − reserved (people with advance_paid OR fully_paid).
+  // Starts as null so the badge shows bouncing dots while we fetch — no
+  // optimistic full-capacity number that briefly lies if reality is lower.
+  // The dot loader lives in the JSX below for the null state. On fetch
+  // failure we fall back to inviteSpots so it doesn't loop forever.
+  const [slotsLeft, setSlotsLeft] = useState<number | null>(null);
   useEffect(() => {
-    if (isBalancePayment || inviteSpots == null) return;
-    // Optimistically show full capacity immediately
-    setSlotsLeft(inviteSpots);
+    if (isBalancePayment || inviteSpots == null) { setSlotsLeft(null); return; }
+    setSlotsLeft(null); // Reset to loading on any dependency change
     const lookupSlug = eventSlug || inviteSlug;
-    if (!lookupSlug) return;
+    if (!lookupSlug) { setSlotsLeft(inviteSpots); return; }
     fetchEventCounts(lookupSlug)
-      .then(({ reserved }) => {
-        setSlotsLeft(Math.max(0, inviteSpots - reserved));
-      })
-      .catch(() => {
-        // Keep the optimistic value — better to show inviteSpots than a spinner
-      });
+      .then(({ reserved }) => setSlotsLeft(Math.max(0, inviteSpots - reserved)))
+      .catch(() => setSlotsLeft(inviteSpots));
   }, [isBalancePayment, eventSlug, inviteSlug, inviteSpots]);
 
   const buildCountdown = (dateStr: string): string => {
@@ -3549,6 +3543,21 @@ function NativeBookingTimeline({
   const dateLabel = eventDate
     ? new Date(`${eventDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
+  // Fuller form for the spots-or-date badge: "Sat, May 22". Used when we
+  // suppress the spots-left number (because <50% of capacity is reserved)
+  // and want to surface the trip date there instead.
+  const badgeDateLabel = eventDate
+    ? new Date(`${eventDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    : '';
+  // Spots-left becomes the badge only once half-or-more of the capacity is
+  // reserved. Below that threshold we show the date instead — scarcity
+  // messaging only when there's actually scarcity.
+  const SCARCITY_THRESHOLD = 0.5;
+  const showScarcityBadge =
+    slotsLeft !== null
+    && inviteSpots != null
+    && inviteSpots > 0
+    && (inviteSpots - slotsLeft) / inviteSpots >= SCARCITY_THRESHOLD;
 
   return (
     <>
@@ -3637,17 +3646,24 @@ function NativeBookingTimeline({
                     {dateLabel}
                   </span>
                 ) : null
-              ) : slotsLeft !== null ? (
-                <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
-                  {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
-                </span>
-              ) : (
+              ) : slotsLeft === null && inviteSpots != null ? (
+                // Loading: bouncing dots while fetchEventCounts resolves
                 <span className="flex-shrink-0 ml-3 flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 border border-amber-200">
                   <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
                   <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0.2 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
                   <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0.4 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
                 </span>
-              )}
+              ) : showScarcityBadge ? (
+                // ≥ 50% of capacity reserved — show spots-left badge in amber
+                <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
+                  {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
+                </span>
+              ) : badgeDateLabel ? (
+                // Below threshold — show the trip date instead (gray, non-urgent)
+                <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
+                  {badgeDateLabel}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
