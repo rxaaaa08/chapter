@@ -1,6 +1,18 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(clients.claim()));
-self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));
+
+// Pass-through fetch handler — but ONLY for same-origin requests.
+// Cross-origin requests (Cloudinary images, Vimeo player, Google Fonts, etc.)
+// bypass the SW entirely and use the browser's normal fetch path. Otherwise
+// the SW's fetch(e.request) treats cross-origin <img>/<link> requests as
+// no-cors, which under a strict CSP fails opaquely with the generic error
+// "FetchEvent.respondWith received an error: TypeError: Load failed".
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  // Skip everything not on our own origin — let the browser handle it
+  if (url.origin !== self.location.origin) return;
+  e.respondWith(fetch(e.request));
+});
 
 // ── Push notifications ────────────────────────────────────────────────────────
 self.addEventListener('push', e => {
