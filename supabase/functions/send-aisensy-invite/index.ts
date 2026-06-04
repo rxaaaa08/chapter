@@ -113,7 +113,14 @@ Deno.serve(async (req) => {
       body: aiBody.slice(0, 100),
     });
 
-    return json(200, { ok: aiRes.ok, status: aiRes.status }, cors);
+    // Include a truncated AiSensy response body when the call failed, so the
+    // admin toast can show the actual reason (bad key / unknown template /
+    // quota / etc). On success we omit the body — saves log noise + payload.
+    return json(200, {
+      ok: aiRes.ok,
+      status: aiRes.status,
+      ...(aiRes.ok ? {} : { error: aiBody.slice(0, 300) || `aisensy http ${aiRes.status}` }),
+    }, cors);
   } catch (err) {
     console.error('send-aisensy-invite error:', err);
     return json(500, { error: 'internal error' }, cors);

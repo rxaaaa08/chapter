@@ -674,7 +674,15 @@ export default function AdminPanel() {
           await loadApplications();
         } else {
           setApplications(prev => prev.map(a => a.id === id ? { ...a, ...sentApp } : a));
-          showToast(ok ? '✅ Approved & WhatsApp invite sent' : '✅ Approved — but WhatsApp send failed');
+          // Surface the actual AiSensy error so the admin can act on it
+          // (bad key / template not approved / quota / etc.) instead of
+          // staring at a generic "failed" toast.
+          const errReason = !ok
+            ? (aiJson.error ? ` — ${String(aiJson.error).slice(0, 120)}` : '')
+            : '';
+          showToast(ok
+            ? '✅ Approved & WhatsApp invite sent'
+            : `✅ Approved — but WhatsApp send failed${errReason}`);
         }
       } catch {
         showToast('✅ Approved — WhatsApp send failed (network error)');
