@@ -21,6 +21,17 @@ function formatDueDate(iso: string): string {
   return `${month} ${day}${suffix}`;
 }
 
+function formatShortDateOrdinal(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return '';
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const day = d.getDate();
+  const s = ['th', 'st', 'nd', 'rd'], v = day % 100;
+  const suffix = (s[(v - 20) % 10] || s[v] || s[0]);
+  return `${month} ${day}${suffix}`;
+}
+
 async function resolveCanonicalSlug(supabase: any, inputSlug: string): Promise<string> {
   if (!inputSlug) return inputSlug;
   const { data } = await supabase
@@ -31,25 +42,44 @@ async function resolveCanonicalSlug(supabase: any, inputSlug: string): Promise<s
   return data?.slug ?? inputSlug;
 }
 
-const AISENSY_CAMPAIGN = 'advance_paid+balance';
+// ── AiSensy one-shot send dedup ───────────────────────────────────────────────
+// See payu-callback for the full rationale. claimSendFlag flips the flag
+// false→true atomically and reports whether THIS caller won; releaseSendFlag
+// rolls it back on send failure so a retry can re-send. Prevents the
+// callback + webhook from both sending the same WhatsApp.
+async function claimSendFlag(supabase: any, appId: string, col: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('applications')
+    .update({ [col]: true })
+    .eq('id', appId)
+    .eq(col, false)
+    .select('id')
+    .maybeSingle();
+  return !!data;
+}
+async function releaseSendFlag(supabase: any, appId: string, col: string): Promise<void> {
+  await supabase.from('applications').update({ [col]: false }).eq('id', appId);
+}
+
+const AISENSY_CAMPAIGN          = 'advance_paid+balance';
+const AISENSY_CAMPAIGN_BALANCE  = 'fullpaid';
+const AISENSY_CAMPAIGN_FAILED   = 'payment_failed';
 
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
   const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-  if (!AISENSY_API_KEY) {
-    console.warn('[aisensy advance_paid webhook] AISENSY_API_KEY not set');
-    return;
-  }
-  try {
-    const { data: app } = await supabase
-      .from('applications')
-      .select('id, name, aisensy_advance_paid_sent')
-      .eq('phone', args.phone)
-      .eq('event_slug', args.eventSlug)
-      .maybeSingle();
-    if (!app || app.aisensy_advance_paid_sent) return;
+  if (!AISENSY_API_KEY) { console.warn('[aisensy advance_paid webhook] AISENSY_API_KEY not set'); return; }
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_advance_paid_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_advance_paid_sent) return;
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_advance_paid_sent'))) return;
 
+  try {
     const { data: ev } = await supabase
       .from('events')
       .select('booking_steps')
@@ -80,14 +110,111 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
       }),
     });
 
-    if (aiRes.ok) {
-      await supabase
-        .from('applications')
-        .update({ aisensy_advance_paid_sent: true })
-        .eq('id', app.id);
+    if (!aiRes.ok) {
+      console.error('[aisensy advance_paid webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_advance_paid_sent');
     }
   } catch (err) {
-    console.error('[aisensy advance_paid webhook] fire failed:', err);
+    console.error('[aisensy advance_paid webhook] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_advance_paid_sent');
+  }
+}
+
+async function fireBalancePaidWhatsApp(supabase: any, args: {
+  phone: string; eventSlug: string; amount: number | string; txnid: string;
+}) {
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) { console.warn('[aisensy balance_paid webhook] AISENSY_API_KEY not set'); return; }
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_balance_paid_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_balance_paid_sent) return;
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_balance_paid_sent'))) return;
+
+  try {
+    const { data: ev } = await supabase
+      .from('events')
+      .select('booking_steps')
+      .eq('slug', args.eventSlug)
+      .maybeSingle();
+    const detailsStep = (ev?.booking_steps ?? [])[3];
+    const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
+
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: AISENSY_API_KEY,
+        campaignName: AISENSY_CAMPAIGN_BALANCE,
+        destination: '91' + args.phone,
+        userName: app.name || 'chapter A 3063',
+        templateParams: [
+          `₹${Number(args.amount).toLocaleString('en-IN')}`,
+          detailsDate,
+        ],
+        source: 'payu-webhook',
+        media: {}, buttons: [], carouselCards: [], location: {},
+        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
+        paramsFallbackValue: { FirstName: app.name || 'user' },
+      }),
+    });
+
+    if (!aiRes.ok) {
+      console.error('[aisensy balance_paid webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_balance_paid_sent');
+    }
+  } catch (err) {
+    console.error('[aisensy balance_paid webhook] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_balance_paid_sent');
+  }
+}
+
+async function firePaymentFailedWhatsApp(supabase: any, args: {
+  phone: string; eventSlug: string; amount: number | string; txnid: string;
+}) {
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) { console.warn('[aisensy payment_failed webhook] AISENSY_API_KEY not set'); return; }
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_payment_failed_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_payment_failed_sent) return;
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_payment_failed_sent'))) return;
+
+  try {
+    const amountNum = Number(args.amount);
+    const formattedAmount = amountNum % 1 === 0
+      ? `₹${amountNum.toLocaleString('en-IN')}`
+      : `₹${amountNum.toFixed(2)}`;
+
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: AISENSY_API_KEY,
+        campaignName: AISENSY_CAMPAIGN_FAILED,
+        destination: '91' + args.phone,
+        userName: app.name || 'chapter A 3063',
+        templateParams: [app.name || 'there', formattedAmount],
+        source: 'payu-webhook',
+        media: {}, buttons: [], carouselCards: [], location: {},
+        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
+        paramsFallbackValue: { FirstName: app.name || 'user' },
+      }),
+    });
+
+    if (!aiRes.ok) {
+      console.error('[aisensy payment_failed webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
+    }
+  } catch (err) {
+    console.error('[aisensy payment_failed webhook] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
   }
 }
 
@@ -115,20 +242,11 @@ Deno.serve(async (req) => {
       return new Response('bad request', { status: 400 });
     }
 
-    // ── 1. Verify hash ──
-    //
-    // PayU reverse hash format (per docs):
-    //   sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
-    //
-    // The five empty fields between status and udf5 correspond to udf10..udf6
-    // (PayU's response includes them even though the request never sent any).
-    // Previous version omitted them and silently failed every hash check.
+    // PayU reverse hash: sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
     const additionalCharges = (p.additionalCharges ?? '').toString();
     const baseReverse =
       `${PAYU_MERCHANT_SALT}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${PAYU_MERCHANT_KEY}`;
-    const reverseStr = additionalCharges
-      ? `${additionalCharges}|${baseReverse}`
-      : baseReverse;
+    const reverseStr = additionalCharges ? `${additionalCharges}|${baseReverse}` : baseReverse;
     const calculatedHash = await sha512(reverseStr);
     const hashMatches = calculatedHash === receivedHash;
 
@@ -149,7 +267,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── 2. Verify amount matches ──
     const { data: stored } = await supabase
       .from('payu_payments')
       .select('event_slug, phone, payment_type, event_title, amount')
@@ -175,7 +292,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── 3. Hash + amount OK, proceed ──
     const dbStatus = status === 'success' ? 'success' : 'failure';
 
     await supabase
@@ -187,11 +303,12 @@ Deno.serve(async (req) => {
       })
       .eq('txnid', txnid);
 
+    const rawSlug    = stored.event_slug as string | null;
+    const phone      = stored.phone as string | null;
+    const paymentType = (stored.payment_type as string | null) ?? 'advance';
+
     if (status === 'success') {
-      const rawSlug    = stored.event_slug as string | null;
-      const phone      = stored.phone as string | null;
-      const paymentType = (stored.payment_type as string | null) ?? 'advance';
-      const newStatus  = paymentType === 'balance' ? 'fully_paid' : 'advance_paid';
+      const newStatus = paymentType === 'balance' ? 'fully_paid' : 'advance_paid';
 
       if (rawSlug && phone) {
         const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
@@ -218,24 +335,27 @@ Deno.serve(async (req) => {
           );
 
         if (paymentType === 'advance') {
-          await fireAdvancePaidWhatsApp(supabase, {
-            phone, eventSlug,
-            amount: stored.amount ?? amount,
-            txnid,
-          });
+          await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+        } else if (paymentType === 'balance') {
+          await fireBalancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
         }
+      }
+    } else {
+      // Failure path — fire the payment_failed WhatsApp. The callback also
+      // fires it, but if the user closed the tab on PayU's failure page the
+      // callback never ran; the webhook is then the only path. The shared
+      // aisensy_payment_failed_sent claim prevents a double-up.
+      if (rawSlug && phone) {
+        const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
+        await firePaymentFailedWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
       }
     }
 
-    return new Response(
-      JSON.stringify({ received: true, status: dbStatus, txnid, hashMatches: true }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    );
+    return new Response(JSON.stringify({ received: true, status: dbStatus, txnid, hashMatches: true }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     console.error('payu-webhook error:', err);
-    return new Response(
-      JSON.stringify({ received: true, error: String(err) }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    );
+    return new Response(JSON.stringify({ received: true, error: String(err) }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 });

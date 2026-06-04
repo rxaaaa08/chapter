@@ -4,7 +4,7 @@ import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, Ch
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
-import { trackEvent, supabase, fetchEventCounts } from './supabase';
+import { trackEvent, supabase, fetchEventCounts, fetchEventByIdOrSlug } from './supabase';
 
 // Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
 // call prod edge functions. supabase.ts already throws if the env var is
@@ -1207,6 +1207,7 @@ function InvitePlanDetailsSheet({
   onPayAdvance,
   isFullyPaid = false,
   isBalancePayment = false,
+  whatsappGroupUrl,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1215,6 +1216,7 @@ function InvitePlanDetailsSheet({
   onPayAdvance?: () => void;
   isFullyPaid?: boolean;
   isBalancePayment?: boolean;
+  whatsappGroupUrl?: string;
 }) {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(0);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
@@ -1492,7 +1494,35 @@ function InvitePlanDetailsSheet({
                   </button>
                 </div>
               )}
-              {isFullyPaid && <div className="h-8" />}
+              {/* Fully-paid users see the Join Groupchat CTA in place of Pay.
+                  AiSensy template buttons can't link to chat.whatsapp.com
+                  directly (Meta blocks it) — this is the workaround: the
+                  template links here and we relay the real group URL. */}
+              {isFullyPaid && whatsappGroupUrl && (
+                <div className="px-5 pb-8">
+                  <a
+                    href={whatsappGroupUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-4 rounded-2xl text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-90 transition-all relative overflow-hidden"
+                    style={{ backgroundColor: '#22C55E' }}
+                  >
+                    <motion.div
+                      className="absolute inset-0 -skew-x-12 pointer-events-none"
+                      style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)', width: '50%' }}
+                      animate={{ x: ['-100%', '300%'] }}
+                      transition={{ duration: 0.9, repeat: Infinity, repeatDelay: 2.2, ease: 'easeInOut' }}
+                    />
+                    <span>Join Groupchat</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                  </a>
+                </div>
+              )}
+              {/* Fully paid but no group URL configured on the event_dates row
+                  → keep the spacer (no message, per the design decision). */}
+              {isFullyPaid && !whatsappGroupUrl && <div className="h-8" />}
               </div>
             </div>
           </motion.div>
@@ -1521,7 +1551,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }> } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }> } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
@@ -1612,14 +1642,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   ): Promise<{ isFullyPaid: boolean; isBalancePayment: boolean; inviteSpots: number | null } | null> => {
     const { data: eventRow } = await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
       .eq('invite_slug', slug)
       .maybeSingle();
 
     // Fall back to slug match if invite_slug didn't find it
     const event = eventRow ?? (await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
       .eq('slug', slug)
       .maybeSingle()).data;
     if (!event) return null;
@@ -1628,7 +1658,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // Resolve payment status: applications first, then legacy invite_payment_submissions.
     const [{ data: appRow }, { data: legacyPaidRows }, { data: inviteRow }] = await Promise.all([
       supabase.from('applications')
-        .select('status, pickup_point_id, selected_city')
+        .select('status, pickup_point_id, selected_city, selected_date')
         .eq('phone', phone)
         .eq('event_slug', realSlug)
         .maybeSingle(),
@@ -1676,6 +1706,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const balanceAmount = Math.max(0, priceFull - priceAdvance);
     const dates = Array.isArray(event.event_dates) ? event.event_dates : [];
     const firstDate = dates.map((d: any) => String(d.start_date ?? '')).filter(Boolean).sort()[0] ?? '';
+    // Resolve the WhatsApp group URL for THIS user's trip date. event_dates
+    // is one-row-per-date and each row has its own group URL (different trip
+    // dates = different cohorts = different group chats). We prefer the row
+    // matching applications.selected_date, fall back to the first available.
+    const selectedDate: string | null = (appRow as any)?.selected_date ?? null;
+    const matchedDateRow = selectedDate
+      ? dates.find((d: any) => String(d.start_date ?? '') === selectedDate)
+      : dates[0];
+    const resolvedGroupUrl: string | undefined = matchedDateRow?.whatsapp_group_url || undefined;
 
     // City-specific plan details (included list, itinerary, meeting_spot)
     const includedList: string[] = Array.isArray(_cd?.included) ? _cd.included : (Array.isArray(event.included) ? event.included : []);
@@ -1697,6 +1736,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       },
       isBalancePayment,
       isFullyPaid,
+      whatsappGroupUrl: resolvedGroupUrl,
       transportPlan: Array.isArray(event.transport_plan) ? event.transport_plan : [],
       inviteSlug: event.invite_slug ?? slug,
       eventSlug: realSlug,
@@ -2800,7 +2840,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             const meetingPointDateFormatted = meetingPointDate ? formatMeetingDate(meetingPointDate) : null;
 
             const botGreeting = isFullyPaid
-              ? `Hi ${firstName}! Your booking is fully confirmed. What would you like to do now?`
+              ? `Hi ${firstName}! We can't wait to see you in ${nativeEventData?.title ?? 'this trip'}. We're currently sorting out all the final logistics…\n\nJust join the group chat & we will send all details there${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' soon'}.`
               : isSoldOut
               ? `Hey ${firstName}, we really wanted you in this plan but...\n\nAll ${totalSpots} spots in ${nativeEventData?.title ?? 'this plan'} are already reserved.\n\nPlease note — your spot is only reserved once the advance is settled.\n\nJoin the waitlist & we'll let you know if someone cancels their spot. We hope to see you in the future!`
               : isPaid
@@ -2974,6 +3014,23 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                 <Send size={16} />
                               </button>
                             )}
+                            {/* Join Groupchat — replaces Pay chip for fully-paid users.
+                                Same green styling so it reads as the primary action.
+                                Only shown when the event_dates row has a group URL set;
+                                otherwise the reply set quietly drops to plan details + doubt. */}
+                            {isFullyPaid && nativeEventData?.whatsappGroupUrl && (
+                              <a
+                                href={nativeEventData.whatsappGroupUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
+                                style={{ backgroundColor: '#22C55E' }}
+                              >
+                                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
+                                <span>Join Groupchat</span>
+                                <Send size={16} />
+                              </a>
+                            )}
                             {!isSoldOut && (
                               <button className={btnClass} onClick={() => { window.history.pushState({ chapteraInviteStep: 'planDetails' }, '', window.location.href); setShowPlanDetailsSheet(true); }}>
                                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
@@ -3140,6 +3197,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   details={nativeEventData?.planDetails ?? null}
                   isFullyPaid={nativeEventData?.isFullyPaid ?? false}
                   isBalancePayment={nativeEventData?.isBalancePayment ?? false}
+                  whatsappGroupUrl={nativeEventData?.whatsappGroupUrl}
                   onPayAdvance={() => {
                     setShowPlanDetailsSheet(false);
                     window.setTimeout(() => {
@@ -3646,42 +3704,54 @@ function NativeBookingTimeline({
                     {dateLabel}
                   </span>
                 ) : null
-              ) : slotsLeft === null && inviteSpots != null ? (
-                // Loading: bouncing dots while fetchEventCounts resolves
-                <span className="flex-shrink-0 ml-3 flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 border border-amber-200">
-                  <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-                  <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0.2 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-                  <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0.4 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-                </span>
               ) : showScarcityBadge ? (
-                // ≥ 50% of capacity reserved — show spots-left badge in amber
+                // ≥ 50% of capacity reserved — amber spots-left badge.
+                // Checked first: if scarcity kicks in after the count loads,
+                // the gold date pill below swaps to this attention-grabbing
+                // amber one — deliberate visual nudge signaling urgency.
                 <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
                   {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
                 </span>
               ) : badgeDateLabel ? (
-                // Below threshold — show the trip date in the same gold pill
-                // styling used by the booking-application-flow timeline (see
-                // AppFlow.tsx). Keeps the "Your Booking Timeline" modal
-                // visually consistent across the two flows.
+                // Gold date pill — matches AppFlow.tsx booking-application
+                // timeline. Shown immediately on first paint (no loading
+                // state) since we already know the date locally — only
+                // swap to the amber spots badge above if/when the fetched
+                // count reveals scarcity.
                 <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
                   {badgeDateLabel}
+                </span>
+              ) : slotsLeft === null && inviteSpots != null ? (
+                // Rare fallback: event has no date set + capacity tracking is
+                // on + count is still loading. Bouncing dots while we wait
+                // to decide between "X Spots Left" or nothing.
+                <span className="flex-shrink-0 ml-3 flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 border border-amber-200">
+                  <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0.2 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: 0.4 }} className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
                 </span>
               ) : null}
             </div>
           </div>
         </div>
 
-        {/* CTA */}
+        {/* CTA — gold styling matches AppFlow.tsx booking-application timeline.
+            Always reads "Confirm" regardless of advance vs balance stage —
+            same button position + same role, label stays consistent. */}
         <div className="px-6 pb-8">
           <button
             type="button"
             onClick={() => onPayAdvance()}
-            className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
+            className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
           >
-            {isBalancePayment ? 'Settle Balance' : 'Confirm'}
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
+            <motion.div
+              className="absolute inset-0 -skew-x-12 pointer-events-none"
+              style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }}
+              animate={{ x: ['-100%', '300%'] }}
+              transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }}
+            />
+            Confirm
+            <ArrowRight size={18} strokeWidth={3.0} />
           </button>
         </div>
 
@@ -4356,7 +4426,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
     if (!slug) return;
     supabase
       .from('events')
-      .select('slug, invite_slug, booking_url, price_advance, price_full, title, booking_steps, invite_spots, event_dates(start_date)')
+      .select('slug, invite_slug, booking_url, price_advance, price_full, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url)')
       .or(`slug.eq.${slug},invite_slug.eq.${slug}`)
       .maybeSingle()
       .then(({ data }) => {
@@ -4611,6 +4681,10 @@ function LandscapeBlocker() {
 // ─── PAYU RETURN SCREEN ────────────────────────────────────────────────────────
 function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'failed'; txnid: string; onDone: (nextPath?: string) => void }) {
   const [payment, setPayment] = React.useState<any>(null);
+  // 4th step in the invite-only booking timeline is always the "Meeting Spot
+  // Details" step — its date is when the customer gets added to the WhatsApp
+  // group chat. Surfaced in the receipt warm-note so they know what to expect.
+  const [detailsDate, setDetailsDate] = React.useState<string>('');
   const [loading, setLoading] = React.useState(true);
   const [dlLoading, setDlLoading] = React.useState(false);
   const [showRetryBill, setShowRetryBill] = React.useState(false);
@@ -4657,6 +4731,28 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     if (tenDigit.length !== 10) { setLoading(false); return; }
     fetchReceipt(tenDigit).then(p => { setPayment(p); setLoading(false); });
   }, [txnid, status, fetchReceipt]);
+
+  // Once we know the event_slug from the payment, look up the event to find
+  // its 4th booking step (Meeting Spot Details) and use that date in the
+  // receipt warm note. Best-effort: if the event doesn't have a 4th step,
+  // the warm note falls back to its date-less form gracefully.
+  React.useEffect(() => {
+    const slug = payment?.event_slug;
+    if (!slug) { setDetailsDate(''); return; }
+    let cancelled = false;
+    fetchEventByIdOrSlug(slug).then(ev => {
+      if (cancelled) return;
+      const step = Array.isArray(ev?.bookingSteps) ? ev.bookingSteps[3] : null;
+      const raw = step?.date;
+      if (typeof raw === 'string' && raw) {
+        const d = new Date(`${raw}T00:00:00`);
+        if (!Number.isNaN(d.getTime())) {
+          setDetailsDate(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        }
+      }
+    }).catch(() => { /* silent — warm note just drops the date clause */ });
+    return () => { cancelled = true; };
+  }, [payment?.event_slug]);
 
   const handleSubmitPhone = async () => {
     const t = phoneInput.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
@@ -4898,11 +4994,16 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
           </h2>
         </div>
 
-        {/* Warm note */}
+        {/* Warm note — references the 4th step in the booking timeline
+            (always the Meeting Spot Details date for invite-only events).
+            If the date isn't available yet (still loading or event has
+            fewer steps), gracefully drop just the "by X" clause. */}
         {payment?.event_title && (
           <div className="bg-[#FAF7F2] border border-[#E8E0D5] rounded-2xl px-4 py-3.5">
             <p className="text-[13px] text-gray-500 leading-relaxed">
-              We're doing everything we can to make <span className="font-semibold text-gray-600">{payment.event_title}</span> special for you! See you soon 💛
+              We will add you to <span className="font-semibold text-gray-600">{payment.event_title}</span> groupchat
+              {detailsDate ? <> by <span className="font-semibold text-gray-600">{detailsDate}</span></> : null}.
+              See you soon 💛
             </p>
           </div>
         )}

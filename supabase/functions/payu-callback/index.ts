@@ -23,6 +23,20 @@ function formatDueDate(iso: string): string {
   return `${month} ${day}${suffix}`;
 }
 
+// Short-month + ordinal-day format, e.g. May 22nd / Aug 26th.
+// Used by the balance-paid template's {{2}} param. Distinct from
+// formatDueDate which uses the full month name (August 26th).
+function formatShortDateOrdinal(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return '';
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const day = d.getDate();
+  const s = ['th', 'st', 'nd', 'rd'], v = day % 100;
+  const suffix = (s[(v - 20) % 10] || s[v] || s[0]);
+  return `${month} ${day}${suffix}`;
+}
+
 async function resolveCanonicalSlug(supabase: any, inputSlug: string): Promise<string> {
   if (!inputSlug) return inputSlug;
   const { data } = await supabase
@@ -33,10 +47,36 @@ async function resolveCanonicalSlug(supabase: any, inputSlug: string): Promise<s
   return data?.slug ?? inputSlug;
 }
 
+// ── AiSensy one-shot send dedup ───────────────────────────────────────────────
+//
+// payu-callback (browser redirect) and payu-webhook (server-to-server) BOTH
+// fire on a successful payment. A plain read-flag-then-set guard
+// races: if both land within the read window they each see the flag false and
+// both send, so the customer gets two identical WhatsApps. claimSendFlag flips
+// the flag false→true in a single conditional UPDATE and reports whether THIS
+// caller won the flip — only the winner sends. releaseSendFlag rolls the flag
+// back if the send fails, so a later retry (e.g. PayU webhook re-delivery) can
+// re-send. This makes delivery effectively at-most-once across the two paths,
+// with at-least-once retry on transient AiSensy failures.
+async function claimSendFlag(supabase: any, appId: string, col: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('applications')
+    .update({ [col]: true })
+    .eq('id', appId)
+    .eq(col, false)
+    .select('id')
+    .maybeSingle();
+  return !!data;
+}
+async function releaseSendFlag(supabase: any, appId: string, col: string): Promise<void> {
+  await supabase.from('applications').update({ [col]: false }).eq('id', appId);
+}
+
 // ── AiSensy WhatsApp ─────────────────────────────────────────────────────────
 
 const AISENSY_CAMPAIGN_ADVANCE = 'advance_paid+balance';
 const AISENSY_CAMPAIGN_FAILED  = 'payment_failed';
+const AISENSY_CAMPAIGN_BALANCE = 'fullpaid';
 
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
@@ -46,15 +86,16 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
     console.warn('[aisensy advance_paid] AISENSY_API_KEY not set, skipping');
     return;
   }
-  try {
-    const { data: app } = await supabase
-      .from('applications')
-      .select('id, name, aisensy_advance_paid_sent')
-      .eq('phone', args.phone)
-      .eq('event_slug', args.eventSlug)
-      .maybeSingle();
-    if (!app || app.aisensy_advance_paid_sent) return;
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_advance_paid_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_advance_paid_sent) return;          // fast path
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_advance_paid_sent'))) return;  // lost the race
 
+  try {
     const { data: ev } = await supabase
       .from('events')
       .select('booking_steps')
@@ -92,14 +133,78 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
       }),
     });
 
-    if (aiRes.ok) {
-      await supabase
-        .from('applications')
-        .update({ aisensy_advance_paid_sent: true })
-        .eq('id', app.id);
+    if (!aiRes.ok) {
+      console.error('[aisensy advance_paid] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_advance_paid_sent');
     }
   } catch (err) {
-    console.error('[aisensy advance_paid] fire failed:', err);
+    console.error('[aisensy advance_paid] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_advance_paid_sent');
+  }
+}
+
+async function fireBalancePaidWhatsApp(supabase: any, args: {
+  phone: string; eventSlug: string; amount: number | string; txnid: string;
+}) {
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) {
+    console.warn('[aisensy balance_paid] AISENSY_API_KEY not set, skipping');
+    return;
+  }
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_balance_paid_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_balance_paid_sent) return;
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_balance_paid_sent'))) return;
+
+  try {
+    // {{2}} comes from the 4th booking step's date — same source as the
+    // receipt warm note and the invite-flow chat copy. Formatted as
+    // May 22nd / Aug 26th per the approved AiSensy template spec.
+    const { data: ev } = await supabase
+      .from('events')
+      .select('booking_steps')
+      .eq('slug', args.eventSlug)
+      .maybeSingle();
+    const detailsStep = (ev?.booking_steps ?? [])[3];
+    const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
+
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: AISENSY_API_KEY,
+        campaignName: AISENSY_CAMPAIGN_BALANCE,
+        destination: '91' + args.phone,
+        userName: app.name || 'chapter A 3063',
+        templateParams: [
+          `₹${Number(args.amount).toLocaleString('en-IN')}`,  // {{1}} amount
+          detailsDate,                                         // {{2}} details date
+        ],
+        source: 'payu-callback',
+        media: {},
+        buttons: [],
+        carouselCards: [],
+        location: {},
+        attributes: {
+          event_slug: args.eventSlug,
+          txn_id: args.txnid,
+          amount: String(args.amount),
+        },
+        paramsFallbackValue: { FirstName: app.name || 'user' },
+      }),
+    });
+
+    if (!aiRes.ok) {
+      console.error('[aisensy balance_paid] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_balance_paid_sent');
+    }
+  } catch (err) {
+    console.error('[aisensy balance_paid] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_balance_paid_sent');
   }
 }
 
@@ -108,15 +213,16 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
 }) {
   const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
   if (!AISENSY_API_KEY) return;
-  try {
-    const { data: app } = await supabase
-      .from('applications')
-      .select('id, name, aisensy_payment_failed_sent')
-      .eq('phone', args.phone)
-      .eq('event_slug', args.eventSlug)
-      .maybeSingle();
-    if (!app || app.aisensy_payment_failed_sent) return;
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_payment_failed_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_payment_failed_sent) return;
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_payment_failed_sent'))) return;
 
+  try {
     const amountNum = Number(args.amount);
     const formattedAmount = amountNum % 1 === 0
       ? `₹${amountNum.toLocaleString('en-IN')}`
@@ -138,14 +244,13 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
       }),
     });
 
-    if (aiRes.ok) {
-      await supabase
-        .from('applications')
-        .update({ aisensy_payment_failed_sent: true })
-        .eq('id', app.id);
+    if (!aiRes.ok) {
+      console.error('[aisensy payment_failed] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
     }
   } catch (err) {
-    console.error('[aisensy payment_failed] fire failed:', err);
+    console.error('[aisensy payment_failed] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
   }
 }
 
@@ -173,18 +278,8 @@ Deno.serve(async (req) => {
       return Response.redirect(`${FRONTEND_URL}/invite?payment_status=failed`, 302);
     }
 
-    // ── 1. Verify hash ──
-    //
-    // PayU reverse hash format (per docs):
-    //   sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
-    //
-    // The five empty fields between status and udf5 correspond to udf10..udf6
-    // (PayU's response includes them even though the request never sent any).
-    // Previous version omitted them and silently failed every hash check.
-    //
-    // If PayU surfaces an additionalCharges field on a transaction, it gets
-    // prepended to the same string. Our current event prices never trigger
-    // this but it's cheap to support both shapes.
+    // PayU reverse hash: sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+    // The 5 empty fields between status and udf5 are udf10..udf6.
     const additionalCharges = (p.additionalCharges ?? '').toString();
     const baseReverse =
       `${PAYU_MERCHANT_SALT}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${PAYU_MERCHANT_KEY}`;
@@ -201,14 +296,12 @@ Deno.serve(async (req) => {
 
     if (!hashMatches) {
       console.error('[payu-callback] HASH MISMATCH — rejecting', { txnid, mihpayid });
-      // Log the attempt but do NOT update any application status
       await supabase.from('payu_payments').update({
         payu_response: { ...p, _hash_matches: false, _rejected: 'hash_mismatch' },
       }).eq('txnid', txnid);
       return Response.redirect(`${FRONTEND_URL}/invite?payment_status=failed&txnid=${encodeURIComponent(txnid)}`, 302);
     }
 
-    // ── 2. Verify amount matches what we stored ──
     const { data: stored } = await supabase
       .from('payu_payments')
       .select('event_slug, phone, payment_type, event_title, amount')
@@ -222,7 +315,6 @@ Deno.serve(async (req) => {
 
     const reportedAmount = Number(amount);
     const expectedAmount = Number(stored.amount);
-    // Allow 1-paisa rounding tolerance
     if (Math.abs(reportedAmount - expectedAmount) > 0.01) {
       console.error('[payu-callback] AMOUNT MISMATCH — rejecting', { txnid, reportedAmount, expectedAmount });
       await supabase.from('payu_payments').update({
@@ -231,7 +323,6 @@ Deno.serve(async (req) => {
       return Response.redirect(`${FRONTEND_URL}/invite?payment_status=failed&txnid=${encodeURIComponent(txnid)}`, 302);
     }
 
-    // ── 3. Hash + amount both OK, proceed ──
     const dbStatus = status === 'success' ? 'success' : 'failure';
 
     await supabase.from('payu_payments').update({
@@ -269,6 +360,12 @@ Deno.serve(async (req) => {
 
         if (paymentType === 'advance') {
           await fireAdvancePaidWhatsApp(supabase, {
+            phone, eventSlug,
+            amount: stored.amount ?? amount,
+            txnid,
+          });
+        } else if (paymentType === 'balance') {
+          await fireBalancePaidWhatsApp(supabase, {
             phone, eventSlug,
             amount: stored.amount ?? amount,
             txnid,
