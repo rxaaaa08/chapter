@@ -3659,8 +3659,11 @@ function NativeBookingTimeline({
                   {slotsLeft === 0 ? 'No Spots Left' : `${slotsLeft} Spot${slotsLeft === 1 ? '' : 's'} Left`}
                 </span>
               ) : badgeDateLabel ? (
-                // Below threshold — show the trip date instead (gray, non-urgent)
-                <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
+                // Below threshold — show the trip date in the same gold pill
+                // styling used by the booking-application-flow timeline (see
+                // AppFlow.tsx). Keeps the "Your Booking Timeline" modal
+                // visually consistent across the two flows.
+                <span className="text-[11px] font-black text-black bg-[#FFD700] border border-[#d4af37] px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
                   {badgeDateLabel}
                 </span>
               ) : null}
