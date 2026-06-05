@@ -96,6 +96,21 @@ Deno.serve(async (req) => {
       continue;
     }
 
+    // Genuine abandonment (opened the bill >=2h ago, never paid). Set the
+    // cart_abandoned flag on their application so the admin People page can
+    // surface Cart-Abandoned for follow-up. This is a flag, NOT a status
+    // change — status stays 'invited' so the invite-flow + payment auth gates
+    // (which key off status IN invited/advance_paid/fully_paid) keep working
+    // and the user can still pay when they tap the nudge. Only touches rows
+    // still in 'invited' (someone who already paid is skipped above anyway).
+    // Done regardless of WhatsApp delivery — it reflects behaviour, not send.
+    await supabase
+      .from('applications')
+      .update({ cart_abandoned: true })
+      .eq('phone', row.phone)
+      .eq('event_slug', row.event_slug)
+      .eq('status', 'invited');
+
     // Look up application name — falls back to poster name, then 'there'
     const { data: appRows } = await supabase
       .from('applications')

@@ -2419,11 +2419,17 @@ export default function AdminPanel() {
 
           // Apply filters
           const searchLower = peopleSearch.trim().toLowerCase();
+          // "Cart Abandoned" is a derived display state: an invited applicant
+          // the cart-abandonment job flagged (opened the bill, never paid).
+          // status itself stays 'invited' (so payment + invite-flow auth keep
+          // working); we only surface it differently in this admin view.
+          const displayStatus = (a: any): string =>
+            (a.cart_abandoned && a.status === 'invited') ? 'cart_abandoned' : a.status;
           const filteredApps = applications.filter(a => {
             const pays = paymentsFor(a.phone, a.event_slug);
             const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
             const statusMatch = applicationsStatusFilter === 'all'
-              || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0 : a.status === applicationsStatusFilter);
+              || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0 : displayStatus(a) === applicationsStatusFilter);
             const searchMatch = !searchLower
               || String(a.name  ?? '').toLowerCase().includes(searchLower)
               || String(a.phone ?? '').includes(searchLower)
@@ -2443,10 +2449,11 @@ export default function AdminPanel() {
           const statusColor = (status: string) => {
             if (status === 'fully_paid')   return '#16a34a';
             if (status === 'advance_paid') return '#84cc16';
-            if (status === 'invited')      return '#2196f3';
-            if (status === 'waitlist')     return '#a855f7';
-            if (status === 'pending')      return '#f97316';
-            if (status === 'rejected')     return '#dc2626';
+            if (status === 'invited')        return '#2196f3';
+            if (status === 'cart_abandoned') return '#b45309';
+            if (status === 'waitlist')       return '#a855f7';
+            if (status === 'pending')        return '#f97316';
+            if (status === 'rejected')       return '#dc2626';
             return '#999';
           };
 
@@ -2493,8 +2500,9 @@ export default function AdminPanel() {
           const counts = {
             total:        peopleMode === 'doubts' ? filteredDoubtSubmissions.length : filteredApps.length,
             pending:      filteredApps.filter(a => a.status === 'pending').length,
-            invited:      filteredApps.filter(a => a.status === 'invited').length,
-            waitlist:     filteredApps.filter(a => a.status === 'waitlist').length,
+            invited:        filteredApps.filter(a => displayStatus(a) === 'invited').length,
+            cart_abandoned: filteredApps.filter(a => displayStatus(a) === 'cart_abandoned').length,
+            waitlist:       filteredApps.filter(a => a.status === 'waitlist').length,
             advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
             fully_paid:   filteredApps.filter(a => a.status === 'fully_paid').length,
           };
@@ -2560,6 +2568,7 @@ export default function AdminPanel() {
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
                   <option value="invited">Invited</option>
+                  <option value="cart_abandoned">Cart Abandoned</option>
                   <option value="waitlist">Waitlist</option>
                   <option value="advance_paid">Advance Paid</option>
                   <option value="fully_paid">Fully Paid</option>
@@ -2793,7 +2802,7 @@ export default function AdminPanel() {
                                   {approvingId === app.id ? 'Sending…' : '✓ Approve'}
                                 </button>
                               ) : (
-                                <span style={{ background: statusColor(app.status) + '22', color: statusColor(app.status), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{String(app.status ?? '').replace(/_/g, ' ')}</span>
+                                <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{String(displayStatus(app) ?? '').replace(/_/g, ' ')}</span>
                               )}
                             </td>
                           </tr>
@@ -2816,8 +2825,8 @@ export default function AdminPanel() {
                                   {approvingId === app.id ? 'Sending…' : '✓ Approve'}
                                 </button>
                               ) : (
-                                <span style={{ fontSize: 12, color: statusColor(app.status), fontWeight: 700, textTransform: 'capitalize' }}>
-                                  ✓ {String(app.status ?? '').replace(/_/g, ' ')}
+                                <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'capitalize' }}>
+                                  ✓ {String(displayStatus(app) ?? '').replace(/_/g, ' ')}
                                 </span>
                               )}
                             </td>
@@ -2830,8 +2839,8 @@ export default function AdminPanel() {
                             <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>{app.name || '—'}</td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
-                              <span style={{ background: statusColor(app.status) + '22', color: statusColor(app.status), border: `1px solid ${statusColor(app.status)}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize' }}>
-                                {String(app.status ?? 'pending').replace(/_/g, ' ')}
+                              <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize' }}>
+                                {String(displayStatus(app) ?? 'pending').replace(/_/g, ' ')}
                               </span>
                             </td>
                             <td style={{ padding: '11px 12px', fontSize: 11, color: '#888', maxWidth: 200 }}>
@@ -2863,8 +2872,9 @@ export default function AdminPanel() {
                 <div style={{ marginTop: 18, color: '#888', fontSize: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <span>Total: <b style={{ color: '#333' }}>{counts.total}</b></span>
                   {counts.pending      > 0 && <span style={{ color: statusColor('pending')      }}>pending: <b>{counts.pending}</b></span>}
-                  {counts.invited      > 0 && <span style={{ color: statusColor('invited')      }}>invited: <b>{counts.invited}</b></span>}
-                  {counts.waitlist     > 0 && <span style={{ color: statusColor('waitlist')     }}>waitlist: <b>{counts.waitlist}</b></span>}
+                  {counts.invited        > 0 && <span style={{ color: statusColor('invited')        }}>invited: <b>{counts.invited}</b></span>}
+                  {counts.cart_abandoned > 0 && <span style={{ color: statusColor('cart_abandoned') }}>cart abandoned: <b>{counts.cart_abandoned}</b></span>}
+                  {counts.waitlist       > 0 && <span style={{ color: statusColor('waitlist')       }}>waitlist: <b>{counts.waitlist}</b></span>}
                   {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
                   {counts.fully_paid   > 0 && <span style={{ color: statusColor('fully_paid')   }}>fully paid: <b>{counts.fully_paid}</b></span>}
                 </div>
