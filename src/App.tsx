@@ -4011,18 +4011,22 @@ function NativePaymentOverlay({
   // Tracks intentional PayU navigation so beforeunload doesn't block it
   const navigatingToPayU = useRef(false);
 
-  // Record that the bill page was opened — used for cart abandonment messaging
+  // Record that the bill page was opened — used for cart abandonment messaging.
+  // Goes through the record_bill_open SECURITY DEFINER RPC, NOT a direct
+  // .upsert(): anon has no SELECT policy on bill_opens (privacy), and a client
+  // upsert compiles to INSERT ... ON CONFLICT which needs SELECT to check the
+  // conflict — so the direct upsert failed RLS silently and nothing was
+  // recorded. The RPC does the upsert with the owner's privileges.
   useEffect(() => {
     if (!prefillPhone || !eventSlug) return;
     const tenDigit = prefillPhone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
     if (tenDigit.length !== 10) return;
-    supabase.from('bill_opens').upsert({
-      phone: tenDigit,
-      name: prefillName || null,
-      event_slug: eventSlug,
-      event_title: eventTitle,
-      opened_at: new Date().toISOString(),
-    }, { onConflict: 'phone,event_slug' }).then(() => {});
+    supabase.rpc('record_bill_open', {
+      p_phone: tenDigit,
+      p_name: prefillName || null,
+      p_event_slug: eventSlug,
+      p_event_title: eventTitle,
+    }).then(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
