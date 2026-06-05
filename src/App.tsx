@@ -3347,9 +3347,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   <p><strong className="text-gray-900">12. Photography and Media</strong><br />Photographs or videos taken during the event may be used by the Company for promotional purposes.</p>
                   <p><strong className="text-gray-900">13. Force Majeure</strong><br />The Company shall not be held responsible for failure or delay in performance due to events beyond reasonable control, including acts of God, pandemic, flood, earthquake, war, or government restrictions.</p>
                   <p><strong className="text-gray-900">14. Dispute Resolution</strong><br />Any dispute arising between the client and the Company shall be subject to the jurisdiction of the competent courts having territorial jurisdiction over the Company’s registered office.</p>
-                  <p><strong className="text-gray-900">15. Acceptance of Terms</strong><br />By confirming the booking and making payment, the client acknowledges that they have read, understood, and agreed to these Terms and Conditions.</p>
+                  <p><strong className="text-gray-900">15. WhatsApp Communication</strong><br />By providing your number, you consent to receiving logistic updates and booking reminders on WhatsApp.</p>
+                  <p><strong className="text-gray-900">16. Age Requirement</strong><br />Certain experiences are strictly 21+. Participants must meet the minimum age requirement specified for each experience. Valid ID proof may be required. Failure to meet the age requirement may result in denial of entry without refund.</p>
+                  <p><strong className="text-gray-900">17. Acceptance of Terms</strong><br />By confirming the booking and making payment, the client acknowledges that they have read, understood, and agreed to these Terms and Conditions.</p>
                   <div>
-                    <strong className="text-gray-900">16. Client Declaration</strong>
+                    <strong className="text-gray-900">18. Client Declaration</strong>
                     <p className="mt-1">I hereby declare and confirm that:</p>
                     <ul className="list-disc pl-5 space-y-1 mt-1">
                       <li>I am participating in the event voluntarily and at my own risk.</li>
