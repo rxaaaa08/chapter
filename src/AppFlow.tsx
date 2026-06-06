@@ -3446,8 +3446,9 @@ const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; c
 };
 
 // Scalloped "flower" outline for the play button — polar radius r(θ)=base+bump·cos(12θ).
+// Shallow bump keeps the scallops soft/rounded rather than a spiky sunburst.
 const FOUNDERS_SCALLOP_PATH = (() => {
-  const cx = 50, cy = 50, base = 39, bump = 6, bumps = 12, N = 144;
+  const cx = 50, cy = 50, base = 42, bump = 2.6, bumps = 12, N = 180;
   let d = '';
   for (let i = 0; i <= N; i++) {
     const a = (i / N) * Math.PI * 2;
@@ -3457,9 +3458,10 @@ const FOUNDERS_SCALLOP_PATH = (() => {
   return d + 'Z';
 })();
 
-// Static voice-note waveform shape (0..1 bar heights) — low at the edges, peaks
-// in the middle. Bars left of the playhead fill gold; the rest stay grey.
-const FOUNDERS_WAVE = [0.15,0.2,0.16,0.26,0.19,0.32,0.24,0.38,0.48,0.32,0.54,0.42,0.64,0.46,0.74,0.52,0.88,0.62,0.96,0.72,1,0.66,0.92,0.56,0.78,0.5,0.68,0.46,0.82,0.56,0.72,0.5,0.62,0.42,0.52,0.36,0.42,0.3,0.34,0.22,0.26,0.16];
+// Static voice-note waveform shape (0..1 bar heights) — organic, with a few
+// scattered louder clusters rather than one central peak, gently lower at the
+// edges. Bars left of the playhead fill gold; the rest stay grey.
+const FOUNDERS_WAVE = [0.22,0.3,0.26,0.42,0.34,0.52,0.6,0.46,0.66,0.5,0.38,0.3,0.44,0.56,0.4,0.7,0.6,0.78,0.66,0.5,0.74,0.58,0.46,0.36,0.54,0.66,0.48,0.72,0.6,0.5,0.64,0.42,0.56,0.46,0.62,0.4,0.5,0.34,0.42,0.28,0.32,0.22];
 
 // Founder's Note — a per-plan voice note played from a scalloped gold button
 // with a tappable waveform (tap to seek). Audio is lazy-loaded (preload="none")
