@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts } from './supabase';
 import { TermsContent } from './TermsContent';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
+import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 
 // Types
@@ -55,6 +55,7 @@ interface Event {
   description: string;
   heroImage: string;
   heroImages?: string[];
+  foundersNoteUrl?: string;
   detailsLandscapeImage?: string;
   startLocation: string;
   pickupPoints?: {
@@ -3444,6 +3445,72 @@ const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; c
   );
 };
 
+// Founder's Note — a per-plan voice note played from a gold play button.
+// Audio is lazy-loaded (preload="none") so it only downloads when tapped.
+// No autoplay. Hidden upstream when the plan has no foundersNoteUrl.
+function FoundersNotePlayer({ url }: { url: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0); // 0..1
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) a.play().catch(() => {}); else a.pause();
+  };
+  const fmt = (s: number) => {
+    if (!isFinite(s) || s < 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="px-6 pt-3 pb-6">
+      <h3 className="text-xl font-black mb-3">Founder's Note</h3>
+      <div className="flex items-center gap-4 bg-[#F5F2ED] border border-[#E4DDD3] rounded-2xl p-4">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={playing ? 'Pause founder note' : 'Play founder note'}
+          className="w-14 h-14 rounded-full bg-[#FFD700] flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform shadow-sm"
+        >
+          {playing
+            ? <Pause size={24} className="text-black" fill="black" />
+            : <Play size={24} className="text-black ml-0.5" fill="black" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-black text-gray-900 leading-tight">A note from the founder</p>
+          <p className="text-[12px] text-gray-500 mb-2">Why this plan is special to me — tap to listen</p>
+          <div className="h-1.5 bg-black/10 rounded-full overflow-hidden">
+            <div className="h-full bg-[#FFD700] rounded-full transition-[width] duration-150" style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums">
+            <span>{fmt(cur)}</span>
+            <span>{dur ? fmt(dur) : '—:—'}</span>
+          </div>
+        </div>
+      </div>
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onTimeUpdate={e => {
+          const a = e.currentTarget;
+          setCur(a.currentTime);
+          setProgress(a.duration ? a.currentTime / a.duration : 0);
+        }}
+        onLoadedMetadata={e => setDur(e.currentTarget.duration)}
+        onEnded={() => { setPlaying(false); setProgress(0); setCur(0); }}
+      />
+    </div>
+  );
+}
+
 const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
@@ -4302,6 +4369,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
             </div>
           </div>
         )}
+
+        {/* Founder's Note — per-plan voice note, shown just before the CTA */}
+        {event.foundersNoteUrl && <FoundersNotePlayer url={event.foundersNoteUrl} />}
 
         {/* Bottom Action Button (End of scroll) */}
         <div className="px-4 pt-4 pb-12">

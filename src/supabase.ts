@@ -88,6 +88,7 @@ export function mapDbEventToEvent(row: any): any {
     description: row.description,
     heroImage: heroImages[0] ?? '',
     heroImages,
+    foundersNoteUrl: row.founders_note_url || undefined,
     startLocation: row.start_location,
     transport: row.transport,
     groupSize: row.group_size,

@@ -58,6 +58,7 @@ type Trip = {
   price_advance: number;
   description: string;
   hero_image: string | string[];
+  founders_note_url?: string;
   cities: string[];
   category: string;
   quick_info?: Array<{ icon?: string; label: string; value: string }>;
@@ -4139,6 +4140,20 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 value={trip.one_liner ?? ''}
                 onChange={e => set('one_liner', e.target.value)}
               />
+            </div>
+          </div>
+          <div style={{ gridColumn: '1/-1' }}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={s.label}>Founder's Note <span style={{ fontWeight: 400, color: '#aaa' }}>(paste a Cloudinary audio URL — a voice note shown with a play button on the plan details page. Leave blank to hide.)</span></label>
+              <input
+                style={s.input}
+                placeholder="https://res.cloudinary.com/.../founders-note.mp3"
+                value={trip.founders_note_url ?? ''}
+                onChange={e => set('founders_note_url', e.target.value)}
+              />
+              {!!trip.founders_note_url?.trim() && (
+                <audio src={trip.founders_note_url} controls preload="none" style={{ width: '100%', marginTop: 8 }} />
+              )}
             </div>
           </div>
           {trip.invite_only && (
