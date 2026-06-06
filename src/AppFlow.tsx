@@ -3445,52 +3445,77 @@ const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; c
   );
 };
 
-// Founder's Note — a per-plan voice note played from a gold play button.
-// Audio is lazy-loaded (preload="none") so it only downloads when tapped.
-// No autoplay. Hidden upstream when the plan has no foundersNoteUrl.
+// Scalloped "flower" outline for the play button — polar radius r(θ)=base+bump·cos(12θ).
+const FOUNDERS_SCALLOP_PATH = (() => {
+  const cx = 50, cy = 50, base = 39, bump = 6, bumps = 12, N = 144;
+  let d = '';
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const r = base + bump * Math.cos(bumps * a);
+    d += (i === 0 ? 'M' : 'L') + (cx + r * Math.cos(a)).toFixed(2) + ' ' + (cy + r * Math.sin(a)).toFixed(2) + ' ';
+  }
+  return d + 'Z';
+})();
+
+// Static voice-note waveform shape (0..1 bar heights) — low at the edges, peaks
+// in the middle. Bars left of the playhead fill gold; the rest stay grey.
+const FOUNDERS_WAVE = [0.15,0.2,0.16,0.26,0.19,0.32,0.24,0.38,0.48,0.32,0.54,0.42,0.64,0.46,0.74,0.52,0.88,0.62,0.96,0.72,1,0.66,0.92,0.56,0.78,0.5,0.68,0.46,0.82,0.56,0.72,0.5,0.62,0.42,0.52,0.36,0.42,0.3,0.34,0.22,0.26,0.16];
+
+// Founder's Note — a per-plan voice note played from a scalloped gold button
+// with a tappable waveform (tap to seek). Audio is lazy-loaded (preload="none")
+// so it only downloads when played; no autoplay. Hidden upstream when the plan
+// has no foundersNoteUrl.
 function FoundersNotePlayer({ url }: { url: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0); // 0..1
-  const [cur, setCur] = useState(0);
-  const [dur, setDur] = useState(0);
 
   const toggle = () => {
     const a = audioRef.current;
     if (!a) return;
     if (a.paused) a.play().catch(() => {}); else a.pause();
   };
-  const fmt = (s: number) => {
-    if (!isFinite(s) || s < 0) return '0:00';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${m}:${String(sec).padStart(2, '0')}`;
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (!a.duration || !isFinite(a.duration)) { a.play().catch(() => {}); return; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    a.currentTime = frac * a.duration;
+    setProgress(frac);
   };
 
   return (
     <div className="px-6 pt-3 pb-6">
       <h3 className="text-xl font-black mb-3">Founder's Note</h3>
-      <div className="flex items-center gap-4 bg-[#F5F2ED] border border-[#E4DDD3] rounded-2xl p-4">
+      <div className="flex items-center gap-4 bg-[#F6F3EC] rounded-[1.6rem] px-4 py-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
         <button
           type="button"
           onClick={toggle}
           aria-label={playing ? 'Pause founder note' : 'Play founder note'}
-          className="w-14 h-14 rounded-full bg-[#FFD700] flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform shadow-sm"
+          className="relative w-16 h-16 flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
         >
-          {playing
-            ? <Pause size={24} className="text-black" fill="black" />
-            : <Play size={24} className="text-black ml-0.5" fill="black" />}
+          <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" aria-hidden="true">
+            <path d={FOUNDERS_SCALLOP_PATH} fill="#FFD700" />
+          </svg>
+          <span className="relative z-10">
+            {playing
+              ? <Pause size={22} className="text-black" fill="black" />
+              : <Play size={22} className="text-black ml-0.5" fill="black" />}
+          </span>
         </button>
-        <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-black text-gray-900 leading-tight">A note from the founder</p>
-          <p className="text-[12px] text-gray-500 mb-2">Why this plan is special to me — tap to listen</p>
-          <div className="h-1.5 bg-black/10 rounded-full overflow-hidden">
-            <div className="h-full bg-[#FFD700] rounded-full transition-[width] duration-150" style={{ width: `${Math.round(progress * 100)}%` }} />
-          </div>
-          <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums">
-            <span>{fmt(cur)}</span>
-            <span>{dur ? fmt(dur) : '—:—'}</span>
-          </div>
+        <div className="flex-1 flex items-center gap-[2px] h-12 cursor-pointer" onClick={seek}>
+          {FOUNDERS_WAVE.map((h, i) => (
+            <div
+              key={i}
+              className="flex-1 rounded-full transition-colors"
+              style={{
+                height: `${Math.round(h * 100)}%`,
+                minHeight: 3,
+                background: (i + 0.5) / FOUNDERS_WAVE.length <= progress ? '#FFD700' : '#C9C4BB',
+              }}
+            />
+          ))}
         </div>
       </div>
       <audio
@@ -3499,13 +3524,8 @@ function FoundersNotePlayer({ url }: { url: string }) {
         preload="none"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-        onTimeUpdate={e => {
-          const a = e.currentTarget;
-          setCur(a.currentTime);
-          setProgress(a.duration ? a.currentTime / a.duration : 0);
-        }}
-        onLoadedMetadata={e => setDur(e.currentTarget.duration)}
-        onEnded={() => { setPlaying(false); setProgress(0); setCur(0); }}
+        onTimeUpdate={e => { const a = e.currentTarget; setProgress(a.duration ? a.currentTime / a.duration : 0); }}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
       />
     </div>
   );
