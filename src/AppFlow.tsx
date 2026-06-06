@@ -3489,7 +3489,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
 
   return (
     <div className="px-6 pt-3 pb-6">
-      <h3 className="text-xl font-black mb-3">a note from the team,</h3>
+      <h3 className="text-xl font-black mb-3">a note from the team...</h3>
       <div className="flex items-center gap-4 bg-[#F6F3EC] rounded-[1.6rem] px-4 py-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
         <button
           type="button"
