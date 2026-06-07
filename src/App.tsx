@@ -3274,6 +3274,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                     verifiedSlug,
                   }));
                 }
+                // Remember the payer's phone so the PayU return screen can fetch
+                // the payment row. payu_payments is RLS-locked to admins (C5), so
+                // PayUReturnScreen reads it phone-bound via get-user-context —
+                // without this the success receipt + the failed-payment smart
+                // Try Again had no phone and fell back to the /invite form.
+                // (The booking-application flow already does this; the invite
+                // flow was missing it.)
+                try { sessionStorage.setItem('bookingPhone', form.phone.replace(/\D/g, '').slice(-10)); } catch { /* ignore quota */ }
               }}
               onClose={() => {
                 sessionStorage.removeItem('ca_payu_bill');

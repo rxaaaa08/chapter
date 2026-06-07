@@ -3445,19 +3445,6 @@ const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; c
   );
 };
 
-// Scalloped "flower" outline for the play button — polar radius r(θ)=base+bump·cos(12θ).
-// Shallow bump keeps the scallops soft/rounded rather than a spiky sunburst.
-const FOUNDERS_SCALLOP_PATH = (() => {
-  const cx = 50, cy = 50, base = 42, bump = 2.6, bumps = 12, N = 180;
-  let d = '';
-  for (let i = 0; i <= N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    const r = base + bump * Math.cos(bumps * a);
-    d += (i === 0 ? 'M' : 'L') + (cx + r * Math.cos(a)).toFixed(2) + ' ' + (cy + r * Math.sin(a)).toFixed(2) + ' ';
-  }
-  return d + 'Z';
-})();
-
 // Static voice-note waveform shape (0..1 bar heights) — organic, with a few
 // scattered louder clusters rather than one central peak, gently lower at the
 // edges. Bars left of the playhead fill gold; the rest stay grey.
@@ -3471,11 +3458,20 @@ function FoundersNotePlayer({ url }: { url: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0); // 0..1
+  const [duration, setDuration] = useState(0); // seconds
+  const [loading, setLoading] = useState(false);
+
+  const fmtTime = (s: number) => {
+    if (!isFinite(s) || s <= 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const ss = Math.floor(s % 60).toString().padStart(2, '0');
+    return `${m}:${ss}`;
+  };
 
   const toggle = () => {
     const a = audioRef.current;
     if (!a) return;
-    if (a.paused) a.play().catch(() => {}); else a.pause();
+    if (a.paused) { setLoading(true); a.play().catch(() => { setLoading(false); }); } else a.pause();
   };
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
     const a = audioRef.current;
@@ -3490,23 +3486,26 @@ function FoundersNotePlayer({ url }: { url: string }) {
   return (
     <div className="px-6 pt-3 pb-6">
       <h3 className="text-xl font-black mb-3">a note from the team...</h3>
-      <div className="flex items-center gap-4 bg-[#F6F3EC] rounded-[1.6rem] px-4 py-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-3 bg-white rounded-[1.6rem] px-4 py-4 border border-gray-200">
         <button
           type="button"
           onClick={toggle}
           aria-label={playing ? 'Pause founder note' : 'Play founder note'}
-          className="relative w-16 h-16 flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
+          className="relative w-11 h-11 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden transition-transform duration-200 hover:-translate-y-0.5 hover:scale-105 active:scale-95"
         >
-          <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" aria-hidden="true">
-            <path d={FOUNDERS_SCALLOP_PATH} fill="#FFD700" />
-          </svg>
-          <span className="relative z-10">
-            {playing
-              ? <Pause size={22} className="text-black" fill="black" />
-              : <Play size={22} className="text-black ml-0.5" fill="black" />}
-          </span>
+          <motion.div
+            className="absolute inset-0 -skew-x-12 pointer-events-none"
+            style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.32) 50%, transparent 100%)', width: '45%' }}
+            animate={{ x: ['-130%', '320%'] }}
+            transition={{ duration: 0.95, repeat: Infinity, repeatDelay: 6.5, ease: 'easeInOut' }}
+          />
+          {loading
+            ? <svg className="w-4 h-4 animate-spin text-gray-400 relative z-10" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+            : playing
+              ? <Pause size={18} className="text-gray-400 relative z-10" fill="currentColor" />
+              : <Play size={18} className="text-gray-400 ml-0.5 relative z-10" fill="currentColor" />}
         </button>
-        <div className="flex-1 flex items-center gap-[2px] h-12 cursor-pointer" onClick={seek}>
+        <div className="flex-1 flex items-center gap-[2px] h-6 cursor-pointer" onClick={seek}>
           {FOUNDERS_WAVE.map((h, i) => (
             <div
               key={i}
@@ -3514,20 +3513,26 @@ function FoundersNotePlayer({ url }: { url: string }) {
               style={{
                 height: `${Math.round(h * 100)}%`,
                 minHeight: 3,
-                background: (i + 0.5) / FOUNDERS_WAVE.length <= progress ? '#FFD700' : '#C9C4BB',
+                background: (i + 0.5) / FOUNDERS_WAVE.length <= progress ? '#FFE066' : '#DBD5C2',
               }}
             />
           ))}
         </div>
+        <span className="text-[11px] font-semibold text-black/55 tabular-nums px-2 py-0.5 bg-black/[0.06] rounded-full flex-shrink-0">
+          {fmtTime(duration)}
+        </span>
       </div>
       <audio
         ref={audioRef}
         src={url}
-        preload="none"
+        preload="metadata"
+        onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
         onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
+        onPlaying={() => setLoading(false)}
+        onWaiting={() => setLoading(true)}
+        onPause={() => { setPlaying(false); setLoading(false); }}
         onTimeUpdate={e => { const a = e.currentTarget; setProgress(a.duration ? a.currentTime / a.duration : 0); }}
-        onEnded={() => { setPlaying(false); setProgress(0); }}
+        onEnded={() => { setPlaying(false); setLoading(false); setProgress(0); }}
       />
     </div>
   );
