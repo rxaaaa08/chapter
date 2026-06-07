@@ -1537,6 +1537,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [isRetryLoading, setIsRetryLoading] = useState(() => !!sessionStorage.getItem('ca_payu_retry_chat'));
   const [isBillRestoreLoading, setIsBillRestoreLoading] = useState(() => !!sessionStorage.getItem('ca_payu_bill'));
+  const [isTimelineRestoreLoading, setIsTimelineRestoreLoading] = useState(() => !!sessionStorage.getItem('ca_payu_timeline'));
   const [inviteApplicationCount, setInviteApplicationCount] = useState<number | null>(null);
   const [inviteReservedCount, setInviteReservedCount] = useState<number | null>(null);
   const [form, setForm] = useState({ name: '', phone: '' });
@@ -2143,6 +2144,37 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Payment retry (browser Back from the retry bill on the Payment Failed
+  // screen): land the user directly on their event's booking timeline — the
+  // step before the bill — instead of the Payment Failed screen. Details come
+  // from the recovered payment row, so phone entry is skipped. A buffer history
+  // entry is pushed so a further Back closes the timeline in place (onPop)
+  // rather than jumping documents.
+  useEffect(() => {
+    const raw = sessionStorage.getItem('ca_payu_timeline');
+    if (!raw) return;
+    sessionStorage.removeItem('ca_payu_timeline');
+    let restored: { name?: string; phone?: string; eventSlug?: string } = {};
+    try { restored = JSON.parse(raw); } catch { setIsTimelineRestoreLoading(false); return; }
+    const name = String(restored.name ?? '').trim();
+    const phone = String(restored.phone ?? '').replace(/\D/g, '').slice(-10);
+    const slug = String(restored.eventSlug ?? '').trim();
+    if (!name || phone.length !== 10 || !slug) { setIsTimelineRestoreLoading(false); return; }
+
+    prepareNativeInviteFlow(slug, phone).then(ready => {
+      if (!ready) { setIsTimelineRestoreLoading(false); return; }
+      setForm({ name, phone });
+      setVerifiedSlug(slug);
+      setTcAccepted(true);
+      setPosterLoaded(true);  // skip poster — timeline covers the screen
+      setChatOpen(true);      // chat underneath so back-from-timeline reveals it
+      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
+      setShowNativeTimeline(true);
+      setIsTimelineRestoreLoading(false);
+    }).catch(() => setIsTimelineRestoreLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Live chat: load messages + Realtime subscription ───────────────────────
   useEffect(() => {
     if (!liveConversationId) return;
@@ -2383,7 +2415,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     return null;
   }
 
-  if (!posterLoaded) {
+  // Timeline restore (browser Back from the retry bill) is an in-app transition,
+  // so show the branded loader during the async event fetch rather than a blank
+  // frame — a bare `return null` makes the screen look like it goes dark.
+  if (!posterLoaded || isTimelineRestoreLoading) {
     return (
       <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
         <motion.div
@@ -3042,32 +3077,16 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                             {isSoldOut && (
                               <button className={btnClass} onClick={() => {
                                 const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
-                                // Update existing row; if none exists (user never had an applications row), insert one
-                                supabase.from('applications')
-                                  .update({ status: 'waitlist' })
-                                  .eq('phone', tenDigit)
-                                  .eq('event_slug', verifiedSlug)
-                                  .select('id')
-                                  .then(({ data }) => {
-                                    if (!data || data.length === 0) {
-                                      supabase.from('applications').insert({
-                                        event_slug: verifiedSlug,
-                                        phone: tenDigit,
-                                        name: form.name.trim() || '',
-                                        status: 'waitlist',
-                                        gender: '',
-                                        why_join: '',
-                                        attended_before: '',
-                                        ticket_type: 'standard',
-                                        ticket_price: 0,
-                                        advance_amount: 0,
-                                        call_status: 'none',
-                                        call_notes: '',
-                                        aisensy_invite_sent: false,
-                                        aisensy_advance_sent: false,
-                                      }).then(() => {});
-                                    }
-                                  });
+                                // join_waitlist is a SECURITY DEFINER RPC. applications is RLS-locked
+                                // (anon has no UPDATE/SELECT, and the anon INSERT policy only allows
+                                // status='pending'), so the old client update().select()+insert()
+                                // silently failed after the security lockdown. The RPC upserts the
+                                // waitlist status server-side (and won't downgrade a paid applicant).
+                                supabase.rpc('join_waitlist', {
+                                  p_phone: tenDigit,
+                                  p_event_slug: verifiedSlug,
+                                  p_name: form.name.trim(),
+                                }).then(() => {});
                                 addInviteUserMsg('Join Waitlist');
                                 simulateInviteTyping(() => {
                                   addInviteBotMsg("We're adding you to the waitlist, if someone cancels we'll contact you!");
@@ -4047,6 +4066,10 @@ function NativePaymentOverlay({
   const formattedDate = eventDate
     ? (() => {
         const d = new Date(`${eventDate}T00:00:00`);
+        // eventDate may already be a human-formatted string — e.g. a stored
+        // trip_date threaded in from a failed payment on retry. If it doesn't
+        // parse as a raw YYYY-MM-DD, use it verbatim instead of mangling it.
+        if (Number.isNaN(d.getTime())) return eventDate;
         const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
         const month = d.toLocaleDateString('en-US', { month: 'long' });
         const day = d.getDate();
@@ -4761,6 +4784,38 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     return () => { cancelled = true; };
   }, [payment?.event_slug]);
 
+  // The retry bill (NativePaymentOverlay below) is a full-screen overlay shown
+  // in place, without its own route. The Try Again button pushes a history
+  // entry when opening it; here we catch the matching Back press and hand the
+  // user back into the actual booking flow — onto their event's booking
+  // timeline — rather than the Payment Failed screen. Without this, Back
+  // bypassed the overlay and crossed straight back into the original /invite
+  // document (which re-displays a near-identical bill), so the first Back press
+  // looked like it did nothing.
+  React.useEffect(() => {
+    if (!showRetryBill) return;
+    const onPop = () => {
+      if (payment?.event_slug && payment?.name && payment?.phone) {
+        try {
+          // ca_payu_bill is still set from the original bill→PayU hop and was
+          // never consumed (SharedInviteFlow didn't mount during the failed
+          // return). Clear it so only the timeline restore fires, not the bill.
+          sessionStorage.removeItem('ca_payu_bill');
+          sessionStorage.setItem('ca_payu_timeline', JSON.stringify({
+            name: payment.name,
+            phone: String(payment.phone).replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10),
+            eventSlug: payment.event_slug,
+          }));
+        } catch { /* ignore quota */ }
+        onDone('/invite');
+      } else {
+        setShowRetryBill(false);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [showRetryBill, payment, onDone]);
+
   const handleSubmitPhone = async () => {
     const t = phoneInput.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
     if (t.length !== 10) { setPhoneError('Please enter a valid 10-digit phone number.'); return; }
@@ -4793,7 +4848,7 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
         <div className="w-full bg-white flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white overflow-hidden relative">
           <NativePaymentOverlay
             eventTitle={payment.event_title ?? ''}
-            eventDate={''}
+            eventDate={payment.trip_date ?? ''}
             priceAdvance={baseAmount}
             prefillName={payment.name ?? ''}
             prefillPhone={payment.phone ?? ''}
@@ -4845,6 +4900,12 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
         <button
           onClick={() => {
             if (payment?.event_slug && payment?.event_title && payment?.amount) {
+              // Push a history entry so the browser Back button closes the retry
+              // bill (returns here, to the Payment Failed screen) instead of
+              // silently crossing back into the original /invite document — which
+              // re-shows a near-identical bill, making the first Back appear to do
+              // nothing. The popstate listener below consumes this entry.
+              try { window.history.pushState({ chapteraRetryBill: true }, '', window.location.href); } catch { /* history may be unavailable */ }
               setShowRetryBill(true);
             } else {
               onDone('/invite');
