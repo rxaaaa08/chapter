@@ -4067,20 +4067,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               />
             </div>
           </div>
-          <div style={{ gridColumn: '1/-1' }}>
-            <div style={{ marginBottom: 14 }}>
-              <label style={s.label}>Founder's Note <span style={{ fontWeight: 400, color: '#aaa' }}>(paste a Cloudinary audio URL — a voice note shown with a play button on the plan details page. Leave blank to hide.)</span></label>
-              <input
-                style={s.input}
-                placeholder="https://res.cloudinary.com/.../founders-note.mp3"
-                value={trip.founders_note_url ?? ''}
-                onChange={e => set('founders_note_url', e.target.value)}
-              />
-              {!!trip.founders_note_url?.trim() && (
-                <audio src={trip.founders_note_url} controls preload="none" style={{ width: '100%', marginTop: 8 }} />
-              )}
-            </div>
-          </div>
           {trip.invite_only && (
             <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
               <label style={s.label}>Shared Invite Link</label>
@@ -4509,6 +4495,21 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
 
       {/* ── CONTENT ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 10 }}>Content</div>
+
+      <CollapsibleSection title="Founder's Note" badge={trip.founders_note_url?.trim() ? 'ON' : 'OFF'} badgeColor={trip.founders_note_url?.trim() ? '#16a34a' : undefined}>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+          Paste a Cloudinary audio URL — a voice note shown with a play button on the plan details page. Leave blank to hide.
+        </div>
+        <input
+          style={s.input}
+          placeholder="https://res.cloudinary.com/.../founders-note.mp3"
+          value={trip.founders_note_url ?? ''}
+          onChange={e => set('founders_note_url', e.target.value)}
+        />
+        {!!trip.founders_note_url?.trim() && (
+          <audio src={trip.founders_note_url} controls preload="none" style={{ width: '100%', marginTop: 8 }} />
+        )}
+      </CollapsibleSection>
 
       <CollapsibleSection title="Header Announcements">
         {(trip.announcements ?? []).length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No announcements yet.</div>}
