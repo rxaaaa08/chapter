@@ -2883,8 +2883,12 @@ export default function AdminPanel() {
 
             <CollapsibleSection title="Global Pre Selection Messages" defaultOpen={true}>
               {[
-                { key: 'welcome', label: 'Select City', placeholder: "Welcome to chapter அ! 👋 Which city are you from buddy?" },
-                { key: 'select_event', label: 'Select Plan', placeholder: "Here are the upcoming {category} in {city}. Which one should I open for you?" },
+                // Used as the 1st bot greeting. The earlier flow asked for city
+                // first then plan; now it's plan-first (cities become meeting
+                // points), so the label reads "Select Plan" and the old
+                // 'select_event' row was removed. The 'select_event' template
+                // stays dormant in chat_messages for any rollback.
+                { key: 'welcome', label: 'Select Plan', placeholder: "Welcome to chapter அ! 👋 What plan do you wanna join?" },
               ].map(({ key, label, placeholder }) => (
                 <div key={key} style={{ marginBottom: 12 }}>
                   <label style={s.label}>{label}</label>
