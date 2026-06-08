@@ -1,8 +1,14 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://txcmismkdttgsyhbnexf.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4Y21pc21rZHR0Z3N5aGJuZXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMzEyMzksImV4cCI6MjA5MDkwNzIzOX0.0GTg30cJz28QiTzadCjCAAxa8ZPRkV5EptNXNMjTRI0';
+// Fail loudly if env vars aren't wired up. We used to fall back to the
+// production URL + anon key on a misconfigured preview deploy, which
+// meant preview builds would silently write to the prod DB.
+const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl)     throw new Error('VITE_SUPABASE_URL is not set');
+if (!supabaseAnonKey) throw new Error('VITE_SUPABASE_ANON_KEY is not set');
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -40,21 +46,10 @@ function getSessionId(): string {
   return id;
 }
 
-// Instagram / Facebook in-app browsers fire a page_view, then our popup
-// forces the user to re-open the site in an external browser (which fires
-// a second page_view under a new session). That inflates every metric ~2x.
-// These in-app sessions never convert, so we skip tracking from them entirely.
-function isInAppBrowser(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  return /Instagram|FBAN|FBAV/i.test(ua);
-}
-
 export async function trackEvent(
-  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated',
+  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated' | 'application_started' | 'application_submitted',
   meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
 ) {
-  if (isInAppBrowser()) return;
   try {
     await supabase.from('flow_analytics').insert({
       event_type,
@@ -87,10 +82,13 @@ export function mapDbEventToEvent(row: any): any {
     oneLiner: row.one_liner ?? '',
     timing: row.timing,
     price: `₹${Number(row.price_full).toLocaleString('en-IN')}`,
-    advanceAmount: row.price_advance,
+    priceFull: Number(row.price_full),
+    advanceAmount: Number(row.price_advance),
+    priceAdvance: Number(row.price_advance),
     description: row.description,
     heroImage: heroImages[0] ?? '',
     heroImages,
+    foundersNoteUrl: row.founders_note_url || undefined,
     startLocation: row.start_location,
     transport: row.transport,
     groupSize: row.group_size,
@@ -119,17 +117,16 @@ export function mapDbEventToEvent(row: any): any {
           otherPrice: Number(p.otherPrice ?? p.other_price ?? 0) || undefined,
           otherAdvance: Number(p.otherAdvance ?? p.other_advance ?? 0) || undefined,
           forOtherCity: p.forOtherCity ?? p.for_other_city ?? undefined,
+          forCity: p.forCity ?? p.for_city ?? undefined,
         }))
       : [],
     transportPlan: row.transport_plan ?? [],
     itinerary: row.itinerary ?? [],
+    cityDetails: row.city_details ?? {},
     showAccommodation: row.show_accommodation ?? false,
     accommodation: row.accommodation ?? { name: '', images: [], features: [], policy: '' },
     inviteSpots: row.invite_spots ?? null,
     totalCapacity: row.total_capacity ?? null,
-    advanceQrUrl: row.advance_qr_url ?? null,
-    balanceQrUrl: row.balance_qr_url ?? null,
-    kynPaymentUrl: row.kyn_payment_url ?? null,
     ticketTypes: Array.isArray(row.ticket_types) ? row.ticket_types : [],
     bookingSteps: Array.isArray(row.booking_steps) && row.booking_steps.length > 0 ? row.booking_steps : undefined,
     dates: (row.event_dates ?? []).map((d: any) => ({
@@ -156,6 +153,9 @@ export function mapDbEventToEvent(row: any): any {
       question: f.question,
       answer: f.answer,
     })),
+    inviteFaqs: Array.isArray(row.invite_faqs)
+      ? row.invite_faqs.map((f: any) => ({ question: String(f.question ?? ''), answer: String(f.answer ?? '') })).filter((f: any) => f.question && f.answer)
+      : [],
   };
 }
 
@@ -184,6 +184,31 @@ export function fillMsg(
 ): string {
   const template = msgs[key] ?? fallback;
   return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
+}
+
+// ─── EVENT COUNTS (registered + reserved) ────────────────────────────────────
+// For invite-only events we surface two key metrics:
+//   • registered → total applications submitted for this event (any status)
+//   • reserved   → applications whose status is advance_paid OR fully_paid
+//                  (i.e. people who actually paid the advance and locked a spot)
+// "Spots left" anywhere in the UI = invite_spots − reserved.
+export async function fetchEventCounts(eventSlug: string): Promise<{ registered: number; reserved: number }> {
+  if (!eventSlug) return { registered: 0, reserved: 0 };
+  const [{ count: registered }, { count: reserved }] = await Promise.all([
+    supabase
+      .from('applications')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_slug', eventSlug),
+    supabase
+      .from('applications')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_slug', eventSlug)
+      .in('status', ['advance_paid', 'fully_paid']),
+  ]);
+  return {
+    registered: typeof registered === 'number' ? registered : 0,
+    reserved:   typeof reserved   === 'number' ? reserved   : 0,
+  };
 }
 
 export async function fetchEvents(): Promise<any[]> {

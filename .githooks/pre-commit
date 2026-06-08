@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+#
+# Pre-commit secret scanner.
+#
+# Blocks commits that look like they contain a secret pattern (JWTs, AWS
+# keys, long base64 blobs, or any key/secret/salt/token assignment with a
+# non-placeholder value). Catches the kind of leak we had to rotate when
+# admin_push_secret and VAPID_PRIVATE_KEY were committed in migrations and
+# pwa.md respectively.
+#
+# To bypass intentionally (e.g. committing a known-safe placeholder), prefix
+# the value with the literal string "PLACEHOLDER" or include `# nosecret` on
+# the same line.
+#
+# Auto-installed by the `prepare` script in package.json — runs on every
+# `npm install`. No external tooling required.
+
+set -u
+
+# Files staged for commit (added/modified/copied/renamed). Exclude binary
+# files and the standard ignore list.
+files=$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -vE '\.(png|jpg|jpeg|webp|gif|ico|pdf|zip|woff2?|ttf|otf|mp4|mov|lock)$' \
+  | grep -vE '^(package-lock\.json|\.githooks/|node_modules/)' \
+  || true)
+
+[ -z "$files" ] && exit 0
+
+# Patterns. Each line: <human label>|<grep -E regex>
+patterns=(
+  'JWT (Supabase anon, service_role, or other)|eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}'
+  'AWS access key|AKIA[0-9A-Z]{16}'
+  'Stripe secret key|sk_live_[0-9a-zA-Z]{16,}'
+  'Generic secret/salt/token assignment|(api[_-]?secret|api[_-]?key|secret[_-]?key|merchant[_-]?salt|push[_-]?secret|access[_-]?token|private[_-]?key)[[:space:]]*[:=][[:space:]]*['"'"'"`]([A-Za-z0-9+/_=-]{20,})['"'"'"`]'
+  'GitHub personal access token|gh[pous]_[A-Za-z0-9]{36}'
+  'OpenAI / Anthropic key|(sk-[A-Za-z0-9]{32,}|sk-ant-[A-Za-z0-9_-]{32,})'
+)
+
+found=0
+for f in $files; do
+  # Only scan the newly added lines in the staged diff (not the surrounding
+  # context). This avoids re-flagging strings that are removed in the diff.
+  diff_lines=$(git diff --cached -- "$f" | grep -E '^\+' | grep -v '^+++')
+  [ -z "$diff_lines" ] && continue
+  for entry in "${patterns[@]}"; do
+    label="${entry%%|*}"
+    regex="${entry#*|}"
+    matches=$(printf '%s\n' "$diff_lines" | grep -E -- "$regex" | grep -v PLACEHOLDER | grep -v 'nosecret' || true)
+    if [ -n "$matches" ]; then
+      if [ $found -eq 0 ]; then
+        echo
+        echo "❌ Pre-commit blocked — looks like a secret might be in the staged changes:"
+        echo
+      fi
+      found=1
+      echo "  • $f  →  $label"
+      printf '%s\n' "$matches" | sed 's/^+/      /; s/^/      /' | head -3
+      echo
+    fi
+  done
+done
+
+if [ $found -ne 0 ]; then
+  echo "If this is a placeholder/test fixture, either:"
+  echo "  1) Replace the value with the literal string PLACEHOLDER, or"
+  echo "  2) Add the comment '# nosecret' on the same line, or"
+  echo "  3) Bypass with: git commit --no-verify"
+  echo
+  echo "If it's a real secret: do NOT commit. Rotate it (Supabase Dashboard,"
+  echo "Vercel env vars, or wherever it lives) and store it server-side only."
+  exit 1
+fi
+
+exit 0
