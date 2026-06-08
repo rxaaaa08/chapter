@@ -621,11 +621,11 @@ function ApplicationForm({
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-1">
           <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">WhatsApp Number</label>
-          {form.phone.length > 0 && !/^\d{10}$/.test(form.phone) && (
+          {(form.phone.length > 0 || step1Attempted) && !/^\d{10}$/.test(form.phone) && (
             <span className="text-[11px] text-amber-500 font-medium">Invalid Number</span>
           )}
         </div>
-        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${form.phone.length > 0 && !/^\d{10}$/.test(form.phone) ? 'ring-2 ring-red-500' : ''}`}>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${(form.phone.length > 0 || step1Attempted) && !/^\d{10}$/.test(form.phone) ? 'ring-2 ring-red-500' : ''}`}>
           <input
             type="tel" value={form.phone} placeholder="We'll reach you here"
             onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
@@ -639,11 +639,11 @@ function ApplicationForm({
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-1">
           <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
-          {form.email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && (
+          {(form.email.length > 0 || step1Attempted) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && (
             <span className="text-[11px] text-amber-500 font-medium">Invalid Email</span>
           )}
         </div>
-        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${form.email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? 'ring-2 ring-red-500' : ''}`}>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${(form.email.length > 0 || step1Attempted) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? 'ring-2 ring-red-500' : ''}`}>
           <input
             type="email" value={form.email} placeholder="You'll receive updates here"
             onChange={e => setForm(f => ({ ...f, email: e.target.value.slice(0, 100) }))}
@@ -655,8 +655,13 @@ function ApplicationForm({
 
       {/* Gender */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Gender</label>
-        <div className="bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow">
+        <div className="flex items-center justify-between px-1">
+          <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Gender</label>
+          {step1Attempted && !form.gender && (
+            <span className="text-[11px] text-amber-500 font-medium">Required</span>
+          )}
+        </div>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !form.gender ? 'ring-2 ring-red-500' : ''}`}>
           <select
             value={form.gender}
             onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
@@ -698,9 +703,15 @@ function ApplicationForm({
         </div>
       </div>
 
-      {/* Attended before */}
+      {/* Attended before — wording flips to "galcode" for girls-only events
+          (same flag the rest of the app uses: girlsOnly OR a girls-only label
+          in quickInfo). */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Have you attended a chapter <span className="text-[19px] font-normal">அ</span> event before?</label>
+        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">
+          {event?.girlsOnly || hasGirlsOnlyQuickInfo(event?.quickInfo)
+            ? <>Have you attended a galcode event before?</>
+            : <>Have you attended a chapter <span className="text-[19px] font-normal">அ</span> event before?</>}
+        </label>
         <div className="bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow">
           <select
             value={form.attendedBefore}

@@ -4067,17 +4067,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               />
             </div>
           </div>
-          {trip.invite_only && (
-            <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
-              <label style={s.label}>Shared Invite Link</label>
-              <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4c1d95', fontFamily: 'monospace' }}>
-                chaptera.in/invite
-              </div>
-              <div style={{ marginTop: 6, fontSize: 12, color: '#7c3aed', lineHeight: 1.45 }}>
-                Guests enter their phone number here; we route them to this event if their number is saved under this event's invite slug.
-              </div>
-            </div>
-          )}
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
           {field('Category', 'category')}
           {/* Booking Type */}
