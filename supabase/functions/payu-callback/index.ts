@@ -323,13 +323,22 @@ Deno.serve(async (req) => {
       return Response.redirect(`${FRONTEND_URL}/invite?payment_status=failed&txnid=${encodeURIComponent(txnid)}`, 302);
     }
 
-    const dbStatus = status === 'success' ? 'success' : 'failure';
+    const dbStatus = status === 'success' ? 'success' : status === 'pending' ? 'pending' : 'failure';
 
     await supabase.from('payu_payments').update({
       status: dbStatus,
       mihpayid: mihpayid || null,
       payu_response: { ...p, _hash_matches: true },
     }).eq('txnid', txnid);
+
+    // Pending (e.g. a slow UPI collect, or a bank transfer still settling).
+    // Do NOT treat it as a failure: don't fire the payment-failed WhatsApp and
+    // don't touch the application status. PayU sends the final success/failure
+    // later (webhook or a follow-up callback), which resolves it. Showing a
+    // 'failed' screen here would wrongly nudge a retry and risk a double charge.
+    if (status === 'pending') {
+      return Response.redirect(`${FRONTEND_URL}/invite?payment_status=pending&txnid=${encodeURIComponent(txnid)}`, 302);
+    }
 
     if (status === 'success') {
       const rawSlug    = stored.event_slug as string | null;

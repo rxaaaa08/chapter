@@ -212,7 +212,12 @@ Deno.serve(async (req) => {
     if (!event.is_active) return err(409, 'event is not active', cors);
 
     const canonicalSlug = event.slug as string;
-    const productinfo   = event.title as string;
+    // Strip the pipe char before productinfo enters the |-delimited PayU hash
+    // string. A title containing '|' would inject an extra delimiter and break
+    // hash validation for that transaction (same reason sanitizeName strips it
+    // from the customer name). Pipes in plan titles are rare but would silently
+    // fail the payment, so we defuse it here.
+    const productinfo   = String(event.title ?? '').replace(/\|/g, ' ').trim();
 
     // ── 4. Compute amount from DB based on payment_type ──
     let amountNum: number;
@@ -288,7 +293,10 @@ Deno.serve(async (req) => {
     const hash       = await sha512(hashString);
 
     // ── 6. Insert pending payu_payments row with server-trusted amount ──
-    await supabase.from('payu_payments').insert({
+    // Must happen BEFORE we hand PayU fields to the browser. If it fails we abort
+    // the order: a payment with no DB row is invisible to the reconciliation cron
+    // (it can only see rows), so we never let a payment reach PayU unrecorded.
+    const { error: insErr } = await supabase.from('payu_payments').insert({
       txnid,
       event_id: null,
       event_slug: canonicalSlug,
@@ -302,6 +310,10 @@ Deno.serve(async (req) => {
       payment_type: paymentType,
       whatsapp_group_url: null, // never trust this from the client
     });
+    if (insErr) {
+      console.error('[create-payu-order] pending insert failed, aborting order', insErr);
+      return err(500, 'could not create order, please try again', cors);
+    }
 
     const callbackUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/payu-callback`;
 

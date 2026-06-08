@@ -85,7 +85,10 @@ Deno.serve(async (req) => {
     if (!(await checkRateLimit(supabase, 'get-user-context:ip', ip, 60, 30))) {
       return json(429, { error: 'rate limit exceeded' }, cors);
     }
-    if (!(await checkRateLimit(supabase, 'get-user-context:phone', phone, 3600, 30))) {
+    // 120/hr per phone — generous enough for the receipt page's pending-payment
+    // poll (every 4s for ~2.5 min) plus normal context lookups. Enumeration is
+    // capped by the per-IP limit above (30/min), not this per-phone one.
+    if (!(await checkRateLimit(supabase, 'get-user-context:phone', phone, 3600, 120))) {
       return json(429, { error: 'rate limit exceeded' }, cors);
     }
 
@@ -100,7 +103,7 @@ Deno.serve(async (req) => {
         .eq('phone', phone),
       supabase
         .from('applications')
-        .select('event_slug, status')
+        .select('event_slug, status, email')
         .eq('phone', phone),
     ]);
 

@@ -3985,6 +3985,7 @@ function NativePaymentOverlay({
   priceAdvance,
   prefillName = '',
   prefillPhone = '',
+  prefillEmail = '',
   eventSlug = '',
   paymentType = 'advance',
   skipEntrance = false,
@@ -3996,6 +3997,7 @@ function NativePaymentOverlay({
   priceAdvance: number;
   prefillName?: string;
   prefillPhone?: string;
+  prefillEmail?: string;
   eventSlug?: string;
   paymentType?: 'advance' | 'balance';
   skipEntrance?: boolean;
@@ -4004,6 +4006,12 @@ function NativePaymentOverlay({
 }) {
   const [name, setName] = useState(prefillName);
   const [phone, setPhone] = useState(prefillPhone);
+  const [email, setEmail] = useState(prefillEmail);
+  // Email is shown read-only when it's on file from the customer's application
+  // (they can't change phone/email at pay time). emailChecking gates the field
+  // while we look it up; it fails open to an editable field.
+  const [emailLocked, setEmailLocked] = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payuData, setPayuData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
   const [error, setError] = useState('');
@@ -4052,6 +4060,41 @@ function NativePaymentOverlay({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // If this phone has an email on file from their application (for this event),
+  // pre-fill it and LOCK the field — applicants don't retype and can't change
+  // their email at pay time (phone is already read-only). Bulk-invited / older
+  // applications have no email on file, so the field stays editable. Fails open
+  // to editable on any error so nobody is ever blocked from paying.
+  useEffect(() => {
+    const tenDigit = prefillPhone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    if (tenDigit.length !== 10 || !eventSlug) return;
+    const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim());
+    let active = true;
+    setEmailChecking(true);
+    (async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`, {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ phone: tenDigit }),
+        });
+        if (active && res.ok) {
+          const d = await res.json();
+          const apps = Array.isArray(d.applications) ? d.applications : [];
+          const onFile = apps.find((a: any) => String(a.event_slug) === eventSlug)?.email;
+          if (isValidEmail(onFile)) { setEmail(String(onFile).trim()); setEmailLocked(true); }
+        }
+      } catch { /* fail-open — field stays editable */ }
+      finally { if (active) setEmailChecking(false); }
+    })();
+    return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Advance breakdown: liveFeeRate comes from the server-canonical table
   // (with a baked-in fallback). Whatever the bill shows is exactly what the
   // server will charge.
@@ -4082,6 +4125,8 @@ function NativePaymentOverlay({
     const tenDigit = phone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
     if (!name.trim()) { setError('Please enter your name.'); return; }
     if (!/^\d{10}$/.test(tenDigit)) { setError('Please enter a valid 10-digit WhatsApp number.'); return; }
+    const cleanEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) { setError('Please enter a valid email address.'); return; }
     setPaying(true);
     setError('');
     try {
@@ -4091,6 +4136,7 @@ function NativePaymentOverlay({
         body: JSON.stringify({
           name: name.trim(),
           phone: tenDigit,
+          email: cleanEmail,
           // amount is informational only — the server recomputes from
           // price_advance + the fee rate for preferred_method below.
           amount: totalPayNow,
@@ -4287,8 +4333,32 @@ function NativePaymentOverlay({
             <div className="flex-1 min-w-0">
               <p className="text-[15px] font-bold text-gray-900 leading-snug">{name}</p>
               {phone && <p className="text-[13px] text-gray-500 mt-0.5">+91 {phone}</p>}
+              {emailLocked && email && <p className="text-[13px] text-gray-500 mt-0.5 truncate">{email}</p>}
             </div>
           </div>
+
+          {/* Email. Read-only (shown above with name/phone) when it's on file
+              from the customer's application; otherwise an editable field for
+              bulk-invited / older applicants. PayU requires a real email —
+              previously every txn used a shared fallback (booking@chaptera.in). */}
+          {!emailLocked && (
+            emailChecking ? (
+              <div className="mt-3.5 h-[60px] rounded-xl bg-gray-100 animate-pulse" />
+            ) : (
+              <div className="mt-3.5">
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); if (error) setError(''); }}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-[14px] text-gray-900 outline-none focus:border-gray-900 transition-colors"
+                />
+                <p className="text-[11px] text-gray-400 mt-1.5">We'll send your payment receipt here.</p>
+              </div>
+            )
+          )}
 
           {error && <p className="text-red-500 text-[12px] font-medium mt-3">{error}</p>}
         </div>
@@ -4332,7 +4402,7 @@ function NativePaymentOverlay({
           <button
             type="button"
             onClick={handlePay}
-            disabled={paying || !selectedMethod}
+            disabled={paying || !selectedMethod || emailChecking}
             className="flex-1 h-14 rounded-2xl flex items-center justify-center active:opacity-80 transition-all disabled:opacity-40 relative overflow-hidden"
             style={{ backgroundColor: '#22C55E' }}
           >
@@ -4709,7 +4779,7 @@ function LandscapeBlocker() {
 
 
 // ─── PAYU RETURN SCREEN ────────────────────────────────────────────────────────
-function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'failed'; txnid: string; onDone: (nextPath?: string) => void }) {
+function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'failed' | 'pending'; txnid: string; onDone: (nextPath?: string) => void }) {
   const [payment, setPayment] = React.useState<any>(null);
   // 4th step in the invite-only booking timeline is always the "Meeting Spot
   // Details" step — its date is when the customer gets added to the WhatsApp
@@ -4718,6 +4788,10 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   const [loading, setLoading] = React.useState(true);
   const [dlLoading, setDlLoading] = React.useState(false);
   const [showRetryBill, setShowRetryBill] = React.useState(false);
+  // When a 'pending' payment is later confirmed by the poll below, this overrides
+  // the URL-derived status so the screen advances to the receipt / failed view
+  // instead of staying on "processing".
+  const [resolved, setResolved] = React.useState<'success' | 'failed' | null>(null);
   // Phone-input fallback for when the user lands on the receipt page in a
   // cold/cross-origin session (e.g. cleared cache, different device, opened
   // the success URL from email). sessionStorage.bookingPhone is the happy
@@ -4816,6 +4890,29 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     return () => window.removeEventListener('popstate', onPop);
   }, [showRetryBill, payment, onDone]);
 
+  // While the payment is "processing" (status=pending), poll for the final
+  // outcome so the customer is auto-advanced to the receipt (or the failed
+  // screen) the instant PayU confirms — no refresh, no relying solely on the
+  // WhatsApp. Polls every 4s for up to ~2.5 min, then gives up (the WhatsApp
+  // covers the rare slow case). Needs the booking phone in this session.
+  React.useEffect(() => {
+    if (status !== 'pending' || resolved) return;
+    const stored = (typeof window !== 'undefined' && sessionStorage.getItem('bookingPhone')) || '';
+    const tenDigit = stored.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    if (tenDigit.length !== 10) return;
+    let active = true;
+    const tick = async () => {
+      const p = await fetchReceipt(tenDigit);
+      if (!active || !p) return;
+      setPayment(p);
+      if (p.status === 'success') setResolved('success');
+      else if (p.status === 'failure') setResolved('failed');
+    };
+    const id = window.setInterval(tick, 4000);
+    const stopAt = window.setTimeout(() => { active = false; window.clearInterval(id); }, 150000);
+    return () => { active = false; window.clearInterval(id); window.clearTimeout(stopAt); };
+  }, [status, resolved, fetchReceipt]);
+
   const handleSubmitPhone = async () => {
     const t = phoneInput.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
     if (t.length !== 10) { setPhoneError('Please enter a valid 10-digit phone number.'); return; }
@@ -4840,8 +4937,37 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     </div>
   );
 
+  // Effective status: a 'pending' payment that the poll above confirms flips
+  // `resolved`, advancing the customer to the receipt (success) or failed view.
+  const view = resolved ?? status;
+
+  // Payment is still being confirmed (e.g. a slow UPI collect). We deliberately
+  // do NOT show the failed screen or a retry CTA here — the payment may still
+  // succeed, and nudging a retry risks a double charge. The poll above advances
+  // this screen automatically once PayU confirms; the WhatsApp is the fallback.
+  if (view === 'pending') {
+    return phoneFrame(
+      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
+        <div className="w-[68px] h-[68px] rounded-full bg-amber-50 flex items-center justify-center">
+          <span className="w-7 h-7 border-[3px] border-amber-200 border-t-amber-500 rounded-full animate-spin" />
+        </div>
+        <div>
+          <h2 className="text-[22px] font-bold text-gray-900 tracking-tight">Confirming your payment</h2>
+          <p className="text-sm text-gray-500 mt-2 leading-relaxed">
+            This usually takes a few seconds for UPI &amp; bank payments. This page updates on its own — no need to refresh, and you'll get a WhatsApp once it's done.
+          </p>
+          <p className="text-[13px] font-semibold text-gray-400 mt-3">Please don't pay again — you won't be charged twice.</p>
+        </div>
+        <button
+          onClick={() => onDone('/invite')}
+          className="mt-1 px-7 py-3 rounded-2xl border border-gray-300 text-gray-700 font-semibold text-sm active:opacity-70 transition-all"
+        >Done</button>
+      </div>
+    );
+  }
+
   // Retry bill: show the NativePaymentOverlay with recovered payment details
-  if (status === 'failed' && showRetryBill && payment) {
+  if (view === 'failed' && showRetryBill && payment) {
     const baseAmount = Math.round(Number(payment.amount) / 1.0242);
     return (
       <div className="h-[100dvh] bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4">
@@ -4852,6 +4978,7 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
             priceAdvance={baseAmount}
             prefillName={payment.name ?? ''}
             prefillPhone={payment.phone ?? ''}
+            prefillEmail={payment.email && payment.email !== 'booking@chaptera.in' ? payment.email : ''}
             eventSlug={payment.event_slug ?? ''}
             paymentType={payment.payment_type === 'balance' ? 'balance' : 'advance'}
             onClose={() => {
@@ -4885,7 +5012,7 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   }
 
   // Payment failed screen — shown after DB row is fetched so Try Again can restore the bill page
-  if (status === 'failed') {
+  if (view === 'failed') {
     return phoneFrame(
       <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
         <div className="w-[68px] h-[68px] rounded-full bg-red-50 flex items-center justify-center">
@@ -4922,7 +5049,7 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   // cache, success URL shared by email). The server-side check still verifies
   // phone == stored phone on the txnid, so this can't leak someone else's
   // receipt to a guesser.
-  if (status === 'success' && !payment) {
+  if (view === 'success' && !payment) {
     return phoneFrame(
       <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
         <div className="w-[68px] h-[68px] rounded-full bg-green-50 flex items-center justify-center">
@@ -5644,9 +5771,9 @@ export default function App() {
   const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
   // Latch PayU return params on mount — must happen before the URL gets replaced by the route sync effect
-  const [payuReturnStatus, setPayuReturnStatus] = useState<'success' | 'failed' | null>(() => {
+  const [payuReturnStatus, setPayuReturnStatus] = useState<'success' | 'failed' | 'pending' | null>(() => {
     if (typeof window === 'undefined') return null;
-    return new URLSearchParams(window.location.search).get('payment_status') as 'success' | 'failed' | null;
+    return new URLSearchParams(window.location.search).get('payment_status') as 'success' | 'failed' | 'pending' | null;
   });
   const [payuReturnTxnid] = useState(() => {
     if (typeof window === 'undefined') return '';

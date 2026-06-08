@@ -292,7 +292,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const dbStatus = status === 'success' ? 'success' : 'failure';
+    const dbStatus = status === 'success' ? 'success' : status === 'pending' ? 'pending' : 'failure';
 
     await supabase
       .from('payu_payments')
@@ -306,6 +306,14 @@ Deno.serve(async (req) => {
     const rawSlug    = stored.event_slug as string | null;
     const phone      = stored.phone as string | null;
     const paymentType = (stored.payment_type as string | null) ?? 'advance';
+
+    // Pending — record the status but fire no WhatsApp and don't change the
+    // application. A later webhook/callback with the final status resolves it.
+    if (status === 'pending') {
+      return new Response(JSON.stringify({ received: true, status: 'pending', txnid }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     if (status === 'success') {
       const newStatus = paymentType === 'balance' ? 'fully_paid' : 'advance_paid';

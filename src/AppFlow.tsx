@@ -478,8 +478,8 @@ function ApplicationForm({
 }: {
   event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string;
   reservedCount: number | null; step: 1 | 2;
-  form: { name: string; phone: string; gender: string; whyJoin: string; attendedBefore: string };
-  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; gender: string; whyJoin: string; attendedBefore: string }>>;
+  form: { name: string; phone: string; email: string; gender: string; whyJoin: string; attendedBefore: string };
+  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; email: string; gender: string; whyJoin: string; attendedBefore: string }>>;
   onNext: () => void; onBack: () => void; onClose: () => void; onSubmitted: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -489,7 +489,7 @@ function ApplicationForm({
   const [step1Attempted, setStep1Attempted] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
 
-  const step1Valid = form.name.trim() && /^\d{10}$/.test(form.phone) && form.gender;
+  const step1Valid = form.name.trim() && /^\d{10}$/.test(form.phone) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && form.gender;
   const step2Valid = form.whyJoin.trim() && form.attendedBefore;
 
   const handleSubmit = async () => {
@@ -519,6 +519,7 @@ function ApplicationForm({
         event_slug: String(event.id ?? '').toLowerCase(),
         name: form.name.trim(),
         phone: form.phone,
+        email: form.email.trim(),
         gender: form.gender,
         why_join: form.whyJoin.trim(),
         attended_before: form.attendedBefore,
@@ -630,6 +631,24 @@ function ApplicationForm({
             onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
             className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
             inputMode="numeric"
+          />
+        </div>
+      </div>
+
+      {/* Email */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between px-1">
+          <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+          {form.email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && (
+            <span className="text-[11px] text-amber-500 font-medium">Invalid Email</span>
+          )}
+        </div>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${form.email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? 'ring-2 ring-red-500' : ''}`}>
+          <input
+            type="email" value={form.email} placeholder="For your booking receipt"
+            onChange={e => setForm(f => ({ ...f, email: e.target.value.slice(0, 100) }))}
+            className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
+            inputMode="email" autoComplete="email"
           />
         </div>
       </div>
@@ -847,7 +866,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showDetailsForm, setShowDetailsForm] = useState(false);
   const [showApplicationForm, setShowApplicationForm] = useState(false);
   const [appFormStep, setAppFormStep] = useState<1 | 2>(1);
-  const [appFormData, setAppFormData] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
+  const [appFormData, setAppFormData] = useState({ name: '', phone: '', email: '', gender: '', whyJoin: '', attendedBefore: '' });
   const [appFormSubmitted, setAppFormSubmitted] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [reservedCount, setReservedCount] = useState<number | null>(null);
@@ -2378,7 +2397,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     {isNativeApplicationFlow ? (
                       <>
                         <button
-                          onClick={() => { trackEvent('application_started', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title }); setShowBookingTimeline(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowApplicationForm(true); }}
+                          onClick={() => { trackEvent('application_started', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title }); setShowBookingTimeline(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', email: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowApplicationForm(true); }}
                           className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                         >
                           <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
@@ -2819,7 +2838,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   setForm={setAppFormData}
                   onNext={() => {}}
                   onBack={() => setAppFormStep(1)}
-                  onClose={() => { setShowApplicationForm(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowBookingTimeline(true); }}
+                  onClose={() => { setShowApplicationForm(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', email: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowBookingTimeline(true); }}
                   onSubmitted={() => setAppFormSubmitted(true)}
                 />
               </motion.div>
