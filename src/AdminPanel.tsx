@@ -2432,7 +2432,7 @@ export default function AdminPanel() {
           // Header columns per mode
           const headers: Record<typeof peopleMode, string[]> =
             peopleMode === 'call'
-              ? { call: ['Name', 'Phone', 'Event', 'Why Join', 'Call Status', 'Notes', 'Date', 'Action'], approval: [], payments: [], doubts: [] }
+              ? { call: ['Name', 'Phone', 'Event', 'Call Status', 'Notes', 'Date', 'Action'], approval: [], payments: [], doubts: [] }
               : peopleMode === 'approval'
               ? { call: [], approval: ['Plan Name', 'Why Join', 'Action'], payments: [], doubts: [] }
               : peopleMode === 'payments'
@@ -2657,33 +2657,54 @@ export default function AdminPanel() {
 
                         // ─── CALL MODE ───
                         const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
+                        // Meeting point sub-line under the event title — useful for events
+                        // with pickups in multiple cities (e.g. "Koyambedu, Chennai") so the
+                        // caller knows exactly where the applicant is joining from. We only
+                        // have the dropdown label saved (e.g. "Koyambedu — by 4:30 PM"), so
+                        // strip the time half if present and combine with selected_city.
+                        const pickupSpot = String(app.pickup_label ?? '').split(' — ')[0].trim();
+                        const pickupCity = String(app.selected_city ?? '').trim();
+                        const meetingLine = pickupSpot && pickupCity
+                          ? `${pickupSpot}, ${pickupCity}`
+                          : pickupSpot || pickupCity || '';
                         if (peopleMode === 'call') return (
                           <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : undefined }}>
-                            <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                              {app.name || '—'}
-                              {openDoubts.length > 0 && (
-                                <span title={`${openDoubts.length} unresolved doubt${openDoubts.length === 1 ? '' : 's'}`} style={{ marginLeft: 6, background: '#fde047', color: '#854d0e', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
-                                  💬 {openDoubts.length}
-                                </span>
+                            <td style={{ padding: '11px 12px', maxWidth: 280, minWidth: 200 }} title={app.why_join ? `${app.name || '—'}\n${app.why_join}` : (app.name || '—')}>
+                              <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {app.name || '—'}
+                                {openDoubts.length > 0 && (
+                                  <span title={`${openDoubts.length} unresolved doubt${openDoubts.length === 1 ? '' : 's'}`} style={{ marginLeft: 6, background: '#fde047', color: '#854d0e', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
+                                    💬 {openDoubts.length}
+                                  </span>
+                                )}
+                              </div>
+                              {app.why_join && (
+                                <div style={{ fontSize: 10, color: '#888', marginTop: 2, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  {app.why_join}
+                                </div>
                               )}
                             </td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
                               <a href={`tel:${app.phone}`} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>{app.phone || '—'}</a>
                             </td>
-                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
-                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 220 }}>
-                              <div style={{ maxHeight: 56, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>{app.why_join || '—'}</div>
+                            <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180 }} title={meetingLine ? `${eventTitle}\n${meetingLine}` : eventTitle}>
+                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eventTitle}</div>
+                              {meetingLine && (
+                                <div style={{ fontSize: 10, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {meetingLine}
+                                </div>
+                              )}
                             </td>
-                            <td style={{ padding: '11px 12px' }}>
+                            <td style={{ padding: '11px 12px', width: 110 }}>
                               <select
                                 value={callSt}
                                 onChange={e => setCallStatusEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
-                                style={{ background: callBadgeColor(callSt) + '22', color: callBadgeColor(callSt), border: `1px solid ${callBadgeColor(callSt)}44`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer', fontWeight: 600, minWidth: 120 }}
+                                style={{ background: callBadgeColor(callSt) + '22', color: callBadgeColor(callSt), border: `1px solid ${callBadgeColor(callSt)}44`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer', fontWeight: 600, width: '100%' }}
                               >
                                 {callStatusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                               </select>
                             </td>
-                            <td style={{ padding: '11px 12px', minWidth: 200 }}>
+                            <td style={{ padding: '11px 12px', width: 150 }}>
                               {openDoubts.length > 0 && (
                                 <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                                   {openDoubts.slice(0, 3).map((d: any) => (
@@ -2705,7 +2726,7 @@ export default function AdminPanel() {
                                 style={{ background: '#fff', color: '#333', border: '1.5px solid #e0e0e0', borderRadius: 6, padding: '5px 9px', fontSize: 12, width: '100%', outline: 'none' }}
                               />
                             </td>
-                            <td style={{ padding: '11px 12px', color: '#888', whiteSpace: 'nowrap', fontSize: 11 }}>{formatAdminDateTime(app.created_at)}</td>
+                            <td style={{ padding: '11px 12px', color: '#888', whiteSpace: 'nowrap', fontSize: 10, width: 90 }}>{formatAdminDateTime(app.created_at)}</td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
                               {isDirty ? (
                                 <button

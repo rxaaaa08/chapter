@@ -31,10 +31,29 @@ async function resolveEvent(supabase: any, inputSlug: string) {
   if (!inputSlug) return null;
   const { data } = await supabase
     .from('events')
-    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug')
+    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details')
     .or(`slug.eq.${inputSlug},invite_slug.eq.${inputSlug}`)
     .maybeSingle();
   return data ?? null;
+}
+
+// Picks the city-specific override from event.city_details if present, falls
+// back to the plan-level price. City keys are matched case-insensitively
+// because admin storage and customer selection can diverge in casing.
+function cityPrices(event: any, trustedCity: string | null): { advance: number; full: number; matchedCity: string | null } {
+  const planAdv  = Number(event?.price_advance ?? 0);
+  const planFull = Number(event?.price_full    ?? 0);
+  if (!trustedCity) return { advance: planAdv, full: planFull, matchedCity: null };
+  const details: Record<string, any> = (event?.city_details && typeof event.city_details === 'object') ? event.city_details : {};
+  const matchKey = Object.keys(details).find(k => k.toLowerCase() === trustedCity.toLowerCase()) ?? null;
+  const override = matchKey ? details[matchKey] : null;
+  const adv  = Number(override?.price_advance);
+  const full = Number(override?.price_full);
+  return {
+    advance: adv  > 0 ? adv  : planAdv,
+    full:    full > 0 ? full : planFull,
+    matchedCity: matchKey ?? trustedCity,
+  };
 }
 
 function normalizePhone(raw: any): string | null {
@@ -219,12 +238,49 @@ Deno.serve(async (req) => {
     // fail the payment, so we defuse it here.
     const productinfo   = String(event.title ?? '').replace(/\|/g, ' ').trim();
 
+    // ── 3a. Resolve TRUSTED city for city-specific pricing ──
+    // Each event has plan-level price_advance/price_full, which serve as the
+    // default. event.city_details = { [city]: { price_advance, price_full } }
+    // holds optional per-city overrides (e.g. Pondy = ₹1,600 advance while
+    // Chennai uses the plan default ₹2,600). Server must pick the right one;
+    // otherwise the client UI's correct per-city price doesn't match what we
+    // actually charge.
+    //
+    // Trust order:
+    //   1. body.selected_city  — what the client just told us. Validated
+    //      against event.cities so a customer can't claim a city the event
+    //      doesn't list (and pay the wrong price).
+    //   2. applications.selected_city — server-trusted, persisted at apply
+    //      time. Used as fallback / cross-check, especially for retry-bill
+    //      where the client doesn't have selected_city handy.
+    //
+    // No trusted city → fall back to plan defaults. Same behaviour as before.
+    const cityList: string[] = Array.isArray(event.cities) ? event.cities.map((c: any) => String(c)) : [];
+    let trustedCity: string | null = null;
+    const claimedCity = String(body.selected_city ?? '').trim();
+    if (claimedCity && cityList.some(c => c.toLowerCase() === claimedCity.toLowerCase())) {
+      trustedCity = cityList.find(c => c.toLowerCase() === claimedCity.toLowerCase()) ?? claimedCity;
+    }
+    if (!trustedCity) {
+      const { data: appCityRow } = await supabase
+        .from('applications')
+        .select('selected_city')
+        .eq('phone', phone)
+        .eq('event_slug', canonicalSlug)
+        .maybeSingle();
+      const storedCity = String((appCityRow as any)?.selected_city ?? '').trim();
+      if (storedCity) {
+        trustedCity = cityList.find(c => c.toLowerCase() === storedCity.toLowerCase()) ?? storedCity;
+      }
+    }
+    const prices = cityPrices(event, trustedCity);
+
     // ── 4. Compute amount from DB based on payment_type ──
     let amountNum: number;
     if (paymentType === 'balance') {
-      // Balance = full price - advance already paid
-      const full = Number(event.price_full ?? 0);
-      const adv  = Number(event.price_advance ?? 0);
+      // Balance = full price - advance already paid (both city-aware)
+      const full = prices.full;
+      const adv  = prices.advance;
       if (full <= 0) return err(409, 'event price_full not configured', cors);
       if (adv  <  0) return err(409, 'event price_advance not configured', cors);
       // Require that the user has actually paid the advance for this event
@@ -239,8 +295,8 @@ Deno.serve(async (req) => {
       amountNum = full - adv;
       if (amountNum <= 0) return err(409, 'computed balance is non-positive', cors);
     } else {
-      // Advance payment
-      const adv = Number(event.price_advance ?? 0);
+      // Advance payment (city-aware)
+      const adv = prices.advance;
       if (adv <= 0) return err(409, 'event price_advance not configured', cors);
       amountNum = adv;
       // For invite-only events: require the phone to be authorized through

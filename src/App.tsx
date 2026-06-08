@@ -1553,7 +1553,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }> } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
@@ -1730,6 +1730,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setNativeEventData({
       priceAdvance: isBalancePayment ? balanceAmount : priceAdvance,
       priceFull,
+      // The city we resolved per-user (application > invited_numbers > 1st event city).
+      // Passed straight to NativePaymentOverlay → create-payu-order so the server
+      // can pick the same city_details override that this UI just used to compute
+      // priceAdvance, instead of silently falling back to the plan default.
+      resolvedCity: resolvedCity ?? undefined,
       title: event.title ?? matchHint?.title ?? '',
       firstDate,
       bookingSteps: Array.isArray(event.booking_steps) ? event.booking_steps : undefined,
@@ -3292,6 +3297,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               prefillEmail={appEmailBySlug[nativeEventData.eventSlug || verifiedSlug] ?? ''}
               lockEmail={!!appEmailBySlug[nativeEventData.eventSlug || verifiedSlug]}
               eventSlug={nativeEventData.eventSlug || verifiedSlug}
+              selectedCity={nativeEventData.resolvedCity ?? ''}
               paymentType={nativeEventData.isBalancePayment ? 'balance' : 'advance'}
               skipEntrance={billRestored}
               onBeforePayU={() => {
@@ -4000,6 +4006,7 @@ function NativePaymentOverlay({
   prefillEmail = '',
   lockEmail = false,
   eventSlug = '',
+  selectedCity = '',
   paymentType = 'advance',
   skipEntrance = false,
   onBeforePayU,
@@ -4013,6 +4020,7 @@ function NativePaymentOverlay({
   prefillEmail?: string;
   lockEmail?: boolean;
   eventSlug?: string;
+  selectedCity?: string;
   paymentType?: 'advance' | 'balance';
   skipEntrance?: boolean;
   onBeforePayU?: () => void;
@@ -4121,6 +4129,11 @@ function NativePaymentOverlay({
           amount: totalPayNow,
           event_title: eventTitle,
           event_slug: eventSlug || undefined,
+          // Pass the user's selected city so the server can apply any
+          // city-specific price override from event.city_details (e.g. Pondy
+          // ₹1,600 vs plan default ₹2,600). Server validates this against
+          // event.cities before trusting it; falls back to applications.selected_city.
+          selected_city: selectedCity || undefined,
           trip_date: formattedDate,
           payment_type: paymentType,
           // Server uses this to (1) charge the right fee on top of the base

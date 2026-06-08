@@ -1880,6 +1880,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
     switch (step) {
       case 'ASK_CITY': {
+        // "Other" is no longer offered — every plan now lists its actual
+        // cities and the customer must pick one of them. Any legacy
+        // selectedCity === 'Other' branches in this file are dead.
         const baseCities: string[] = Array.from(new Set(events.flatMap(e => e.cities as string[]).filter(Boolean)));
         const middleCities = baseCities
           .filter(c => {
@@ -1887,10 +1890,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             return lc !== 'chennai' && lc !== 'other';
           })
           .sort((a, b) => a.localeCompare(b));
-        const availableCities = ['Chennai', ...middleCities, 'Other'];
+        const availableCities = ['Chennai', ...middleCities];
         const cityOptions = availableCities.map((city) => ({
           value: city,
-          label: city === 'Other' ? 'Other City' : city,
+          label: city,
         }));
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
@@ -4936,12 +4939,18 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
               >
                 <X size={14} />
               </button>
-              {/* City switcher — same style as month switcher in calendar */}
+              {/* City switcher — same style as month switcher in calendar.
+                  "Other" is filtered out (Other Cities flow is gone). Legacy
+                  events may still list 'Other' in their cities array; we just
+                  don't surface it as a switcher option. */}
               {(() => {
                 const cityOrder: string[] = [];
-                allEvents.forEach(e => (e.cities ?? []).forEach(c => { if (!cityOrder.includes(c)) cityOrder.push(c); }));
+                allEvents.forEach(e => (e.cities ?? []).forEach(c => {
+                  if (String(c).toLowerCase() === 'other') return;
+                  if (!cityOrder.includes(c)) cityOrder.push(c);
+                }));
                 const cityIdx = cityOrder.indexOf(switcherCity);
-                const cityLabel = switcherCity.toLowerCase() === 'other' ? 'Other Cities' : switcherCity.charAt(0).toUpperCase() + switcherCity.slice(1).toLowerCase();
+                const cityLabel = switcherCity.charAt(0).toUpperCase() + switcherCity.slice(1).toLowerCase();
                 const cityEvents = sortGirlsOnlyLast(allEvents.filter(e => (e.cities ?? []).includes(switcherCity)));
                 const categories: string[] = [];
                 cityEvents.forEach(e => { if (!categories.includes(e.category)) categories.push(e.category); });
