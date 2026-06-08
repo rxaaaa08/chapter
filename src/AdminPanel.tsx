@@ -4372,14 +4372,6 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <label style={s.label}>Date Offset (days)</label>
                 <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} style={s.input} placeholder="0 = same day, -1 = previous day" value={p.dateOffset ?? 0} onChange={e => setPickup(p._idx, 'dateOffset', Number(e.target.value))} />
               </div>
-              <div>
-                <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = base event price" value={p.otherPrice ?? ''} onChange={e => setPickup(p._idx, 'otherPrice', e.target.value === '' ? undefined : Number(e.target.value))} />
-              </div>
-              <div style={{ gridColumn: '1/-1' }}>
-                <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={p.otherAdvance ?? ''} onChange={e => setPickup(p._idx, 'otherAdvance', e.target.value === '' ? undefined : Number(e.target.value))} />
-              </div>
             </div>
             {/* For City — radio buttons (one per event city, excluding Other) */}
             {(() => {
@@ -4505,62 +4497,11 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Own Transport Option" badge={ownTransport ? 'ON' : 'OFF'} badgeColor={ownTransport ? '#16a34a' : undefined}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: ownTransport ? 12 : 0 }}>
-          <span style={{ fontSize: 13, color: '#555' }}>Enable own transport option for this trip</span>
-          <button type="button" onClick={() => toggleOwnTransport(!ownTransport)}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport ? '#16a34a' : '#ddd', color: ownTransport ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-            {ownTransport ? 'ON' : 'OFF'}
-          </button>
-        </div>
-        {ownTransport && (
-          <div style={{ background: '#f9f9f9', border: '1.5px solid #eee', borderRadius: 10, padding: '10px 12px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <div>
-                <label style={s.label}>Dropdown Label</label>
-                <input style={s.input} placeholder="Own Transport" value={ownTransport.label} onChange={e => setOwnTransport({ label: e.target.value })} />
-              </div>
-              <div>
-                <label style={s.label}>Own Transport Price (₹)</label>
-                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="e.g. 4999" value={ownTransport.ownTransportPrice ?? 0} onChange={e => setOwnTransport({ ownTransportPrice: Number(e.target.value) })} />
-              </div>
-              <div>
-                <label style={s.label}>Meeting Point (Event Location)</label>
-                <input style={s.input} placeholder="e.g. Villa near Auroville" value={ownTransport.meetingSpot} onChange={e => setOwnTransport({ meetingSpot: e.target.value })} />
-              </div>
-              <div>
-                <label style={s.label}>Reporting Time</label>
-                <input style={s.input} placeholder="e.g. 6:00 PM" value={ownTransport.time} onChange={e => setOwnTransport({ time: e.target.value })} />
-              </div>
-              <div>
-                <label style={s.label}>Other City Price (₹)</label>
-                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = same as own transport price" value={ownTransport.otherPrice ?? ''} onChange={e => setOwnTransport({ otherPrice: e.target.value === '' ? undefined : Number(e.target.value) })} />
-              </div>
-              <div>
-                <label style={s.label}>Other City Advance (₹)</label>
-                <input type="number" onWheel={e => (e.target as HTMLInputElement).blur()} min={0} style={s.input} placeholder="Leave blank = event advance amount" value={ownTransport.otherAdvance ?? ''} onChange={e => setOwnTransport({ otherAdvance: e.target.value === '' ? undefined : Number(e.target.value) })} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <label style={{ ...s.label, marginBottom: 0 }}>Own Transport As Only Option</label>
-              <button type="button" onClick={() => setOwnTransport({ ownOnly: !ownTransport.ownOnly })}
-                style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: ownTransport.ownOnly ? '#111' : '#ddd', color: ownTransport.ownOnly ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                {ownTransport.ownOnly ? 'YES' : 'NO'}
-              </button>
-            </div>
-          </div>
-        )}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Show In Other City Feed" badge={showInOther ? 'ON' : 'OFF'} badgeColor={showInOther ? '#16a34a' : undefined}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#555' }}>When ON, users selecting "Other" city can see this event.</span>
-          <button type="button" onClick={toggleShowInOther}
-            style={{ padding: '4px 14px', borderRadius: 99, border: 'none', background: showInOther ? '#16a34a' : '#ddd', color: showInOther ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>
-            {showInOther ? 'ON' : 'OFF'}
-          </button>
-        </div>
-      </CollapsibleSection>
+      {/* "Own Transport Option" + "Show In Other City Feed" sections removed —
+          the Other Cities / Own Transport flows aren't used currently.
+          Helpers (toggleOwnTransport, setOwnTransport, toggleShowInOther,
+          ownTransport, showInOther) are intentionally kept dormant so the
+          sections can be revived by re-adding the JSX. */}
 
       {/* ── CONTENT ── */}
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 10 }}>Content</div>
