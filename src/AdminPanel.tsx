@@ -1543,89 +1543,10 @@ export default function AdminPanel() {
               ) : null;
             })()}
 
-            <CollapsibleSection
-              title="Edit Other City Plans"
-              badge={`${trips.filter(t => (t.cities ?? []).includes('Other')).length} plan${trips.filter(t => (t.cities ?? []).includes('Other')).length !== 1 ? 's' : ''}`}
-            >
-              {trips.filter(t => (t.cities ?? []).includes('Other')).length === 0 ? (
-                <div style={{ ...s.card, color: '#777' }}>
-                  No plans are enabled for Other city users yet. Turn ON <strong>Show In Other City Feed</strong> inside any plan to see it here.
-                </div>
-              ) : (
-                trips
-                  .filter(t => (t.cities ?? []).includes('Other'))
-                  .map(trip => {
-                    const isExpanded = otherEditingId === trip.id;
-                    return (
-                      <div key={trip.id} style={{ ...s.card, opacity: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: isExpanded ? 10 : 0 }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                            <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
-                          </div>
-                          <button
-                            style={isExpanded || saving === trip.id ? s.btn(saving === trip.id ? '#aaa' : '#111') : s.outlineBtn}
-                            disabled={saving === trip.id}
-                            onClick={async () => {
-                              if (!trip.id) return;
-                              if (!isExpanded) {
-                                setOtherEditingId(trip.id);
-                                return;
-                              }
-                              await saveTrip(trip);
-                              setOtherEditingId(null);
-                            }}
-                          >
-                            {saving === trip.id ? 'Saving…' : (isExpanded ? 'Save' : 'Edit')}
-                          </button>
-                          <div style={{ position: 'relative', minWidth: 118 }}>
-                            <select
-                              value={otherActionById[trip.id!] ?? ''}
-                              onChange={async (e) => {
-                                const action = e.target.value;
-                                setOtherActionById(prev => ({ ...prev, [trip.id!]: action }));
-                                await handleOtherAction(trip, action);
-                                setOtherActionById(prev => ({ ...prev, [trip.id!]: '' }));
-                              }}
-                              style={{
-                                ...s.input,
-                                width: '100%',
-                                padding: '8px 30px 8px 10px',
-                                fontSize: 13,
-                                fontWeight: 700,
-                                borderRadius: 8,
-                                color: '#16a34a',
-                                appearance: 'none',
-                                WebkitAppearance: 'none',
-                                MozAppearance: 'none',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <option value="" disabled>Live</option>
-                              <option value="live">Live</option>
-                              <option value="preview">Preview</option>
-                              <option value="remove">Remove</option>
-                            </select>
-                            <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#777', fontSize: 11, pointerEvents: 'none' }}>▾</span>
-                          </div>
-                        </div>
-
-                        {isExpanded && (
-                          <OtherCityForm
-                            trip={trip}
-                            onChange={(next) => updateTripInList(trip.id!, () => next)}
-                            onSave={() => saveTrip(trip)}
-                            onCancel={() => setOtherEditingId(null)}
-                            saving={saving === trip.id}
-                            s={s}
-                            hideFooterActions={true}
-                          />
-                        )}
-                      </div>
-                    );
-                  })
-              )}
-            </CollapsibleSection>
+            {/* "Edit Other City Plans" section removed — the Other Cities flow
+                isn't used currently. The OtherCityForm component and the
+                Other-City state/handlers are left in place (dormant) so the
+                section can be revived later by re-adding this JSX block. */}
 
             {addingTrip && editingTrip && !editingTrip.id && (
               <div style={s.card}>
