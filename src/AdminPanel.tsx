@@ -1906,7 +1906,7 @@ export default function AdminPanel() {
               </div>
             </div>
             <div style={{ fontSize: 11, color: '#aaa', marginBottom: 18 }}>
-              Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code>, <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code>, or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{price}'}</code> in Value to auto-fill prices.
+              Use <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{advance}'}</code>, <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{balance}'}</code>, or <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{price}'}</code> in Value to auto-fill prices. A row whose Label contains <code style={{ background: '#f0f0ea', borderRadius: 4, padding: '1px 4px' }}>{'{application_count}'}</code> becomes the gold social-proof row at the bottom of the timeline (not a numbered step) — Value sets the title under it.
             </div>
             {(() => {
               const getNearestDateTs = (trip: Trip) => {

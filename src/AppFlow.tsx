@@ -2306,7 +2306,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                   <div className="px-6 pb-6">
                     <div className="bg-[#F2F2F7] rounded-3xl overflow-hidden">
-                      {/* All booking steps — index 0 = "Now" row, rest = deadline rows */}
                       {(() => {
                         const meetingPoint = journeyCardData?.meetingPoint || '';
                         const _cd3 = (selectedEvent as any).cityDetails?.[selectedCity];
@@ -2314,10 +2313,26 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const advanceStr = `₹${pricing.advance.toLocaleString('en-IN')}`;
                         const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
                         const priceStr = `₹${pricing.total.toLocaleString('en-IN')}`;
-                        const resolveValue = (v: string) => v
-                          .replace(/\{advance\}/gi, advanceStr)
-                          .replace(/\{balance\}/gi, balanceStr)
-                          .replace(/\{price\}/gi, priceStr);
+
+                        // Social-proof count: legacy formula (capacity * 3 + applicationCount).
+                        // Used to substitute the {application_count} placeholder in the
+                        // social-proof booking_steps row's label.
+                        const capacity = (selectedEvent as any).totalCapacity;
+                        const socialProofCount =
+                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && typeof applicationCount === 'number'
+                            ? (capacity * 3) + applicationCount
+                            : null;
+
+                        const resolveValue = (v: string) => {
+                          let out = (v || '')
+                            .replace(/\{advance\}/gi, advanceStr)
+                            .replace(/\{balance\}/gi, balanceStr)
+                            .replace(/\{price\}/gi, priceStr);
+                          if (socialProofCount !== null) {
+                            out = out.replace(/\{application_count\}/gi, String(socialProofCount));
+                          }
+                          return out;
+                        };
 
                         const selectedDateEntry = selectedEvent.dates.find(d => d.date === bookingDate);
                         const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? [
@@ -2325,71 +2340,71 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
-                        const steps = eventSteps;
 
-                        const buildCountdown = (dateStr: string) => {
-                          const secs = dateStr
-                            ? Math.max(0, Math.floor((new Date(dateStr + 'T00:00:00').getTime() - Date.now()) / 1000))
-                            : 0;
-                          if (secs === 0) return 'Due soon';
-                          const d = Math.floor(secs / (3600 * 24));
-                          const h = Math.floor((secs % (3600 * 24)) / 3600);
-                          const m = Math.floor((secs % 3600) / 60);
-                          const s = secs % 60;
-                          return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-                        };
-                        return steps.map((step, si) => {
-                          const isNowRow = si === 0;
-                          const stepValue = resolveValue(step.value || '');
-                          const dateLabel = !isNowRow && step.date
-                            ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                            : null;
-                          return (
-                            <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
+                        // Social-proof row: the last booking_steps entry whose label contains
+                        // {application_count}. It's pulled OUT of the timeline list and used to
+                        // drive the yellow card at the bottom — so the admin can edit that copy
+                        // in one place, without it duplicating as a numbered step.
+                        let socialProofIdx = -1;
+                        for (let i = eventSteps.length - 1; i >= 0; i--) {
+                          if ((eventSteps[i].label || '').includes('{application_count}')) { socialProofIdx = i; break; }
+                        }
+                        const socialProofRow = socialProofIdx >= 0 ? eventSteps[socialProofIdx] : null;
+                        const steps = socialProofIdx >= 0 ? eventSteps.filter((_: any, i: number) => i !== socialProofIdx) : eventSteps;
+
+                        const yellowTitle = socialProofRow?.value ? resolveValue(socialProofRow.value) : selectedEvent.title;
+                        const yellowDateStr = (socialProofRow?.date) || bookingDate || selectedEvent.dates?.[0]?.date || '';
+
+                        return (
+                          <>
+                            {/* All booking steps — index 0 = "Now" row, rest = deadline rows */}
+                            {steps.map((step: any, si: number) => {
+                              const isNowRow = si === 0;
+                              const stepValue = resolveValue(step.value || '');
+                              const dateLabel = !isNowRow && step.date
+                                ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                                : null;
+                              return (
+                                <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
+                                  <div>
+                                    <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
+                                    <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
+                                  </div>
+                                  {isNowRow ? (
+                                    <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                      Now
+                                    </span>
+                                  ) : dateLabel ? (
+                                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                      {dateLabel}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+
+                            {/* Prize row — social-proof copy (driven by booking_steps), event title, and date */}
+                            <div className="px-5 py-4 flex items-end justify-between bg-[#FFD700]/10">
                               <div>
-                                <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
-                                <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
+                                {socialProofRow && socialProofCount !== null ? (
+                                  <p className="text-[11px] text-gray-400 font-medium mb-0.5 flex items-center gap-1">
+                                    <Users size={11} className="flex-shrink-0" />
+                                    {resolveValue(socialProofRow.label || '')}
+                                  </p>
+                                ) : null}
+                                <p className="text-[15px] font-black text-gray-900 leading-tight">{yellowTitle}</p>
                               </div>
-                              {isNowRow ? (
-                                <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                                  Now
-                                </span>
-                              ) : dateLabel ? (
-                                <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                                  {dateLabel}
-                                </span>
-                              ) : null}
+                              <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
+                                {yellowDateStr ? (
+                                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full text-black bg-[#FFD700] border border-[#d4af37] font-black">
+                                    {new Date(`${yellowDateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
-                          );
-                        });
+                          </>
+                        );
                       })()}
-
-	                      {/* Prize row — event title + date */}
-	                      <div className="px-5 py-4 flex items-end justify-between bg-[#FFD700]/10">
-	                        <div>
-	                          {(() => {
-	                            const capacity = (selectedEvent as any).totalCapacity;
-	                            const socialProofCount =
-	                              isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && typeof applicationCount === 'number'
-	                                ? (capacity * 3) + applicationCount
-	                                : null;
-	                            return socialProofCount !== null ? (
-	                              <p className="text-[11px] text-gray-400 font-medium mb-0.5 flex items-center gap-1"><Users size={11} className="flex-shrink-0" />{socialProofCount} ppl have requested invitation</p>
-	                            ) : null;
-	                          })()}
-	                          <p className="text-[15px] font-black text-gray-900 leading-tight">{selectedEvent.title}</p>
-	                        </div>
-                        <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
-                          {(() => {
-                            const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
-                            return dateStr ? (
-                              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full text-black bg-[#FFD700] border border-[#d4af37] font-black">
-                                {new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                              </span>
-                            ) : null;
-                          })()}
-                        </div>
-                      </div>
                     </div>
                   </div>
 
