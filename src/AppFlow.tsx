@@ -645,7 +645,7 @@ function ApplicationForm({
         </div>
         <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${form.email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? 'ring-2 ring-red-500' : ''}`}>
           <input
-            type="email" value={form.email} placeholder="For your booking receipt"
+            type="email" value={form.email} placeholder="You'll receive updates here"
             onChange={e => setForm(f => ({ ...f, email: e.target.value.slice(0, 100) }))}
             className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
             inputMode="email" autoComplete="email"

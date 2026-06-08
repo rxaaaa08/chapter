@@ -1557,6 +1557,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
+  // Email from the user's application keyed by canonical event_slug. Populated
+  // by verifyPhone (the existing get-user-context lookup) and passed straight
+  // into NativePaymentOverlay as prefillEmail + lockEmail — so the bill renders
+  // with the email already in hand. No duplicate fetch, no skeleton flicker.
+  const [appEmailBySlug, setAppEmailBySlug] = useState<Record<string, string>>({});
   // Chat overlay state
   const [chatOpen, setChatOpen] = useState(false);
   // 0 = typing dots only, 1 = messages visible, 2 = reply card visible
@@ -1854,7 +1859,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // RLS-locked to admins (C5), so we go through the get-user-context edge
     // function which uses service_role + filters by the caller-supplied phone.
     let inviteRows: { event_slug: string }[] = [];
-    let appRows: { event_slug: string; status: string }[] = [];
+    let appRows: { event_slug: string; status: string; email?: string }[] = [];
     try {
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`,
@@ -1879,10 +1884,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }
 
     const appStatusBySlug = new Map<string, string>();
+    const emailMap: Record<string, string> = {};
+    const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
     (appRows ?? []).forEach((row: any) => {
       const slug = String(row.event_slug ?? '').trim();
       if (slug) appStatusBySlug.set(slug, String(row.status ?? 'pending'));
+      const e = String(row.email ?? '').trim();
+      if (slug && e && isValidEmail(e)) emailMap[slug] = e;
     });
+    setAppEmailBySlug(emailMap);
     const candidates = new Map<string, string>();
     (inviteRows ?? []).forEach((row: any) => {
       const inviteSlug = String(row.event_slug ?? '').trim();
@@ -3279,6 +3289,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               priceAdvance={nativeEventData.priceAdvance}
               prefillName={form.name.trim()}
               prefillPhone={form.phone}
+              prefillEmail={appEmailBySlug[nativeEventData.eventSlug || verifiedSlug] ?? ''}
+              lockEmail={!!appEmailBySlug[nativeEventData.eventSlug || verifiedSlug]}
               eventSlug={nativeEventData.eventSlug || verifiedSlug}
               paymentType={nativeEventData.isBalancePayment ? 'balance' : 'advance'}
               skipEntrance={billRestored}
@@ -3986,6 +3998,7 @@ function NativePaymentOverlay({
   prefillName = '',
   prefillPhone = '',
   prefillEmail = '',
+  lockEmail = false,
   eventSlug = '',
   paymentType = 'advance',
   skipEntrance = false,
@@ -3998,6 +4011,7 @@ function NativePaymentOverlay({
   prefillName?: string;
   prefillPhone?: string;
   prefillEmail?: string;
+  lockEmail?: boolean;
   eventSlug?: string;
   paymentType?: 'advance' | 'balance';
   skipEntrance?: boolean;
@@ -4008,10 +4022,10 @@ function NativePaymentOverlay({
   const [phone, setPhone] = useState(prefillPhone);
   const [email, setEmail] = useState(prefillEmail);
   // Email is shown read-only when it's on file from the customer's application
-  // (they can't change phone/email at pay time). emailChecking gates the field
-  // while we look it up; it fails open to an editable field.
-  const [emailLocked, setEmailLocked] = useState(false);
-  const [emailChecking, setEmailChecking] = useState(false);
+  // (they can't change phone/email at pay time). The caller passes lockEmail —
+  // SharedInviteFlow already fetched the user's context during phone-verification,
+  // so we don't repeat that lookup here. No async, no skeleton, no flicker.
+  const emailLockedState = lockEmail;
   const [paying, setPaying] = useState(false);
   const [payuData, setPayuData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
   const [error, setError] = useState('');
@@ -4057,41 +4071,6 @@ function NativePaymentOverlay({
       p_event_slug: eventSlug,
       p_event_title: eventTitle,
     }).then(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // If this phone has an email on file from their application (for this event),
-  // pre-fill it and LOCK the field — applicants don't retype and can't change
-  // their email at pay time (phone is already read-only). Bulk-invited / older
-  // applications have no email on file, so the field stays editable. Fails open
-  // to editable on any error so nobody is ever blocked from paying.
-  useEffect(() => {
-    const tenDigit = prefillPhone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
-    if (tenDigit.length !== 10 || !eventSlug) return;
-    const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim());
-    let active = true;
-    setEmailChecking(true);
-    (async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`, {
-          method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({ phone: tenDigit }),
-        });
-        if (active && res.ok) {
-          const d = await res.json();
-          const apps = Array.isArray(d.applications) ? d.applications : [];
-          const onFile = apps.find((a: any) => String(a.event_slug) === eventSlug)?.email;
-          if (isValidEmail(onFile)) { setEmail(String(onFile).trim()); setEmailLocked(true); }
-        }
-      } catch { /* fail-open — field stays editable */ }
-      finally { if (active) setEmailChecking(false); }
-    })();
-    return () => { active = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -4333,7 +4312,7 @@ function NativePaymentOverlay({
             <div className="flex-1 min-w-0">
               <p className="text-[15px] font-bold text-gray-900 leading-snug">{name}</p>
               {phone && <p className="text-[13px] text-gray-500 mt-0.5">+91 {phone}</p>}
-              {emailLocked && email && <p className="text-[13px] text-gray-500 mt-0.5 truncate">{email}</p>}
+              {emailLockedState && email && <p className="text-[13px] text-gray-500 mt-0.5 truncate">{email}</p>}
             </div>
           </div>
 
@@ -4341,23 +4320,19 @@ function NativePaymentOverlay({
               from the customer's application; otherwise an editable field for
               bulk-invited / older applicants. PayU requires a real email —
               previously every txn used a shared fallback (booking@chaptera.in). */}
-          {!emailLocked && (
-            emailChecking ? (
-              <div className="mt-3.5 h-[60px] rounded-xl bg-gray-100 animate-pulse" />
-            ) : (
-              <div className="mt-3.5">
-                <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="Email address"
-                  value={email}
-                  onChange={e => { setEmail(e.target.value); if (error) setError(''); }}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-[14px] text-gray-900 outline-none focus:border-gray-900 transition-colors"
-                />
-                <p className="text-[11px] text-gray-400 mt-1.5">We'll send your payment receipt here.</p>
-              </div>
-            )
+          {!emailLockedState && (
+            <div className="mt-3.5">
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="Email address"
+                value={email}
+                onChange={e => { setEmail(e.target.value); if (error) setError(''); }}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-[14px] text-gray-900 outline-none focus:border-gray-900 transition-colors"
+              />
+              <p className="text-[11px] text-gray-400 mt-1.5">We'll send your payment receipt here.</p>
+            </div>
           )}
 
           {error && <p className="text-red-500 text-[12px] font-medium mt-3">{error}</p>}
@@ -4402,7 +4377,7 @@ function NativePaymentOverlay({
           <button
             type="button"
             onClick={handlePay}
-            disabled={paying || !selectedMethod || emailChecking}
+            disabled={paying || !selectedMethod}
             className="flex-1 h-14 rounded-2xl flex items-center justify-center active:opacity-80 transition-all disabled:opacity-40 relative overflow-hidden"
             style={{ backgroundColor: '#22C55E' }}
           >
