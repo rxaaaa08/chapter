@@ -1105,7 +1105,7 @@ function InviteChatEssentialsCard({
 }: {
   quickInfo: Array<{ label: string; value: string }>;
   transportPlan: Array<{ time?: string; [key: string]: any }>;
-  pickupPoints?: Array<{ id?: string; label?: string; meetingSpot?: string; meeting_spot?: string; location?: string; time?: string; [key: string]: any }>;
+  pickupPoints?: Array<{ id?: string; label?: string; meetingSpot?: string; meeting_spot?: string; location?: string; time?: string; transport?: string; [key: string]: any }>;
   firstDate?: string;
   savedPickupPointId?: string | null;
 }) {
@@ -1113,25 +1113,25 @@ function InviteChatEssentialsCard({
   const spotField      = qi.find(c => c.label === 'Meeting Spot' || c.label === 'Venue')  ?? qi[0];
   const transportField = qi.find(c => c.label === 'Transport'    || c.label === 'Format') ?? qi[1];
 
-  // When the event has multiple pickup points and we know which one this user chose,
-  // use that point's details directly instead of the generic quickInfo value.
+  // Pickup-point resolution: prefer the user's known pickup; otherwise if the
+  // event has exactly one pickup point use it (single-pickup events have no
+  // ambiguity); otherwise fall through to quickInfo (legacy event-level copy
+  // that may be stale, but is the only remaining source).
+  //
+  // This mirrors the booking-application flow's JourneyCard — both flows now
+  // surface the same Meeting Spot / Transport / Time from the same source of
+  // truth (pickup_points), so admins editing pickup_points see the change
+  // reflected everywhere instead of having to also keep quickInfo in sync.
   const points = pickupPoints ?? [];
-  const savedPoint = savedPickupPointId && points.length > 1
-    ? points.find(p => p.id === savedPickupPointId) ?? null
-    : null;
+  const userPoint =
+    (savedPickupPointId ? points.find(p => p.id === savedPickupPointId) ?? null : null) ??
+    (points.length === 1 ? points[0] : null);
 
-  const normalize = (value?: string) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-  const spotValue = normalize(spotField?.value);
-  const matchedPickup = points.find(point => {
-    const options = [point.label, point.meetingSpot, point.meeting_spot, point.location].map(normalize);
-    return spotValue && options.some(option => option === spotValue || option.includes(spotValue) || spotValue.includes(option));
-  }) ?? points[0];
-
-  // Resolved display values — saved choice wins when available
-  const resolvedMeetingSpot = savedPoint
-    ? (savedPoint.meetingSpot ?? savedPoint.meeting_spot ?? savedPoint.label ?? spotField?.value)
+  const resolvedMeetingSpot = userPoint
+    ? (userPoint.meetingSpot ?? userPoint.meeting_spot ?? userPoint.label ?? spotField?.value)
     : spotField?.value;
-  const firstTime = savedPoint?.time ?? matchedPickup?.time ?? transportPlan?.[0]?.time ?? '';
+  const resolvedTransport = userPoint?.transport ?? transportField?.value;
+  const firstTime = userPoint?.time ?? transportPlan?.[0]?.time ?? '';
 
   const dateStr = firstDate ?? '';
 
@@ -1163,7 +1163,7 @@ function InviteChatEssentialsCard({
                   <Bus size={9} className="text-gray-400" />
                   <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField.label}</span>
                 </div>
-                <span className="text-[13px] font-black text-gray-900 leading-tight">{transportField.value}</span>
+                <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedTransport}</span>
               </div>
             )}
           </div>
@@ -4385,7 +4385,6 @@ function NativePaymentOverlay({
                 onChange={e => { setEmail(e.target.value); if (error) setError(''); }}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-[14px] text-gray-900 outline-none focus:border-gray-900 transition-colors"
               />
-              <p className="text-[11px] text-gray-400 mt-1.5">We'll send your payment receipt here.</p>
             </div>
           )}
 
