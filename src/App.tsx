@@ -4145,8 +4145,29 @@ function NativePaymentOverlay({
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setPayuData({ url: data.payu_url, fields: data.fields });
-    } catch {
-      setError('Could not initiate payment. Please try again.');
+    } catch (e: any) {
+      // Surface the actual server error so callers/admins debugging this can
+      // tell rate limits / invite gating / config issues apart from generic
+      // network blips. Maps technical messages from create-payu-order to
+      // customer-friendly copy; falls through to the generic line otherwise.
+      const raw = String(e?.message ?? '').toLowerCase();
+      let msg = 'Could not initiate payment. Please try again.';
+      if (raw.includes('rate limit') && raw.includes('phone')) {
+        msg = "Too many attempts — please wait an hour and try again.";
+      } else if (raw.includes('rate limit')) {
+        msg = "Too many attempts from your network — please try again in a minute.";
+      } else if (raw.includes('phone not invited')) {
+        msg = "This number isn't on the invite list for this plan. Check the number or contact us.";
+      } else if (raw.includes('no application found for balance')) {
+        msg = "We couldn't find your booking for the balance payment. Contact us if this looks wrong.";
+      } else if (raw.includes('advance not yet paid')) {
+        msg = "Please settle the advance before paying the balance.";
+      } else if (raw.includes('event is not active')) {
+        msg = "This plan isn't open for booking right now.";
+      } else if (raw.includes('event not found')) {
+        msg = "Couldn't find this plan. Refresh and try again.";
+      }
+      setError(msg);
       setPaying(false);
     }
   };
