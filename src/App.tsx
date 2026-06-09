@@ -1911,10 +1911,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const checks = await Promise.all(Array.from(candidates.entries()).map(async ([candidateSlug, fallbackStatus]) => {
       if (!candidateSlug) return null;
 
+      // is_active=true filter so legacy invited_numbers/applications rows
+      // tied to events the admin has since disabled don't show up as picker
+      // options. Without this, a phone with an invited_numbers row for a
+      // disabled plan still sees that plan listed as 'Invited'.
       const { data: event } = await supabase
         .from('events')
         .select('slug, title, invite_slug, invite_spots, event_dates(start_date, status)')
         .or(`invite_slug.eq.${candidateSlug},slug.eq.${candidateSlug}`)
+        .eq('is_active', true)
         .maybeSingle();
 
       if (!event) return null;
@@ -4537,6 +4542,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
       .from('events')
       .select('slug, invite_slug, booking_url, price_advance, price_full, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url)')
       .or(`slug.eq.${slug},invite_slug.eq.${slug}`)
+      .eq('is_active', true)
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
@@ -4814,10 +4820,17 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   const [phoneError, setPhoneError] = React.useState('');
   const [submittingPhone, setSubmittingPhone] = React.useState(false);
 
+  // Application email for this event (same lookup the bill uses). When present,
+  // the retry-bill renders the email LOCKED — the smart bill is part of the same
+  // booking flow, so an applicant shouldn't be able to change their email there
+  // any more than they can on the original bill.
+  const [appEmailForEvent, setAppEmailForEvent] = React.useState<string>('');
+
   // get-user-context cross-checks the supplied phone against the stored phone
   // on the txnid (server-side). Returns the payment row only on match,
   // otherwise null. Anyone with the txnid alone cannot view someone else's
-  // receipt without also knowing the correct phone.
+  // receipt without also knowing the correct phone. We also stash the
+  // application's email for the payment's event, used to lock the retry bill.
   const fetchReceipt = React.useCallback(async (phone: string): Promise<any> => {
     if (phone.length !== 10) return null;
     try {
@@ -4835,7 +4848,15 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
       );
       if (!res.ok) return null;
       const d = await res.json();
-      return d.payment ?? null;
+      const p = d.payment ?? null;
+      // Match the application for the payment's event_slug (if we have one)
+      // and stash its email. Used by the retry-bill to lock the email field.
+      const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim());
+      const apps = Array.isArray(d.applications) ? d.applications : [];
+      const targetSlug = String(p?.event_slug ?? '').trim();
+      const onFile = targetSlug ? apps.find((a: any) => String(a.event_slug) === targetSlug)?.email : '';
+      setAppEmailForEvent(isValidEmail(onFile) ? String(onFile).trim() : '');
+      return p;
     } catch { return null; }
   }, [txnid]);
 
@@ -4995,7 +5016,8 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
             priceAdvance={baseAmount}
             prefillName={payment.name ?? ''}
             prefillPhone={payment.phone ?? ''}
-            prefillEmail={payment.email && payment.email !== 'booking@chaptera.in' ? payment.email : ''}
+            prefillEmail={appEmailForEvent || (payment.email && payment.email !== 'booking@chaptera.in' ? payment.email : '')}
+            lockEmail={!!appEmailForEvent}
             eventSlug={payment.event_slug ?? ''}
             paymentType={payment.payment_type === 'balance' ? 'balance' : 'advance'}
             onClose={() => {
