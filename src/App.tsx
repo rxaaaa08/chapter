@@ -1536,7 +1536,13 @@ function InvitePlanDetailsSheet({
 function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: () => void }) {
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [isRetryLoading, setIsRetryLoading] = useState(() => !!sessionStorage.getItem('ca_payu_retry_chat'));
-  const [isBillRestoreLoading, setIsBillRestoreLoading] = useState(() => !!sessionStorage.getItem('ca_payu_bill'));
+  // Timeline restore takes priority over bill restore. If a back-from-retry-bill
+  // queued ca_payu_timeline, we must NOT also fire the bill restore — otherwise
+  // the bill briefly flashes on top after the timeline is set, looking like the
+  // back press did nothing.
+  const [isBillRestoreLoading, setIsBillRestoreLoading] = useState(() =>
+    !!sessionStorage.getItem('ca_payu_bill') && !sessionStorage.getItem('ca_payu_timeline')
+  );
   const [isTimelineRestoreLoading, setIsTimelineRestoreLoading] = useState(() => !!sessionStorage.getItem('ca_payu_timeline'));
   const [inviteApplicationCount, setInviteApplicationCount] = useState<number | null>(null);
   const [inviteReservedCount, setInviteReservedCount] = useState<number | null>(null);
@@ -2142,6 +2148,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   useEffect(() => {
     const raw = sessionStorage.getItem('ca_payu_bill');
     if (!raw) return;
+    // Yield to timeline restore: if the back-from-retry-bill flow queued a
+    // ca_payu_timeline payload, that path owns the screen — drop our bill
+    // restore quietly so the user lands on the timeline, not a flash of the
+    // bill on top of it.
+    if (sessionStorage.getItem('ca_payu_timeline')) {
+      sessionStorage.removeItem('ca_payu_bill');
+      setIsBillRestoreLoading(false);
+      return;
+    }
     sessionStorage.removeItem('ca_payu_bill');
     let restored: { name?: string; phone?: string; verifiedSlug?: string } = {};
     try { restored = JSON.parse(raw); } catch { setIsBillRestoreLoading(false); return; }
