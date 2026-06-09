@@ -4773,6 +4773,10 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   // Details" step — its date is when the customer gets added to the WhatsApp
   // group chat. Surfaced in the receipt warm-note so they know what to expect.
   const [detailsDate, setDetailsDate] = React.useState<string>('');
+  // Balance due date — sourced from the booking step whose label/value mentions
+  // "balance". Used in the advance-paid receipt warm note ("settle balance
+  // anytime before X"). Same find-by-regex pattern as payu-callback.
+  const [balanceDate, setBalanceDate] = React.useState<string>('');
   const [loading, setLoading] = React.useState(true);
   const [dlLoading, setDlLoading] = React.useState(false);
   const [showRetryBill, setShowRetryBill] = React.useState(false);
@@ -4824,24 +4828,28 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     fetchReceipt(tenDigit).then(p => { setPayment(p); setLoading(false); });
   }, [txnid, status, fetchReceipt]);
 
-  // Once we know the event_slug from the payment, look up the event to find
-  // its 4th booking step (Meeting Spot Details) and use that date in the
-  // receipt warm note. Best-effort: if the event doesn't have a 4th step,
-  // the warm note falls back to its date-less form gracefully.
+  // Once we know the event_slug from the payment, look up the event for two
+  // dates used by the receipt warm note. Both come from the canonical 5-step
+  // invite-only booking timeline (vibe check → advance → balance → meeting
+  // spot → social proof), so they're read positionally:
+  //   - balanceDate = step index 2 ("remaining balance") → advance-paid note
+  //   - detailsDate = step index 3 ("Meeting Spot Details") → balance/full note
+  // Best-effort: if a step or date is missing the warm note drops that
+  // clause gracefully.
   React.useEffect(() => {
     const slug = payment?.event_slug;
-    if (!slug) { setDetailsDate(''); return; }
+    if (!slug) { setDetailsDate(''); setBalanceDate(''); return; }
     let cancelled = false;
+    const fmt = (raw: any): string => {
+      if (typeof raw !== 'string' || !raw) return '';
+      const d = new Date(`${raw}T00:00:00`);
+      return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
     fetchEventByIdOrSlug(slug).then(ev => {
       if (cancelled) return;
-      const step = Array.isArray(ev?.bookingSteps) ? ev.bookingSteps[3] : null;
-      const raw = step?.date;
-      if (typeof raw === 'string' && raw) {
-        const d = new Date(`${raw}T00:00:00`);
-        if (!Number.isNaN(d.getTime())) {
-          setDetailsDate(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-        }
-      }
+      const steps: any[] = Array.isArray(ev?.bookingSteps) ? ev.bookingSteps : [];
+      setBalanceDate(fmt(steps[2]?.date));
+      setDetailsDate(fmt(steps[3]?.date));
     }).catch(() => { /* silent — warm note just drops the date clause */ });
     return () => { cancelled = true; };
   }, [payment?.event_slug]);
@@ -5177,17 +5185,27 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
           </h2>
         </div>
 
-        {/* Warm note — references the 4th step in the booking timeline
-            (always the Meeting Spot Details date for invite-only events).
-            If the date isn't available yet (still loading or event has
-            fewer steps), gracefully drop just the "by X" clause. */}
+        {/* Warm note — copy varies by payment type:
+            - advance: settle-balance reminder ("anytime before X")
+            - balance / full: groupchat-add promise (Meeting Spot Details date)
+            Both gracefully drop the date clause if it isn't available. */}
         {payment?.event_title && (
           <div className="bg-[#FAF7F2] border border-[#E8E0D5] rounded-2xl px-4 py-3.5">
-            <p className="text-[13px] text-gray-500 leading-relaxed">
-              We will add you to <span className="font-semibold text-gray-600">{payment.event_title}</span> groupchat
-              {detailsDate ? <> by <span className="font-semibold text-gray-600">{detailsDate}</span></> : null}.
-              See you soon 💛
-            </p>
+            {payment?.payment_type === 'advance' ? (
+              <p className="text-[13px] text-gray-500 leading-relaxed">
+                We're working to give you the best <span className="font-semibold text-gray-600">{payment.event_title}</span> experience!
+                {balanceDate
+                  ? <> You can settle balance anytime before <span className="font-semibold text-gray-600">{balanceDate}</span>.</>
+                  : <> You can settle the balance anytime before due.</>}
+                {' '}See you soon 💛
+              </p>
+            ) : (
+              <p className="text-[13px] text-gray-500 leading-relaxed">
+                We will add you to <span className="font-semibold text-gray-600">{payment.event_title}</span> groupchat
+                {detailsDate ? <> by <span className="font-semibold text-gray-600">{detailsDate}</span></> : null}.
+                See you soon 💛
+              </p>
+            )}
           </div>
         )}
 

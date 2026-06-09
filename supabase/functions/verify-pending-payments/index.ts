@@ -98,8 +98,9 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events').select('booking_steps').eq('slug', args.eventSlug).maybeSingle();
-    const balStep = (ev?.booking_steps ?? []).find((s: any) =>
-      /balance/i.test(`${s.label ?? ''} ${s.value ?? ''}`));
+    // Balance step is always index 2 in the canonical 5-step invite-only
+    // booking timeline. Matches the receipt warm-note's positional lookup.
+    const balStep = Array.isArray(ev?.booking_steps) ? ev.booking_steps[2] : null;
     const dueFinal = formatDueDate(balStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
