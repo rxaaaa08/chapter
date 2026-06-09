@@ -1109,33 +1109,24 @@ function InviteChatEssentialsCard({
   firstDate?: string;
   savedPickupPointId?: string | null;
 }) {
-  const qi = quickInfo ?? [];
-  const spotField      = qi.find(c => c.label === 'Meeting Spot' || c.label === 'Venue')  ?? qi[0];
-  const transportField = qi.find(c => c.label === 'Transport'    || c.label === 'Format') ?? qi[1];
-
-  // Pickup-point resolution: prefer the user's known pickup; otherwise if the
-  // event has exactly one pickup point use it (single-pickup events have no
-  // ambiguity); otherwise fall through to quickInfo (legacy event-level copy
-  // that may be stale, but is the only remaining source).
+  // Essentials card source of truth = pickup_points. We deliberately do NOT
+  // read from quick_info (the "Plan card" admin field) — admins editing the
+  // pickup points should never have to also sync a parallel free-text copy.
+  // Every event is guaranteed to have at least one pickup point.
   //
-  // This mirrors the booking-application flow's JourneyCard — both flows now
-  // surface the same Meeting Spot / Transport / Time from the same source of
-  // truth (pickup_points), so admins editing pickup_points see the change
-  // reflected everywhere instead of having to also keep quickInfo in sync.
+  // Resolution: prefer the user's known pickup; otherwise use the first one.
   const points = pickupPoints ?? [];
   const userPoint =
     (savedPickupPointId ? points.find(p => p.id === savedPickupPointId) ?? null : null) ??
-    (points.length === 1 ? points[0] : null);
+    points[0];
 
-  const resolvedMeetingSpot = userPoint
-    ? (userPoint.meetingSpot ?? userPoint.meeting_spot ?? userPoint.label ?? spotField?.value)
-    : spotField?.value;
-  const resolvedTransport = userPoint?.transport ?? transportField?.value;
-  const firstTime = userPoint?.time ?? transportPlan?.[0]?.time ?? '';
+  const resolvedMeetingSpot = userPoint?.meetingSpot ?? userPoint?.meeting_spot ?? userPoint?.label ?? '';
+  const resolvedTransport   = userPoint?.transport ?? '';
+  const firstTime           = userPoint?.time ?? '';
 
   const dateStr = firstDate ?? '';
 
-  if (!spotField && !transportField && !dateStr) return null;
+  if (!resolvedMeetingSpot && !resolvedTransport && !dateStr) return null;
 
   const d       = dateStr ? new Date(dateStr + 'T00:00:00') : null;
   const day     = d ? d.getDate().toString() : '';
@@ -1148,20 +1139,20 @@ function InviteChatEssentialsCard({
       <div className="border border-dashed border-[#2C7FFF] rounded-2xl overflow-hidden bg-white">
         <div className="flex">
           <div className="flex-1 flex flex-col">
-            {spotField && (
+            {resolvedMeetingSpot && (
               <div className="px-4 py-3 border-b border-dashed border-[#D4E5FF]">
                 <div className="flex items-center gap-1 mb-1">
                   <MapPin size={9} className="text-gray-400" />
-                  <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField.label}</span>
+                  <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Meeting Spot</span>
                 </div>
                 <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedMeetingSpot}</span>
               </div>
             )}
-            {transportField && (
+            {resolvedTransport && (
               <div className="px-4 py-3">
                 <div className="flex items-center gap-1 mb-1">
                   <Bus size={9} className="text-gray-400" />
-                  <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField.label}</span>
+                  <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Transport</span>
                 </div>
                 <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedTransport}</span>
               </div>

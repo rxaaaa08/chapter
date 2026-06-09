@@ -3429,28 +3429,28 @@ const getCityPickupPoints = (event: Event, selectedCity: string) => {
   return points;
 };
 
-const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
-  const dbPoint = meetingPoint ? event.pickupPoints?.find(p => p.id === meetingPoint) : null;
-  const pointDateOffset = dbPoint?.dateOffset ?? 0;
+const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: string; startDate: string; meetingPoint?: string }) => {
+  // Essentials card source of truth = pickup_points. We deliberately do NOT
+  // read from event.quickInfo (the "Plan card" admin field) or cityDetails —
+  // admins editing the pickup points should never have to also sync a parallel
+  // free-text copy. Every event is guaranteed to have at least one pickup point.
+  //
+  // Resolution: prefer the user's chosen pickup; otherwise use the first one.
+  const points = event.pickupPoints ?? [];
+  const userPoint =
+    (meetingPoint ? points.find(p => p.id === meetingPoint) ?? null : null) ??
+    points[0] ?? null;
+
+  const pointDateOffset = userPoint?.dateOffset ?? 0;
   const d = new Date(startDate + 'T00:00:00');
   d.setDate(d.getDate() + pointDateOffset);
-  const day    = d.getDate().toString();
-  const month  = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  const day     = d.getDate().toString();
+  const month   = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
   const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
 
-  const qi = event.quickInfo || [];
-  const spotField      = qi.find(c => c.label === 'Meeting Spot' || c.label === 'Venue')    || qi[0];
-  const transportField = qi.find(c => c.label === 'Transport'    || c.label === 'Format')   || qi[1];
-
-  const firstTime = event.transportPlan?.[0]?.time || event.itinerary?.[0]?.schedule?.[0]?.time || '';
-
-  // City-specific quick-info override
-  const _cityData = city ? (event as any).cityDetails?.[city] : null;
-
-  const cfg = (!dbPoint && meetingPoint) ? MEETING_POINT_CONFIG[meetingPoint] : null;
-  const resolvedMeeting   = dbPoint ? dbPoint.meetingSpot : cfg ? cfg.meetingSpot  : (_cityData?.meeting_spot ?? spotField?.value);
-  const resolvedTransport = dbPoint ? dbPoint.transport   : cfg ? cfg.transport     : (_cityData?.transport    ?? transportField?.value);
-  const resolvedTime      = dbPoint ? dbPoint.time        : cfg?.pickupTime || firstTime;
+  const resolvedMeeting   = userPoint?.meetingSpot ?? userPoint?.label ?? '';
+  const resolvedTransport = userPoint?.transport ?? '';
+  const resolvedTime      = userPoint?.time ?? '';
 
   return (
     <div>
@@ -3466,14 +3466,14 @@ const JourneyCard = ({ event, city, startDate, meetingPoint }: { event: Event; c
           <div className="px-4 py-3 border-b border-dashed border-[#D4E5FF] border-opacity-60">
             <div className="flex items-center gap-1 mb-1">
               <MapPin size={9} className="text-gray-400" />
-              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{spotField?.label}</span>
+              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Meeting Spot</span>
             </div>
             <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedMeeting}</span>
           </div>
           <div className="px-4 py-3">
             <div className="flex items-center gap-1 mb-1">
               <Bus size={9} className="text-gray-400" />
-              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">{transportField?.label}</span>
+              <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Transport</span>
             </div>
             <span className="text-[13px] font-black text-gray-900 leading-tight">{resolvedTransport}</span>
           </div>
