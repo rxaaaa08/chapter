@@ -3421,9 +3421,10 @@ const PAYMENT_METHOD_GROUPS: PayMethodGroup[] = [
   { group: 'Cards',       methods: [{ id: 'debitcard',  label: 'Debit Card',         subLabel: 'Visa, Mastercard, Maestro, RuPay & more',      feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'debitcard'  },
                                     { id: 'creditcard', label: 'Credit Card',        subLabel: 'Visa, Mastercard, Amex, Diners & more',        feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'creditcard' }] },
   { group: 'Net Banking', methods: [{ id: 'netbanking', label: 'Net Banking',        subLabel: 'SBI, HDFC, ICICI, Axis & all major banks',     feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'netbanking' }] },
-  { group: 'EMI',         methods: [{ id: 'emi',        label: 'EMI',                subLabel: 'Credit card EMI (no-cost) & debit card EMI',     feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'emi'        }] },
-  { group: 'Wallets',     methods: [{ id: 'cashcard',   label: 'Wallets',            subLabel: 'Mobikwik, Ola Money (Postpaid + Wallet) & TWID Pay by Rewards',         feeRate: 0.0495, feeLabel: '4.95%', enforcePaymethod: 'cashcard'   }] },
-  { group: 'Pay Later',   methods: [{ id: 'bnpl',       label: 'Buy Now Pay Later',  subLabel: 'LazyPay — pay later with zero interest',                               feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'bnpl'       }] },
+  { group: 'More Payment Options', methods: [
+                                    { id: 'emi',        label: 'EMI',                      subLabel: 'Credit card EMI from ICICI, Axis, Standard Chartered & more banks', feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'emi'        },
+                                    { id: 'cashcard',   label: 'Wallets & Pay by Rewards', subLabel: 'Mobikwik, Ola Money (Postpaid + Wallet) & TWID Pay by Rewards',   feeRate: 0.0495, feeLabel: '4.95%', enforcePaymethod: 'cashcard'   },
+                                    { id: 'bnpl',       label: 'Buy Now Pay Later',        subLabel: 'LazyPay',                                                         feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'bnpl'       }] },
 ];
 
 // ─── NATIVE BOOKING CONFIRMATION ─────────────────────────────────────────────
@@ -3954,6 +3955,10 @@ function PaymentMethodSheet({
 
       {/* Scrollable method list */}
       <div className="flex-1 overflow-y-auto pb-8">
+        {/* Fee note (moved to top so customers see it before scanning options) */}
+        <p className="text-[11px] text-gray-400 text-center px-6 pt-4 pb-1">
+          Fees shown are collected by PayU Payment Processing Gateway.
+        </p>
         {PAYMENT_METHOD_GROUPS.map((group) => (
           <div key={group.group}>
             {/* Group header */}
@@ -3998,11 +4003,6 @@ function PaymentMethodSheet({
             </div>
           </div>
         ))}
-
-        {/* Fee note */}
-        <p className="text-[11px] text-gray-400 text-center px-6 pt-6">
-          Fees shown are collected by PayU Payment Processing Gateway.
-        </p>
       </div>
     </motion.div>
   );
@@ -4268,7 +4268,7 @@ function NativePaymentOverlay({
             <span className="text-[14px] font-medium text-gray-900">₹{priceAdvance.toLocaleString('en-IN')}</span>
           </div>
 
-          {/* Transaction fee */}
+          {/* Payment processing fee */}
           <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-200">
             <button
               type="button"
@@ -4276,7 +4276,7 @@ function NativePaymentOverlay({
               className="flex items-center gap-1 active:opacity-60 transition-opacity"
             >
               <span className="text-[14px] text-gray-700 border-b border-dashed border-gray-400">
-                Transaction fee
+                Payment Processing Fee
               </span>
               {selectedMethod && <span className="text-gray-400 text-[12px]">({liveFeeLabel})</span>}
             </button>
@@ -4493,7 +4493,7 @@ function NativePaymentOverlay({
               {/* Rows */}
               <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-100">
                 <div>
-                  <p className="text-[14px] text-gray-800">Payment Processing Fee</p>
+                  <p className="text-[14px] text-gray-800">Transaction Processing Fees</p>
                   <p className="text-[12px] text-gray-400 mt-0.5">Charged by PayU at 2% of advance</p>
                 </div>
                 <span className="text-[14px] font-medium text-gray-900">{fmtFee(basePFF)}</span>
