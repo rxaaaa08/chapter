@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download, Ticket } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -6047,6 +6048,9 @@ export default function App() {
       <InAppBrowserNudge />
       <LandscapeBlocker />
       <AppFlow />
+      {/* Vercel Speed Insights — ships real-user Core Web Vitals (LCP / INP / CLS)
+          to the Vercel dashboard. Tiny script (~2KB), no PII collected. */}
+      <SpeedInsights />
     </>
   );
 }
