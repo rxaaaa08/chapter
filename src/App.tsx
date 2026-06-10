@@ -3422,7 +3422,7 @@ const PAYMENT_METHOD_GROUPS: PayMethodGroup[] = [
                                     { id: 'creditcard', label: 'Credit Card',        subLabel: 'Visa, Mastercard, Amex, Diners & more',        feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'creditcard' }] },
   { group: 'Net Banking', methods: [{ id: 'netbanking', label: 'Net Banking',        subLabel: 'SBI, HDFC, ICICI, Axis & all major banks',     feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'netbanking' }] },
   { group: 'EMI',         methods: [{ id: 'emi',        label: 'EMI',                subLabel: 'Credit card EMI (no-cost) & debit card EMI',     feeRate: 0.0367, feeLabel: '3.67%', enforcePaymethod: 'emi'        }] },
-  { group: 'Wallets',     methods: [{ id: 'cashcard',   label: 'Wallets',            subLabel: 'Airtel, Freecharge, Jio Money, OLA Money & more',                     feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'cashcard'   }] },
+  { group: 'Wallets',     methods: [{ id: 'cashcard',   label: 'Wallets',            subLabel: 'Mobikwik, Ola Money (Postpaid + Wallet) & TWID Pay by Rewards',         feeRate: 0.0495, feeLabel: '4.95%', enforcePaymethod: 'cashcard'   }] },
   { group: 'Pay Later',   methods: [{ id: 'bnpl',       label: 'Buy Now Pay Later',  subLabel: 'LazyPay — pay later with zero interest',                               feeRate: 0.0242, feeLabel: '2.42%', enforcePaymethod: 'bnpl'       }] },
 ];
 

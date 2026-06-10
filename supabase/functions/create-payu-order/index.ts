@@ -92,7 +92,7 @@ const FEE_RATES: Record<string, number> = {
   creditcard: 0.0367,
   netbanking: 0.0242,
   emi:        0.0367,
-  cashcard:   0.0242,
+  cashcard:   0.0495,
   bnpl:       0.0242,
 };
 
