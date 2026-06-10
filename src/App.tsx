@@ -5396,7 +5396,7 @@ function PrivacyScreen() {
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
-          <a href="/aboutus" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
+          <a href="/lifestyle" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </a>
           <div>
@@ -5511,7 +5511,7 @@ function TermsScreen() {
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
-          <a href="/aboutus" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
+          <a href="/lifestyle" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </a>
           <div>
@@ -5878,17 +5878,20 @@ export default function App() {
       setRouteSearch(window.location.search);
     };
     window.addEventListener('popstate', syncRoute);
+    // /join → /lifestyle is still handled client-side because Vercel only
+    // sees the request once; if a customer has a legacy bookmark to /join
+    // we want the URL bar to update without a full document reload.
     if (window.location.pathname === '/join') {
       const nextSearch = window.location.search || '';
       window.history.replaceState({}, '', `/lifestyle${nextSearch}`);
       syncRoute();
       return () => window.removeEventListener('popstate', syncRoute);
     }
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-    if (!isStandalone && window.location.pathname === '/' && !window.location.search.includes('preview_event') && !window.location.search.includes('payment_status')) {
-      window.history.replaceState({}, '', '/aboutus');
-      syncRoute();
-    }
+    // The "/" → "/lifestyle" redirect used to live here. It's now done by
+    // Vercel server-side (see vercel.json) so the response is a true 307
+    // and there's no flash of the homepage before React boots. The PWA
+    // launches at /admin (manifest.json start_url), so a server-side
+    // redirect at / is safe — no standalone bypass needed.
     return () => window.removeEventListener('popstate', syncRoute);
   }, []);
 

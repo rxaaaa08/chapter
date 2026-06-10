@@ -1,4 +1,15 @@
 {
+  "redirects": [
+    {
+      "source": "/",
+      "missing": [
+        { "type": "query", "key": "preview_event" },
+        { "type": "query", "key": "payment_status" }
+      ],
+      "destination": "/lifestyle",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/|.*\\.).*)",

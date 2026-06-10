@@ -1245,7 +1245,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         return;
       }
       if (isPreviewMode && activeHistoryLayer === 'event-details') {
-        window.location.assign('/aboutus');
+        window.location.assign('/lifestyle');
         setTimeout(() => { handlingPopStateRef.current = false; }, 0);
         return;
       }
@@ -4024,7 +4024,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         <div className="flex items-center px-4 pt-12 pb-4 border-b border-gray-100">
           <button
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 active:bg-gray-200 transition-colors flex-shrink-0"
-            onClick={() => { if (isPreviewLink) { window.location.href = 'https://chaptera.in/aboutus'; } else { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); } }}
+            onClick={() => { if (isPreviewLink) { window.location.href = 'https://chaptera.in/lifestyle'; } else { setSwitcherCity(selectedCity); setShowPlanSwitcher(true); } }}
           >
             <ChevronLeft size={16} className="text-gray-700 ml-[-1px]" strokeWidth={2.5} />
           </button>
