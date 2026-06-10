@@ -11,6 +11,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="chapter அ admin" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Preload the UPI logo so the bill-page payment-method icons paint
+         instantly. Without this, the <img> fetch is kicked off only when
+         React mounts the bill row, costing one network round-trip. -->
+    <link rel="preload" as="image" href="/upi-logo.png" />
     <script>
       // Capture beforeinstallprompt before React mounts so it's never missed.
       // React reads it from window.__deferredInstallPrompt.

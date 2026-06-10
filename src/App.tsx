@@ -3821,7 +3821,16 @@ function PayMethodIcon({ id }: { id: string }) {
     case 'upi':
       return (
         <div className={`${base} bg-white border border-gray-100 shadow-sm`}>
-          <img src="/upi-logo.png" alt="UPI" className="w-8 h-auto object-contain" />
+          <img
+            src="/upi-logo.png"
+            alt="UPI"
+            width={32}
+            height={16}
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            className="w-8 h-auto object-contain"
+          />
         </div>
       );
     // Credit Card — Visa/MC circles
