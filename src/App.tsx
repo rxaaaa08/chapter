@@ -1662,7 +1662,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // Resolve payment status: applications first, then legacy invite_payment_submissions.
     const [{ data: appRow }, { data: legacyPaidRows }, { data: inviteRow }] = await Promise.all([
       supabase.from('applications')
-        .select('status, pickup_point_id, selected_city, selected_date')
+        .select('status, pickup_point_id, selected_city, selected_date, email')
         .eq('phone', phone)
         .eq('event_slug', realSlug)
         .maybeSingle(),
@@ -1683,6 +1683,17 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const appStatus = (appRow?.status as string | undefined) ?? legacyStatus ?? 'invited';
     const isFullyPaid      = appStatus === 'fully_paid';
     const isBalancePayment = appStatus === 'advance_paid';
+
+    // Seed appEmailBySlug from the applications row so the bill page can
+    // pre-fill + lock the email field even on a cold restore path that
+    // bypasses verifyPhone (e.g. hard-reload of the bill overlay after
+    // the user already submitted their application). Without this, the
+    // map is only ever populated by verifyPhone, leaving the email field
+    // blank + editable on reload despite the email already being on file.
+    const storedEmail = String((appRow as any)?.email ?? '').trim();
+    if (storedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(storedEmail) && storedEmail !== 'booking@chaptera.in') {
+      setAppEmailBySlug(prev => prev[realSlug] === storedEmail ? prev : { ...prev, [realSlug]: storedEmail });
+    }
 
     // Resolve the user's city for per-city pricing:
     // 1. Prefer stored selected_city from their application
