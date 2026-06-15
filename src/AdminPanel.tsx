@@ -832,7 +832,7 @@ export default function AdminPanel() {
     // while payu_payments.event_slug stored 'sunrise-at-kovalam' → UPDATE missed).
     const tripWithSlug = {
       ...trip,
-      slug:        String(trip.slug ?? '').toLowerCase(),
+      slug:        String(trip.slug || autoSlug).toLowerCase(),
       invite_slug: String(trip.invite_slug || autoSlug).toLowerCase(),
     };
     const { event_dates, event_media, event_reviews, faqs, id, ...fields } = tripWithSlug;

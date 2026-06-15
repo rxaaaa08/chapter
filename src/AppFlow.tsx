@@ -2333,8 +2333,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         // social-proof booking_steps row's label.
                         const capacity = (selectedEvent as any).totalCapacity;
                         const socialProofCount =
-                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && typeof applicationCount === 'number'
-                            ? (capacity * 3) + applicationCount
+                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0
+                            ? (capacity * 3) + (typeof applicationCount === 'number' ? applicationCount : 0)
                             : null;
 
                         const resolveValue = (v: string) => {
