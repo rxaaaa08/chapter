@@ -663,10 +663,20 @@ export default function AdminPanel() {
         });
         const aiJson = await aiRes.json().catch(() => ({}));
         const ok = aiRes.ok && aiJson.ok;
-        // Mark aisensy_invite_sent on the row
+        // Mark aisensy_invite_sent on the row. Also stamp invite_sent_at —
+        // the retarget-check cron compares this against now()-24h. Only set
+        // when AiSensy actually accepted the send (ok=true) so a failed
+        // delivery doesn't start the re-target countdown from a bogus time.
+        // Clears re_target in case admin is re-approving after a correction
+        // (e.g. fixed a phone-number typo) so the flag doesn't linger.
         const { data: sentApp, error: sentError } = await supabase
           .from('applications')
-          .update({ status: 'invited', aisensy_invite_sent: ok })
+          .update({
+            status: 'invited',
+            aisensy_invite_sent: ok,
+            ...(ok ? { invite_sent_at: new Date().toISOString() } : {}),
+            re_target: false,
+          })
           .eq('id', id)
           .select('*')
           .maybeSingle();
@@ -2341,12 +2351,19 @@ export default function AdminPanel() {
 
           // Apply filters
           const searchLower = peopleSearch.trim().toLowerCase();
-          // "Cart Abandoned" is a derived display state: an invited applicant
-          // the cart-abandonment job flagged (opened the bill, never paid).
-          // status itself stays 'invited' (so payment + invite-flow auth keep
-          // working); we only surface it differently in this admin view.
-          const displayStatus = (a: any): string =>
-            (a.cart_abandoned && a.status === 'invited') ? 'cart_abandoned' : a.status;
+          // "Cart Abandoned" and "Re-Target" are derived display states for
+          // invited applicants. cart_abandoned = bill opened, never paid.
+          // re_target = AiSensy invite >= 24h ago, bill never opened (i.e.
+          // either delivery failed or they ignored it). Mutually exclusive
+          // by construction; cart_abandoned wins ties (more recent signal).
+          // status itself stays 'invited' (so payment + invite-flow auth
+          // keep working); we only surface it differently in this admin view.
+          const displayStatus = (a: any): string => {
+            if (a.status !== 'invited') return a.status;
+            if (a.cart_abandoned) return 'cart_abandoned';
+            if (a.re_target) return 're_target';
+            return a.status;
+          };
           const filteredApps = applications.filter(a => {
             const pays = paymentsFor(a.phone, a.event_slug);
             const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
@@ -2373,6 +2390,7 @@ export default function AdminPanel() {
             if (status === 'advance_paid') return '#84cc16';
             if (status === 'invited')        return '#2196f3';
             if (status === 'cart_abandoned') return '#b45309';
+            if (status === 're_target')      return '#7c3aed';
             if (status === 'waitlist')       return '#a855f7';
             if (status === 'pending')        return '#f97316';
             if (status === 'rejected')       return '#dc2626';
@@ -2424,6 +2442,7 @@ export default function AdminPanel() {
             pending:      filteredApps.filter(a => a.status === 'pending').length,
             invited:        filteredApps.filter(a => displayStatus(a) === 'invited').length,
             cart_abandoned: filteredApps.filter(a => displayStatus(a) === 'cart_abandoned').length,
+            re_target:      filteredApps.filter(a => displayStatus(a) === 're_target').length,
             waitlist:       filteredApps.filter(a => a.status === 'waitlist').length,
             advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
             fully_paid:   filteredApps.filter(a => a.status === 'fully_paid').length,
@@ -2491,6 +2510,7 @@ export default function AdminPanel() {
                   <option value="pending">Pending</option>
                   <option value="invited">Invited</option>
                   <option value="cart_abandoned">Cart Abandoned</option>
+                  <option value="re_target">Re-Target</option>
                   <option value="waitlist">Waitlist</option>
                   <option value="advance_paid">Advance Paid</option>
                   <option value="fully_paid">Fully Paid</option>
@@ -2817,6 +2837,7 @@ export default function AdminPanel() {
                   {counts.pending      > 0 && <span style={{ color: statusColor('pending')      }}>pending: <b>{counts.pending}</b></span>}
                   {counts.invited        > 0 && <span style={{ color: statusColor('invited')        }}>invited: <b>{counts.invited}</b></span>}
                   {counts.cart_abandoned > 0 && <span style={{ color: statusColor('cart_abandoned') }}>cart abandoned: <b>{counts.cart_abandoned}</b></span>}
+                  {counts.re_target      > 0 && <span style={{ color: statusColor('re_target')      }}>re-target: <b>{counts.re_target}</b></span>}
                   {counts.waitlist       > 0 && <span style={{ color: statusColor('waitlist')       }}>waitlist: <b>{counts.waitlist}</b></span>}
                   {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
                   {counts.fully_paid   > 0 && <span style={{ color: statusColor('fully_paid')   }}>fully paid: <b>{counts.fully_paid}</b></span>}
