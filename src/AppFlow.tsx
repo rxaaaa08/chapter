@@ -489,7 +489,7 @@ function ApplicationForm({
   const [step1Attempted, setStep1Attempted] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
 
-  const step1Valid = form.name.trim() && /^\d{10}$/.test(form.phone) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && form.gender;
+  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && form.gender;
   const step2Valid = form.whyJoin.trim() && form.attendedBefore;
 
   const handleSubmit = async () => {
@@ -621,11 +621,11 @@ function ApplicationForm({
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-1">
           <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">WhatsApp Number</label>
-          {(form.phone.length > 0 || step1Attempted) && !/^\d{10}$/.test(form.phone) && (
+          {(form.phone.length > 0 || step1Attempted) && !/^[6-9]\d{9}$/.test(form.phone) && (
             <span className="text-[11px] text-amber-500 font-medium">Invalid Number</span>
           )}
         </div>
-        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${(form.phone.length > 0 || step1Attempted) && !/^\d{10}$/.test(form.phone) ? 'ring-2 ring-red-500' : ''}`}>
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${(form.phone.length > 0 || step1Attempted) && !/^[6-9]\d{9}$/.test(form.phone) ? 'ring-2 ring-red-500' : ''}`}>
           <input
             type="tel" value={form.phone} placeholder="We'll reach you here"
             onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
