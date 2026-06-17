@@ -170,10 +170,10 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'analytics' | 'settings'>(
-    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'analytics' | 'settings') ?? 'people'
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'analytics' | 'settings'>(
+    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'marketers' | 'analytics' | 'settings') ?? 'people'
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -301,6 +301,24 @@ export default function AdminPanel() {
   // catch unusual growth before the 500 MB Supabase free tier becomes tight.
   const [storageReport, setStorageReport] = useState<{ total_db_size_pretty: string; free_tier_pct: number; taken_at: string; biggest?: { table: string; pretty: string } } | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  // ── Marketers feature state ────────────────────────────────────────────
+  // currentMarketer: call_marketers row matching the logged-in user's email,
+  // or null if they're not a marketer (admin-only ops). Drives the banner +
+  // tells the People-tab UI to behave as "my leads" instead of "all leads".
+  // marketers + marketerStats are admin-only — populated when admin opens
+  // the Marketers tab. event_marketers_map: { event_slug → marketer_id[] }
+  // for the event-edit form's marketer multi-select.
+  const [currentMarketer, setCurrentMarketer] = useState<{ id: string; name: string; email: string; commission_amount: number } | null>(null);
+  const [myCommissionStats, setMyCommissionStats] = useState<{ total: number; ticketCount: number } | null>(null);
+  const [marketers, setMarketers] = useState<Array<{ id: string; email: string; name: string; commission_amount: number; active: boolean }>>([]);
+  const [marketerStats, setMarketerStats] = useState<Record<string, { total: number; ticketCount: number }>>({});
+  const [eventMarketersMap, setEventMarketersMap] = useState<Record<string, string[]>>({});
+  const [addingMarketer, setAddingMarketer] = useState(false);
+  const [newMarketerEmail, setNewMarketerEmail] = useState('');
+  const [newMarketerName, setNewMarketerName] = useState('');
+  const [newMarketerCommission, setNewMarketerCommission] = useState('50');
+  const [savingMarketer, setSavingMarketer] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month' | '90d'>('week');
   // Funnel event filter. null = default (active events only). A Set = the
   // explicit set of event ids the admin has chosen to show (lets them toggle
@@ -402,6 +420,33 @@ export default function AdminPanel() {
       const role = (data?.role as 'admin' | 'ops') ?? null;
       setAdminRole(role);
       setAuthDenied(!role); // logged in via Google but not in admin_users
+
+      // Marketer side-car: an ops user whose email exists in call_marketers
+      // is a marketer. Drives the commission banner + scopes the People tab
+      // to "my leads" via the RLS policy (no client-side filter needed).
+      if (role === 'ops') {
+        const { data: mk } = await supabase
+          .from('call_marketers')
+          .select('id, name, email, commission_amount')
+          .eq('email', userEmail)
+          .eq('active', true)
+          .maybeSingle();
+        setCurrentMarketer(mk ?? null);
+        if (mk?.id) {
+          // Sum sales this calendar month — drives the banner copy.
+          const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+          const { data: sales } = await supabase
+            .from('marketer_sales')
+            .select('amount')
+            .eq('marketer_id', mk.id)
+            .gte('accrued_at', monthStart.toISOString());
+          const total = (sales ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+          setMyCommissionStats({ total, ticketCount: (sales ?? []).length });
+        }
+      } else {
+        setCurrentMarketer(null);
+        setMyCommissionStats(null);
+      }
       // Mark this device as an admin device so the PWA always opens at /admin
       if (role) localStorage.setItem('chaptera_admin_device', '1');
       else localStorage.removeItem('chaptera_admin_device');
@@ -511,6 +556,74 @@ export default function AdminPanel() {
       from += PAGE;
     }
     return { data: all, error: null };
+  };
+
+  // Admin-only. Pulls the marketer roster, their commission totals, and
+  // the event_marketers map for use in the event-edit form.
+  const loadMarketersData = async () => {
+    const [{ data: mkRows }, { data: salesRows }, { data: emRows }] = await Promise.all([
+      supabase.from('call_marketers').select('id, email, name, commission_amount, active').order('created_at'),
+      supabase.from('marketer_sales').select('marketer_id, amount'),
+      supabase.from('event_marketers').select('event_slug, marketer_id'),
+    ]);
+    setMarketers((mkRows ?? []) as any);
+    const stats: Record<string, { total: number; ticketCount: number }> = {};
+    (salesRows ?? []).forEach((r: any) => {
+      const k = r.marketer_id;
+      const cur = stats[k] ?? { total: 0, ticketCount: 0 };
+      cur.total += Number(r.amount);
+      cur.ticketCount += 1;
+      stats[k] = cur;
+    });
+    setMarketerStats(stats);
+    const map: Record<string, string[]> = {};
+    (emRows ?? []).forEach((r: any) => {
+      const arr = map[r.event_slug] ?? [];
+      arr.push(r.marketer_id);
+      map[r.event_slug] = arr;
+    });
+    setEventMarketersMap(map);
+  };
+
+  // Save (or create) a marketer. Admin-only flow from the Marketers tab.
+  const saveNewMarketer = async () => {
+    const email = newMarketerEmail.trim().toLowerCase();
+    const name = newMarketerName.trim();
+    const commission = Number(newMarketerCommission) || 50;
+    if (!email || !name) { showToast('Email and name required'); return; }
+    setSavingMarketer(true);
+    const { error } = await supabase.from('call_marketers').insert({ email, name, commission_amount: commission });
+    setSavingMarketer(false);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast('Marketer added');
+    setAddingMarketer(false);
+    setNewMarketerEmail(''); setNewMarketerName(''); setNewMarketerCommission('50');
+    logAdminAction('marketer_create', 'call_marketers', null, { email, name, commission });
+    loadMarketersData();
+  };
+
+  const toggleMarketerActive = async (mk: { id: string; active: boolean; name: string }) => {
+    const { error } = await supabase.from('call_marketers').update({ active: !mk.active }).eq('id', mk.id);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(`${mk.name} ${!mk.active ? 'reactivated' : 'deactivated'}`);
+    logAdminAction(mk.active ? 'marketer_deactivate' : 'marketer_reactivate', 'call_marketers', mk.id, {});
+    loadMarketersData();
+  };
+
+  // Replace event_marketers rows for a given event with the chosen set.
+  // The DB trigger handles the redistribute on insert/delete.
+  const setEventMarketers = async (eventSlug: string, nextIds: string[]) => {
+    const current = eventMarketersMap[eventSlug] ?? [];
+    const toAdd = nextIds.filter(id => !current.includes(id));
+    const toRemove = current.filter(id => !nextIds.includes(id));
+    if (toRemove.length > 0) {
+      await supabase.from('event_marketers').delete().eq('event_slug', eventSlug).in('marketer_id', toRemove);
+    }
+    if (toAdd.length > 0) {
+      await supabase.from('event_marketers').insert(toAdd.map(marketer_id => ({ event_slug: eventSlug, marketer_id })));
+    }
+    setEventMarketersMap(prev => ({ ...prev, [eventSlug]: nextIds }));
+    logAdminAction('event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
   };
 
   const loadApplications = async () => {
@@ -1414,6 +1527,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
+        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); }}>Marketers</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
@@ -1503,7 +1617,22 @@ export default function AdminPanel() {
                         }}
                       >
                         {editingTrip?.id === trip.id ? (
-                          <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => setEditingTrip(null)} saving={saving === trip.id} s={s} />
+                          <>
+                            <TripForm trip={editingTrip} onChange={setEditingTrip} onSave={() => saveTrip(editingTrip!)} onCancel={() => setEditingTrip(null)} saving={saving === trip.id} s={s} />
+                            {/* Marketer assignment — only for existing trips with a slug.
+                                Selecting marketers triggers the DB redistribute trigger
+                                which auto-fans existing applications across them. */}
+                            {adminRole === 'admin' && trip.slug && (
+                              <MarketerAssignment
+                                eventSlug={trip.slug}
+                                marketers={marketers.filter(m => m.active)}
+                                selectedIds={eventMarketersMap[trip.slug] ?? []}
+                                onChange={ids => setEventMarketers(trip.slug, ids)}
+                                onOpen={loadMarketersData}
+                                s={s}
+                              />
+                            )}
+                          </>
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                             <div style={{ flex: 1 }}>
@@ -2460,9 +2589,20 @@ export default function AdminPanel() {
 
           return (
             <div>
+              {/* Commission banner — only when the logged-in user is a marketer.
+                  Counts this calendar month's sales (status moved to fully_paid). */}
+              {currentMarketer && myCommissionStats && (
+                <div style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)', borderRadius: 16, padding: '14px 18px', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 14, color: '#111' }}>
+                  <div style={{ fontSize: 24 }}>💰</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 800, fontSize: 18 }}>₹{myCommissionStats.total.toLocaleString('en-IN')} earned this month</div>
+                    <div style={{ fontSize: 12, opacity: 0.75 }}>{myCommissionStats.ticketCount} {myCommissionStats.ticketCount === 1 ? 'ticket' : 'tickets'} sold · ₹{currentMarketer.commission_amount}/ticket</div>
+                  </div>
+                </div>
+              )}
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 700, fontSize: 22 }}>People</div>
+                <div style={{ fontWeight: 700, fontSize: 22 }}>{currentMarketer ? 'My Leads' : 'People'}</div>
                 <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
                   {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
                 </span>
@@ -3722,6 +3862,80 @@ export default function AdminPanel() {
           );
         })()}
 
+        {/* ── MARKETERS TAB (admin only) ───────────────────────────────────── */}
+        {tab === 'marketers' && adminRole === 'admin' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 22 }}>Marketers</div>
+              <span style={{ fontSize: 13, color: '#888' }}>{marketers.length} {marketers.length === 1 ? 'marketer' : 'marketers'}</span>
+              <div style={{ flex: 1 }} />
+              <button style={s.btn()} onClick={() => setAddingMarketer(true)}>+ Add Marketer</button>
+            </div>
+
+            <div style={{ background: '#fef3c7', border: '1.5px solid #fcd34d', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#92400e', lineHeight: 1.55 }}>
+              <b>How this works:</b> add a marketer here, then add their email to <code>admin_users</code> with role <code>ops</code> in Supabase. When they log in, they only see leads assigned to them. Assignment is round-robin per event — assign marketers to events from the event-edit form.
+            </div>
+
+            {addingMarketer && (
+              <div style={{ background: '#fff', border: '1.5px solid #e0e0e0', borderRadius: 12, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 120px auto auto', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={s.label}>Email</label>
+                  <input style={s.input} placeholder="marketer@example.com" value={newMarketerEmail} onChange={e => setNewMarketerEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>Name</label>
+                  <input style={s.input} placeholder="Full name" value={newMarketerName} onChange={e => setNewMarketerName(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>₹ / ticket</label>
+                  <input style={s.input} type="number" value={newMarketerCommission} onChange={e => setNewMarketerCommission(e.target.value)} />
+                </div>
+                <button style={s.btn()} disabled={savingMarketer} onClick={saveNewMarketer}>{savingMarketer ? 'Saving…' : 'Save'}</button>
+                <button style={s.outlineBtn} onClick={() => { setAddingMarketer(false); setNewMarketerEmail(''); setNewMarketerName(''); setNewMarketerCommission('50'); }}>Cancel</button>
+              </div>
+            )}
+
+            <div style={{ background: '#fff', border: '1.5px solid #eee', borderRadius: 12, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#fafafa', borderBottom: '1.5px solid #eee' }}>
+                    {['Name', 'Email', '₹ / ticket', 'Tickets sold', 'Total earned', 'Status', ''].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700, color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {marketers.length === 0 && (
+                    <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#888' }}>No marketers yet. Click "+ Add Marketer".</td></tr>
+                  )}
+                  {marketers.map(mk => {
+                    const stats = marketerStats[mk.id] ?? { total: 0, ticketCount: 0 };
+                    return (
+                      <tr key={mk.id} style={{ borderBottom: '1px solid #f4f4f4', opacity: mk.active ? 1 : 0.5 }}>
+                        <td style={{ padding: '12px 14px', fontWeight: 600 }}>{mk.name}</td>
+                        <td style={{ padding: '12px 14px', color: '#666' }}>{mk.email}</td>
+                        <td style={{ padding: '12px 14px' }}>₹{mk.commission_amount}</td>
+                        <td style={{ padding: '12px 14px' }}>{stats.ticketCount}</td>
+                        <td style={{ padding: '12px 14px', fontWeight: 700 }}>₹{stats.total.toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <span style={{ background: mk.active ? '#dcfce7' : '#fee2e2', color: mk.active ? '#15803d' : '#b91c1c', padding: '3px 9px', borderRadius: 6, fontWeight: 700, fontSize: 11 }}>
+                            {mk.active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                          <button style={s.outlineBtn} onClick={() => toggleMarketerActive(mk)}>
+                            {mk.active ? 'Deactivate' : 'Reactivate'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* ── SETTINGS TAB ─────────────────────────────────────────────────── */}
         {tab === 'settings' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
@@ -3802,6 +4016,58 @@ export default function AdminPanel() {
           </div>
         )}
 
+      </div>
+    </div>
+  );
+}
+
+// ─── MARKETER ASSIGNMENT (per event) ──────────────────────────────────────
+// Renders below the TripForm. Picking marketers writes to event_marketers;
+// the DB redistribute trigger handles fanning existing applications across
+// the new set (no client-side redistribute needed).
+function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, onOpen, s }: {
+  eventSlug: string;
+  marketers: Array<{ id: string; name: string; email: string }>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  onOpen?: () => void;
+  s: any;
+}) {
+  React.useEffect(() => { onOpen?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (id: string) => {
+    if (selectedIds.includes(id)) onChange(selectedIds.filter(x => x !== id));
+    else onChange([...selectedIds, id]);
+  };
+  return (
+    <div style={{ marginTop: 18, padding: 16, background: '#fafafa', borderRadius: 12, border: '1.5px solid #eee' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+        Marketers on this event
+      </div>
+      {marketers.length === 0 ? (
+        <div style={{ fontSize: 13, color: '#888' }}>No active marketers. Add them in the Marketers tab.</div>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {marketers.map(mk => {
+            const on = selectedIds.includes(mk.id);
+            return (
+              <button
+                key={mk.id}
+                type="button"
+                onClick={() => toggle(mk.id)}
+                style={{
+                  padding: '7px 14px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#d7d7d7'),
+                  background: on ? '#111' : '#fff', color: on ? '#fff' : '#555',
+                  fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                {on ? '✓ ' : ''}{mk.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
+        New applications round-robin among the selected marketers. Existing unassigned/unconverted leads auto-redistribute when you change this list.
       </div>
     </div>
   );
