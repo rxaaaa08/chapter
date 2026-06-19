@@ -209,8 +209,6 @@ export default function AdminPanel() {
   const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [planDoubts, setPlanDoubts] = useState<any[]>([]);
   const [doubtsLoadError, setDoubtsLoadError] = useState('');
-  const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
-  const [approvedDoubtIds, setApprovedDoubtIds] = useState<Set<string>>(new Set());
   const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
   const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
@@ -312,6 +310,18 @@ export default function AdminPanel() {
   const [currentMarketer, setCurrentMarketer] = useState<{ id: string; name: string; email: string; commission_amount: number } | null>(null);
   const [myCommissionStats, setMyCommissionStats] = useState<{ total: number; ticketCount: number } | null>(null);
   const [marketers, setMarketers] = useState<Array<{ id: string; email: string; name: string; commission_amount: number; active: boolean }>>([]);
+  // id → name map for tagging each lead's marketer in the admin Call view.
+  const [marketerNameById, setMarketerNameById] = useState<Record<string, string>>({});
+  // Transparent team board (active marketers' tickets sold + earned, all-time),
+  // shown on the marketer's People tab. Peers' names + totals only.
+  const [marketerBoard, setMarketerBoard] = useState<Array<{ marketer_id: string; name: string; tickets_sold: number; estimated_earning: number }>>([]);
+  // Performance tab: founder P&L summary (RPC) + editable fixed-costs ledger.
+  const [marketersLoading, setMarketersLoading] = useState(false);
+  const [perfSummary, setPerfSummary] = useState<any | null>(null);
+  const [fixedCosts, setFixedCosts] = useState<Array<{ id: string; label: string; amount: number; active: boolean }>>([]);
+  const [costEdits, setCostEdits] = useState<Record<string, string>>({});
+  const [newFixedLabel, setNewFixedLabel] = useState('');
+  const [newFixedAmount, setNewFixedAmount] = useState('');
   const [marketerStats, setMarketerStats] = useState<Record<string, { total: number; ticketCount: number }>>({});
   const [eventMarketersMap, setEventMarketersMap] = useState<Record<string, string[]>>({});
   const [addingMarketer, setAddingMarketer] = useState(false);
@@ -561,11 +571,17 @@ export default function AdminPanel() {
   // Admin-only. Pulls the marketer roster, their commission totals, and
   // the event_marketers map for use in the event-edit form.
   const loadMarketersData = async () => {
-    const [{ data: mkRows }, { data: salesRows }, { data: emRows }] = await Promise.all([
+    setMarketersLoading(true);
+    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }] = await Promise.all([
       supabase.from('call_marketers').select('id, email, name, commission_amount, active').order('created_at'),
       supabase.from('marketer_sales').select('marketer_id, amount'),
       supabase.from('event_marketers').select('event_slug, marketer_id'),
+      supabase.rpc('get_performance_summary'),
+      supabase.from('fixed_costs').select('*').order('created_at'),
     ]);
+    setMarketersLoading(false);
+    setPerfSummary(perfRows ?? null);
+    setFixedCosts((fcRows ?? []) as any);
     setMarketers((mkRows ?? []) as any);
     const stats: Record<string, { total: number; ticketCount: number }> = {};
     (salesRows ?? []).forEach((r: any) => {
@@ -626,14 +642,45 @@ export default function AdminPanel() {
     logAdminAction('event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
   };
 
+  // ── Performance: per-event cost-per-ticket + fixed-costs ledger ─────────────
+  const saveEventCost = async (eventId: string) => {
+    const val = Number(costEdits[eventId]);
+    if (!Number.isFinite(val) || val < 0) { showToast('Enter a valid cost'); return; }
+    const { error } = await supabase.from('events').update({ cost_per_ticket: val }).eq('id', eventId);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast('Cost saved');
+    loadMarketersData();
+  };
+  const addFixedCost = async () => {
+    const label = newFixedLabel.trim();
+    const amount = Number(newFixedAmount);
+    if (!label || !Number.isFinite(amount) || amount < 0) { showToast('Enter a label and amount'); return; }
+    const { error } = await supabase.from('fixed_costs').insert({ label, amount });
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    setNewFixedLabel(''); setNewFixedAmount('');
+    loadMarketersData();
+  };
+  const removeFixedCost = async (id: string) => {
+    const { error } = await supabase.from('fixed_costs').delete().eq('id', id);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    loadMarketersData();
+  };
+
   const loadApplications = async () => {
     setApplicationsLoading(true);
-    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }] = await Promise.all([
+    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }, { data: marketerRows }, { data: boardRows }] = await Promise.all([
       fetchAllRows('applications', 'created_at'),
       fetchAllRows('doubt_submissions', 'submitted_at'),
       supabase.from('events').select('slug, invite_slug'),
       fetchAllRows('plan_doubts', 'created_at'),
+      // Roster (id → name) so the admin Call view can tag each lead's marketer.
+      // RLS returns all rows to admins, just the caller's own row to a marketer.
+      supabase.from('call_marketers').select('id, name'),
+      // Transparent team board (peers' tickets sold + earned) for marketers.
+      supabase.rpc('get_marketer_board'),
     ]);
+    if (marketerRows) setMarketerNameById(Object.fromEntries(marketerRows.map((m: any) => [m.id, m.name])));
+    if (boardRows) setMarketerBoard(boardRows as any);
     console.log('[loadApplications] applications:', data?.length ?? 0, 'doubt_submissions:', doubtsRows?.length ?? 0, doubtsErr ? `(doubts error: ${doubtsErr.message} | ${doubtsErr.details} | ${doubtsErr.hint})` : '');
     if (doubtsErr) {
       console.error('[loadApplications] doubt_submissions error:', doubtsErr);
@@ -835,84 +882,6 @@ export default function AdminPanel() {
     }
 
     setApprovingId(null);
-  };
-
-  const approveDoubtSubmission = async (submission: any) => {
-    const id = submission.id ?? `${submission.phone}-${submission.submitted_at}`;
-    setApprovingDoubtId(id);
-
-    // Resolve event_slug from the stored event_title
-    const rawTitle = (submission.event_title || '').trim();
-    const matchedTrip = trips.find(t =>
-      t.title === rawTitle || t.slug === rawTitle || t.invite_slug === rawTitle
-    );
-    const eventSlug = matchedTrip?.slug ?? rawTitle;
-
-    if (!eventSlug) {
-      showToast('⚠️ Could not determine event slug for this submission.');
-      setApprovingDoubtId(null);
-      return;
-    }
-
-    const phone = (submission.phone ?? '').replace(/\D/g, '').slice(-10);
-
-    // Check for existing application to avoid duplicates
-    const { data: existing } = await supabase
-      .from('applications')
-      .select('id, status')
-      .eq('phone', phone)
-      .eq('event_slug', eventSlug)
-      .maybeSingle();
-
-    if (existing) {
-      if (existing.status === 'invited' || existing.status === 'advance_paid' || existing.status === 'fully_paid') {
-        showToast(`ℹ️ Already ${existing.status.replace('_', ' ')} — no change needed.`);
-        setApprovedDoubtIds(prev => new Set(prev).add(id));
-        setApprovingDoubtId(null);
-        return;
-      }
-      // Update existing application to invited
-      const { error } = await supabase
-        .from('applications')
-        .update({ status: 'invited' })
-        .eq('id', existing.id);
-      if (error) {
-        showToast(`❌ Could not update application: ${error.message}`);
-      } else {
-        showToast(`✅ ${submission.name || 'Person'} updated to invited!`);
-        setApprovedDoubtIds(prev => new Set(prev).add(id));
-        logAdminAction('application_approve_from_doubt', 'applications', existing.id, {
-          phone, event_slug: eventSlug, previous_status: existing.status, doubt_id: id,
-        });
-      }
-      setApprovingDoubtId(null);
-      return;
-    }
-
-    // Create a new application row
-    const { data: createdApp, error } = await supabase.from('applications').insert({
-      event_slug: eventSlug,
-      name: (submission.name ?? '').trim() || 'Unknown',
-      phone,
-      gender: '',
-      why_join: 'doubt resolved manually',
-      selected_date: submission.selected_date ?? null,
-      selected_city: submission.city ?? null,
-      status: 'invited',
-      call_status: 'called',
-      call_notes: `Approved via doubt: "${(submission.doubt || submission.message || '').slice(0, 80)}"`,
-    }).select('id').maybeSingle();
-
-    if (error) {
-      showToast(`❌ Could not create application: ${error.message}`);
-    } else {
-      showToast(`✅ ${submission.name || 'Person'} approved & invited!`);
-      setApprovedDoubtIds(prev => new Set(prev).add(id));
-      logAdminAction('application_create_from_doubt', 'applications', createdApp?.id ?? null, {
-        phone, event_slug: eventSlug, doubt_id: id, name: submission.name ?? null,
-      });
-    }
-    setApprovingDoubtId(null);
   };
 
   const saveCallInfo = async (id: string) => {
@@ -1527,7 +1496,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); }}>Marketers</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
@@ -2504,6 +2473,23 @@ export default function AdminPanel() {
               || pays.all.some((p: any) => String(p.txnid ?? '').toLowerCase().includes(searchLower));
             return eventMatch && statusMatch && searchMatch;
           });
+          // A doubt is "handled" the moment that person actually submits an
+          // application for the same event — a real, non-gameable outcome (a
+          // marketer can't fake it; the person fills the form themselves).
+          // Derived from the applications list, so it's always accurate.
+          const last10 = (p: any) => String(p ?? '').replace(/\D/g, '').slice(-10);
+          const appliedKeys = new Set(
+            applications.map(a => `${last10(a.phone)}__${String(a.event_slug ?? '').toLowerCase()}`)
+          );
+          const doubtHasApplied = (submission: any): boolean => {
+            const phone10 = last10(submission.phone);
+            if (!phone10) return false;
+            const raw = (submission.event_title || submission.event_slug || '').trim();
+            const trip = trips.find(t => t.title === raw || t.slug === raw || t.invite_slug === raw);
+            const slug = String(trip?.slug ?? submission.event_slug ?? '').toLowerCase();
+            return !!slug && appliedKeys.has(`${phone10}__${slug}`);
+          };
+
           const filteredDoubtSubmissions = (planDoubts ?? []).filter((submission) => {
             const submissionPlan = getDoubtSubmissionPlanName(submission);
             const planMatch = qnaDoubtPlanFilter === 'all'
@@ -2512,7 +2498,8 @@ export default function AdminPanel() {
             const cityMatch = qnaDoubtCityFilter === 'all'
               || (submission.city ?? '').toLowerCase().includes(qnaDoubtCityFilter.toLowerCase());
             return planMatch && cityMatch;
-          });
+          // Open doubts (not yet applied) surface above handled ones.
+          }).sort((a, b) => Number(doubtHasApplied(a)) - Number(doubtHasApplied(b)));
 
           const statusColor = (status: string) => {
             if (status === 'fully_paid')   return '#16a34a';
@@ -2591,20 +2578,67 @@ export default function AdminPanel() {
             <div>
               {/* Commission banner — only when the logged-in user is a marketer.
                   Counts this calendar month's sales (status moved to fully_paid). */}
-              {currentMarketer && myCommissionStats && (
-                <div style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)', borderRadius: 16, padding: '14px 18px', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 14, color: '#111' }}>
-                  <div style={{ fontSize: 24 }}>💰</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 800, fontSize: 18 }}>₹{myCommissionStats.total.toLocaleString('en-IN')} earned this month</div>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>{myCommissionStats.ticketCount} {myCommissionStats.ticketCount === 1 ? 'ticket' : 'tickets'} sold · ₹{currentMarketer.commission_amount}/ticket</div>
+              {currentMarketer && myCommissionStats && (() => {
+                const fullyPaid   = applications.filter(a => a.status === 'fully_paid').length;
+                const advanceOnly = applications.filter(a => a.status === 'advance_paid').length;
+                const paidAdvance = fullyPaid + advanceOnly;
+                const inr = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
+                const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
+                  <div style={{ flex: 1, minWidth: 120, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 11, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+                    <div style={{ fontSize: accent ? 30 : 22, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 4 }}>{value}</div>
                   </div>
+                );
+                return (
+                <div style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Your stats */}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Tile label="Paid advance" value={paidAdvance} />
+                    <Tile label="Fully paid" value={fullyPaid} />
+                    <Tile label="Estimated earning" value={inr(paidAdvance * (currentMarketer.commission_amount || 0))} accent />
+                  </div>
+                  <div style={{ fontSize: 11, color: '#999', paddingLeft: 2 }}>
+                    Estimated if everyone who paid the advance also pays their full balance — you're paid ₹{currentMarketer.commission_amount}/ticket only on full payment.
+                  </div>
+
+                  {/* Transparent team board */}
+                  {marketerBoard.length > 0 && (
+                    <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 360 }}>
+                        <thead>
+                          <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <th style={{ textAlign: 'left', padding: '8px 16px' }}>The Team</th>
+                            <th style={{ textAlign: 'center', padding: '8px 12px' }}>Tickets Sold</th>
+                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Estimated Earnings</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {marketerBoard.map((m) => {
+                            const isMe = m.marketer_id === currentMarketer.id;
+                            return (
+                              <tr key={m.marketer_id} style={{ background: isMe ? '#f0fdf4' : 'transparent', borderTop: '1px solid #f5f5f0' }}>
+                                <td style={{ padding: '10px 16px', fontWeight: isMe ? 700 : 500, color: '#111' }}>{m.name}{isMe && <span style={{ fontSize: 10, color: '#16a34a', marginLeft: 6 }}>you</span>}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', color: '#111', fontWeight: 600 }}>{m.tickets_sold}</td>
+                                <td style={{ padding: '10px 16px', textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>{inr(m.estimated_earning)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-              )}
+                );
+              })()}
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 700, fontSize: 22 }}>{currentMarketer ? 'My Leads' : 'People'}</div>
                 <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
                   {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
+                  {peopleMode === 'doubts' && (() => {
+                    const appliedCount = filteredDoubtSubmissions.filter(doubtHasApplied).length;
+                    return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} applied</span> : null;
+                  })()}
                 </span>
                 <div style={{ flex: 1 }} />
                 <button
@@ -2721,11 +2755,12 @@ export default function AdminPanel() {
                     const contactMessage = `Hi ${submission.name ? submission.name.split(' ')[0] : 'there'}, we're reaching out from chapter அ regarding your doubt about ${eventName}.`;
                     const contactHref = phoneDigits ? `https://wa.me/91${phoneDigits.slice(-10)}?text=${encodeURIComponent(contactMessage)}` : '';
                     const isLast = index === filteredDoubtSubmissions.length - 1;
+                    const applied = doubtHasApplied(submission);
 
                     return (
                       <div
                         key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`}
-                        style={{ padding: '14px 20px', borderBottom: isLast ? 'none' : '1px solid #f0f0f0' }}
+                        style={{ padding: '14px 20px', borderBottom: isLast ? 'none' : '1px solid #f0f0f0', background: applied ? '#fafafa' : '#fff', opacity: applied ? 0.65 : 1 }}
                       >
                         {/* Doubt text — primary, full width, fully readable */}
                         <p style={{ fontSize: 15, color: '#111', lineHeight: 1.55, margin: '0 0 10px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
@@ -2745,6 +2780,11 @@ export default function AdminPanel() {
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                            {applied && (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 999, padding: '3px 9px' }}>
+                                ✓ Applied
+                              </span>
+                            )}
                             {phoneDigits && (
                               <span style={{ fontSize: 12, color: '#555', fontVariantNumeric: 'tabular-nums' }}>
                                 +91 {phoneDigits.slice(-10)}
@@ -2762,32 +2802,6 @@ export default function AdminPanel() {
                             ) : (
                               <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
                             )}
-                            {(() => {
-                              const sid = submission.id ?? `${submission.phone}-${submission.submitted_at}`;
-                              const alreadyApproved = approvedDoubtIds.has(sid);
-                              const isApproving = approvingDoubtId === sid;
-                              return (
-                                <button
-                                  onClick={() => approveDoubtSubmission(submission)}
-                                  disabled={isApproving || alreadyApproved}
-                                  title="Approve & create invite"
-                                  style={{
-                                    padding: '5px 12px',
-                                    fontSize: 12,
-                                    borderRadius: 8,
-                                    border: '1px solid #d1d5db',
-                                    background: alreadyApproved ? '#f0fdf4' : '#fafafa',
-                                    color: alreadyApproved ? '#16a34a' : '#6b7280',
-                                    cursor: isApproving || alreadyApproved ? 'default' : 'pointer',
-                                    fontWeight: 500,
-                                    opacity: isApproving ? 0.6 : 1,
-                                    transition: 'all 0.15s',
-                                  }}
-                                >
-                                  {isApproving ? '…' : alreadyApproved ? '✓ Approved' : 'Approve'}
-                                </button>
-                              );
-                            })()}
                           </div>
                         </div>
                       </div>
@@ -2863,6 +2877,12 @@ export default function AdminPanel() {
                               >
                                 {callStatusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                               </select>
+                              {/* Admin-only: which marketer owns this lead (first 3 letters). */}
+                              {adminRole === 'admin' && app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id] && (
+                                <div title={marketerNameById[app.assigned_marketer_id]} style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500 }}>
+                                  {marketerNameById[app.assigned_marketer_id].slice(0, 3)}
+                                </div>
+                              )}
                             </td>
                             <td style={{ padding: '11px 12px', width: 150 }}>
                               {openDoubts.length > 0 && (
@@ -3261,6 +3281,17 @@ export default function AdminPanel() {
             appsApprovedByEvent[row.event_id] = row.approved || 0;
             appsAdvancePaidByEvent[row.event_id] = row.advance_paid || 0;
           });
+          // Doubt Solved Rate: per event, how many doubt-askers went on to apply.
+          // (Derived server-side in the RPC; see doubts_per_event.)
+          const doubtsTotalByEvent: Record<string, number> = {};
+          const doubtsSolvedByEvent: Record<string, number> = {};
+          ((summary?.doubts_per_event ?? []) as Array<{ event_id: string; total: number; solved: number }>).forEach((row) => {
+            doubtsTotalByEvent[row.event_id] = row.total || 0;
+            doubtsSolvedByEvent[row.event_id] = row.solved || 0;
+          });
+          const totalDoubtsAll  = Object.values(doubtsTotalByEvent).reduce((s, n) => s + n, 0);
+          const solvedDoubtsAll = Object.values(doubtsSolvedByEvent).reduce((s, n) => s + n, 0);
+          const doubtSolvedPctAll = totalDoubtsAll > 0 ? Math.round((solvedDoubtsAll / totalDoubtsAll) * 100) : null;
 
           // Cities pie (count of city_selected rows per city). The tracked
           // value is often a pickup-point phrasing — "I'll join in Chennai",
@@ -3830,6 +3861,69 @@ export default function AdminPanel() {
                     })}
                   </div>
 
+                  {/* Doubt Solved Rate — of people who asked a doubt, how many
+                      went on to actually submit an application for that event.
+                      Derived from real applications (doubts_per_event in the
+                      RPC), so it can't be gamed. Global figure + per-event. */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Doubt Solved Rate</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
+                    Of people who asked a doubt, how many went on to submit an application for that event. A high rate means doubts are being resolved into real applications.
+                  </div>
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                    {/* Overall (global) */}
+                    {(() => {
+                      const pct = doubtSolvedPctAll;
+                      const hasData = totalDoubtsAll > 0;
+                      return (
+                        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #f0f0ea' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: '#111' }}>Overall (all events)</span>
+                            <span style={{ fontSize: 20, fontWeight: 800, color: !hasData ? '#bbb' : pct! >= 70 ? '#4ade80' : pct! >= 40 ? '#fcd34d' : '#fca5a5' }}>
+                              {hasData ? `${pct}%` : '—%'}
+                            </span>
+                          </div>
+                          <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ width: hasData ? `${Math.min(100, pct!)}%` : '4%', height: '100%', background: !hasData ? '#e5e5e5' : pct! >= 70 ? '#bbf7d0' : pct! >= 40 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                            {hasData ? `${solvedDoubtsAll} of ${totalDoubtsAll} doubts led to an application` : 'no doubts in this window'}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Per-event breakdown — events that have at least one doubt */}
+                    {(() => {
+                      const doubtEvents = Object.keys(doubtsTotalByEvent)
+                        .filter(id => doubtsTotalByEvent[id] > 0)
+                        .sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
+                      if (doubtEvents.length === 0) {
+                        return <div style={{ color: '#bbb', fontSize: 13 }}>No doubts in this window</div>;
+                      }
+                      return doubtEvents.map((eventId, idx) => {
+                        const total  = doubtsTotalByEvent[eventId]  || 0;
+                        const solved = doubtsSolvedByEvent[eventId] || 0;
+                        const pct = total > 0 ? Math.round((solved / total) * 100) : null;
+                        const last = idx === doubtEvents.length - 1;
+                        return (
+                          <div key={eventId} style={{ marginBottom: last ? 0 : 14, paddingBottom: last ? 0 : 14, borderBottom: last ? 'none' : '1px solid #f0f0ea' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
+                              <span style={{ fontSize: 20, fontWeight: 800, color: pct! >= 70 ? '#4ade80' : pct! >= 40 ? '#fcd34d' : '#fca5a5' }}>
+                                {pct}%
+                              </span>
+                            </div>
+                            <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                              <div style={{ width: `${Math.min(100, pct!)}%`, height: '100%', background: pct! >= 70 ? '#bbf7d0' : pct! >= 40 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                            </div>
+                            <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+                              {solved} of {total} doubt-askers applied
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+
                   {/* DB-storage footer. Weekly cron writes a snapshot row; this
                       reads the most recent one. Color tints amber > 50% and
                       red > 80% of the 500 MB free tier so unusual growth gets
@@ -3862,11 +3956,197 @@ export default function AdminPanel() {
           );
         })()}
 
-        {/* ── MARKETERS TAB (admin only) ───────────────────────────────────── */}
+        {/* ── PERFORMANCE TAB (admin only) ─────────────────────────────────── */}
         {tab === 'marketers' && adminRole === 'admin' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 22 }}>Marketers</div>
+            {(() => {
+              const ps = perfSummary || {};
+              const num = (x: any) => Number(x) || 0;
+              const inr = (n: any) => '₹' + Math.round(num(n)).toLocaleString('en-IN');
+              const fixed = num(ps.fixed_costs_total);
+              const perEvent: any[] = ps.per_event || [];
+              const perMarketer: any[] = ps.per_marketer || [];
+              const monthName = (ym: string) => { const [y, m] = (ym || '').split('-'); return new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-US', { month: 'short', year: '2-digit' }); };
+              // Committed-income forecast: each event's profit lands in its
+              // balance-due month. Fixed costs hit every month. profit shown is
+              // net of fixed.
+              const forecast: any[] = (ps.forecast || []).map((f: any) => ({ ...f, net: num(f.profit) - fixed }));
+              const thisMonthNet = num(ps.this_month_profit) - fixed;
+              const maxAbs = Math.max(1, ...forecast.map(f => Math.abs(num(f.net))));
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      onClick={() => loadMarketersData()}
+                      disabled={marketersLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: marketersLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: marketersLoading ? 0.55 : 1 }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: marketersLoading ? 'spin 0.8s linear infinite' : 'none' }}>
+                        <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                      {marketersLoading ? 'Refreshing' : 'Refresh'}
+                    </button>
+                  </div>
+
+                  {/* Committed-income forecast — one number + next 6 months */}
+                  <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 14, padding: '20px 24px' }}>
+                    <div style={{ fontSize: 13, color: '#999', fontWeight: 600, marginBottom: 6 }}>
+                      Profit this month{forecast[0] ? ` (${monthName(forecast[0].month)})` : ''} — committed, assumes balances get paid
+                    </div>
+                    <div style={{ fontSize: 38, fontWeight: 800, color: thisMonthNet >= 0 ? '#111' : '#dc2626', lineHeight: 1 }}>{inr(thisMonthNet)}</div>
+                    <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
+                      Total committed over the next 6 months: <b style={{ color: '#16a34a' }}>{inr(forecast.reduce((s, f) => s + num(f.net), 0))}</b>
+                    </div>
+
+                    {/* Next 6 months bars */}
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0ea' }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>Next 6 months</div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 150 }}>
+                        {forecast.map((f, i) => {
+                          const p = num(f.net);
+                          const h = Math.round((Math.abs(p) / maxAbs) * 95);
+                          const isThis = i === 0;
+                          return (
+                            <div key={f.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 4 }}>
+                              <div style={{ fontSize: 11, color: p ? '#111' : '#ccc', fontWeight: 600 }}>{inr(p)}</div>
+                              <div style={{ width: '64%', height: Math.max(h, p === 0 ? 0 : 3), minHeight: p === 0 ? 2 : 3, background: p > 0 ? (isThis ? '#22c55e' : '#bbf7d0') : p < 0 ? '#fecaca' : '#eee', borderRadius: 4 }} />
+                              <div style={{ fontSize: 10, color: isThis ? '#111' : '#aaa', fontWeight: isThis ? 700 : 400 }}>{monthName(f.month)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#bbb', marginTop: 12 }}>
+                      Committed income only — profit from tickets already sold, shown in the month each event's balance is due. It grows as you sell more, so you can see next month filling up and line up your next event.
+                    </div>
+                  </div>
+
+                  {/* Per-event unit economics (editable cost per ticket) */}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Per-Event Unit Economics</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Type your cost to deliver one ticket. Price = full ticket (advance + balance). Profit per ticket = price − your cost − ₹50 commission.</div>
+                    <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 620 }}>
+                        <thead>
+                          <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <th style={{ textAlign: 'left', padding: '8px 16px' }}>Event</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Tickets</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Price</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Your cost/ticket</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Profit/ticket</th>
+                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Margin</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {perEvent.length === 0 && <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No sales yet.</td></tr>}
+                          {perEvent.map((ev) => {
+                            const tickets = num(ev.tickets);
+                            const price = num(ev.price_per_ticket);
+                            const cost = costEdits[ev.event_id] !== undefined ? Number(costEdits[ev.event_id]) || 0 : num(ev.cost_per_ticket);
+                            const perTicket = price - cost - 50;
+                            const margin = price > 0 ? Math.round((perTicket / price) * 100) : null;
+                            const dirty = costEdits[ev.event_id] !== undefined && Number(costEdits[ev.event_id]) !== num(ev.cost_per_ticket);
+                            return (
+                              <tr key={ev.event_id} style={{ borderTop: '1px solid #f5f5f0' }}>
+                                <td style={{ padding: '10px 16px', fontWeight: 600, color: '#111' }}>{ev.title}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{tickets}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{inr(price)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    ₹<input type="number" min={0} value={costEdits[ev.event_id] ?? String(num(ev.cost_per_ticket))}
+                                      onChange={e => setCostEdits(prev => ({ ...prev, [ev.event_id]: e.target.value }))}
+                                      onWheel={e => (e.target as HTMLInputElement).blur()}
+                                      style={{ width: 70, padding: '4px 6px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, textAlign: 'right' }} />
+                                    {dirty && <button onClick={() => saveEventCost(ev.event_id)} style={{ ...s.btn('#111'), padding: '3px 8px', fontSize: 11 }}>Save</button>}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: perTicket >= 0 ? '#16a34a' : '#dc2626' }}>{inr(perTicket)}</td>
+                                <td style={{ padding: '10px 16px', textAlign: 'right', color: margin == null ? '#bbb' : margin >= 40 ? '#16a34a' : margin >= 0 ? '#d97706' : '#dc2626' }}>{margin == null ? '—' : `${margin}%`}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Marketer ROI */}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Marketer ROI</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Leads assigned vs. how many they converted (Conv = sold ÷ leads), plus the revenue they generated and commission earned.</div>
+                    <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 680 }}>
+                        <thead>
+                          <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <th style={{ textAlign: 'left', padding: '8px 16px' }}>Marketer</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Leads</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Sold</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Conv</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Revenue generated</th>
+                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Commission</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {perMarketer.map((m) => {
+                            const assigned = num(m.assigned);
+                            const sold = num(m.tickets);
+                            const conv = assigned > 0 ? Math.round((sold / assigned) * 100) : null;
+                            return (
+                            <tr key={m.marketer_id} style={{ borderTop: '1px solid #f5f5f0', opacity: m.active ? 1 : 0.5 }}>
+                              <td style={{ padding: '10px 16px', fontWeight: 600, color: '#111' }}>{m.name}{!m.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>inactive</span>}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{assigned}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{sold}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: conv == null ? '#bbb' : conv >= 40 ? '#16a34a' : conv >= 15 ? '#d97706' : '#dc2626' }}>{conv == null ? '—' : `${conv}%`}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{inr(m.revenue_generated)}</td>
+                              <td style={{ padding: '10px 16px', textAlign: 'right', color: '#555' }}>{inr(m.commission)}</td>
+                            </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Fixed costs ledger */}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Monthly Fixed Costs</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Recurring tools/subscriptions (AiSensy, Claude, …). These are subtracted from your monthly profit above.</div>
+                    <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '12px 16px' }}>
+                      {fixedCosts.length === 0 && <div style={{ color: '#bbb', fontSize: 13, marginBottom: 10 }}>No fixed costs yet.</div>}
+                      {fixedCosts.map(fc => (
+                        <div key={fc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #f5f5f0' }}>
+                          <span style={{ flex: 1, fontSize: 13, color: '#111' }}>{fc.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>{inr(fc.amount)}/mo</span>
+                          <button onClick={() => removeFixedCost(fc.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12 }}>Remove</button>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                        <input value={newFixedLabel} onChange={e => setNewFixedLabel(e.target.value)} placeholder="e.g. AiSensy"
+                          style={{ flex: 1, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }} />
+                        <input type="number" min={0} value={newFixedAmount} onChange={e => setNewFixedAmount(e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} placeholder="₹/mo"
+                          style={{ width: 90, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }} />
+                        <button style={s.btn()} onClick={addFixedCost}>Add</button>
+                      </div>
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0ea', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                        <span style={{ color: '#888', fontWeight: 600 }}>Total fixed costs</span>
+                        <span style={{ fontWeight: 700, color: '#111' }}>{inr(ps.fixed_costs_total)}/mo</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
+    Each event's profit (full price − your ticket cost − ₹50 commission, summed over tickets sold) lands in the month its balance is due, minus fixed costs. Only tickets already sold count — it's a committed-income forecast, not a sales projection. Amounts are net of PayU fees, in IST months. Keep your ticket costs and fixed costs current.
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* ── Marketer management ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Marketers</div>
               <span style={{ fontSize: 13, color: '#888' }}>{marketers.length} {marketers.length === 1 ? 'marketer' : 'marketers'}</span>
               <div style={{ flex: 1 }} />
               <button style={s.btn()} onClick={() => setAddingMarketer(true)}>+ Add Marketer</button>
@@ -3992,25 +4272,18 @@ export default function AdminPanel() {
                         {new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </span>
                     </div>
-                    <button
-                      style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
-                      onClick={() => removeNotifDevice(d.id)}
-                    >
-                      Remove
-                    </button>
+                    {adminRole === 'admin' && (
+                      <button
+                        style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+                        onClick={() => removeNotifDevice(d.id)}
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
 
-              <div style={{ marginTop: 16, padding: 12, background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
-                <p style={{ fontSize: 12, color: '#92400e', margin: 0, lineHeight: 1.6 }}>
-                  <strong>One-time setup required:</strong> Run this in the Supabase SQL editor once to wire up the DB triggers, replacing with your actual service role key (found at Supabase Dashboard → Settings → API):<br />
-                  <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: '#fff', borderRadius: 6, fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>
-                    ALTER DATABASE postgres SET app.settings.service_role_key = 'your-service-role-key-here';
-                  </code>
-                  Also add <strong>VAPID_PUBLIC_KEY</strong>, <strong>VAPID_PRIVATE_KEY</strong>, and <strong>VAPID_SUBJECT</strong> secrets to the <code>send-admin-push</code> Edge Function (same values as <code>send-push-notification</code>).
-                </p>
-              </div>
             </CollapsibleSection>
 
           </div>
