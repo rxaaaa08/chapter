@@ -2342,9 +2342,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const meetingPoint = journeyCardData?.meetingPoint || '';
                         const _cd3 = (selectedEvent as any).cityDetails?.[selectedCity];
                         const pricing = getMeetingPointPricing(selectedEvent, meetingPoint, selectedCity, _cd3?.price_full > 0 ? _cd3.price_full : undefined, _cd3?.price_advance > 0 ? _cd3.price_advance : undefined);
-                        const advanceStr = `₹${pricing.advance.toLocaleString('en-IN')}`;
-                        const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
                         const priceStr = `₹${pricing.total.toLocaleString('en-IN')}`;
+                        // Single-payment events charge the full price as the one payment, so
+                        // {advance} resolves to the full price (the step's label stays editable).
+                        const advanceStr = selectedEvent.paymentMode === 'full' ? priceStr : `₹${pricing.advance.toLocaleString('en-IN')}`;
+                        const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
 
                         // Social-proof count: legacy formula (capacity * 3 + applicationCount).
                         // Used to substitute the {application_count} placeholder in the
@@ -2367,11 +2369,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         };
 
                         const selectedDateEntry = selectedEvent.dates.find(d => d.date === bookingDate);
-                        const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? [
-                          { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
-                          { label: 'Remaining Balance', value: '{balance}', date: '' },
-                          { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
-                        ];
+                        const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? (
+                          selectedEvent.paymentMode === 'full'
+                            ? [
+                                { label: 'Single Entry', value: '{price}', date: '' },
+                                { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                              ]
+                            : [
+                                { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
+                                { label: 'Remaining Balance', value: '{balance}', date: '' },
+                                { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                              ]
+                        );
 
                         // Social-proof row: the last booking_steps entry whose label contains
                         // {application_count}. It's pulled OUT of the timeline list and used to

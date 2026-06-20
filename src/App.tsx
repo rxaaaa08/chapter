@@ -3657,14 +3657,21 @@ function NativeBookingTimeline({
 
   // Build steps list
   const steps = isFullPay
-    ? [
+    ? (() => {
         // Single-payment event: one full-price step, then any non-payment
         // booking steps (e.g. "Receive" details). No advance/balance split.
-        { label: 'Pay in full', value: '{price}', date: '' },
-        ...(bookingSteps ?? []).filter(s =>
+        // The payment step's label stays editable — it reuses the admin's
+        // payment (advance) Booking Step label, falling back to "Single Entry".
+        const all = bookingSteps ?? [];
+        const paymentStep = all.find(s => /advance/i.test(`${s.label} ${s.value}`));
+        const rest = all.filter(s =>
           !/advance|balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
-        ),
-      ]
+        );
+        return [
+          { label: paymentStep?.label || 'Single Entry', value: '{price}', date: '' },
+          ...rest,
+        ];
+      })()
     : isBalancePayment
     ? [
         // Row 0: advance — already paid
@@ -4319,7 +4326,7 @@ function NativePaymentOverlay({
 
           {/* Advance / Balance */}
           <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-200">
-            <span className="text-[14px] text-gray-700">{paymentType === 'full' ? 'Full Payment' : paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
+            <span className="text-[14px] text-gray-700">{paymentType === 'full' ? 'Single Entry' : paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
             <span className="text-[14px] font-medium text-gray-900">₹{priceAdvance.toLocaleString('en-IN')}</span>
           </div>
 
