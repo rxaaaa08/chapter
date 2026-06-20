@@ -622,7 +622,9 @@ function ApplicationForm({
         <div className="flex items-center justify-between px-1">
           <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">WhatsApp Number</label>
           {(form.phone.length > 0 || step1Attempted) && !/^[6-9]\d{9}$/.test(form.phone) && (
-            <span className="text-[11px] text-amber-500 font-medium">Invalid Number</span>
+            <span className="text-[11px] text-amber-500 font-medium">
+              {form.phone.startsWith('0') ? 'Your number cannot start with 0' : 'Invalid Number'}
+            </span>
           )}
         </div>
         <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${(form.phone.length > 0 || step1Attempted) && !/^[6-9]\d{9}$/.test(form.phone) ? 'ring-2 ring-red-500' : ''}`}>
@@ -4693,11 +4695,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                 ) : (
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
-                                  <p>Lock your spot (Advance)</p>
+                                  <p>Advance</p>
                                   <p className="text-2xl font-black text-black leading-tight">{formatINR(displayAdvance)}</p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1 text-[11px] font-semibold text-gray-700">
-                                  <p className="text-[11px]">Remaining balance</p>
+                                  <p className="text-[11px]">Remaining Balance</p>
                                   <p className="text-base font-semibold text-black">
                                     {formatINR(displayRemaining)}
                                   </p>
@@ -4736,7 +4738,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                     animate={{ x: ['-100%', '300%'] }}
                                     transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
                                   />
-                                  {(event.quickInfo?.find(item => item.label === 'Calendar CTA')?.value?.trim()) || 'Book Now'}
+                                  {(event.quickInfo?.find(item => item.label === 'Calendar CTA')?.value?.trim()) || (event.inviteOnly ? 'Apply Now' : 'Book Now')}
                                   <ArrowRight size={16} strokeWidth={3.0} />
                                 </button>
                               </div>
