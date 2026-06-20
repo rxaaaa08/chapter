@@ -104,6 +104,8 @@ export function mapDbEventToEvent(row: any): any {
     // description holds "The Essentials" copy (date / time / location).
     // (events.booking_flow is CHECK-constrained to 'payment' | 'whatsapp'.)
     bookingFlow: row.booking_flow ?? undefined,
+    // 'full' = single payment (one amount, no advance/balance split); 'split' default.
+    paymentMode: row.payment_mode ?? 'split',
     ctaLabel: row.cta_label ?? '',
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,

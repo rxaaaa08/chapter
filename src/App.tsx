@@ -2941,9 +2941,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               : isPaid
               ? `Hi ${firstName}, we're working on giving you the best ${nativeEventData?.title ?? 'trip'} experience!\n\nWe'll add you to the plan group chat & share further meeting point details${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' a few days before the plan'}.\n\nWhat would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50)
-              ? `Hi ${firstName}, out of all applications, your vibe matched our club perfectly!\n\nBut please note — the invitation does not reserve your spot. A spot is reserved for you once the advance is paid.\n\n${inviteReservedCount} out of ${totalSpots} spots are already reserved. What would you like to do now?`
+              ? `Hi ${firstName}, out of all applications, your vibe matched our club perfectly!\n\nBut please note — the invitation does not reserve your spot. A spot is reserved for you once ${isFullPay ? 'payment is made' : 'the advance is paid'}.\n\n${inviteReservedCount} out of ${totalSpots} spots are already reserved. What would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null)
-              ? `Hi ${firstName}, out of ${applicationPhrase} applications, your vibe matched our club perfectly!\n\nBut please note — invitation does not reserve your spot. We follow 1st come - 1st served basis.\n\nSpots are reserved for those who settle the advance first. What would you like to do?`
+              ? `Hi ${firstName}, out of ${applicationPhrase} applications, your vibe matched our club perfectly!\n\nBut please note — invitation does not reserve your spot. We follow 1st come - 1st served basis.\n\nSpots are reserved for those who settle ${isFullPay ? 'payment' : 'the advance'} first. What would you like to do?`
               : `Hi ${firstName}! What would you like to do now?`;
 
             const hasEssentials = !!(chatEventQuickInfo.length > 0 || chatEventTransportPlan[0]?.time || nativeEventData?.firstDate);

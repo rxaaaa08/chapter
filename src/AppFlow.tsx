@@ -108,6 +108,8 @@ interface Event {
   // 'whatsapp' = free community event; chat opens the WhatsApp sheet
   // instead of the details page (bookingUrl = WhatsApp invite link).
   bookingFlow?: string;
+  // 'full' = single payment (one "Single Entry" amount, no advance/balance split).
+  paymentMode?: string;
   ctaLabel?: string;
   announcements?: string[];
   inviteOnly?: boolean;
@@ -2380,7 +2382,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           if ((eventSteps[i].label || '').includes('{application_count}')) { socialProofIdx = i; break; }
                         }
                         const socialProofRow = socialProofIdx >= 0 ? eventSteps[socialProofIdx] : null;
-                        const steps = socialProofIdx >= 0 ? eventSteps.filter((_: any, i: number) => i !== socialProofIdx) : eventSteps;
+                        const steps = (socialProofIdx >= 0 ? eventSteps.filter((_: any, i: number) => i !== socialProofIdx) : eventSteps)
+                          // Single-payment events have no remaining-balance step.
+                          .filter((s: any) => selectedEvent.paymentMode === 'full' ? !/balance/i.test(`${s.label} ${s.value}`) : true);
 
                         const yellowTitle = socialProofRow?.value ? resolveValue(socialProofRow.value) : selectedEvent.title;
                         const yellowDateStr = (socialProofRow?.date) || bookingDate || selectedEvent.dates?.[0]?.date || '';
@@ -4836,6 +4840,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                   <p className="text-[11px] font-semibold text-gray-500">Total</p>
                                   <p className="text-2xl font-black text-black leading-tight">{formatINR(pricing.total)}</p>
                                 </div>
+                              </div>
+                                ) : event.paymentMode === 'full' ? (
+                              <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
+                                <p>Single Entry</p>
+                                <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
                               </div>
                                 ) : (
                               <div className="flex items-start justify-between gap-3">
