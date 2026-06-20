@@ -1980,13 +1980,22 @@ export default function AdminPanel() {
                       const activeDateRow = sortedDates.find(d => d.start_date === selectedDate);
                       const perDateSteps = (activeDateRow as any)?.booking_steps as Array<{ label: string; value: string; date: string }> | undefined;
                       const isNativeApp = trip.booking_url === 'native-application';
-                      const nativeDefaultSteps = [
-                        { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
-                        { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
-                        { label: 'remaining balance',                 value: '{balance}',               date: '' },
-                        { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
-                        { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
-                      ];
+                      const isFullPay = trip.payment_mode === 'full';
+                      // Single-payment native events have no remaining-balance step (4 rows).
+                      const nativeDefaultSteps = isFullPay
+                        ? [
+                            { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
+                            { label: 'if you\'re invited',               value: '{price}',                 date: '' },
+                            { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
+                            { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
+                          ]
+                        : [
+                            { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
+                            { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
+                            { label: 'remaining balance',                 value: '{balance}',               date: '' },
+                            { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
+                            { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
+                          ];
                       const defaultSteps = isNativeApp
                         ? (trip.booking_steps?.length ? trip.booking_steps : nativeDefaultSteps)
                         : trip.booking_steps ?? [
@@ -1994,15 +2003,21 @@ export default function AdminPanel() {
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
-                      const rawSteps: Array<{ label: string; value: string; date: string }> =
+                      const rawStepsAll: Array<{ label: string; value: string; date: string }> =
                         timelineEdits[editKey] ?? (hasMultipleDates ? (perDateSteps ?? defaultSteps) : defaultSteps);
-                      // Native app events always show exactly 5 rows — pad missing steps from defaults
-                      // Step 5 (index 4) defaults to the event's own title as value
+                      // Single-payment events drop the remaining-balance step in the editor too,
+                      // so it matches the customer timeline and won't re-save a stale balance row.
+                      const rawSteps = isFullPay
+                        ? rawStepsAll.filter(s => !/balance/i.test(`${s.label} ${s.value}`))
+                        : rawStepsAll;
+                      // Native app events show a fixed row count — 4 for single-payment, else 5 —
+                      // padding missing steps from defaults. The last row defaults to the event title.
+                      const nativeRowCount = isFullPay ? 4 : 5;
                       const currentSteps: Array<{ label: string; value: string; date: string }> = isNativeApp
-                        ? Array.from({ length: 5 }, (_, i) => {
+                        ? Array.from({ length: nativeRowCount }, (_, i) => {
                             if (rawSteps[i]) return rawSteps[i];
                             const def = nativeDefaultSteps[i];
-                            return i === 4 ? { ...def, value: trip.title ?? def.value } : def;
+                            return i === nativeRowCount - 1 ? { ...def, value: trip.title ?? def.value } : def;
                           })
                         : rawSteps;
                       const setStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) => {
@@ -2072,7 +2087,7 @@ export default function AdminPanel() {
                           {currentSteps.map((step, i) => {
                             const isNowRow = i === 0;
                             // Native app: steps 0 (request invitation) and 4 (enjoy the plan) have no date
-                            const nativeNoDate = isNativeApp && (i === 0 || i === 4);
+                            const nativeNoDate = isNativeApp && (i === 0 || i === currentSteps.length - 1);
                             return (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isNativeApp ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
                                 {/* Left: label + value stacked */}
@@ -2085,7 +2100,7 @@ export default function AdminPanel() {
                                   />
                                   <input
                                     style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 15, fontWeight: 700, color: '#111', padding: 0 }}
-                                    placeholder={i === 1 ? '{advance}' : i === 2 ? '{balance}' : 'Value or text'}
+                                    placeholder={i === 1 ? (isFullPay ? '{price}' : '{advance}') : (!isFullPay && i === 2) ? '{balance}' : 'Value or text'}
                                     value={step.value}
                                     onChange={e => setStep(i, { value: e.target.value })}
                                   />
