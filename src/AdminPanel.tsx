@@ -4457,30 +4457,9 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const addStay = () => setStays([...stays, { name: '', images: ['', '', ''], features: ['', '', ''] }]);
   const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
-  // ── Booking Steps ──
-  // Native application events always have exactly 5 fixed steps (label + date editable, value locked):
-  //   1. Request Invitation  2. Pay Advance ({advance})  3. Pay Balance ({balance})
-  //   4. Get Meeting Point Details  5. Enjoy the Plan
-  // Non-native: free-form, index 0 = "Now" row (no date), 1+ have date pickers
+  // Native-application flag (used by the Trip Dates "Spots auto" layout below).
+  // The booking-timeline editor lives in its own dedicated section, not here.
   const isNativeAppEvent = trip.booking_url === 'native-application';
-  const nativeAppDefaultSteps = [
-    { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
-    { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
-    { label: 'remaining balance',                 value: '{balance}',               date: '' },
-    { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
-    { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
-  ];
-  const bookingSteps = isNativeAppEvent
-    ? (trip.booking_steps?.length ? trip.booking_steps : nativeAppDefaultSteps)
-    : trip.booking_steps?.length ? trip.booking_steps : [
-        { label: 'Advance', value: '{advance}', date: '' },
-        { label: 'Remaining Balance', value: '{balance}', date: '' },
-        { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
-      ];
-  const setBookingStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) =>
-    onChange({ ...trip, booking_steps: bookingSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
-  const addBookingStep = () => onChange({ ...trip, booking_steps: [...bookingSteps, { label: '', value: '', date: '' }] });
-  const removeBookingStep = (i: number) => onChange({ ...trip, booking_steps: bookingSteps.filter((_, idx) => idx !== i) });
 
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
