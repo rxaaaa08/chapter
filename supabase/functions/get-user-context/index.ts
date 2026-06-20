@@ -1,8 +1,10 @@
 // get-user-context
 //
 // Anon-callable endpoint that returns a phone's known state on chaptera:
-//   - invites: { event_slug }[]     — rows in invited_numbers for this phone
-//   - applications: { event_slug, status }[] — rows in applications for this phone
+//   - invites: { event_slug, city }[] — rows in invited_numbers for this phone
+//   - applications: { event_slug, status, email, pickup_point_id, selected_city,
+//                     selected_date }[] — rows in applications for this phone
+//   - invite_submissions: { invite_slug, status }[] — legacy payment-status source
 //   - payment: { ... } | null       — if txnid was passed AND the stored phone
 //                                     on payu_payments matches the request phone
 //
@@ -92,19 +94,25 @@ Deno.serve(async (req) => {
       return json(429, { error: 'rate limit exceeded' }, cors);
     }
 
-    // Both queries run in parallel — independent.
+    // All three queries run in parallel — independent.
     const [
       { data: invites },
       { data: applications },
+      { data: inviteSubmissions },
     ] = await Promise.all([
       supabase
         .from('invited_numbers')
-        .select('event_slug')
+        .select('event_slug, city')
         .eq('phone', phone),
       supabase
         .from('applications')
-        .select('event_slug, status, email')
+        .select('event_slug, status, email, pickup_point_id, selected_city, selected_date')
         .eq('phone', phone),
+      supabase
+        .from('invite_payment_submissions')
+        .select('invite_slug, status')
+        .eq('phone', phone)
+        .order('submitted_at', { ascending: false }),
     ]);
 
     // Optional receipt lookup. We cross-check the phone on payu_payments so
@@ -122,8 +130,9 @@ Deno.serve(async (req) => {
     }
 
     return json(200, {
-      invites:      invites      ?? [],
-      applications: applications ?? [],
+      invites:            invites           ?? [],
+      applications:       applications      ?? [],
+      invite_submissions: inviteSubmissions ?? [],
       payment,
     }, cors);
   } catch (err) {

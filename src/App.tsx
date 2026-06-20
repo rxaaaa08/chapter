@@ -1660,27 +1660,39 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     if (!event) return null;
     const realSlug: string = event.slug ?? slug;
 
-    // Resolve payment status: applications first, then legacy invite_payment_submissions.
-    const [{ data: appRow }, { data: legacyPaidRows }, { data: inviteRow }] = await Promise.all([
-      supabase.from('applications')
-        .select('status, pickup_point_id, selected_city, selected_date, email')
-        .eq('phone', phone)
-        .eq('event_slug', realSlug)
-        .maybeSingle(),
-      supabase.from('invite_payment_submissions')
-        .select('status')
-        .eq('invite_slug', slug)
-        .eq('phone', phone)
-        .in('status', ['advance_paid', 'fully_paid'])
-        .order('submitted_at', { ascending: false })
-        .limit(1),
-      supabase.from('invited_numbers')
-        .select('city')
-        .eq('event_slug', slug)
-        .eq('phone', phone)
-        .maybeSingle(),
-    ]);
-    const legacyStatus: string | null = legacyPaidRows?.[0]?.status ?? null;
+    // Resolve payment status via the get-user-context edge function
+    // (service_role). applications / invite_payment_submissions /
+    // invited_numbers are RLS-locked to admins, so direct anon reads here
+    // silently return nothing and can re-ask paid users for an advance.
+    const slugSet = new Set([slug, realSlug, event.invite_slug].filter(Boolean));
+    const paidStatuses = new Set(['advance_paid', 'fully_paid']);
+    let appRow: any = null;
+    let inviteRow: any = null;
+    let legacyStatus: string | null = null;
+    try {
+      const ctxRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ phone }),
+      });
+      if (ctxRes.ok) {
+        const ctx = await ctxRes.json();
+        const apps: any[] = Array.isArray(ctx.applications) ? ctx.applications : [];
+        const subs: any[] = Array.isArray(ctx.invite_submissions) ? ctx.invite_submissions : [];
+        const invs: any[] = Array.isArray(ctx.invites) ? ctx.invites : [];
+        appRow = apps.find(a => slugSet.has(a.event_slug)) ?? null;
+        inviteRow = invs.find(i => slugSet.has(i.event_slug)) ?? null;
+        legacyStatus = subs.find(s => slugSet.has(s.invite_slug) && paidStatuses.has(String(s.status)))?.status ?? null;
+      } else {
+        console.error('[prepareNativeInviteFlow] get-user-context non-ok', ctxRes.status);
+      }
+    } catch (err) {
+      console.error('[prepareNativeInviteFlow] get-user-context failed', err);
+    }
     const appStatus = (appRow?.status as string | undefined) ?? legacyStatus ?? 'invited';
     const isFullyPaid      = appStatus === 'fully_paid';
     const isBalancePayment = appStatus === 'advance_paid';
@@ -1984,16 +1996,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       return;
     }
 
-    // Fallback: check applications table for native-application flow events
+    // Fallback: check applications for native-application flow events. Reuses
+    // appRows from get-user-context; a direct applications read is RLS-blocked
+    // for anon and would come back empty.
     if (found.length === 0) {
-      const { data: appData } = await supabase
-        .from('applications')
-        .select('event_slug, status')
-        .eq('phone', tenDigit)
-        .in('status', ['invited', 'advance_paid', 'fully_paid'])
-        .limit(1);
+      const appData = (appRows ?? []).filter(
+        (a: any) => ['invited', 'advance_paid', 'fully_paid'].includes(String(a.status)),
+      ).slice(0, 1);
 
-      if (appData && appData.length > 0) {
+      if (appData.length > 0) {
         const eventSlug = appData[0].event_slug;
         const ready = await prepareNativeInviteFlow(eventSlug, tenDigit);
         if (ready) {
@@ -2336,13 +2347,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
     // Check if sold out at the moment user taps "Tap to Continue"
     if (pendingInviteSpots !== null) {
-      const { data: allPaidRows } = await supabase
-        .from('invite_payment_submissions')
-        .select('phone')
-        .eq('invite_slug', verifiedSlug)
-        .eq('status', 'advance_paid');
-      const uniquePaidPhones = new Set((allPaidRows ?? []).map((r: any) => r.phone));
-      if (uniquePaidPhones.size >= pendingInviteSpots) {
+      // Use the same SECURITY DEFINER count as the timeline's "spots left"
+      // display. A direct invite_payment_submissions read is RLS-blocked for
+      // anon and can let a sold-out event through.
+      const { reserved } = await fetchEventCounts(verifiedSlug);
+      if (reserved >= pendingInviteSpots) {
         setError('sold_out');
         setHasFailedOnce(true);
         return;

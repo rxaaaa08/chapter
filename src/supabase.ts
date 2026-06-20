@@ -194,20 +194,17 @@ export function fillMsg(
 // "Spots left" anywhere in the UI = invite_spots − reserved.
 export async function fetchEventCounts(eventSlug: string): Promise<{ registered: number; reserved: number }> {
   if (!eventSlug) return { registered: 0, reserved: 0 };
-  const [{ count: registered }, { count: reserved }] = await Promise.all([
-    supabase
-      .from('applications')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_slug', eventSlug),
-    supabase
-      .from('applications')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_slug', eventSlug)
-      .in('status', ['advance_paid', 'fully_paid']),
-  ]);
+  // applications is RLS-locked to admins, so anon COUNTs return 0. The RPC
+  // returns only aggregate integers and resolves invite_slug -> canonical slug.
+  const { data, error } = await supabase.rpc('event_booking_counts', { p_slug: eventSlug });
+  if (error) {
+    console.error('Supabase event_booking_counts error:', error);
+    return { registered: 0, reserved: 0 };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
   return {
-    registered: typeof registered === 'number' ? registered : 0,
-    reserved:   typeof reserved   === 'number' ? reserved   : 0,
+    registered: Number((row as any)?.registered ?? 0) || 0,
+    reserved:   Number((row as any)?.reserved   ?? 0) || 0,
   };
 }
 
