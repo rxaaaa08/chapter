@@ -3657,14 +3657,14 @@ function NativeBookingTimeline({
 
   // Build steps list
   const steps = isFullPay
-    // Single-payment: render the admin's booking steps as-is — the payment step
-    // already carries the full price ({advance}/{price} both resolve to it for
-    // single-pay). Just drop the balance step and the vibe-check / social-proof
-    // rows (the social-proof row is the separate event-title row below). No
-    // synthetic step, so the price isn't duplicated.
-    ? (bookingSteps ?? []).filter(s =>
-        !/balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
-      )
+    // Single-payment (post-invite): render the admin's booking steps, dropping
+    // the balance step and the vibe-check / social-proof rows (social-proof is
+    // the separate event-title row below). The payment row (its value resolves
+    // to the full price) is relabeled "Single Entry Payment" — this timeline is
+    // only shown after the user is invited, so the pre-invite label doesn't fit.
+    ? (bookingSteps ?? [])
+        .filter(s => !/balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`))
+        .map(s => /\{advance\}|\{price\}/i.test(s.value) ? { ...s, label: 'Single Entry Payment' } : s)
     : isBalancePayment
     ? [
         // Row 0: advance — already paid
