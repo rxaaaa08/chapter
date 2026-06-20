@@ -56,6 +56,9 @@ type Trip = {
   timing: string;
   price_full: number;
   price_advance: number;
+  // 'split' = advance + remaining balance (default). 'full' = single payment
+  // for the full price (advance is ignored; status jumps straight to paid).
+  payment_mode?: string;
   description: string;
   hero_image: string | string[];
   founders_note_url?: string;
@@ -4649,7 +4652,18 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
           </div>
           {field('Duration (e.g. 1 Night 2 Days)', 'timing')}
-          {field('Category', 'category')}
+          <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>Category</label>
+            <select
+              style={s.input}
+              value={trip.category || 'Trip'}
+              onChange={e => set('category', e.target.value)}
+            >
+              <option value="Trip">Trip</option>
+              <option value="Event">Event</option>
+              <option value="Meets">Meets</option>
+            </select>
+          </div>
           {/* Booking Type */}
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Booking Type</label>
@@ -4760,6 +4774,34 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 + Add
               </button>
             </div>
+          </div>
+
+          {/* Payment Mode: split (advance + balance) vs full (single payment) */}
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Payment Mode</label>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 6, border: '1.5px solid #e0e0e0', borderRadius: 10, overflow: 'hidden' }}>
+              {([
+                { mode: 'split', label: 'Split (Advance + Balance)' },
+                { mode: 'full',  label: 'Full (Single Payment)' },
+              ] as const).map(option => {
+                const active = (trip.payment_mode ?? 'split') === option.mode;
+                return (
+                  <button
+                    key={option.mode}
+                    type="button"
+                    onClick={() => onChange({ ...trip, payment_mode: option.mode })}
+                    style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: 11, color: '#888', margin: 0 }}>
+              {(trip.payment_mode ?? 'split') === 'full'
+                ? 'Customers pay the full price in one payment. The Advance amount is ignored.'
+                : 'Customers pay an advance now and the remaining balance later.'}
+            </p>
           </div>
 
           {/* Per-city pricing */}

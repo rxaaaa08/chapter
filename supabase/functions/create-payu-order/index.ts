@@ -31,7 +31,7 @@ async function resolveEvent(supabase: any, inputSlug: string) {
   if (!inputSlug) return null;
   const { data } = await supabase
     .from('events')
-    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details')
+    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details, payment_mode')
     .or(`slug.eq.${inputSlug},invite_slug.eq.${inputSlug}`)
     .maybeSingle();
   return data ?? null;
@@ -187,7 +187,9 @@ Deno.serve(async (req) => {
     const rawSlug = String(body.event_slug ?? '').trim();
     if (!rawSlug) return err(400, 'missing event_slug', cors);
 
-    const paymentType = body.payment_type === 'balance' ? 'balance' : 'advance';
+    // Preliminary type from the client; finalized after we resolve the event,
+    // because a single-payment event overrides it to 'full' regardless of claim.
+    let paymentType = body.payment_type === 'balance' ? 'balance' : 'advance';
 
     // Email is optional and only used for PayU receipts — sanity check it
     const customerEmail = String(body.email ?? '').trim();
@@ -229,6 +231,12 @@ Deno.serve(async (req) => {
     const event = await resolveEvent(supabase, rawSlug);
     if (!event) return err(404, 'event not found', cors);
     if (!event.is_active) return err(409, 'event is not active', cors);
+
+    // Single-payment events override the split advance/balance flow entirely:
+    // one payment for the full price, status jumps straight to fully_paid. The
+    // server decides this from the DB so a client can't downgrade a full-pay
+    // event to a cheaper 'advance' charge.
+    if (event.payment_mode === 'full') paymentType = 'full';
 
     const canonicalSlug = event.slug as string;
     // Strip the pipe char before productinfo enters the |-delimited PayU hash
@@ -277,7 +285,31 @@ Deno.serve(async (req) => {
 
     // ── 4. Compute amount from DB based on payment_type ──
     let amountNum: number;
-    if (paymentType === 'balance') {
+    if (paymentType === 'full') {
+      // Single-payment event: charge the full price in one shot (city-aware).
+      const full = prices.full;
+      if (full <= 0) return err(409, 'event price_full not configured', cors);
+      amountNum = full;
+      // Same invite-only authorization gate as the advance (first-payment) path.
+      if (event.invite_only) {
+        const [{ data: invited }, { data: approvedApp }] = await Promise.all([
+          supabase
+            .from('invited_numbers')
+            .select('phone')
+            .eq('phone', phone)
+            .eq('event_slug', canonicalSlug)
+            .maybeSingle(),
+          supabase
+            .from('applications')
+            .select('id')
+            .eq('phone', phone)
+            .eq('event_slug', canonicalSlug)
+            .in('status', ['invited', 'advance_paid', 'fully_paid'])
+            .maybeSingle(),
+        ]);
+        if (!invited && !approvedApp) return err(403, 'phone not invited for this event', cors);
+      }
+    } else if (paymentType === 'balance') {
       // Balance = full price - advance already paid (both city-aware)
       const full = prices.full;
       const adv  = prices.advance;

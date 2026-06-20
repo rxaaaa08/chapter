@@ -1200,6 +1200,7 @@ function InvitePlanDetailsSheet({
   onPayAdvance,
   isFullyPaid = false,
   isBalancePayment = false,
+  isFullPay = false,
   whatsappGroupUrl,
 }: {
   open: boolean;
@@ -1209,6 +1210,7 @@ function InvitePlanDetailsSheet({
   onPayAdvance?: () => void;
   isFullyPaid?: boolean;
   isBalancePayment?: boolean;
+  isFullPay?: boolean;
   whatsappGroupUrl?: string;
 }) {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(0);
@@ -1480,7 +1482,7 @@ function InvitePlanDetailsSheet({
                       animate={{ x: ['-100%', '300%'] }}
                       transition={{ duration: 0.9, repeat: Infinity, repeatDelay: 2.2, ease: 'easeInOut' }}
                     />
-                    <span>{isBalancePayment ? 'Pay Balance' : 'Pay Advance'}</span>
+                    <span>{isFullPay ? 'Pay Now' : isBalancePayment ? 'Pay Balance' : 'Pay Advance'}</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M5 12h14M12 5l7 7-7 7"/>
                     </svg>
@@ -1551,7 +1553,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
@@ -1647,23 +1649,26 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   ): Promise<{ isFullyPaid: boolean; isBalancePayment: boolean; inviteSpots: number | null } | null> => {
     const { data: eventRow } = await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
       .eq('invite_slug', slug)
       .maybeSingle();
 
     // Fall back to slug match if invite_slug didn't find it
     const event = eventRow ?? (await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
       .eq('slug', slug)
       .maybeSingle()).data;
     if (!event) return null;
     const realSlug: string = event.slug ?? slug;
 
-    // Resolve payment status via the get-user-context edge function
-    // (service_role). applications / invite_payment_submissions /
-    // invited_numbers are RLS-locked to admins, so direct anon reads here
-    // silently return nothing and can re-ask paid users for an advance.
+    // Resolve payment status via the get-user-context edge function (service_role).
+    // applications / invite_payment_submissions / invited_numbers are RLS-locked to
+    // admins (the C5 PII lockdown dropped anon SELECT), so a direct anon read here
+    // returns nothing — which silently defaulted everyone to 'invited' and re-asked
+    // for the advance even after it was paid. This mirrors findInviteMatches, which
+    // already routes through the same wrapper. The endpoint only returns rows tied
+    // to the submitted phone, is CORS-restricted, and is rate-limited.
     const slugSet = new Set([slug, realSlug, event.invite_slug].filter(Boolean));
     const paidStatuses = new Set(['advance_paid', 'fully_paid']);
     let appRow: any = null;
@@ -1696,6 +1701,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const appStatus = (appRow?.status as string | undefined) ?? legacyStatus ?? 'invited';
     const isFullyPaid      = appStatus === 'fully_paid';
     const isBalancePayment = appStatus === 'advance_paid';
+    // Single-payment event: one charge for the full price (no advance/balance).
+    const isFullPay        = (event.payment_mode ?? 'split') === 'full';
 
     // Seed appEmailBySlug from the applications row so the bill page can
     // pre-fill + lock the email field even on a cold restore path that
@@ -1749,8 +1756,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const itinerary: any[] = Array.isArray(_cd?.itinerary) ? _cd.itinerary : (Array.isArray(event.itinerary) ? event.itinerary : []);
 
     setNativeEventData({
-      priceAdvance: isBalancePayment ? balanceAmount : priceAdvance,
+      // Amount to pay now: full price for single-payment events, otherwise the
+      // balance (if advance already paid) or the advance.
+      priceAdvance: isFullPay ? priceFull : (isBalancePayment ? balanceAmount : priceAdvance),
       priceFull,
+      paymentMode: event.payment_mode ?? 'split',
       // The city we resolved per-user (application > invited_numbers > 1st event city).
       // Passed straight to NativePaymentOverlay → create-payu-order so the server
       // can pick the same city_details override that this UI just used to compute
@@ -1996,9 +2006,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       return;
     }
 
-    // Fallback: check applications for native-application flow events. Reuses
-    // appRows from get-user-context; a direct applications read is RLS-blocked
-    // for anon and would come back empty.
+    // Fallback: check applications for native-application flow events. Reuses the
+    // appRows already returned by get-user-context (service_role) — a direct
+    // applications read here is RLS-blocked for anon and would always be empty.
     if (found.length === 0) {
       const appData = (appRows ?? []).filter(
         (a: any) => ['invited', 'advance_paid', 'fully_paid'].includes(String(a.status)),
@@ -2347,9 +2357,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
     // Check if sold out at the moment user taps "Tap to Continue"
     if (pendingInviteSpots !== null) {
-      // Use the same SECURITY DEFINER count as the timeline's "spots left"
-      // display. A direct invite_payment_submissions read is RLS-blocked for
-      // anon and can let a sold-out event through.
+      // reserved (advance_paid + fully_paid) via the SECURITY DEFINER RPC.
+      // A direct invite_payment_submissions read here is RLS-blocked for anon
+      // (returns 0), which would let a sold-out event through. Using the same
+      // reserved metric as the timeline's "spots left" keeps the two consistent.
       const { reserved } = await fetchEventCounts(verifiedSlug);
       if (reserved >= pendingInviteSpots) {
         setError('sold_out');
@@ -2890,6 +2901,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             const firstName = form.name.trim().split(' ')[0];
             const isFullyPaid = nativeEventData?.isFullyPaid ?? false;
             const isPaid = nativeEventData?.isBalancePayment ?? false;
+            const isFullPay = (nativeEventData?.paymentMode ?? 'split') === 'full';
             const eventTitle = nativeEventData?.title ?? '';
             const headerAnnouncements = (nativeEventData?.announcements ?? []).filter(Boolean);
             const headerText = headerAnnouncements.length > 0
@@ -3093,7 +3105,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                 onClick={() => { window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href); setShowNativeTimeline(true); }}
                               >
                                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
-                                <span>{isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
+                                <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
                                 <Send size={16} />
                               </button>
                             )}
@@ -3218,7 +3230,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                 onClick={() => { window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href); setShowNativeTimeline(true); }}
                               >
                                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
-                                <span>{isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
+                                <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
                                 <Send size={14} className="shrink-0" />
                               </button>
                             )}
@@ -3264,6 +3276,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   details={nativeEventData?.planDetails ?? null}
                   isFullyPaid={nativeEventData?.isFullyPaid ?? false}
                   isBalancePayment={nativeEventData?.isBalancePayment ?? false}
+                  isFullPay={(nativeEventData?.paymentMode ?? 'split') === 'full'}
                   whatsappGroupUrl={nativeEventData?.whatsappGroupUrl}
                   onPayAdvance={() => {
                     setShowPlanDetailsSheet(false);
@@ -3287,6 +3300,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               priceFull={nativeEventData.priceFull}
               bookingSteps={nativeEventData.bookingSteps}
               isBalancePayment={nativeEventData.isBalancePayment}
+              isFullPay={nativeEventData.paymentMode === 'full'}
               inviteSlug={nativeEventData.inviteSlug}
               eventSlug={nativeEventData.eventSlug}
               inviteSpots={nativeEventData.inviteSpots}
@@ -3330,7 +3344,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               lockEmail={!!appEmailBySlug[nativeEventData.eventSlug || verifiedSlug]}
               eventSlug={nativeEventData.eventSlug || verifiedSlug}
               selectedCity={nativeEventData.resolvedCity ?? ''}
-              paymentType={nativeEventData.isBalancePayment ? 'balance' : 'advance'}
+              paymentType={nativeEventData.paymentMode === 'full' ? 'full' : (nativeEventData.isBalancePayment ? 'balance' : 'advance')}
               skipEntrance={billRestored}
               onBeforePayU={() => {
                 if (nativeEventData) {
@@ -3562,6 +3576,7 @@ function NativeBookingTimeline({
   priceFull,
   bookingSteps,
   isBalancePayment = false,
+  isFullPay = false,
   inviteSlug,
   eventSlug,
   inviteSpots,
@@ -3575,6 +3590,7 @@ function NativeBookingTimeline({
   priceFull: number;
   bookingSteps?: Array<{ label: string; value: string; date?: string }>;
   isBalancePayment?: boolean;
+  isFullPay?: boolean;
   inviteSlug?: string;
   eventSlug?: string;
   inviteSpots?: number | null;
@@ -3640,7 +3656,16 @@ function NativeBookingTimeline({
     : '';
 
   // Build steps list
-  const steps = isBalancePayment
+  const steps = isFullPay
+    ? [
+        // Single-payment event: one full-price step, then any non-payment
+        // booking steps (e.g. "Receive" details). No advance/balance split.
+        { label: 'Pay in full', value: '{price}', date: '' },
+        ...(bookingSteps ?? []).filter(s =>
+          !/advance|balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
+        ),
+      ]
+    : isBalancePayment
     ? [
         // Row 0: advance — already paid
         { label: 'advance', value: `₹${Math.max(originalAdvance, 0).toLocaleString('en-IN')}`, date: '' },
@@ -4062,7 +4087,7 @@ function NativePaymentOverlay({
   lockEmail?: boolean;
   eventSlug?: string;
   selectedCity?: string;
-  paymentType?: 'advance' | 'balance';
+  paymentType?: 'advance' | 'balance' | 'full';
   skipEntrance?: boolean;
   onBeforePayU?: () => void;
   onClose: () => void;
@@ -4294,7 +4319,7 @@ function NativePaymentOverlay({
 
           {/* Advance / Balance */}
           <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-200">
-            <span className="text-[14px] text-gray-700">{paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
+            <span className="text-[14px] text-gray-700">{paymentType === 'full' ? 'Full Payment' : paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
             <span className="text-[14px] font-medium text-gray-900">₹{priceAdvance.toLocaleString('en-IN')}</span>
           </div>
 

@@ -80,6 +80,9 @@ async function releaseSendFlag(supabase: any, appId: string, col: string): Promi
 const AISENSY_CAMPAIGN_ADVANCE = 'advance_paid+balance';
 const AISENSY_CAMPAIGN_BALANCE = 'fullpaid';
 const AISENSY_CAMPAIGN_FAILED  = 'payment_failed';
+// Single-payment ('full') events: paid-in-full confirmation. Must exist in the
+// AiSensy dashboard. Params: {{1}} = amount (₹…), {{2}} = details date.
+const AISENSY_CAMPAIGN_FULL    = 'paid_full';
 
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
@@ -170,6 +173,51 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
   } catch (err) {
     console.error('[reconcile balance_paid] fire failed, releasing claim:', err);
     await releaseSendFlag(supabase, app.id, 'aisensy_balance_paid_sent');
+  }
+}
+
+async function fireFullPaidWhatsApp(supabase: any, args: {
+  phone: string; eventSlug: string; amount: number | string; txnid: string;
+}) {
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) { console.warn('[reconcile full_paid] AISENSY_API_KEY not set'); return; }
+  const { data: app } = await supabase
+    .from('applications')
+    .select('id, name, aisensy_full_paid_sent')
+    .eq('phone', args.phone)
+    .eq('event_slug', args.eventSlug)
+    .maybeSingle();
+  if (!app || app.aisensy_full_paid_sent) return;
+  if (!(await claimSendFlag(supabase, app.id, 'aisensy_full_paid_sent'))) return;
+
+  try {
+    const { data: ev } = await supabase
+      .from('events').select('booking_steps').eq('slug', args.eventSlug).maybeSingle();
+    const detailsStep = (ev?.booking_steps ?? [])[3];
+    const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
+
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: AISENSY_API_KEY,
+        campaignName: AISENSY_CAMPAIGN_FULL,
+        destination: '91' + args.phone,
+        userName: app.name || 'chapter A 3063',
+        templateParams: [`₹${Number(args.amount).toLocaleString('en-IN')}`, detailsDate],
+        source: 'payu-reconcile',
+        media: {}, buttons: [], carouselCards: [], location: {},
+        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
+        paramsFallbackValue: { FirstName: app.name || 'user' },
+      }),
+    });
+    if (!aiRes.ok) {
+      console.error('[reconcile full_paid] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+      await releaseSendFlag(supabase, app.id, 'aisensy_full_paid_sent');
+    }
+  } catch (err) {
+    console.error('[reconcile full_paid] fire failed, releasing claim:', err);
+    await releaseSendFlag(supabase, app.id, 'aisensy_full_paid_sent');
   }
 }
 
@@ -335,7 +383,7 @@ Deno.serve(async (req) => {
 
         if (isSuccess && rawSlug && phone) {
           const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
-          const newStatus = paymentType === 'balance' ? 'fully_paid' : 'advance_paid';
+          const newStatus = (paymentType === 'balance' || paymentType === 'full') ? 'fully_paid' : 'advance_paid';
 
           await supabase.from('applications')
             .update({ status: newStatus })
@@ -353,6 +401,8 @@ Deno.serve(async (req) => {
 
           if (paymentType === 'balance') {
             await fireBalancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+          } else if (paymentType === 'full') {
+            await fireFullPaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
           } else {
             await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
           }
