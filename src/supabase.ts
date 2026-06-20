@@ -47,7 +47,7 @@ function getSessionId(): string {
 }
 
 export async function trackEvent(
-  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated' | 'application_started' | 'application_submitted',
+  event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated' | 'application_started' | 'application_submitted' | 'community_sheet_opened' | 'community_whatsapp_clicked',
   meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
 ) {
   try {
@@ -98,6 +98,12 @@ export function mapDbEventToEvent(row: any): any {
     optionalActivities: Array.isArray(row.optional_activities) ? row.optional_activities : (row.optional_activities ?? []),
     announcements: Array.isArray(row.announcements) ? row.announcements : (row.announcements ?? []),
     bookingUrl: row.booking_url,
+    // 'whatsapp' = free community event (e.g. Weekly Creator's Meet). The
+    // plans chat opens a WhatsApp-community bottom sheet instead of the
+    // details page; booking_url holds the WhatsApp invite link and
+    // description holds "The Essentials" copy (date / time / location).
+    // (events.booking_flow is CHECK-constrained to 'payment' | 'whatsapp'.)
+    bookingFlow: row.booking_flow ?? undefined,
     ctaLabel: row.cta_label ?? '',
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,

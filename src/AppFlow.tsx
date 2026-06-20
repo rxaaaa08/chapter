@@ -105,6 +105,9 @@ interface Event {
   dates: TripDate[];
   faqs: FAQ[];
   bookingUrl: string;
+  // 'whatsapp' = free community event; chat opens the WhatsApp sheet
+  // instead of the details page (bookingUrl = WhatsApp invite link).
+  bookingFlow?: string;
   ctaLabel?: string;
   announcements?: string[];
   inviteOnly?: boolean;
@@ -878,6 +881,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [showDetailsForm, setShowDetailsForm] = useState(false);
   const [showApplicationForm, setShowApplicationForm] = useState(false);
+  // Community event (booking_flow='whatsapp') whose WhatsApp sheet is open.
+  // Tapping its chip opens this sheet directly — no user message, no bot
+  // reply, no step change; closing returns to the untouched chat.
+  const [communityEvent, setCommunityEvent] = useState<Event | null>(null);
   const [appFormStep, setAppFormStep] = useState<1 | 2>(1);
   const [appFormData, setAppFormData] = useState({ name: '', phone: '', email: '', gender: '', whyJoin: '', attendedBefore: '' });
   const [appFormSubmitted, setAppFormSubmitted] = useState(false);
@@ -1406,6 +1413,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   };
 
   const handleEventSelect = (event: Event) => {
+    // Community events short-circuit the whole flow: no user message, no
+    // bot reply, no details page — just the WhatsApp community sheet.
+    if (event.bookingFlow === 'whatsapp') {
+      trackEvent('community_sheet_opened', { event_id: event.id, event_title: event.title });
+      setCommunityEvent(event);
+      return;
+    }
     setStep('PROCESSING');
     addUserMessage(event.oneLiner || event.title);
     setSelectedEvent(event);
@@ -2791,6 +2805,101 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           )}
         </AnimatePresence>
 
+        {/* ── Community Event Sheet (free recurring events) ────────── */}
+        <AnimatePresence>
+          {communityEvent && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
+                onClick={() => setCommunityEvent(null)}
+              />
+              <motion.div
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+                className="absolute bottom-0 left-0 right-0 z-[56] bg-white rounded-t-[2rem] flex flex-col"
+              >
+                {/* Frosted close button floating above sheet */}
+                <button
+                  onClick={() => setCommunityEvent(null)}
+                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+                <div className="px-6 pt-7 pb-8 overflow-y-auto">
+                  {/* Headline quote — same treatment as the application sheet */}
+                  <p className="text-[17px] text-gray-900 leading-snug text-left">We all start as strangers... <span className="font-black">until we meet.</span></p>
+
+                  {/* The Essentials — same design as the invite-flow Journey card,
+                      minus the Transport block. Meeting Spot = start_location,
+                      You'll Meet = description, date tile = first event date,
+                      time = timing column. */}
+                  {(() => {
+                    const meetingSpot = communityEvent.startLocation || '';
+                    const youllMeet   = communityEvent.description || '';
+                    const timeStr     = communityEvent.timing || '';
+                    const dateStr     = communityEvent.dates?.[0]?.date || '';
+                    const d       = dateStr ? new Date(dateStr + 'T00:00:00') : null;
+                    const day     = d ? d.getDate().toString() : '';
+                    const month   = d ? d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : '';
+                    const weekday = d ? d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase() : '';
+                    if (!meetingSpot && !youllMeet && !d) return null;
+                    return (
+                      <div className="mt-5">
+                        <p className="text-[10px] font-bold text-[#2C7FFF] uppercase tracking-widest mb-2 px-1">The Essentials</p>
+                        <div className="border border-dashed border-[#2C7FFF] rounded-2xl overflow-hidden bg-white">
+                          <div className="flex">
+                            <div className="flex-1 flex flex-col">
+                              {meetingSpot && (
+                                <div className={`px-4 py-3 ${youllMeet ? 'border-b border-dashed border-[#D4E5FF]' : ''}`}>
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <MapPin size={9} className="text-gray-400" />
+                                    <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">Meeting Spot</span>
+                                  </div>
+                                  <span className="text-[13px] font-black text-gray-900 leading-tight">{meetingSpot}</span>
+                                </div>
+                              )}
+                              {youllMeet && (
+                                <div className="px-4 py-3">
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <Users size={9} className="text-gray-400" />
+                                    <span className="text-[8px] text-gray-400 font-semibold uppercase tracking-wider">You'll Meet</span>
+                                  </div>
+                                  <span className="text-[13px] font-black text-gray-900 leading-tight">{youllMeet}</span>
+                                </div>
+                              )}
+                            </div>
+                            {d && (
+                              <div className="border-l border-dashed border-[#D4E5FF] flex flex-col items-center justify-center px-5 py-4 bg-white gap-0.5">
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
+                                <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
+                                <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
+                                {timeStr && <span className="text-[13px] font-bold text-gray-900 mt-1.5">{timeStr}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Join button */}
+                  <button
+                    onClick={() => {
+                      trackEvent('community_whatsapp_clicked', { event_id: communityEvent.id, event_title: communityEvent.title });
+                      window.open(communityEvent.bookingUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="mt-6 w-full bg-[#25D366] text-white font-black text-[16px] rounded-2xl py-4 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-transform shadow-lg shadow-[#25D366]/25"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.297-.497.1-.198.05-.371-.025-.52-.074-.149-.668-1.612-.916-2.207-.241-.579-.486-.5-.668-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.064 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    Join WhatsApp Community
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
         {/* ── Native Application Form ─────────────────────────────── */}
         <AnimatePresence>
           {showApplicationForm && selectedEvent && appFormStep === 1 && (
@@ -3673,6 +3782,20 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
+  // Selected trip range — start is the rider-facing tapped date, end is the
+  // base (city-agnostic) start plus the trip duration, matching the grid band.
+  const tripRange = React.useMemo(() => {
+    if (!selectedDate) return null;
+    const durationMatch = event.timing.match(/(\d+)\s*D(?:ays?)?\b/i);
+    const tripDays = Math.max(durationMatch ? parseInt(durationMatch[1], 10) : activeItinerary.length, 1);
+    const start = new Date(`${selectedDate}T00:00:00`);
+    const end = new Date(`${shiftDateStr(selectedDate, -cityDateOffset)}T00:00:00`);
+    end.setDate(end.getDate() + tripDays - 1);
+    const days = Math.max(Math.round((end.getTime() - start.getTime()) / 86400000) + 1, 1);
+    const crossesMonth = start.getMonth() !== end.getMonth() || start.getFullYear() !== end.getFullYear();
+    return { start, end, days, crossesMonth };
+  }, [selectedDate, event.timing, activeItinerary, cityDateOffset]);
+
   const itineraryRef = useRef<HTMLDivElement>(null);
 
   // Auto-open first itinerary item (no auto-scroll)
@@ -3821,16 +3944,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	        : null;
 	    const useNativeFillingFastCells = !!nativeAvailability?.isFillingFast && nativeAvailability.available > 0;
 	    
-	    // Calculate trip duration
-	    const durationMatch = event.timing.match(/(\d+)\s*Days?/i);
-    const tripDays = durationMatch ? parseInt(durationMatch[1], 10) : activeItinerary.length;
-    
-    const selectedDateObj = selectedDate ? new Date(`${selectedDate}T00:00:00`) : null;
-    // Base trip start is always the original city-agnostic start
-    const baseStartStr = selectedDate ? shiftDateStr(selectedDate, -cityDateOffset) : null;
-    const baseStartObj = baseStartStr ? new Date(`${baseStartStr}T00:00:00`) : null;
-    const endDateObj = baseStartObj ? new Date(baseStartObj) : null;
-    if (endDateObj) endDateObj.setDate(endDateObj.getDate() + tripDays - 1);
+    const selectedDateObj = tripRange?.start ?? null;
+    const endDateObj = tripRange?.end ?? null;
     
     const days = [];
     let availableCellIdx = 0;
@@ -3851,6 +3966,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
       const isSelectedStart = selectedDate === dateStr;
       const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
       const isWithinTrip = selectedDateObj && endDateObj && currentDateObj > selectedDateObj && currentDateObj < endDateObj;
+      const inTripBand = !!(isSelectedStart || isWithinTrip || isTripEnd);
+      const continuesNextMonth = inTripBand && !isTripEnd && i === daysInMonth;
+      const continuesPrevMonth = inTripBand && !isSelectedStart && i === 1;
 
       const shapeClass = (() => {
         if (isSelectedStart && isTripEnd) return "rounded-full";
@@ -3956,7 +4074,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	              </motion.span>
 	            </>
 	          ) : (
-	            <span className="text-base relative z-[3]">{i}</span>
+            <span className="text-base relative z-[3] flex items-center justify-center">
+              {continuesPrevMonth && <ChevronLeft size={11} strokeWidth={3} className="-ml-1.5 opacity-60" />}
+              {i}
+              {continuesNextMonth && <ChevronRight size={11} strokeWidth={3} className="-mr-1.5 opacity-60" />}
+            </span>
 	          )}
         </motion.button>
       );
@@ -4009,6 +4131,29 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         <div className="grid grid-cols-7 gap-1">
           {days}
         </div>
+        {tripRange?.crossesMonth && (() => {
+          const startMonth = new Date(tripRange.start.getFullYear(), tripRange.start.getMonth(), 1);
+          const endMonth = new Date(tripRange.end.getFullYear(), tripRange.end.getMonth(), 1);
+          const viewing = currentMonth.getTime();
+          const hintClass = "w-full mt-3 py-2.5 rounded-xl bg-[#FFF3BF] border border-[#FFD700]/60 text-[12px] font-bold text-[#b38200] flex items-center justify-center gap-1.5 active:scale-95 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]";
+          if (viewing >= startMonth.getTime() && viewing < endMonth.getTime()) {
+            return (
+              <button type="button" onClick={() => setCurrentMonth(endMonth)} className={hintClass}>
+                Trip continues into {endMonth.toLocaleString('default', { month: 'long' })}
+                <ChevronRight size={14} strokeWidth={3} />
+              </button>
+            );
+          }
+          if (viewing === endMonth.getTime()) {
+            return (
+              <button type="button" onClick={() => setCurrentMonth(startMonth)} className={hintClass}>
+                <ChevronLeft size={14} strokeWidth={3} />
+                Started {tripRange.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              </button>
+            );
+          }
+          return null;
+        })()}
       </div>
     );
   };
@@ -4946,14 +5091,18 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                   events may still list 'Other' in their cities array; we just
                   don't surface it as a switcher option. */}
               {(() => {
+                // Community events (free, WhatsApp-sheet-only) are excluded:
+                // the switcher swaps between details pages, which community
+                // events don't have.
+                const switchableEvents = allEvents.filter(e => e.bookingFlow !== 'whatsapp');
                 const cityOrder: string[] = [];
-                allEvents.forEach(e => (e.cities ?? []).forEach(c => {
+                switchableEvents.forEach(e => (e.cities ?? []).forEach(c => {
                   if (String(c).toLowerCase() === 'other') return;
                   if (!cityOrder.includes(c)) cityOrder.push(c);
                 }));
                 const cityIdx = cityOrder.indexOf(switcherCity);
                 const cityLabel = switcherCity.charAt(0).toUpperCase() + switcherCity.slice(1).toLowerCase();
-                const cityEvents = sortGirlsOnlyLast(allEvents.filter(e => (e.cities ?? []).includes(switcherCity)));
+                const cityEvents = sortGirlsOnlyLast(switchableEvents.filter(e => (e.cities ?? []).includes(switcherCity)));
                 const categories: string[] = [];
                 cityEvents.forEach(e => { if (!categories.includes(e.category)) categories.push(e.category); });
 

@@ -60,6 +60,8 @@ type Trip = {
   // for the full price (advance is ignored; status jumps straight to paid).
   payment_mode?: string;
   description: string;
+  // Meeting spot shown on the community sheet's Essentials card
+  start_location?: string;
   hero_image: string | string[];
   founders_note_url?: string;
   cities: string[];
@@ -70,6 +72,10 @@ type Trip = {
   not_included: string[];
   announcements?: string[];
   booking_url: string;
+  // 'whatsapp' = free community event; plans chat opens a WhatsApp sheet
+  // (booking_url = invite link, description = "The Essentials" copy).
+  // DB CHECK constraint allows only 'payment' | 'whatsapp' | NULL.
+  booking_flow?: string | null;
   cta_label: string;
   is_active: boolean;
   pickup_points?: PickupPoint[];
@@ -4669,11 +4675,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <label style={s.label}>Booking Type</label>
             <div style={{ display: 'flex', gap: 0, marginBottom: 10, border: '1.5px solid #e0e0e0', borderRadius: 10, overflow: 'hidden' }}>
               {([
-                { mode: 'invite-only', label: 'Invite Only',  bookingUrl: 'native-application', inviteOnly: true  },
-                { mode: 'open-event',  label: 'Open Event',   bookingUrl: 'payu-hosted',        inviteOnly: false },
-                { mode: 'external',    label: 'External Link', bookingUrl: '',                  inviteOnly: false },
+                { mode: 'invite-only', label: 'Invite Only',  bookingUrl: 'native-application', inviteOnly: true,  bookingFlow: null },
+                { mode: 'open-event',  label: 'Open Event',   bookingUrl: 'payu-hosted',        inviteOnly: false, bookingFlow: null },
+                { mode: 'external',    label: 'External Link', bookingUrl: '',                  inviteOnly: false, bookingFlow: null },
+                { mode: 'community',   label: 'Community',    bookingUrl: '',                   inviteOnly: false, bookingFlow: 'whatsapp' },
               ] as const).map(option => {
                 const current =
+                  trip.booking_flow === 'whatsapp'          ? 'community'   :
                   trip.booking_url === 'native-application' ? 'invite-only' :
                   trip.booking_url === 'payu-hosted'        ? 'open-event'  :
                   'external';
@@ -4682,7 +4690,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   <button
                     key={option.mode}
                     type="button"
-                    onClick={() => onChange({ ...trip, booking_url: option.bookingUrl, invite_only: option.inviteOnly })}
+                    onClick={() => onChange({ ...trip, booking_url: option.bookingUrl, invite_only: option.inviteOnly, booking_flow: option.bookingFlow })}
                     style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
                   >
                     {option.label}
@@ -4692,13 +4700,72 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             </div>
 
             {/* External Link: URL input */}
-            {trip.booking_url !== 'native-application' && trip.booking_url !== 'payu-hosted' && (
+            {trip.booking_flow !== 'whatsapp' && trip.booking_url !== 'native-application' && trip.booking_url !== 'payu-hosted' && (
               <input
                 style={s.input}
                 placeholder="https://tally.so/r/..."
                 value={trip.booking_url}
                 onChange={e => set('booking_url', e.target.value)}
               />
+            )}
+
+            {/* Community: WhatsApp link + The Essentials fields (meeting spot /
+                date / time — rendered as the Journey-style card in the sheet) */}
+            {trip.booking_flow === 'whatsapp' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={s.label}>WhatsApp Community Link</label>
+                  <input
+                    style={s.input}
+                    placeholder="https://chat.whatsapp.com/..."
+                    value={trip.booking_url}
+                    onChange={e => set('booking_url', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label style={s.label}>Meeting Spot (The Essentials card)</label>
+                  <input
+                    style={s.input}
+                    placeholder="Anna Nagar (exact location shared in community)"
+                    value={trip.start_location}
+                    onChange={e => set('start_location', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label style={s.label}>You'll Meet (The Essentials card)</label>
+                  <input
+                    style={s.input}
+                    placeholder="ppl who love creating content"
+                    value={trip.description}
+                    onChange={e => set('description', e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={s.label}>Date</label>
+                    <input
+                      style={s.input}
+                      type="date"
+                      value={trip.event_dates?.[0]?.start_date ?? ''}
+                      onChange={e => onChange({
+                        ...trip,
+                        event_dates: e.target.value
+                          ? [{ ...(trip.event_dates?.[0] ?? { status: 'available' as const, label: '' }), start_date: e.target.value }]
+                          : [],
+                      })}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={s.label}>Time (e.g. 4:00 PM)</label>
+                    <input
+                      style={s.input}
+                      placeholder="4:00 PM"
+                      value={trip.timing}
+                      onChange={e => set('timing', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Invite Only: total spots */}
