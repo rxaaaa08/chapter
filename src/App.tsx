@@ -3657,21 +3657,14 @@ function NativeBookingTimeline({
 
   // Build steps list
   const steps = isFullPay
-    ? (() => {
-        // Single-payment event: one full-price step, then any non-payment
-        // booking steps (e.g. "Receive" details). No advance/balance split.
-        // The payment step's label stays editable — it reuses the admin's
-        // payment (advance) Booking Step label, falling back to "Single Entry".
-        const all = bookingSteps ?? [];
-        const paymentStep = all.find(s => /advance/i.test(`${s.label} ${s.value}`));
-        const rest = all.filter(s =>
-          !/advance|balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
-        );
-        return [
-          { label: paymentStep?.label || 'Single Entry', value: '{price}', date: '' },
-          ...rest,
-        ];
-      })()
+    // Single-payment: render the admin's booking steps as-is — the payment step
+    // already carries the full price ({advance}/{price} both resolve to it for
+    // single-pay). Just drop the balance step and the vibe-check / social-proof
+    // rows (the social-proof row is the separate event-title row below). No
+    // synthetic step, so the price isn't duplicated.
+    ? (bookingSteps ?? []).filter(s =>
+        !/balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
+      )
     : isBalancePayment
     ? [
         // Row 0: advance — already paid
