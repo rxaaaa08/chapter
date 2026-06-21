@@ -3305,6 +3305,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               eventSlug={nativeEventData.eventSlug}
               inviteSpots={nativeEventData.inviteSpots}
               applicationCount={inviteApplicationCount}
+              reserved={inviteReservedCount}
               onPayAdvance={() => {
                 if (typeof window !== 'undefined') {
                   window.history.pushState({ chapteraInviteStep: 'bill' }, '', window.location.href);
@@ -3581,6 +3582,7 @@ function NativeBookingTimeline({
   eventSlug,
   inviteSpots,
   applicationCount = null,
+  reserved = null,
   onPayAdvance,
   onClose,
 }: {
@@ -3595,6 +3597,7 @@ function NativeBookingTimeline({
   eventSlug?: string;
   inviteSpots?: number | null;
   applicationCount?: number | null;
+  reserved?: number | null;
   onPayAdvance: () => void;
   onClose: () => void;
 }) {
@@ -3628,15 +3631,21 @@ function NativeBookingTimeline({
   // optimistic full-capacity number that briefly lies if reality is lower.
   // The dot loader lives in the JSX below for the null state. On fetch
   // failure we fall back to inviteSpots so it doesn't loop forever.
-  const [slotsLeft, setSlotsLeft] = useState<number | null>(null);
+  // Seed from the reserved count the parent already fetched (for the greeting) so the
+  // badge is correct on first paint — no loading flash, no date→amber swap on open.
+  const seededSlots = !isBalancePayment && inviteSpots != null && reserved != null
+    ? Math.max(0, inviteSpots - reserved)
+    : null;
+  const [slotsLeft, setSlotsLeft] = useState<number | null>(seededSlots);
   useEffect(() => {
     if (isBalancePayment || inviteSpots == null) { setSlotsLeft(null); return; }
-    setSlotsLeft(null); // Reset to loading on any dependency change
     const lookupSlug = eventSlug || inviteSlug;
-    if (!lookupSlug) { setSlotsLeft(inviteSpots); return; }
+    // Refresh in the background; keep the seeded value visible meanwhile (don't reset
+    // to null) so an already-known count never flickers back to a loading state.
+    if (!lookupSlug) { setSlotsLeft(prev => prev ?? inviteSpots); return; }
     fetchEventCounts(lookupSlug)
-      .then(({ reserved }) => setSlotsLeft(Math.max(0, inviteSpots - reserved)))
-      .catch(() => setSlotsLeft(inviteSpots));
+      .then(({ reserved: fresh }) => setSlotsLeft(Math.max(0, inviteSpots - fresh)))
+      .catch(() => setSlotsLeft(prev => prev ?? inviteSpots));
   }, [isBalancePayment, eventSlug, inviteSlug, inviteSpots]);
 
   const buildCountdown = (dateStr: string): string => {
