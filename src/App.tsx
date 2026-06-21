@@ -3664,7 +3664,7 @@ function NativeBookingTimeline({
     // only shown after the user is invited, so the pre-invite label doesn't fit.
     ? (bookingSteps ?? [])
         .filter(s => !/balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`))
-        .map(s => /\{advance\}|\{price\}/i.test(s.value) ? { ...s, label: 'Single Entry Payment' } : s)
+        .map(s => /\{advance\}|\{price\}/i.test(s.value) ? { ...s, label: 'entry payment' } : s)
     : isBalancePayment
     ? [
         // Row 0: advance — already paid
@@ -4319,7 +4319,7 @@ function NativePaymentOverlay({
 
           {/* Advance / Balance */}
           <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-200">
-            <span className="text-[14px] text-gray-700">{paymentType === 'full' ? 'Single Entry' : paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
+            <span className="text-[14px] text-gray-700">{paymentType === 'full' ? 'Entry Ticket' : paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
             <span className="text-[14px] font-medium text-gray-900">₹{priceAdvance.toLocaleString('en-IN')}</span>
           </div>
 

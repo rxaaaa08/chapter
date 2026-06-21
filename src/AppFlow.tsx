@@ -2372,7 +2372,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? (
                           selectedEvent.paymentMode === 'full'
                             ? [
-                                { label: 'Single Entry', value: '{price}', date: '' },
+                                { label: 'Entry Ticket', value: '{price}', date: '' },
                                 { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                               ]
                             : [
@@ -2407,6 +2407,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                               const dateLabel = !isNowRow && step.date
                                 ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                                 : null;
+                              // Single-payment: the payment row has no meaningful pre-invite deadline
+                              // (the customer pays after being invited), so show "After Invitation"
+                              // in place of the date — same pill styling.
+                              const isAfterInviteRow = selectedEvent.paymentMode === 'full' && !isNowRow && /\{advance\}|\{price\}/i.test(step.value || '');
                               return (
                                 <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                                   <div>
@@ -2416,6 +2420,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                   {isNowRow ? (
                                     <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                                       Now
+                                    </span>
+                                  ) : isAfterInviteRow ? (
+                                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                      After Invitation
                                     </span>
                                   ) : dateLabel ? (
                                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -4148,19 +4156,19 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
           const startMonth = new Date(tripRange.start.getFullYear(), tripRange.start.getMonth(), 1);
           const endMonth = new Date(tripRange.end.getFullYear(), tripRange.end.getMonth(), 1);
           const viewing = currentMonth.getTime();
-          const hintClass = "w-full mt-3 py-2.5 rounded-xl bg-[#FFF3BF] border border-[#FFD700]/60 text-[12px] font-bold text-[#b38200] flex items-center justify-center gap-1.5 active:scale-95 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]";
+          const hintClass = "w-full mt-3 py-2.5 rounded-xl border border-dashed border-[#d4af37] text-[10px] font-bold uppercase tracking-wider text-gray-600 flex items-center justify-center gap-1.5 active:scale-95 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d4af37]";
           if (viewing >= startMonth.getTime() && viewing < endMonth.getTime()) {
             return (
               <button type="button" onClick={() => setCurrentMonth(endMonth)} className={hintClass}>
                 Trip continues into {endMonth.toLocaleString('default', { month: 'long' })}
-                <ChevronRight size={14} strokeWidth={3} />
+                <ChevronRight size={12} strokeWidth={3} className="shrink-0 -translate-y-[0.25px]" />
               </button>
             );
           }
           if (viewing === endMonth.getTime()) {
             return (
               <button type="button" onClick={() => setCurrentMonth(startMonth)} className={hintClass}>
-                <ChevronLeft size={14} strokeWidth={3} />
+                <ChevronLeft size={12} strokeWidth={3} className="shrink-0 -translate-y-[0.25px]" />
                 Started {tripRange.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
               </button>
             );
@@ -4851,8 +4859,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                 </div>
                               </div>
                                 ) : event.paymentMode === 'full' ? (
-                              <div className="flex flex-col gap-1 text-[11px] font-semibold text-gray-700">
-                                <p>Single Entry</p>
+                              <div className="flex flex-col items-center text-center gap-1 text-[11px] font-semibold text-gray-700">
+                                <p>Entry Ticket</p>
                                 <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
                               </div>
                                 ) : (
