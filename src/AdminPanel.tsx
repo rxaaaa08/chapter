@@ -173,6 +173,20 @@ async function logAdminAction(
   }
 }
 
+// Price shown in trip summaries should match what checkout actually charges: a
+// per-city override (city_details[city].price_full > 0) wins over the plan-level
+// price_full (which can be a stale default). Mirrors create-payu-order's cityPrices.
+function tripDisplayPrice(trip: Trip): number {
+  const cd = (trip.city_details ?? {}) as Record<string, { price_full?: number }>;
+  const firstCity = (trip.cities ?? []).find(c => c && c.toLowerCase() !== 'other');
+  if (firstCity) {
+    const key = Object.keys(cd).find(k => k.toLowerCase() === firstCity.toLowerCase());
+    const cityFull = key ? Number(cd[key]?.price_full) : 0;
+    if (cityFull > 0) return cityFull;
+  }
+  return Number(trip.price_full) || 0;
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const [adminRole, setAdminRole] = useState<'admin' | 'ops' | null>(null);
@@ -1615,7 +1629,7 @@ export default function AdminPanel() {
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
+                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{tripDisplayPrice(trip).toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
                               <button style={s.outlineBtn} onClick={() => setEditingTrip(normalizeCityDetails({ ...trip }))}>Edit</button>
@@ -1777,7 +1791,7 @@ export default function AdminPanel() {
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0 }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
+                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{tripDisplayPrice(trip).toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
                             {isExpanded ? (
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2263,7 +2277,7 @@ export default function AdminPanel() {
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0 }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 16 }}>{trip.title}</div>
-                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{trip.price_full?.toLocaleString('en-IN')} · {trip.timing}</div>
+                              <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>₹{tripDisplayPrice(trip).toLocaleString('en-IN')} · {trip.timing}</div>
                             </div>
                             {isExpanded ? (
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2555,6 +2569,54 @@ export default function AdminPanel() {
             return '#555';
           };
 
+          // Download exactly what's on screen (current mode + active filters) as a
+          // CSV. Excel/Google Sheets open it directly; the BOM keeps unicode intact.
+          const exportCsv = () => {
+            const esc = (v: any) => `"${(v == null ? '' : String(v)).replace(/"/g, '""')}"`;
+            const prettyStatus = (st: string) => st.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const callLabel = (cs: string) => callStatusOptions.find(o => o.value === cs)?.label ?? cs;
+
+            let cols: string[];
+            let rows: (string | number)[][];
+            if (peopleMode === 'doubts') {
+              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Applied'];
+              rows = filteredDoubtSubmissions.map((d: any) => [
+                d.name ?? '', d.phone ?? '', getDoubtSubmissionPlanName(d), d.city ?? '',
+                formatAdminDateTime(d.created_at), d.message ?? '', doubtHasApplied(d) ? 'Yes' : 'No',
+              ]);
+            } else {
+              cols = ['Name', 'Phone', 'Event', 'City', 'Meeting Point', 'Status', 'Call Status',
+                      'Call Notes', 'Why Join', 'Marketer', 'Applied At', 'Transaction IDs', 'Amount Paid'];
+              rows = filteredApps.map(app => {
+                const pays = paymentsFor(app.phone, app.event_slug);
+                const txns = pays.all.map((p: any) => p.txnid).filter(Boolean).join(' | ');
+                const amount = pays.all.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+                const callSt = callStatusEdits[app.id] ?? app.call_status ?? 'not_called';
+                const callNt = callNotesEdits[app.id] ?? app.call_notes ?? '';
+                const pickupSpot = String(app.pickup_label ?? '').split(' — ')[0].trim();
+                return [
+                  app.name ?? '', app.phone ?? '',
+                  titleBySlug[app.event_slug] ?? app.event_slug ?? '',
+                  app.selected_city ?? '', pickupSpot,
+                  prettyStatus(displayStatus(app)), callLabel(callSt), callNt, app.why_join ?? '',
+                  (app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id]) || '',
+                  formatAdminDateTime(app.created_at), txns, amount || '',
+                ];
+              });
+            }
+
+            const csv = [cols, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+            const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `people-${peopleMode}-${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          };
+
           const modeChip = (m: typeof peopleMode, label: string, emoji: string) => (
             <button
               key={m}
@@ -2665,6 +2727,19 @@ export default function AdminPanel() {
                   })()}
                 </span>
                 <div style={{ flex: 1 }} />
+                {adminRole === 'admin' && (
+                <button
+                  onClick={exportCsv}
+                  disabled={counts.total === 0}
+                  title="Download the current view (active filters applied) as a CSV — opens in Google Sheets / Excel"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: counts.total === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: counts.total === 0 ? 0.55 : 1 }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Download
+                </button>
+                )}
                 <button
                   onClick={() => { loadApplications(); refreshPayuPayments(); }}
                   disabled={applicationsLoading}
@@ -4192,7 +4267,7 @@ export default function AdminPanel() {
                 </div>
                 <div>
                   <label style={s.label}>₹ / ticket</label>
-                  <input style={s.input} type="number" value={newMarketerCommission} onChange={e => setNewMarketerCommission(e.target.value)} />
+                  <input style={s.input} type="number" onWheel={e => (e.target as HTMLInputElement).blur()} value={newMarketerCommission} onChange={e => setNewMarketerCommission(e.target.value)} />
                 </div>
                 <button style={s.btn()} disabled={savingMarketer} onClick={saveNewMarketer}>{savingMarketer ? 'Saving…' : 'Save'}</button>
                 <button style={s.outlineBtn} onClick={() => { setAddingMarketer(false); setNewMarketerEmail(''); setNewMarketerName(''); setNewMarketerCommission('50'); }}>Cancel</button>
@@ -4768,6 +4843,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <label style={{ ...s.label, marginBottom: 0, whiteSpace: 'nowrap' }}>Total Spots</label>
                 <input
                   type="number"
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
                   min={0}
                   style={{ ...s.input, width: 90, marginBottom: 0 }}
                   placeholder="e.g. 35"
@@ -4784,6 +4860,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <label style={{ ...s.label, marginBottom: 0, whiteSpace: 'nowrap' }}>Total Capacity</label>
                 <input
                   type="number"
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
                   min={1}
                   style={{ ...s.input, width: 90, marginBottom: 0 }}
                   placeholder="e.g. 20"
@@ -4880,6 +4957,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                       <label style={{ fontSize: 11, color: '#888', fontWeight: 600, display: 'block', marginBottom: 4 }}>Full Price (₹)</label>
                       <input
                         type="number"
+                        onWheel={e => (e.target as HTMLInputElement).blur()}
                         style={{ ...s.input, marginBottom: 0 }}
                         value={cityPriceFull}
                         onChange={e => {
@@ -4892,6 +4970,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                       <label style={{ fontSize: 11, color: '#888', fontWeight: 600, display: 'block', marginBottom: 4 }}>Advance (₹)</label>
                       <input
                         type="number"
+                        onWheel={e => (e.target as HTMLInputElement).blur()}
                         style={{ ...s.input, marginBottom: 0 }}
                         value={cityPriceAdvance}
                         onChange={e => {
@@ -4999,6 +5078,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <label style={s.label}>Gang Size</label>
             <input
               type="number"
+              onWheel={e => (e.target as HTMLInputElement).blur()}
               min={1}
               step={1}
               style={s.input}
@@ -5449,6 +5529,7 @@ function OtherCityForm({ trip, onChange, onSave, onCancel, saving, s, hideFooter
                 <label style={s.label}>Journey Card Date Offset (days)</label>
                 <input
                   type="number"
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
                   style={s.input}
                   placeholder="0 = same day, -1 = previous day"
                   value={point.dateOffset ?? 0}
