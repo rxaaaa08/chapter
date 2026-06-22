@@ -363,6 +363,7 @@ export default function AdminPanel() {
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
   const [applicationsStatusFilter, setApplicationsStatusFilter] = useState<'all' | string>('all');
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
   const [callNotesEdits, setCallNotesEdits] = useState<Record<string, string>>({});
   const [savingCallId, setSavingCallId] = useState<string | null>(null);
@@ -907,6 +908,120 @@ export default function AdminPanel() {
     setApprovingId(null);
   };
 
+  // Approve a doubt submission directly: create an `applications` row (status
+  // 'invited') from the doubt's captured details, then run the same invite
+  // side-effects as approveApplication (invited_numbers + AiSensy + push). This
+  // lets a marketer resolve a doubt AND invite the person without a re-apply.
+  // Admin-only — also enforced server-side by the applications_admin_insert RLS.
+  const approveDoubtSubmission = async (submission: any) => {
+    // Resolve the canonical event slug + trip from whatever the doubt stored.
+    const rawTitle = (submission.event_title || submission.event_slug || submission.event_id || '').trim();
+    const trip = trips.find(t =>
+      String(t.slug ?? '').toLowerCase() === String(submission.event_id ?? '').toLowerCase()
+      || t.title === rawTitle || t.slug === rawTitle || t.invite_slug === rawTitle
+    );
+    const slug = String(trip?.slug ?? submission.event_id ?? '').toLowerCase();
+    const phone10 = String(submission.phone ?? '').replace(/\D/g, '').slice(-10);
+
+    if (!slug)                        { showToast('❌ Could not match this doubt to a plan'); return; }
+    if (!/^[6-9]\d{9}$/.test(phone10)) { showToast('❌ Invalid phone number on this doubt'); return; }
+
+    setApprovingDoubtId(submission.id);
+
+    // 1. Create the application row (status invited). On a unique-key clash
+    //    (event_slug, phone) the person already applied — just flip that row to
+    //    invited rather than clobbering their real application data.
+    let appId: string | null = null;
+    const { data: inserted, error: insErr } = await supabase
+      .from('applications')
+      .insert({
+        event_slug:    slug,
+        name:          (submission.name ?? '').trim() || 'Guest',
+        phone:         phone10,
+        email:         (submission.email ?? '').trim() || null,
+        gender:        (submission.gender ?? '').trim(),    // doubt form collects this now
+        why_join:      (submission.why_join ?? '').trim(),
+        status:        'invited',
+        selected_date: submission.selected_date ?? null,
+        selected_city: submission.city ?? null,
+        pickup_label:  submission.meeting_spot ?? null,
+        // Hand the resulting application to whoever owns the doubt. The BEFORE
+        // INSERT trigger also infers this, but setting it explicitly makes the
+        // attribution unambiguous (and round-robins only when the doubt is
+        // unassigned, since null lets the trigger fall back).
+        assigned_marketer_id: submission.assigned_marketer_id ?? null,
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (insErr) {
+      if (insErr.code === '23505') {
+        const { data: existing, error: findErr } = await supabase
+          .from('applications').select('id').eq('event_slug', slug).eq('phone', phone10).maybeSingle();
+        if (findErr || !existing) { showToast(`❌ ${findErr?.message || 'Application already exists but could not be located'}`); setApprovingDoubtId(null); return; }
+        appId = existing.id;
+        await supabase.from('applications').update({ status: 'invited' }).eq('id', appId);
+      } else {
+        showToast(`❌ ${insErr.message}`); setApprovingDoubtId(null); return;
+      }
+    } else {
+      appId = inserted?.id ?? null;
+    }
+    logAdminAction('doubt_approve_invite', 'applications', appId, {
+      name: submission.name ?? null, phone: phone10, event_slug: slug, doubt_id: submission.id ?? null,
+    });
+
+    // 2. Invite side-effects (mirror of approveApplication).
+    const eventName = trip?.title ?? slug;
+    const firstDate = trip?.event_dates?.[0]?.start_date ?? '';
+    const eventDate = (() => {
+      if (!firstDate) return '';
+      const d = new Date(firstDate + 'T00:00:00');
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+      const month = d.toLocaleDateString('en-US', { month: 'long' });
+      const day = d.getDate();
+      const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
+      return `${dayName}, ${month} ${day}${suffix}`;
+    })();
+    const inviteSlug = trip?.invite_slug;
+    if (inviteSlug) {
+      await supabase.from('invited_numbers').insert({ event_slug: inviteSlug, phone: phone10 }).select();
+      logAdminAction('invited_number_add', 'invited_numbers', null, { event_slug: inviteSlug, phone: phone10, via: 'approveDoubtSubmission', application_id: appId });
+    }
+
+    let ok = false; let errReason = '';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const aiRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-aisensy-invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+        body: JSON.stringify({ phone: phone10, userName: submission.name ?? '', eventName, eventDate }),
+      });
+      const aiJson = await aiRes.json().catch(() => ({}));
+      ok = aiRes.ok && aiJson.ok;
+      if (!ok && aiJson.error) errReason = ` — ${String(aiJson.error).slice(0, 120)}`;
+    } catch { errReason = ' (network error)'; }
+
+    if (appId) {
+      await supabase.from('applications').update({
+        status: 'invited',
+        aisensy_invite_sent: ok,
+        ...(ok ? { invite_sent_at: new Date().toISOString() } : {}),
+        re_target: false,
+      }).eq('id', appId);
+    }
+
+    try {
+      await supabase.functions.invoke('send-push-notification', {
+        body: { type: 'direct', phone: phone10, title: "You're invited! 🎉", body: `Your spot on ${eventName} is confirmed. Open the app to see your invite.`, url: inviteSlug ? `/invite/${inviteSlug}` : '/' },
+      });
+    } catch { /* push is non-critical */ }
+
+    showToast(ok ? '✅ Invited & WhatsApp sent' : `✅ Invited — WhatsApp send failed${errReason}`);
+    setApprovingDoubtId(null);
+    await loadApplications(); // refresh so the "Applied" badge + People tab reflect it
+  };
+
   const saveCallInfo = async (id: string) => {
     setSavingCallId(id);
     const { error } = await supabase
@@ -945,10 +1060,18 @@ export default function AdminPanel() {
     // Force both slug + invite_slug to lowercase to prevent the
     // mixed-case bug (applications.event_slug stored 'Sunrise-at-Kovalam'
     // while payu_payments.event_slug stored 'sunrise-at-kovalam' → UPDATE missed).
+    // Inputs store raw values while typing (so spaces work); trim quick_info
+    // values here, once, and drop any entry that's left whitespace-only.
+    const cleanedQuickInfo = Array.isArray(trip.quick_info)
+      ? trip.quick_info
+          .map((qi: any) => ({ ...qi, value: typeof qi.value === 'string' ? qi.value.trim() : qi.value }))
+          .filter((qi: any) => String(qi.value ?? '').trim() !== '')
+      : trip.quick_info;
     const tripWithSlug = {
       ...trip,
       slug:        String(trip.slug || autoSlug).toLowerCase(),
       invite_slug: String(trip.invite_slug || autoSlug).toLowerCase(),
+      quick_info:  cleanedQuickInfo,
     };
     const { event_dates, event_media, event_reviews, faqs, id, ...fields } = tripWithSlug;
     const normalizedEventDates = tripWithSlug.booking_url === 'native-application'
@@ -2579,10 +2702,11 @@ export default function AdminPanel() {
             let cols: string[];
             let rows: (string | number)[][];
             if (peopleMode === 'doubts') {
-              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Applied'];
+              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Why Join', 'Applied'];
               rows = filteredDoubtSubmissions.map((d: any) => [
                 d.name ?? '', d.phone ?? '', getDoubtSubmissionPlanName(d), d.city ?? '',
-                formatAdminDateTime(d.created_at), d.message ?? '', doubtHasApplied(d) ? 'Yes' : 'No',
+                (d.reporting_date ?? '') || formatAdminDateTime(d.submitted_at ?? d.created_at),
+                d.doubt ?? d.message ?? '', d.why_join ?? '', doubtHasApplied(d) ? 'Yes' : 'No',
               ]);
             } else {
               cols = ['Name', 'Phone', 'Event', 'City', 'Meeting Point', 'Status', 'Call Status',
@@ -2866,6 +2990,14 @@ export default function AdminPanel() {
                           {doubtText}
                         </p>
 
+                        {/* Why-join intent — lets the marketer invite directly without a re-apply */}
+                        {(submission.why_join ?? '').trim() && (
+                          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '8px 12px', margin: '0 0 10px 0' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Why they want to join</div>
+                            <p style={{ fontSize: 13.5, color: '#166534', lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{submission.why_join}</p>
+                          </div>
+                        )}
+
                         {/* Meta row */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: '#888', minWidth: 0 }}>
@@ -2900,6 +3032,22 @@ export default function AdminPanel() {
                               </a>
                             ) : (
                               <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
+                            )}
+                            {/* Admin-only: turn a doubt straight into an invited
+                                application so they don't have to re-apply. Hidden
+                                once they've applied (manage from the People tab). */}
+                            {adminRole === 'admin' && phoneDigits && !applied && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`Approve ${submitterName} and send the invite for ${eventName}?\n\nThis creates an application (status: invited) and sends the WhatsApp invite.`)) {
+                                    approveDoubtSubmission(submission);
+                                  }
+                                }}
+                                disabled={approvingDoubtId === submission.id}
+                                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 700, color: '#fff', background: '#16a34a', border: 'none', borderRadius: 8, cursor: approvingDoubtId === submission.id ? 'wait' : 'pointer', opacity: approvingDoubtId === submission.id ? 0.6 : 1 }}
+                              >
+                                {approvingDoubtId === submission.id ? 'Inviting…' : 'Approve & Invite'}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -4474,10 +4622,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   );
   const setPlanValue = (removeLabels: string[], saveLabel: string, value: string, icon: string) => {
     const next = quickInfo.filter(item => !removeLabels.includes(item.label));
-    const trimmed = value.trim();
+    // Store the raw value so the user can type spaces freely (a trailing space
+    // is no longer stripped on every keystroke). Leading/trailing whitespace is
+    // cleaned up once, at save time, in saveTrip(). We only trim for the
+    // keep-or-remove decision so a whitespace-only field still drops the entry.
     onChange({
       ...trip,
-      quick_info: trimmed ? [...next, { icon, label: saveLabel, value: trimmed }] : next,
+      quick_info: value.trim() ? [...next, { icon, label: saveLabel, value }] : next,
     });
   };
   const setGangSize = (value: string) => {
@@ -4486,7 +4637,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
     const capacity = trimmed === '' ? null : Number(trimmed);
     onChange({
       ...trip,
-      quick_info: trimmed ? [...next, { icon: 'users', label: 'Group Size', value: trimmed }] : next,
+      quick_info: trimmed ? [...next, { icon: 'users', label: 'Group Size', value }] : next,
       invite_spots: Number.isFinite(capacity) ? capacity : null,
       total_capacity: Number.isFinite(capacity) ? capacity : null,
     });
