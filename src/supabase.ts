@@ -216,31 +216,6 @@ export async function fetchEventCounts(eventSlug: string): Promise<{ registered:
   };
 }
 
-// Per-date booking counts for the calendar's per-date spots-left logic.
-// Returns a map keyed by selected_date (YYYY-MM-DD) → { registered, reserved }.
-// applications is RLS-locked to admins, so this goes through the anon-safe
-// event_booking_counts_by_date RPC (resolves invite_slug → canonical slug).
-export async function fetchEventDateCounts(
-  eventSlug: string
-): Promise<Record<string, { registered: number; reserved: number }>> {
-  if (!eventSlug) return {};
-  const { data, error } = await supabase.rpc('event_booking_counts_by_date', { p_slug: eventSlug });
-  if (error) {
-    console.error('Supabase event_booking_counts_by_date error:', error);
-    return {};
-  }
-  const map: Record<string, { registered: number; reserved: number }> = {};
-  for (const row of (data ?? []) as any[]) {
-    const key = String(row?.selected_date ?? '').slice(0, 10);
-    if (!key) continue;
-    map[key] = {
-      registered: Number(row?.registered ?? 0) || 0,
-      reserved:   Number(row?.reserved   ?? 0) || 0,
-    };
-  }
-  return map;
-}
-
 export async function fetchEvents(): Promise<any[]> {
   const { data, error } = await supabase
     .from('events')

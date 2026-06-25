@@ -362,8 +362,6 @@ export default function AdminPanel() {
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
   const [applicationsStatusFilter, setApplicationsStatusFilter] = useState<'all' | string>('all');
-  // 'all' | 'unassigned' | <marketer id>. Admin-only filter.
-  const [applicationsMarketerFilter, setApplicationsMarketerFilter] = useState<'all' | string>('all');
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
@@ -947,12 +945,11 @@ export default function AdminPanel() {
         selected_date: submission.selected_date ?? null,
         selected_city: submission.city ?? null,
         pickup_label:  submission.meeting_spot ?? null,
-        // Attribution: when a marketer (ops) approves, the application MUST be
-        // assigned to them — both for correct credit and because the marketer
-        // RLS insert policy only allows self-assigned rows. Admins (no
-        // currentMarketer) fall back to whoever owns the doubt, else the BEFORE
-        // INSERT trigger infers it.
-        assigned_marketer_id: currentMarketer?.id ?? submission.assigned_marketer_id ?? null,
+        // Hand the resulting application to whoever owns the doubt. The BEFORE
+        // INSERT trigger also infers this, but setting it explicitly makes the
+        // attribution unambiguous (and round-robins only when the doubt is
+        // unassigned, since null lets the trigger fall back).
+        assigned_marketer_id: submission.assigned_marketer_id ?? null,
       })
       .select('id')
       .maybeSingle();
@@ -2635,11 +2632,7 @@ export default function AdminPanel() {
               || String(a.name  ?? '').toLowerCase().includes(searchLower)
               || String(a.phone ?? '').includes(searchLower)
               || pays.all.some((p: any) => String(p.txnid ?? '').toLowerCase().includes(searchLower));
-            const marketerMatch = applicationsMarketerFilter === 'all'
-              || (applicationsMarketerFilter === 'unassigned'
-                    ? !a.assigned_marketer_id
-                    : a.assigned_marketer_id === applicationsMarketerFilter);
-            return eventMatch && statusMatch && searchMatch && marketerMatch;
+            return eventMatch && statusMatch && searchMatch;
           });
           // A doubt is "handled" the moment that person actually submits an
           // application for the same event — a real, non-gameable outcome (a
@@ -2665,11 +2658,7 @@ export default function AdminPanel() {
               : submissionPlan.toLowerCase() === qnaDoubtPlanFilter.trim().toLowerCase();
             const cityMatch = qnaDoubtCityFilter === 'all'
               || (submission.city ?? '').toLowerCase().includes(qnaDoubtCityFilter.toLowerCase());
-            const marketerMatch = applicationsMarketerFilter === 'all'
-              || (applicationsMarketerFilter === 'unassigned'
-                    ? !submission.assigned_marketer_id
-                    : submission.assigned_marketer_id === applicationsMarketerFilter);
-            return planMatch && cityMatch && marketerMatch;
+            return planMatch && cityMatch;
           // Open doubts (not yet applied) surface above handled ones.
           }).sort((a, b) => Number(doubtHasApplied(a)) - Number(doubtHasApplied(b)));
 
@@ -2713,7 +2702,7 @@ export default function AdminPanel() {
             let cols: string[];
             let rows: (string | number)[][];
             if (peopleMode === 'doubts') {
-              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Why Join', 'Invited'];
+              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Why Join', 'Applied'];
               rows = filteredDoubtSubmissions.map((d: any) => [
                 d.name ?? '', d.phone ?? '', getDoubtSubmissionPlanName(d), d.city ?? '',
                 (d.reporting_date ?? '') || formatAdminDateTime(d.submitted_at ?? d.created_at),
@@ -2858,7 +2847,7 @@ export default function AdminPanel() {
                   {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
                   {peopleMode === 'doubts' && (() => {
                     const appliedCount = filteredDoubtSubmissions.filter(doubtHasApplied).length;
-                    return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} invited</span> : null;
+                    return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} applied</span> : null;
                   })()}
                 </span>
                 <div style={{ flex: 1 }} />
@@ -2924,22 +2913,6 @@ export default function AdminPanel() {
                   <option value="fully_paid">Fully Paid</option>
                   <option value="has_doubt">Raised Doubt</option>
                 </select>
-                {/* Marketer filter — admin-only (ops users only ever see their own leads). */}
-                {adminRole === 'admin' && (
-                  <select
-                    value={applicationsMarketerFilter}
-                    onChange={e => setApplicationsMarketerFilter(e.target.value)}
-                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
-                  >
-                    <option value="all">All Marketers</option>
-                    <option value="unassigned">Unassigned</option>
-                    {Object.entries(marketerNameById)
-                      .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
-                      .map(([id, name]) => (
-                        <option key={id} value={id}>{name}</option>
-                    ))}
-                  </select>
-                )}
                 <input
                   type="text"
                   placeholder="Search name or phone…"
@@ -2947,8 +2920,8 @@ export default function AdminPanel() {
                   onChange={e => setPeopleSearch(e.target.value)}
                   style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', minWidth: 220 }}
                 />
-                {(applicationsEventFilter !== 'all' || applicationsStatusFilter !== 'all' || applicationsMarketerFilter !== 'all' || peopleSearch) && (
-                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsStatusFilter('all'); setApplicationsMarketerFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                {(applicationsEventFilter !== 'all' || applicationsStatusFilter !== 'all' || peopleSearch) && (
+                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsStatusFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
                 )}
               </div>
               ) : (
@@ -2969,24 +2942,8 @@ export default function AdminPanel() {
                   <option value="all">All Plans</option>
                   {qnaDoubtPlans.map(plan => <option key={plan} value={plan}>{plan}</option>)}
                 </select>
-                {/* Marketer filter — admin-only, mirrors the Call tab. */}
-                {adminRole === 'admin' && (
-                  <select
-                    value={applicationsMarketerFilter}
-                    onChange={e => setApplicationsMarketerFilter(e.target.value)}
-                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
-                  >
-                    <option value="all">All Marketers</option>
-                    <option value="unassigned">Unassigned</option>
-                    {Object.entries(marketerNameById)
-                      .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
-                      .map(([id, name]) => (
-                        <option key={id} value={id}>{name}</option>
-                    ))}
-                  </select>
-                )}
-                {(qnaDoubtCityFilter !== 'all' || qnaDoubtPlanFilter !== 'all' || applicationsMarketerFilter !== 'all') && (
-                  <button onClick={() => { setQnaDoubtCityFilter('all'); setQnaDoubtPlanFilter('all'); setApplicationsMarketerFilter('all'); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                {(qnaDoubtCityFilter !== 'all' || qnaDoubtPlanFilter !== 'all') && (
+                  <button onClick={() => { setQnaDoubtCityFilter('all'); setQnaDoubtPlanFilter('all'); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
                 )}
               </div>
               )}
@@ -3028,18 +2985,17 @@ export default function AdminPanel() {
                         key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`}
                         style={{ padding: '14px 20px', borderBottom: isLast ? 'none' : '1px solid #f0f0f0', background: applied ? '#fafafa' : '#fff', opacity: applied ? 0.65 : 1 }}
                       >
-                        {/* Doubt — labeled field, primary, full width */}
-                        <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Doubt</div>
+                        {/* Doubt text — primary, full width, fully readable */}
                         <p style={{ fontSize: 15, color: '#111', lineHeight: 1.55, margin: '0 0 10px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {doubtText}
                         </p>
 
-                        {/* Why-join — same quiet labeled-field treatment, muted (no fill) */}
+                        {/* Why-join intent — lets the marketer invite directly without a re-apply */}
                         {(submission.why_join ?? '').trim() && (
-                          <>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Why Join</div>
-                            <p style={{ fontSize: 13.5, color: '#555', lineHeight: 1.5, margin: '0 0 10px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{submission.why_join}</p>
-                          </>
+                          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '8px 12px', margin: '0 0 10px 0' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Why they want to join</div>
+                            <p style={{ fontSize: 13.5, color: '#166534', lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{submission.why_join}</p>
+                          </div>
                         )}
 
                         {/* Meta row */}
@@ -3052,18 +3008,12 @@ export default function AdminPanel() {
                             {(reportingDateText !== '-' || submittedAt !== '-') && (
                               <><span style={{ color: '#ccc' }}>·</span><span>{reportingDateText !== '-' ? reportingDateText : submittedAt}</span></>
                             )}
-                            {/* Admin-only: which marketer owns this doubt. */}
-                            {adminRole === 'admin' && submission.assigned_marketer_id && marketerNameById[submission.assigned_marketer_id] && (
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#555', background: '#f3f3f3', borderRadius: 999, padding: '2px 9px' }}>
-                                👤 {marketerNameById[submission.assigned_marketer_id]}
-                              </span>
-                            )}
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                             {applied && (
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 999, padding: '3px 9px' }}>
-                                ✓ Invited
+                                ✓ Applied
                               </span>
                             )}
                             {phoneDigits && (
@@ -3083,12 +3033,10 @@ export default function AdminPanel() {
                             ) : (
                               <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
                             )}
-                            {/* Turn a doubt straight into an invited application so
-                                they don't re-apply. Visible to admins and marketers
-                                (a marketer only sees their own assigned doubts, and
-                                RLS forces the new application to be self-assigned).
-                                Hidden once already invited. */}
-                            {adminRole && phoneDigits && !applied && (
+                            {/* Admin-only: turn a doubt straight into an invited
+                                application so they don't have to re-apply. Hidden
+                                once they've applied (manage from the People tab). */}
+                            {adminRole === 'admin' && phoneDigits && !applied && (
                               <button
                                 onClick={() => {
                                   if (window.confirm(`Approve ${submitterName} and send the invite for ${eventName}?\n\nThis creates an application (status: invited) and sends the WhatsApp invite.`)) {
@@ -3096,9 +3044,9 @@ export default function AdminPanel() {
                                   }
                                 }}
                                 disabled={approvingDoubtId === submission.id}
-                                style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: approvingDoubtId === submission.id ? 'not-allowed' : 'pointer', opacity: approvingDoubtId === submission.id ? 0.6 : 1 }}
+                                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 700, color: '#fff', background: '#16a34a', border: 'none', borderRadius: 8, cursor: approvingDoubtId === submission.id ? 'wait' : 'pointer', opacity: approvingDoubtId === submission.id ? 0.6 : 1 }}
                               >
-                                {approvingDoubtId === submission.id ? 'Sending…' : '✓ Approve'}
+                                {approvingDoubtId === submission.id ? 'Inviting…' : 'Approve & Invite'}
                               </button>
                             )}
                           </div>

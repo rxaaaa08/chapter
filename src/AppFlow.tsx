@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts } from './supabase';
 import { TermsContent } from './TermsContent';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
@@ -854,11 +854,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
-  // Latches true the instant a calendar CTA (Book Now / Contact Us) is pressed,
-  // so the galcode header doesn't flash back to "chapter அ" during the transient
-  // PROCESSING (typing) step before ASK_DOUBTS/SHOW_FAQ renders. Auto-reset by an
-  // effect once the user lands back on a pre-doubt step.
-  const [inDoubtFlow, setInDoubtFlow] = useState(false);
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -884,9 +879,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [appFormSubmitted, setAppFormSubmitted] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [reservedCount, setReservedCount] = useState<number | null>(null);
-  // Per-date counts (keyed YYYY-MM-DD) for per-date spots-left in the calendar,
-  // ApplicationForm, and booking timeline. null until loaded.
-  const [dateCounts, setDateCounts] = useState<Record<string, { registered: number; reserved: number }> | null>(null);
   // Dynamic global announcements computed from invite-only events
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<string[]>([]);
   const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
@@ -962,9 +954,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', gender: '', message: '', whyJoin: '' });
   const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat'>('form');
-  // Once a doubt is submitted this session, hide the "ask a doubt" CTA in the
-  // FAQ step so it isn't offered again (FAQs + "ready to book" stay visible).
-  const [doubtSubmittedThisSession, setDoubtSubmittedThisSession] = useState(false);
   // Deprecated — see App.tsx for the rationale.
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
     () => null
@@ -1045,14 +1034,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     if (!isNativeApplicationFlow || !selectedEvent?.id) {
       setApplicationCount(null);
       setReservedCount(null);
-      setDateCounts(null);
       return;
     }
     fetchEventCounts(selectedEvent.id).then(({ registered, reserved }) => {
       setApplicationCount(registered);
       setReservedCount(reserved);
     });
-    fetchEventDateCounts(selectedEvent.id).then(setDateCounts);
   }, [isNativeApplicationFlow, selectedEvent?.id]);
 
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
@@ -1146,12 +1133,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   // Determine which announcements to show
   const isAfterTripInfo = step === 'ASK_DOUBTS' || step === 'SHOW_FAQ' || step === 'DONE';
-  // Reset the doubt-flow latch once the user is back on a pre-doubt step (not the
-  // transient PROCESSING step, and not within the doubt flow itself) — e.g. after
-  // going back to event details or picking a new plan.
-  useEffect(() => {
-    if (step !== 'PROCESSING' && !isAfterTripInfo) setInDoubtFlow(false);
-  }, [step, isAfterTripInfo]);
   const currentAnnouncements = (isAfterTripInfo && (selectedEvent?.announcements?.length ?? 0) > 0)
     ? (selectedEvent?.announcements ?? [])
     : globalAnnouncements;
@@ -1164,20 +1145,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   useEffect(() => clearDetailTimers, []);
 
-  // Rotate the header one-liner. Keyed on the announcement *content* (not just
-  // length) so when the set switches — e.g. general → event after a CTA — the
-  // index resets to 0 and a fresh 5s timer starts, instead of inheriting the old
-  // timer's leftover phase (which made the first rotation arrive at a random time).
-  const announcementsKey = currentAnnouncements.join('|');
   useEffect(() => {
-    setAnnouncementIndex(0);
-    if (currentAnnouncements.length <= 1) return;
+    if (currentAnnouncements.length === 0) return;
     const interval = setInterval(() => {
       setAnnouncementIndex((prev) => (prev + 1) % currentAnnouncements.length);
     }, 5000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [announcementsKey]);
+  }, [currentAnnouncements.length]);
 
   // Once details are ready, let the overlay fade out before showing details
   useEffect(() => {
@@ -1311,6 +1285,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     return () => window.removeEventListener('popstate', onPopState);
   }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails]);
 
+  // Reset announcement index when switching contexts
+  useEffect(() => {
+    setAnnouncementIndex(0);
+  }, [isAfterTripInfo, selectedEvent]);
 
   // Balance due countdown timer
   useEffect(() => {
@@ -1555,7 +1533,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       });
     }
     trackEvent(action === 'book' ? 'book_clicked' : 'contact_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-    setInDoubtFlow(true); // galcode header on immediately, before the PROCESSING flash
     setStep('PROCESSING');
 
     simulateBotTyping(() => {
@@ -1691,7 +1668,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const whyJoin = doubtFormData.whyJoin;
     setShowDoubtPopup(false);
     setDoubtSheetView('form');
-    setDoubtSubmittedThisSession(true);
     setDoubtFormData({ name: '', phone: '', gender: '', message: '', whyJoin: '' });
 
     // Inject chat messages right away
@@ -2016,12 +1992,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 <span className="truncate whitespace-normal text-left">{faq.question}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
-            {!doubtSubmittedThisSession && (
             <button onClick={() => { setShowDoubtPopup(true); setDoubtSheetView(liveConversationId ? 'chat' : 'form'); }} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
               <span className="truncate whitespace-normal text-left">{doubtCtaLabel}</span> <MessageCircle size={16} className="flex-shrink-0" />
             </button>
-            )}
             <button onClick={handleReadyToBook} className={primaryBtnClass + " mt-2 relative overflow-hidden"}>
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
               <span>{(msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀"}</span> <Send size={16} />
@@ -2172,33 +2146,22 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     </div>
   );
   const isSelectedGirlsOnlyEvent = selectedEvent?.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent?.quickInfo);
-  // GalCode branding (name + photo) ONLY once the user has entered the doubt
-  // flow — i.e. after pressing Book Now / Contact Us in the calendar sheet
-  // (isAfterTripInfo = ASK_DOUBTS | SHOW_FAQ | DONE). The plan-selection steps
-  // stay "chapter அ". Photo is zoomed 1.4x to match the invite-payment header.
-  const showGalcodeHeader = isSelectedGirlsOnlyEvent && (isAfterTripInfo || inDoubtFlow);
-  const chatHeaderProfile = showGalcodeHeader ? '/galcode_chat_profile.jpeg' : chatProfile;
-  const chatHeaderProfileClass = showGalcodeHeader
-    ? 'w-full h-full object-contain scale-[1.4]'
-    : 'w-full h-full object-contain scale-[1.02] translate-y-[2px]';
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
 
-        {/* Header — not rendered under the event-details overlay, so it doesn't
-            flash (incl. the galcode↔chapter swap) through during the back transition. */}
-        {!showDetails && (
+        {/* Header */}
         <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
-              <img src={chatHeaderProfile} alt="chat profile" className={chatHeaderProfileClass} />
+              <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
             </div>
             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-1.5">
-              <h1 className="font-black text-lg tracking-tight text-black">{showGalcodeHeader ? 'galcode' : 'chapter அ'}</h1>
+              <h1 className="font-black text-lg tracking-tight text-black">chapter அ</h1>
               <CheckCircle2 size={16} className="text-blue-500 fill-blue-50" />
             </div>
             <div className="h-[14px] overflow-hidden relative mt-0.5">
@@ -2219,7 +2182,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             </div>
           </div>
         </div>
-        )}
 
         {showChat && !showDetails && !showTransition && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
@@ -2307,7 +2269,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             allEvents={events}
             applicationCount={applicationCount}
             reservedCount={reservedCount}
-            dateCounts={dateCounts}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
             openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
@@ -2381,16 +2342,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const advanceStr = selectedEvent.paymentMode === 'full' ? priceStr : `₹${pricing.advance.toLocaleString('en-IN')}`;
                         const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
 
-                        // Social-proof count: (capacity * 3) + registered for the SELECTED date.
+                        // Social-proof count: legacy formula (capacity * 3 + applicationCount).
                         // Used to substitute the {application_count} placeholder in the
-                        // social-proof booking_steps row's label. Per-date: only counts
-                        // applicants who chose this date. Hidden until per-date counts load.
+                        // social-proof booking_steps row's label.
                         const capacity = (selectedEvent as any).totalCapacity;
-                        const socialProofDate = bookingDate || selectedEvent?.dates?.[0]?.date || '';
-                        const perDateRegistered = dateCounts && socialProofDate ? (dateCounts[socialProofDate]?.registered ?? 0) : null;
                         const socialProofCount =
-                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && perDateRegistered !== null
-                            ? (capacity * 3) + perDateRegistered
+                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0
+                            ? (capacity * 3) + (typeof applicationCount === 'number' ? applicationCount : 0)
                             : null;
 
                         const resolveValue = (v: string) => {
@@ -3458,7 +3416,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </div>
 
                     <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3 relative">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">{isSelectedGirlsOnlyEvent ? "I confirm that I'm Female" : 'Gender'}</label>
+                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Gender</label>
                       <select
                         required
                         value={doubtFormData.gender}
@@ -3466,15 +3424,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         className={`w-full bg-transparent text-[17px] font-medium outline-none appearance-none cursor-pointer pr-6 ${doubtFormData.gender ? 'text-gray-900' : 'text-gray-300'}`}
                       >
                         <option value="" disabled>Select Option</option>
-                        {isSelectedGirlsOnlyEvent ? (
-                          <option value="Female">Yes</option>
-                        ) : (
-                          <>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Non-Binary">Non-Binary</option>
-                          </>
-                        )}
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Non-Binary">Non-Binary</option>
                       </select>
                       <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
@@ -3795,7 +3747,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -4031,40 +3983,17 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
 	    // Shift so Monday = 0, Sunday = 6 (common in India)
 	    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
-	    // ── Per-date spots-left (native application events) ──────────────────────
-	    // Capacity (totalCapacity) applies to EACH date independently. reserved per
-	    // date comes from dateCounts (advance_paid/fully_paid who picked that date).
-	    // Rules: a date with 0 left auto-sells-out; the EARLIEST date that's ≥50%
-	    // reserved (and still has spots) is the only one shown amber + "Only X left";
-	    // every other non-sold date stays green.
-	    const isNative = event.bookingUrl === 'native-application';
 	    const nativeCapacity = (event as any).totalCapacity as number | null;
-	    const cap = isNative && typeof nativeCapacity === 'number' && nativeCapacity > 0 ? nativeCapacity : null;
-	    const reservedForDate = (baseDate?: string) => (baseDate && dateCounts ? (dateCounts[baseDate]?.reserved ?? 0) : 0);
-	    const sortedTripDates = (event.dates ?? []).filter(d => d.date).slice().sort((a, b) => a.date.localeCompare(b.date));
-	    // Classify each trip date: 'sold' | 'amber' (earliest filling-fast) | 'green'.
-	    let earliestFillingFastDate: string | null = null;
-	    let earliestFillingFastLeft = 0;
-	    if (cap) {
-	      for (const d of sortedTripDates) {
-	        const reserved = reservedForDate(d.date);
-	        const avail = cap - reserved;
-	        if (d.status === 'sold_out' || avail <= 0) continue;       // sold out → skip
-	        if (reserved / cap >= 0.5) { earliestFillingFastDate = d.date; earliestFillingFastLeft = avail; break; }
-	      }
-	    }
-	    const dateVisualState = (baseDate?: string, dbStatus?: string): 'sold' | 'amber' | 'green' | null => {
-	      if (!isNative || !cap || !baseDate) return null;
-	      const avail = cap - reservedForDate(baseDate);
-	      if (dbStatus === 'sold_out' || avail <= 0) return 'sold';
-	      if (baseDate === earliestFillingFastDate) return 'amber';
-	      return 'green';
-	    };
-	    // Legend summary across all trip dates.
-	    const tripStates = cap ? sortedTripDates.map(d => dateVisualState(d.date, d.status)) : [];
-	    const legendHasGreen = tripStates.includes('green');
-	    const legendAllSoldOut = tripStates.length > 0 && tripStates.every(s => s === 'sold');
-
+	    const nativeTaken = typeof reservedCount === 'number' ? reservedCount : null;
+	    const nativeAvailability =
+	      event.bookingUrl === 'native-application' && nativeCapacity && nativeTaken !== null
+	        ? {
+	            available: Math.max(nativeCapacity - nativeTaken, 0),
+	            isFillingFast: nativeTaken / nativeCapacity >= 0.5,
+	          }
+	        : null;
+	    const useNativeFillingFastCells = !!nativeAvailability?.isFillingFast && nativeAvailability.available > 0;
+	    
     const selectedDateObj = tripRange?.start ?? null;
     const endDateObj = tripRange?.end ?? null;
     
@@ -4079,12 +4008,10 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
 	      const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
 	      const tripDate = event.dates?.find(d => d.date === baseDateStr);
-	      const cellState = dateVisualState(baseDateStr, tripDate?.status);
 	      const effectiveDateStatus =
-	        cellState === 'sold'  ? 'sold_out'
-	        : cellState === 'amber' ? 'selling_out'
-	        : cellState === 'green' ? 'available'
-	        : tripDate?.status;
+	        useNativeFillingFastCells && tripDate?.status === 'available'
+	          ? 'selling_out'
+	          : tripDate?.status;
 
       const isSelectedStart = selectedDate === dateStr;
       const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
@@ -4101,7 +4028,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         return "rounded-xl";
       })();
 
-	      const isSoldOut = tripDate?.status === 'sold_out' || cellState === 'sold';
+	      const isSoldOut = tripDate?.status === 'sold_out';
 	      const isUnavailable = !tripDate || isSoldOut;
 	      const isColoured = !!tripDate && (effectiveDateStatus === 'available' || effectiveDateStatus === 'selling_out');
       const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && !selectedDate;
@@ -4229,34 +4156,23 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
           </button>
         </div>
         <div className="flex items-center justify-center gap-5 mt-4 mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-          {(() => {
-            const amberKey = (label: string) => (
+          {nativeAvailability?.available > 0 && nativeAvailability.isFillingFast ? (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
+              <span>Only {nativeAvailability.available} spot{nativeAvailability.available === 1 ? '' : 's'} left</span>
+            </div>
+          ) : (
+            <>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
-                <span>{label}</span>
+                <span>Filling fast</span>
               </div>
-            );
-            const greenKey = (
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
                 <span>Available</span>
               </div>
-            );
-            // Per-date native logic.
-            if (cap) {
-              if (legendAllSoldOut) return null;                       // all sold out → no keys
-              if (earliestFillingFastDate) {                           // ≥1 filling-fast date
-                return (
-                  <>
-                    {amberKey(`Only ${earliestFillingFastLeft} spot${earliestFillingFastLeft === 1 ? '' : 's'} left`)}
-                    {legendHasGreen && greenKey}
-                  </>
-                );
-              }
-            }
-            // Default color legend (non-native, no capacity, or nothing filling fast).
-            return (<>{amberKey('Filling fast')}{greenKey}</>);
-          })()}
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-7 gap-1 mb-2 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
