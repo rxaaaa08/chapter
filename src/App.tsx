@@ -1553,7 +1553,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; girlsOnly?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
@@ -1761,6 +1761,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       priceAdvance: isFullPay ? priceFull : (isBalancePayment ? balanceAmount : priceAdvance),
       priceFull,
       paymentMode: event.payment_mode ?? 'split',
+      // GalCode events (girls-only flag in quick_info) get a "galcode" chat header.
+      girlsOnly: Array.isArray(event.quick_info) && event.quick_info.some((i: any) =>
+        ['girls only event', "girl's only event", 'girls_only_event'].includes(String(i.label ?? '').trim().toLowerCase())
+        && String(i.value ?? '').trim().toLowerCase() !== 'false'
+      ),
       // The city we resolved per-user (application > invited_numbers > 1st event city).
       // Passed straight to NativePaymentOverlay → create-payu-order so the server
       // can pick the same city_details override that this UI just used to compute
@@ -2948,6 +2953,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
             const hasEssentials = !!(chatEventQuickInfo.length > 0 || chatEventTransportPlan[0]?.time || nativeEventData?.firstDate);
 
+            // GalCode events use a dedicated chat profile photo (served from /public),
+            // zoomed in 1.5x so the logo fills the tile instead of sitting boxed-in.
+            const chatHeaderProfile = nativeEventData?.girlsOnly ? '/galcode_chat_profile.jpeg' : chatProfile;
+            const chatHeaderProfileClass = nativeEventData?.girlsOnly
+              ? 'w-full h-full object-contain scale-[1.4]'
+              : 'w-full h-full object-contain scale-[1.02] translate-y-[2px]';
+
             const ReplyContainer = ({ children, delay = 0.15 }: { children: React.ReactNode; delay?: number }) => (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className="pt-1">
                 <div className="bg-white rounded-2xl border border-gray-200 p-3">
@@ -2985,7 +2997,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                           style={{ background: '#FFD700', filter: 'blur(10px)' }}
                         />
                         <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
-                          <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+                          <img src={chatHeaderProfile} alt="chat profile" className={chatHeaderProfileClass} />
                         </div>
                       </motion.div>
                     </motion.div>
@@ -2995,13 +3007,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                 <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
                   <div className="relative">
                     <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
-                      <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+                      <img src={chatHeaderProfile} alt="chat profile" className={chatHeaderProfileClass} />
                     </div>
                     <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-1.5">
-                      <h1 className="font-black text-lg tracking-tight text-black">chapter அ</h1>
+                      <h1 className="font-black text-lg tracking-tight text-black">{nativeEventData?.girlsOnly ? 'galcode' : 'chapter அ'}</h1>
                       <CheckCircle2 size={16} className="text-blue-500 fill-blue-50" />
                     </div>
                     <div className="h-[14px] overflow-hidden relative mt-0.5">
