@@ -131,6 +131,54 @@ type PayuPayment = {
 };
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+// Default native-application booking-timeline steps for a payment mode.
+// Single-pay = 4 rows (one entry payment); split = 5 rows (advance + balance).
+// Last row is the gold social-proof row (event title).
+function nativeDefaultBookingSteps(isFullPay: boolean, title: string): Array<{ label: string; value: string; date: string }> {
+  const titleRow = { label: '{application_count} ppl have requested invitation', value: title || 'Your Plan Name', date: '' };
+  return isFullPay
+    ? [
+        { label: 'vibe check',            value: 'Request Invitation',      date: '' },
+        { label: "if you're invited",     value: '{price}',                 date: '' },
+        { label: "you'll receive exact",  value: 'Meeting Spot Details 📍', date: '' },
+        titleRow,
+      ]
+    : [
+        { label: 'vibe check',                  value: 'Request Invitation',      date: '' },
+        { label: "if you're invited (advance)", value: '{advance}',               date: '' },
+        { label: 'remaining balance',           value: '{balance}',               date: '' },
+        { label: "you'll receive exact",        value: 'Meeting Spot Details 📍', date: '' },
+        titleRow,
+      ];
+}
+
+// True when stored steps structurally match the payment mode: split must have a
+// {balance} row; single must NOT. Used to auto-heal steps left over from a mode
+// switch (e.g. a single-pay event flipped to split keeps its old {price}-only rows).
+function bookingStepsMatchMode(steps: Array<{ label: string; value: string }> | undefined | null, isFullPay: boolean): boolean {
+  if (!steps?.length) return false;
+  const hasBalance = steps.some(s => /\{balance\}/i.test(`${s.label} ${s.value}`));
+  return isFullPay ? !hasBalance : hasBalance;
+}
+
+// Rebuild steps for a new payment mode, preserving dates on the rows whose role
+// survives the switch (request-invitation, meeting-spot, social-proof). Only the
+// payment rows are structurally reset.
+function regenNativeBookingSteps(existing: Array<{ label: string; value: string; date: string }> | undefined, isFullPay: boolean, title: string) {
+  const prevDate = (re: RegExp) => (existing ?? []).find(s => re.test(`${s.label} ${s.value}`))?.date ?? '';
+  const inviteDate  = prevDate(/request invitation|vibe check/i);
+  const meetingDate = prevDate(/meeting spot|you'?ll receive/i);
+  const socialDate  = prevDate(/application_count/i);
+  return nativeDefaultBookingSteps(isFullPay, title).map(s => {
+    const k = `${s.label} ${s.value}`;
+    if (/request invitation|vibe check/i.test(k)) return { ...s, date: inviteDate };
+    if (/meeting spot|you'?ll receive/i.test(k)) return { ...s, date: meetingDate };
+    if (/application_count/i.test(k))            return { ...s, date: socialDate };
+    return s; // payment rows reset to blank date
+  });
+}
+
 const statusLabel = { available: 'Available', selling_out: 'Selling Out', sold_out: 'Sold Out' };
 const statusColor = { available: '#16a34a', selling_out: '#d97706', sold_out: '#dc2626' };
 
@@ -362,6 +410,8 @@ export default function AdminPanel() {
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
   const [applicationsStatusFilter, setApplicationsStatusFilter] = useState<'all' | string>('all');
+  // 'all' | 'unassigned' | <marketer id>. Admin-only filter.
+  const [applicationsMarketerFilter, setApplicationsMarketerFilter] = useState<'all' | string>('all');
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
@@ -799,7 +849,10 @@ export default function AdminPanel() {
         String(t.slug ?? t.id ?? '').toLowerCase() === appSlugLower
       );
       const eventName = trip?.title ?? app.event_slug ?? '';
-      const firstDate = trip?.event_dates?.[0]?.start_date ?? '';
+      // Use the date the applicant actually chose; only fall back to the first
+      // event date if their selection is missing. (Was always event_dates[0],
+      // so multi-date events sent the wrong date in the invite.)
+      const firstDate = (app.selected_date as string) || trip?.event_dates?.[0]?.start_date || '';
       const eventDate = (() => {
         if (!firstDate) return '';
         const d = new Date(firstDate + 'T00:00:00');
@@ -945,11 +998,12 @@ export default function AdminPanel() {
         selected_date: submission.selected_date ?? null,
         selected_city: submission.city ?? null,
         pickup_label:  submission.meeting_spot ?? null,
-        // Hand the resulting application to whoever owns the doubt. The BEFORE
-        // INSERT trigger also infers this, but setting it explicitly makes the
-        // attribution unambiguous (and round-robins only when the doubt is
-        // unassigned, since null lets the trigger fall back).
-        assigned_marketer_id: submission.assigned_marketer_id ?? null,
+        // Attribution: when a marketer (ops) approves, the application MUST be
+        // assigned to them — both for correct credit and because the marketer
+        // RLS insert policy only allows self-assigned rows. Admins (no
+        // currentMarketer) fall back to whoever owns the doubt, else the BEFORE
+        // INSERT trigger infers it.
+        assigned_marketer_id: currentMarketer?.id ?? submission.assigned_marketer_id ?? null,
       })
       .select('id')
       .maybeSingle();
@@ -973,7 +1027,8 @@ export default function AdminPanel() {
 
     // 2. Invite side-effects (mirror of approveApplication).
     const eventName = trip?.title ?? slug;
-    const firstDate = trip?.event_dates?.[0]?.start_date ?? '';
+    // Prefer the date the person chose on their doubt over the first event date.
+    const firstDate = (submission.selected_date as string) || trip?.event_dates?.[0]?.start_date || '';
     const eventDate = (() => {
       if (!firstDate) return '';
       const d = new Date(firstDate + 'T00:00:00');
@@ -2133,15 +2188,19 @@ export default function AdminPanel() {
                             { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
                             { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
                           ];
+                      // Auto-heal: only reuse stored steps if they match the current
+                      // payment mode (split needs a {balance} row, single must not).
+                      // Steps left over from a mode switch fall back to the mode default.
                       const defaultSteps = isNativeApp
-                        ? (trip.booking_steps?.length ? trip.booking_steps : nativeDefaultSteps)
+                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay) ? trip.booking_steps! : nativeDefaultSteps)
                         : trip.booking_steps ?? [
                           { label: 'Advance', value: '{advance}', date: '' },
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
+                      const healedPerDateSteps = isNativeApp && !bookingStepsMatchMode(perDateSteps, isFullPay) ? undefined : perDateSteps;
                       const rawStepsAll: Array<{ label: string; value: string; date: string }> =
-                        timelineEdits[editKey] ?? (hasMultipleDates ? (perDateSteps ?? defaultSteps) : defaultSteps);
+                        timelineEdits[editKey] ?? (hasMultipleDates ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
                       // Single-payment events drop the remaining-balance step in the editor too,
                       // so it matches the customer timeline and won't re-save a stale balance row.
                       const rawSteps = isFullPay
@@ -2632,7 +2691,11 @@ export default function AdminPanel() {
               || String(a.name  ?? '').toLowerCase().includes(searchLower)
               || String(a.phone ?? '').includes(searchLower)
               || pays.all.some((p: any) => String(p.txnid ?? '').toLowerCase().includes(searchLower));
-            return eventMatch && statusMatch && searchMatch;
+            const marketerMatch = applicationsMarketerFilter === 'all'
+              || (applicationsMarketerFilter === 'unassigned'
+                    ? !a.assigned_marketer_id
+                    : a.assigned_marketer_id === applicationsMarketerFilter);
+            return eventMatch && statusMatch && searchMatch && marketerMatch;
           });
           // A doubt is "handled" the moment that person actually submits an
           // application for the same event — a real, non-gameable outcome (a
@@ -2658,7 +2721,11 @@ export default function AdminPanel() {
               : submissionPlan.toLowerCase() === qnaDoubtPlanFilter.trim().toLowerCase();
             const cityMatch = qnaDoubtCityFilter === 'all'
               || (submission.city ?? '').toLowerCase().includes(qnaDoubtCityFilter.toLowerCase());
-            return planMatch && cityMatch;
+            const marketerMatch = applicationsMarketerFilter === 'all'
+              || (applicationsMarketerFilter === 'unassigned'
+                    ? !submission.assigned_marketer_id
+                    : submission.assigned_marketer_id === applicationsMarketerFilter);
+            return planMatch && cityMatch && marketerMatch;
           // Open doubts (not yet applied) surface above handled ones.
           }).sort((a, b) => Number(doubtHasApplied(a)) - Number(doubtHasApplied(b)));
 
@@ -2702,7 +2769,7 @@ export default function AdminPanel() {
             let cols: string[];
             let rows: (string | number)[][];
             if (peopleMode === 'doubts') {
-              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Why Join', 'Applied'];
+              cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Why Join', 'Invited'];
               rows = filteredDoubtSubmissions.map((d: any) => [
                 d.name ?? '', d.phone ?? '', getDoubtSubmissionPlanName(d), d.city ?? '',
                 (d.reporting_date ?? '') || formatAdminDateTime(d.submitted_at ?? d.created_at),
@@ -2847,7 +2914,7 @@ export default function AdminPanel() {
                   {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
                   {peopleMode === 'doubts' && (() => {
                     const appliedCount = filteredDoubtSubmissions.filter(doubtHasApplied).length;
-                    return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} applied</span> : null;
+                    return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} invited</span> : null;
                   })()}
                 </span>
                 <div style={{ flex: 1 }} />
@@ -2913,6 +2980,22 @@ export default function AdminPanel() {
                   <option value="fully_paid">Fully Paid</option>
                   <option value="has_doubt">Raised Doubt</option>
                 </select>
+                {/* Marketer filter — admin-only (ops users only ever see their own leads). */}
+                {adminRole === 'admin' && (
+                  <select
+                    value={applicationsMarketerFilter}
+                    onChange={e => setApplicationsMarketerFilter(e.target.value)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    <option value="all">All Marketers</option>
+                    <option value="unassigned">Unassigned</option>
+                    {Object.entries(marketerNameById)
+                      .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+                      .map(([id, name]) => (
+                        <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                )}
                 <input
                   type="text"
                   placeholder="Search name or phone…"
@@ -2920,8 +3003,8 @@ export default function AdminPanel() {
                   onChange={e => setPeopleSearch(e.target.value)}
                   style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', minWidth: 220 }}
                 />
-                {(applicationsEventFilter !== 'all' || applicationsStatusFilter !== 'all' || peopleSearch) && (
-                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsStatusFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                {(applicationsEventFilter !== 'all' || applicationsStatusFilter !== 'all' || applicationsMarketerFilter !== 'all' || peopleSearch) && (
+                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsStatusFilter('all'); setApplicationsMarketerFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
                 )}
               </div>
               ) : (
@@ -2942,8 +3025,24 @@ export default function AdminPanel() {
                   <option value="all">All Plans</option>
                   {qnaDoubtPlans.map(plan => <option key={plan} value={plan}>{plan}</option>)}
                 </select>
-                {(qnaDoubtCityFilter !== 'all' || qnaDoubtPlanFilter !== 'all') && (
-                  <button onClick={() => { setQnaDoubtCityFilter('all'); setQnaDoubtPlanFilter('all'); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                {/* Marketer filter — admin-only, mirrors the Call tab. */}
+                {adminRole === 'admin' && (
+                  <select
+                    value={applicationsMarketerFilter}
+                    onChange={e => setApplicationsMarketerFilter(e.target.value)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    <option value="all">All Marketers</option>
+                    <option value="unassigned">Unassigned</option>
+                    {Object.entries(marketerNameById)
+                      .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+                      .map(([id, name]) => (
+                        <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                )}
+                {(qnaDoubtCityFilter !== 'all' || qnaDoubtPlanFilter !== 'all' || applicationsMarketerFilter !== 'all') && (
+                  <button onClick={() => { setQnaDoubtCityFilter('all'); setQnaDoubtPlanFilter('all'); setApplicationsMarketerFilter('all'); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
                 )}
               </div>
               )}
@@ -2985,17 +3084,18 @@ export default function AdminPanel() {
                         key={submission.id ?? `${submission.phone ?? 'submission'}-${index}`}
                         style={{ padding: '14px 20px', borderBottom: isLast ? 'none' : '1px solid #f0f0f0', background: applied ? '#fafafa' : '#fff', opacity: applied ? 0.65 : 1 }}
                       >
-                        {/* Doubt text — primary, full width, fully readable */}
+                        {/* Doubt — labeled field, primary, full width */}
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Doubt</div>
                         <p style={{ fontSize: 15, color: '#111', lineHeight: 1.55, margin: '0 0 10px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {doubtText}
                         </p>
 
-                        {/* Why-join intent — lets the marketer invite directly without a re-apply */}
+                        {/* Why-join — same quiet labeled-field treatment, muted (no fill) */}
                         {(submission.why_join ?? '').trim() && (
-                          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '8px 12px', margin: '0 0 10px 0' }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Why they want to join</div>
-                            <p style={{ fontSize: 13.5, color: '#166534', lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{submission.why_join}</p>
-                          </div>
+                          <>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Why Join</div>
+                            <p style={{ fontSize: 13.5, color: '#555', lineHeight: 1.5, margin: '0 0 10px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{submission.why_join}</p>
+                          </>
                         )}
 
                         {/* Meta row */}
@@ -3008,12 +3108,18 @@ export default function AdminPanel() {
                             {(reportingDateText !== '-' || submittedAt !== '-') && (
                               <><span style={{ color: '#ccc' }}>·</span><span>{reportingDateText !== '-' ? reportingDateText : submittedAt}</span></>
                             )}
+                            {/* Admin-only: which marketer owns this doubt. */}
+                            {adminRole === 'admin' && submission.assigned_marketer_id && marketerNameById[submission.assigned_marketer_id] && (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#555', background: '#f3f3f3', borderRadius: 999, padding: '2px 9px' }}>
+                                👤 {marketerNameById[submission.assigned_marketer_id]}
+                              </span>
+                            )}
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                             {applied && (
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 999, padding: '3px 9px' }}>
-                                ✓ Applied
+                                ✓ Invited
                               </span>
                             )}
                             {phoneDigits && (
@@ -3033,10 +3139,12 @@ export default function AdminPanel() {
                             ) : (
                               <span style={{ fontSize: 12, color: '#aaa' }}>No Number</span>
                             )}
-                            {/* Admin-only: turn a doubt straight into an invited
-                                application so they don't have to re-apply. Hidden
-                                once they've applied (manage from the People tab). */}
-                            {adminRole === 'admin' && phoneDigits && !applied && (
+                            {/* Turn a doubt straight into an invited application so
+                                they don't re-apply. Visible to admins and marketers
+                                (a marketer only sees their own assigned doubts, and
+                                RLS forces the new application to be self-assigned).
+                                Hidden once already invited. */}
+                            {adminRole && phoneDigits && !applied && (
                               <button
                                 onClick={() => {
                                   if (window.confirm(`Approve ${submitterName} and send the invite for ${eventName}?\n\nThis creates an application (status: invited) and sends the WhatsApp invite.`)) {
@@ -3044,9 +3152,9 @@ export default function AdminPanel() {
                                   }
                                 }}
                                 disabled={approvingDoubtId === submission.id}
-                                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 700, color: '#fff', background: '#16a34a', border: 'none', borderRadius: 8, cursor: approvingDoubtId === submission.id ? 'wait' : 'pointer', opacity: approvingDoubtId === submission.id ? 0.6 : 1 }}
+                                style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: approvingDoubtId === submission.id ? 'not-allowed' : 'pointer', opacity: approvingDoubtId === submission.id ? 0.6 : 1 }}
                               >
-                                {approvingDoubtId === submission.id ? 'Inviting…' : 'Approve & Invite'}
+                                {approvingDoubtId === submission.id ? 'Sending…' : '✓ Approve'}
                               </button>
                             )}
                           </div>
@@ -3075,6 +3183,14 @@ export default function AdminPanel() {
                         const isDirty = callSt !== (app.call_status ?? 'not_called') || callNt !== (app.call_notes ?? '');
                         const pays = paymentsFor(app.phone, app.event_slug);
                         const eventTitle = titleBySlug[app.event_slug] ?? app.event_slug ?? '—';
+                        // The date this applicant actually chose (shown muted next to the
+                        // event name so the caller knows which date's cohort this lead is in).
+                        const eventDateText = app.selected_date
+                          ? (() => {
+                              const d = new Date(`${app.selected_date}T00:00:00`);
+                              return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            })()
+                          : '';
 
                         // ─── CALL MODE ───
                         const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
@@ -3110,9 +3226,11 @@ export default function AdminPanel() {
                             </td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180 }} title={meetingLine ? `${eventTitle}\n${meetingLine}` : eventTitle}>
                               <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eventTitle}</div>
-                              {meetingLine && (
+                              {(meetingLine || eventDateText) && (
                                 <div style={{ fontSize: 10, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {meetingLine}
+                                  {meetingLine && eventDateText && <span style={{ color: '#bbb' }}> · </span>}
+                                  {eventDateText && <span style={{ color: '#aaa' }}>{eventDateText}</span>}
                                 </div>
                               )}
                             </td>
@@ -5078,7 +5196,14 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   <button
                     key={option.mode}
                     type="button"
-                    onClick={() => onChange({ ...trip, payment_mode: option.mode })}
+                    onClick={() => onChange(
+                      trip.booking_url === 'native-application'
+                        // Switching payment mode rebuilds the timeline to the new
+                        // mode's structure (single = entry payment; split = advance +
+                        // balance) so it can't keep stale rows from the old mode.
+                        ? { ...trip, payment_mode: option.mode, booking_steps: regenNativeBookingSteps(trip.booking_steps, option.mode === 'full', trip.title ?? '') }
+                        : { ...trip, payment_mode: option.mode }
+                    )}
                     style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
                   >
                     {option.label}

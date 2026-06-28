@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts } from './supabase';
 import { TermsContent } from './TermsContent';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
@@ -483,8 +483,8 @@ function ApplicationForm({
 }: {
   event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string;
   reservedCount: number | null; step: 1 | 2;
-  form: { name: string; phone: string; gender: string; whyJoin: string; attendedBefore: string };
-  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; gender: string; whyJoin: string; attendedBefore: string }>>;
+  form: { name: string; phone: string; gender: string; whyJoin: string };
+  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; gender: string; whyJoin: string }>>;
   onNext: () => void; onBack: () => void; onClose: () => void; onSubmitted: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -495,10 +495,11 @@ function ApplicationForm({
   const [nameFocused, setNameFocused] = useState(false);
 
   const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && form.gender;
-  const step2Valid = form.whyJoin.trim() && form.attendedBefore;
+  const step2Valid = form.whyJoin.trim();
+  const formValid = step1Valid && step2Valid; // single-page form: all fields required
 
   const handleSubmit = async () => {
-    if (!step2Valid || submitting) return;
+    if (!formValid || submitting) return;
     setSubmitting(true);
     setError('');
 
@@ -526,7 +527,6 @@ function ApplicationForm({
         phone: form.phone,
         gender: form.gender,
         why_join: form.whyJoin.trim(),
-        attended_before: form.attendedBefore,
         status: 'pending',
         selected_date: selectedDate ?? null,
         pickup_point_id: chosenPoint?.id ?? selectedPickupId ?? null,
@@ -597,9 +597,9 @@ function ApplicationForm({
     </div>
   );
 
-  /* ── Step 1: Name + Phone ── */
-  if (step === 1) return (
-    <div className="px-5 pt-0 pb-6 flex flex-col gap-4">
+  /* ── Single-page form: Name, Phone, Email, Gender, Why Join ── */
+  return (
+    <div className="flex-1 overflow-y-auto px-5 pt-1 pb-6 flex flex-col gap-4">
       {/* Name */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between px-1">
@@ -670,20 +670,6 @@ function ApplicationForm({
         </div>
       </div>
 
-      {/* Next */}
-      <button
-        type="button"
-        onClick={() => { setStep1Attempted(true); if (step1Valid) onNext(); }}
-        className="w-full py-[17px] rounded-2xl font-black text-[17px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all bg-[#FFD700] text-black"
-      >
-        Next <ArrowRight size={18} strokeWidth={2.5} />
-      </button>
-    </div>
-  );
-
-  /* ── Step 2: Why Join + Attended Before ── */
-  return (
-    <div className="flex-1 overflow-y-auto px-5 pt-4 pb-6 flex flex-col gap-4">
       {/* Why join */}
       <div className="flex flex-col gap-1.5">
         <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Why do you want to join us?</label>
@@ -691,32 +677,9 @@ function ApplicationForm({
           <textarea
             value={form.whyJoin} placeholder="Tell us why this plan excites you..."
             onChange={e => setForm(f => ({ ...f, whyJoin: e.target.value.slice(0, 300) }))}
-            rows={3}
+            rows={2}
             className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-300 outline-none resize-none leading-relaxed"
           />
-        </div>
-      </div>
-
-      {/* Attended before — wording flips to "galcode" for girls-only events
-          (same flag the rest of the app uses: girlsOnly OR a girls-only label
-          in quickInfo). */}
-      <div className="flex flex-col gap-1.5">
-        <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">
-          {event?.girlsOnly || hasGirlsOnlyQuickInfo(event?.quickInfo)
-            ? <>Have you attended a galcode event before?</>
-            : <>Have you attended a chapter <span className="text-[19px] font-normal">அ</span> event before?</>}
-        </label>
-        <div className="bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow">
-          <select
-            value={form.attendedBefore}
-            onChange={e => setForm(f => ({ ...f, attendedBefore: e.target.value }))}
-            className={`w-full bg-transparent text-[16px] font-semibold outline-none appearance-none cursor-pointer pr-6 ${form.attendedBefore ? 'text-gray-900' : 'text-gray-300'}`}
-          >
-            <option value="" disabled>Select an option</option>
-            <option value="Yes">Yesss!</option>
-            <option value="No">No :(</option>
-          </select>
-          <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </div>
 
@@ -725,7 +688,7 @@ function ApplicationForm({
       {/* Submit */}
       <button
         type="button" disabled={submitting}
-        onClick={handleSubmit}
+        onClick={() => { setStep1Attempted(true); handleSubmit(); }}
         className="w-full py-[17px] rounded-2xl font-black text-[17px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all bg-[#FFD700] text-black"
       >
         {submitting ? (
@@ -854,6 +817,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
+  // Latches true the instant a calendar CTA (Book Now / Contact Us) is pressed,
+  // so the galcode header doesn't flash back to "chapter அ" during the transient
+  // PROCESSING (typing) step before ASK_DOUBTS/SHOW_FAQ renders. Auto-reset by an
+  // effect once the user lands back on a pre-doubt step.
+  const [inDoubtFlow, setInDoubtFlow] = useState(false);
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -874,11 +842,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   // Tapping its chip opens this sheet directly — no user message, no bot
   // reply, no step change; closing returns to the untouched chat.
   const [communityEvent, setCommunityEvent] = useState<Event | null>(null);
-  const [appFormStep, setAppFormStep] = useState<1 | 2>(1);
-  const [appFormData, setAppFormData] = useState({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' });
+  const [appFormData, setAppFormData] = useState({ name: '', phone: '', gender: '', whyJoin: '' });
   const [appFormSubmitted, setAppFormSubmitted] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [reservedCount, setReservedCount] = useState<number | null>(null);
+  // Per-date counts (keyed YYYY-MM-DD) for per-date spots-left in the calendar,
+  // ApplicationForm, and booking timeline. null until loaded.
+  const [dateCounts, setDateCounts] = useState<Record<string, { registered: number; reserved: number }> | null>(null);
   // Dynamic global announcements computed from invite-only events
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<string[]>([]);
   const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
@@ -954,6 +924,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', gender: '', message: '', whyJoin: '' });
   const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat'>('form');
+  // Once a doubt is submitted this session, hide the "ask a doubt" CTA in the
+  // FAQ step so it isn't offered again (FAQs + "ready to book" stay visible).
+  const [doubtSubmittedThisSession, setDoubtSubmittedThisSession] = useState(false);
   // Deprecated — see App.tsx for the rationale.
   const [liveConversationId, setLiveConversationId] = useState<string | null>(
     () => null
@@ -1034,12 +1007,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     if (!isNativeApplicationFlow || !selectedEvent?.id) {
       setApplicationCount(null);
       setReservedCount(null);
+      setDateCounts(null);
       return;
     }
     fetchEventCounts(selectedEvent.id).then(({ registered, reserved }) => {
       setApplicationCount(registered);
       setReservedCount(reserved);
     });
+    fetchEventDateCounts(selectedEvent.id).then(setDateCounts);
   }, [isNativeApplicationFlow, selectedEvent?.id]);
 
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
@@ -1133,6 +1108,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   // Determine which announcements to show
   const isAfterTripInfo = step === 'ASK_DOUBTS' || step === 'SHOW_FAQ' || step === 'DONE';
+  // Reset the doubt-flow latch once the user is back on a pre-doubt step (not the
+  // transient PROCESSING step, and not within the doubt flow itself) — e.g. after
+  // going back to event details or picking a new plan.
+  useEffect(() => {
+    if (step !== 'PROCESSING' && !isAfterTripInfo) setInDoubtFlow(false);
+  }, [step, isAfterTripInfo]);
   const currentAnnouncements = (isAfterTripInfo && (selectedEvent?.announcements?.length ?? 0) > 0)
     ? (selectedEvent?.announcements ?? [])
     : globalAnnouncements;
@@ -1145,13 +1126,20 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   useEffect(() => clearDetailTimers, []);
 
+  // Rotate the header one-liner. Keyed on the announcement *content* (not just
+  // length) so when the set switches — e.g. general → event after a CTA — the
+  // index resets to 0 and a fresh 5s timer starts, instead of inheriting the old
+  // timer's leftover phase (which made the first rotation arrive at a random time).
+  const announcementsKey = currentAnnouncements.join('|');
   useEffect(() => {
-    if (currentAnnouncements.length === 0) return;
+    setAnnouncementIndex(0);
+    if (currentAnnouncements.length <= 1) return;
     const interval = setInterval(() => {
       setAnnouncementIndex((prev) => (prev + 1) % currentAnnouncements.length);
     }, 5000);
     return () => clearInterval(interval);
-  }, [currentAnnouncements.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [announcementsKey]);
 
   // Once details are ready, let the overlay fade out before showing details
   useEffect(() => {
@@ -1285,10 +1273,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     return () => window.removeEventListener('popstate', onPopState);
   }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails]);
 
-  // Reset announcement index when switching contexts
-  useEffect(() => {
-    setAnnouncementIndex(0);
-  }, [isAfterTripInfo, selectedEvent]);
 
   // Balance due countdown timer
   useEffect(() => {
@@ -1533,6 +1517,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       });
     }
     trackEvent(action === 'book' ? 'book_clicked' : 'contact_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
+    setInDoubtFlow(true); // galcode header on immediately, before the PROCESSING flash
     setStep('PROCESSING');
 
     simulateBotTyping(() => {
@@ -1668,6 +1653,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const whyJoin = doubtFormData.whyJoin;
     setShowDoubtPopup(false);
     setDoubtSheetView('form');
+    setDoubtSubmittedThisSession(true);
     setDoubtFormData({ name: '', phone: '', gender: '', message: '', whyJoin: '' });
 
     // Inject chat messages right away
@@ -1992,10 +1978,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 <span className="truncate whitespace-normal text-left">{faq.question}</span> <Send size={16} className="flex-shrink-0" />
               </button>
             ))}
+            {!doubtSubmittedThisSession && (
             <button onClick={() => { setShowDoubtPopup(true); setDoubtSheetView(liveConversationId ? 'chat' : 'form'); }} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
               <span className="truncate whitespace-normal text-left">{doubtCtaLabel}</span> <MessageCircle size={16} className="flex-shrink-0" />
             </button>
+            )}
             <button onClick={handleReadyToBook} className={primaryBtnClass + " mt-2 relative overflow-hidden"}>
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
               <span>{(msgs.doubts_btn_no || '').trim() || "All clear, let's book! 🚀"}</span> <Send size={16} />
@@ -2146,22 +2134,33 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     </div>
   );
   const isSelectedGirlsOnlyEvent = selectedEvent?.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent?.quickInfo);
+  // GalCode branding (name + photo) ONLY once the user has entered the doubt
+  // flow — i.e. after pressing Book Now / Contact Us in the calendar sheet
+  // (isAfterTripInfo = ASK_DOUBTS | SHOW_FAQ | DONE). The plan-selection steps
+  // stay "chapter அ". Photo is zoomed 1.4x to match the invite-payment header.
+  const showGalcodeHeader = isSelectedGirlsOnlyEvent && (isAfterTripInfo || inDoubtFlow);
+  const chatHeaderProfile = showGalcodeHeader ? '/galcode_chat_profile.jpeg' : chatProfile;
+  const chatHeaderProfileClass = showGalcodeHeader
+    ? 'w-full h-full object-contain scale-[1.4]'
+    : 'w-full h-full object-contain scale-[1.02] translate-y-[2px]';
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
 
-        {/* Header */}
+        {/* Header — not rendered under the event-details overlay, so it doesn't
+            flash (incl. the galcode↔chapter swap) through during the back transition. */}
+        {!showDetails && (
         <div className="bg-white p-4 flex items-center gap-3 z-10 relative">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-black shadow-md overflow-hidden p-1">
-              <img src={chatProfile} alt="chapter அ profile" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+              <img src={chatHeaderProfile} alt="chat profile" className={chatHeaderProfileClass} />
             </div>
             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-1.5">
-              <h1 className="font-black text-lg tracking-tight text-black">chapter அ</h1>
+              <h1 className="font-black text-lg tracking-tight text-black">{showGalcodeHeader ? 'galcode' : 'chapter அ'}</h1>
               <CheckCircle2 size={16} className="text-blue-500 fill-blue-50" />
             </div>
             <div className="h-[14px] overflow-hidden relative mt-0.5">
@@ -2182,6 +2181,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             </div>
           </div>
         </div>
+        )}
 
         {showChat && !showDetails && !showTransition && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F2ED] relative">
@@ -2269,6 +2269,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             allEvents={events}
             applicationCount={applicationCount}
             reservedCount={reservedCount}
+            dateCounts={dateCounts}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
             openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
@@ -2342,13 +2343,16 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const advanceStr = selectedEvent.paymentMode === 'full' ? priceStr : `₹${pricing.advance.toLocaleString('en-IN')}`;
                         const balanceStr = `₹${Math.max(pricing.total - pricing.advance, 0).toLocaleString('en-IN')}`;
 
-                        // Social-proof count: legacy formula (capacity * 3 + applicationCount).
+                        // Social-proof count: (capacity * 3) + registered for the SELECTED date.
                         // Used to substitute the {application_count} placeholder in the
-                        // social-proof booking_steps row's label.
+                        // social-proof booking_steps row's label. Per-date: only counts
+                        // applicants who chose this date. Hidden until per-date counts load.
                         const capacity = (selectedEvent as any).totalCapacity;
+                        const socialProofDate = bookingDate || selectedEvent?.dates?.[0]?.date || '';
+                        const perDateRegistered = dateCounts && socialProofDate ? (dateCounts[socialProofDate]?.registered ?? 0) : null;
                         const socialProofCount =
-                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0
-                            ? (capacity * 3) + (typeof applicationCount === 'number' ? applicationCount : 0)
+                          isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && perDateRegistered !== null
+                            ? (capacity * 3) + perDateRegistered
                             : null;
 
                         const resolveValue = (v: string) => {
@@ -2461,7 +2465,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     {isNativeApplicationFlow ? (
                       <>
                         <button
-                          onClick={() => { trackEvent('application_started', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title }); setShowBookingTimeline(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowApplicationForm(true); }}
+                          onClick={() => { trackEvent('application_started', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title }); setShowBookingTimeline(false); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '' }); setShowApplicationForm(true); }}
                           className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                         >
                           <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
@@ -2921,7 +2925,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
         {/* ── Native Application Form ─────────────────────────────── */}
         <AnimatePresence>
-          {showApplicationForm && selectedEvent && appFormStep === 1 && (
+          {showApplicationForm && selectedEvent && (
             <>
               <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -2931,7 +2935,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               <motion.div
                 initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[56] bg-white rounded-t-[2rem] flex flex-col"
+                className="absolute bottom-0 left-0 right-0 z-[56] bg-white rounded-t-[2rem] flex flex-col max-h-[90dvh]"
               >
                 {/* Frosted close button floating above sheet */}
                 <button
@@ -2940,14 +2944,16 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
-                {/* Header — GalCode (girls-only) events get their own line. */}
-                <div className="px-6 pt-6 pb-6 flex-shrink-0">
-                  {selectedEvent.girlsOnly ? (
-                    <p className="text-[17px] text-gray-900 leading-snug text-left">This plan is reserved for <span className="font-black">girlies-only.</span></p>
-                  ) : (
-                    <p className="text-[17px] text-gray-900 leading-snug text-left">Not everyone gets in — but the right people <span className="font-black">always do.</span></p>
-                  )}
-                </div>
+                {/* Header — hidden on the success screen. GalCode events get their own line. */}
+                {!appFormSubmitted && (
+                  <div className="px-6 pt-6 pb-5 flex-shrink-0">
+                    {selectedEvent.girlsOnly ? (
+                      <p className="text-[17px] text-gray-900 leading-snug text-left">This plan is reserved for <span className="font-black">girlies-only.</span></p>
+                    ) : (
+                      <p className="text-[17px] text-gray-900 leading-snug text-left">Not everyone gets in — but the right people <span className="font-black">always do.</span></p>
+                    )}
+                  </div>
+                )}
                 <ApplicationForm
                   event={selectedEvent}
                   selectedDate={bookingDate || selectedEvent?.dates?.[0]?.date}
@@ -2957,51 +2963,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   step={1}
                   form={appFormData}
                   setForm={setAppFormData}
-                  onNext={() => setAppFormStep(2)}
+                  onNext={() => {}}
                   onBack={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
                   onClose={() => { setShowApplicationForm(false); setShowBookingTimeline(true); }}
-                  onSubmitted={() => setAppFormSubmitted(true)}
-                />
-              </motion.div>
-            </>
-          )}
-
-          {showApplicationForm && selectedEvent && appFormStep === 2 && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[56] bg-black/40 backdrop-blur-md"
-                onClick={() => setAppFormStep(1)}
-              />
-              <motion.div
-                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
-                className="absolute bottom-0 left-0 right-0 z-[57] bg-white rounded-t-[2rem] flex flex-col"
-              >
-                {/* Header */}
-                {!appFormSubmitted && (
-                  <div className="px-6 pt-5 pb-4 flex-shrink-0">
-                    <button
-                      onClick={() => setAppFormStep(1)}
-                      className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-500 active:opacity-60"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                      Back
-                    </button>
-                  </div>
-                )}
-                <ApplicationForm
-                  event={selectedEvent}
-                  selectedDate={bookingDate || selectedEvent?.dates?.[0]?.date}
-                  selectedPickupId={journeyCardData?.meetingPoint}
-                  selectedCity={selectedCity || undefined}
-                  reservedCount={reservedCount}
-                  step={2}
-                  form={appFormData}
-                  setForm={setAppFormData}
-                  onNext={() => {}}
-                  onBack={() => setAppFormStep(1)}
-                  onClose={() => { setShowApplicationForm(false); setAppFormStep(1); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '', attendedBefore: '' }); setShowBookingTimeline(true); }}
                   onSubmitted={() => setAppFormSubmitted(true)}
                 />
               </motion.div>
@@ -3416,7 +3380,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </div>
 
                     <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3 relative">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Gender</label>
+                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">{isSelectedGirlsOnlyEvent ? "I confirm that I'm Female" : 'Gender'}</label>
                       <select
                         required
                         value={doubtFormData.gender}
@@ -3424,9 +3388,15 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         className={`w-full bg-transparent text-[17px] font-medium outline-none appearance-none cursor-pointer pr-6 ${doubtFormData.gender ? 'text-gray-900' : 'text-gray-300'}`}
                       >
                         <option value="" disabled>Select Option</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Non-Binary">Non-Binary</option>
+                        {isSelectedGirlsOnlyEvent ? (
+                          <option value="Female">Yes</option>
+                        ) : (
+                          <>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Non-Binary">Non-Binary</option>
+                          </>
+                        )}
                       </select>
                       <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
@@ -3747,7 +3717,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -3983,17 +3953,43 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
 	    // Shift so Monday = 0, Sunday = 6 (common in India)
 	    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
+	    // ── Per-date spots-left (native application events) ──────────────────────
+	    // Capacity (totalCapacity) applies to EACH date independently. reserved per
+	    // date comes from dateCounts (advance_paid/fully_paid who picked that date).
+	    // Rules: a date with 0 left auto-sells-out; the EARLIEST date that's ≥50%
+	    // reserved (and still has spots) is the only one shown amber + "Only X left";
+	    // every other non-sold date stays green.
+	    const isNative = event.bookingUrl === 'native-application';
 	    const nativeCapacity = (event as any).totalCapacity as number | null;
-	    const nativeTaken = typeof reservedCount === 'number' ? reservedCount : null;
-	    const nativeAvailability =
-	      event.bookingUrl === 'native-application' && nativeCapacity && nativeTaken !== null
-	        ? {
-	            available: Math.max(nativeCapacity - nativeTaken, 0),
-	            isFillingFast: nativeTaken / nativeCapacity >= 0.5,
-	          }
-	        : null;
-	    const useNativeFillingFastCells = !!nativeAvailability?.isFillingFast && nativeAvailability.available > 0;
-	    
+	    const cap = isNative && typeof nativeCapacity === 'number' && nativeCapacity > 0 ? nativeCapacity : null;
+	    const reservedForDate = (baseDate?: string) => (baseDate && dateCounts ? (dateCounts[baseDate]?.reserved ?? 0) : 0);
+	    const sortedTripDates = (event.dates ?? []).filter(d => d.date).slice().sort((a, b) => a.date.localeCompare(b.date));
+	    // Classify each trip date: 'sold' | 'amber' (earliest filling-fast) | 'green'.
+	    let earliestFillingFastDate: string | null = null;
+	    let earliestFillingFastLeft = 0;
+	    if (cap) {
+	      for (const d of sortedTripDates) {
+	        const reserved = reservedForDate(d.date);
+	        const avail = cap - reserved;
+	        if (d.status === 'sold_out' || avail <= 0) continue;       // sold out → skip
+	        if (reserved / cap >= 0.5) { earliestFillingFastDate = d.date; earliestFillingFastLeft = avail; break; }
+	      }
+	    }
+	    const dateVisualState = (baseDate?: string, dbStatus?: string): 'sold' | 'amber' | 'green' | null => {
+	      // Only classify ACTUAL trip/event dates. Non-trip days have no status
+	      // (dbStatus undefined); without this guard they have 0 reservations →
+	      // available = capacity > 0 → wrongly painted green across the whole month.
+	      if (!isNative || !cap || !baseDate || !dbStatus) return null;
+	      const avail = cap - reservedForDate(baseDate);
+	      if (dbStatus === 'sold_out' || avail <= 0) return 'sold';
+	      if (baseDate === earliestFillingFastDate) return 'amber';
+	      return 'green';
+	    };
+	    // Legend summary across all trip dates.
+	    const tripStates = cap ? sortedTripDates.map(d => dateVisualState(d.date, d.status)) : [];
+	    const legendHasGreen = tripStates.includes('green');
+	    const legendAllSoldOut = tripStates.length > 0 && tripStates.every(s => s === 'sold');
+
     const selectedDateObj = tripRange?.start ?? null;
     const endDateObj = tripRange?.end ?? null;
     
@@ -4008,10 +4004,12 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
 	      const baseDateStr = shiftDateStr(dateStr, -cityDateOffset);
 	      const tripDate = event.dates?.find(d => d.date === baseDateStr);
+	      const cellState = dateVisualState(baseDateStr, tripDate?.status);
 	      const effectiveDateStatus =
-	        useNativeFillingFastCells && tripDate?.status === 'available'
-	          ? 'selling_out'
-	          : tripDate?.status;
+	        cellState === 'sold'  ? 'sold_out'
+	        : cellState === 'amber' ? 'selling_out'
+	        : cellState === 'green' ? 'available'
+	        : tripDate?.status;
 
       const isSelectedStart = selectedDate === dateStr;
       const isTripEnd = endDateObj && currentDateObj.getTime() === endDateObj.getTime();
@@ -4028,7 +4026,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
         return "rounded-xl";
       })();
 
-	      const isSoldOut = tripDate?.status === 'sold_out';
+	      const isSoldOut = tripDate?.status === 'sold_out' || cellState === 'sold';
 	      const isUnavailable = !tripDate || isSoldOut;
 	      const isColoured = !!tripDate && (effectiveDateStatus === 'available' || effectiveDateStatus === 'selling_out');
       const isShimmerable = isColoured && !isSelectedStart && !isWithinTrip && !isTripEnd && !selectedDate;
@@ -4156,23 +4154,34 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
           </button>
         </div>
         <div className="flex items-center justify-center gap-5 mt-4 mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-          {nativeAvailability?.available > 0 && nativeAvailability.isFillingFast ? (
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
-              <span>Only {nativeAvailability.available} spot{nativeAvailability.available === 1 ? '' : 's'} left</span>
-            </div>
-          ) : (
-            <>
+          {(() => {
+            const amberKey = (label: string) => (
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-sm border border-[#f59e0b] shadow-[0_0_0_1px_rgba(245,158,11,0.35)]" style={{ backgroundColor: '#FFEDE5' }}></div>
-                <span>Filling fast</span>
+                <span>{label}</span>
               </div>
+            );
+            const greenKey = (
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-sm bg-green-300 border border-green-600 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"></div>
                 <span>Available</span>
               </div>
-            </>
-          )}
+            );
+            // Per-date native logic.
+            if (cap) {
+              if (legendAllSoldOut) return null;                       // all sold out → no keys
+              if (earliestFillingFastDate) {                           // ≥1 filling-fast date
+                return (
+                  <>
+                    {amberKey(`Only ${earliestFillingFastLeft} spot${earliestFillingFastLeft === 1 ? '' : 's'} left`)}
+                    {legendHasGreen && greenKey}
+                  </>
+                );
+              }
+            }
+            // Default color legend (non-native, no capacity, or nothing filling fast).
+            return (<>{amberKey('Filling fast')}{greenKey}</>);
+          })()}
         </div>
 
         <div className="grid grid-cols-7 gap-1 mb-2 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">

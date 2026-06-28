@@ -69,6 +69,19 @@ const AISENSY_CAMPAIGN_FAILED   = 'payment_failed';
 // Params: {{1}} = amount (₹…), {{2}} = details date (from booking_steps[3]).
 const AISENSY_CAMPAIGN_FULL     = 'paid_full';
 
+// Resolve booking-timeline steps for an applicant: prefer the per-date steps for
+// the date they chose (multi-date events can have different deadlines per date),
+// falling back to the event-level steps.
+function pickBookingSteps(ev: any, selectedDate?: string | null): any[] {
+  const eventLevel = Array.isArray(ev?.booking_steps) ? ev.booking_steps : [];
+  if (selectedDate && Array.isArray(ev?.event_dates)) {
+    const row = ev.event_dates.find((d: any) => String(d?.start_date ?? '') === String(selectedDate));
+    const perDate = Array.isArray(row?.booking_steps) ? row.booking_steps : [];
+    if (perDate.length > 0) return perDate;
+  }
+  return eventLevel;
+}
+
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
@@ -76,7 +89,7 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
   if (!AISENSY_API_KEY) { console.warn('[aisensy advance_paid webhook] AISENSY_API_KEY not set'); return; }
   const { data: app } = await supabase
     .from('applications')
-    .select('id, name, aisensy_advance_paid_sent')
+    .select('id, name, selected_date, aisensy_advance_paid_sent')
     .eq('phone', args.phone)
     .eq('event_slug', args.eventSlug)
     .maybeSingle();
@@ -86,12 +99,12 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events')
-      .select('booking_steps')
+      .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
     // Balance step is always index 2 in the canonical 5-step invite-only
     // booking timeline. Matches the receipt warm-note's positional lookup.
-    const balStep = Array.isArray(ev?.booking_steps) ? ev.booking_steps[2] : null;
+    const balStep = pickBookingSteps(ev, app.selected_date)[2] ?? null;
     const dueFinal = formatDueDate(balStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
@@ -131,7 +144,7 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
   if (!AISENSY_API_KEY) { console.warn('[aisensy balance_paid webhook] AISENSY_API_KEY not set'); return; }
   const { data: app } = await supabase
     .from('applications')
-    .select('id, name, aisensy_balance_paid_sent')
+    .select('id, name, selected_date, aisensy_balance_paid_sent')
     .eq('phone', args.phone)
     .eq('event_slug', args.eventSlug)
     .maybeSingle();
@@ -141,10 +154,10 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events')
-      .select('booking_steps')
+      .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
-    const detailsStep = (ev?.booking_steps ?? [])[3];
+    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
@@ -183,7 +196,7 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
   if (!AISENSY_API_KEY) { console.warn('[aisensy full_paid webhook] AISENSY_API_KEY not set'); return; }
   const { data: app } = await supabase
     .from('applications')
-    .select('id, name, aisensy_full_paid_sent')
+    .select('id, name, selected_date, aisensy_full_paid_sent')
     .eq('phone', args.phone)
     .eq('event_slug', args.eventSlug)
     .maybeSingle();
@@ -193,10 +206,10 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events')
-      .select('booking_steps')
+      .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
-    const detailsStep = (ev?.booking_steps ?? [])[3];
+    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {

@@ -403,6 +403,19 @@ Deno.serve(async (req) => {
       return err(500, 'could not create order, please try again', cors);
     }
 
+    // Persist the payer's REAL email onto their application so the balance-payment
+    // flow can pre-fill + lock it (otherwise they're re-asked for the email when
+    // they return to pay the balance). Never the booking@ placeholder. Non-fatal —
+    // a failure here must not block the order.
+    if (customerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+      const { error: emailErr } = await supabase
+        .from('applications')
+        .update({ email: customerEmail })
+        .eq('event_slug', canonicalSlug)
+        .eq('phone', phone);
+      if (emailErr) console.error('[create-payu-order] could not backfill applications.email', emailErr);
+    }
+
     const callbackUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/payu-callback`;
 
     // enforce_paymethod is emitted server-side (when a method was picked) so
