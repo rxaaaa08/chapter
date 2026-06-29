@@ -469,17 +469,29 @@ export default function AdminPanel() {
     .sort((a, b) => a.localeCompare(b));
 
   const getDoubtSubmissionPlanName = (submission: any) => {
-    // doubt_submissions uses event_title (plain string) — look it up in trips for a canonical title
-    const raw = (submission.event_title || submission.event || submission.event_name || '').trim();
-    if (raw) {
-      const match = trips.find(t => t.title === raw || t.slug === raw || t.invite_slug === raw);
-      return match ? match.title : raw;
+    // Resolve in order of stability:
+    //   1. event_id (slug/uuid the doubt was submitted under — survives renames)
+    //   2. event_slug (older field name)
+    //   3. event_title (string snapshot — breaks when the trip is renamed)
+    // This is what stops doubts from going missing after a plan rename.
+    // Always trim the returned title — some DB titles have trailing spaces
+    // and the plan filter dropdown's values are pre-trimmed, so an untrimmed
+    // return value silently breaks the equality check.
+    const id = (submission.event_id || '').trim();
+    if (id) {
+      const match = trips.find(t => t.id === id || t.slug === id || t.invite_slug === id);
+      if (match) return (match.title || '').trim();
     }
     if (submission.event_slug) {
       const match = trips.find(t => t.slug === submission.event_slug || t.invite_slug === submission.event_slug);
-      if (match) return match.title;
-      return submission.event_slug;
+      if (match) return (match.title || '').trim();
     }
+    const raw = (submission.event_title || submission.event || submission.event_name || '').trim();
+    if (raw) {
+      const match = trips.find(t => t.title === raw || t.slug === raw || t.invite_slug === raw);
+      return match ? (match.title || '').trim() : raw;
+    }
+    if (submission.event_slug) return submission.event_slug;
     return '-';
   };
 
@@ -3809,6 +3821,22 @@ export default function AdminPanel() {
             </div>
           );
 
+          // Trigger a CSV file download from in-memory rows. BOM keeps unicode
+          // intact in Excel / Google Sheets.
+          const downloadCsv = (filename: string, cols: string[], rows: (string | number)[][]) => {
+            const esc = (v: any) => `"${(v == null ? '' : String(v)).replace(/"/g, '""')}"`;
+            const csv = [cols, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+            const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          };
+
           return (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -3861,9 +3889,34 @@ export default function AdminPanel() {
                       { label: 'Application Completion',pct: pooledAppComplPct,    num: totalAppSubmitted,   den: totalAppStarted,     descr: 'who opened the form submitted', emptyText: 'collecting data — form opens tracked from now' },
                       { label: 'Payment Conversion',    pct: pooledPaymentConvPct, num: totalAdvancePaid,    den: totalApproved,       descr: 'approved paid the advance', extra: ttpLabel ? ` · median ${ttpLabel} (n=${ttpN})` : '' },
                     ];
+                    const downloadJourneyCsv = () => {
+                      const rows: (string | number)[][] = [
+                        ['Visitors', '', fmt(visitors), '', `${windowLabel} · unique sessions`],
+                        ...steps.map(step => [
+                          step.label,
+                          step.pct === null ? '' : `${step.pct}%`,
+                          step.pct === null ? '' : fmt(step.num),
+                          step.pct === null ? '' : fmt(step.den),
+                          step.pct === null ? (step.emptyText || 'no data yet') : `${step.descr}${step.extra ?? ''}`,
+                        ]),
+                      ];
+                      downloadCsv(`journey-${analyticsWindow}-${new Date().toISOString().slice(0, 10)}.csv`, ['Step', 'Rate', 'Numerator', 'Denominator', 'Description'], rows);
+                    };
                     return (
                       <>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Journey</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, flex: 1 }}>Journey</div>
+                          <button
+                            onClick={downloadJourneyCsv}
+                            title="Download the journey funnel for the selected window as a CSV"
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#444' }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Download
+                          </button>
+                        </div>
                         <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
                           The full customer journey, all events combined for {windowLabel.toLowerCase()}. Each bar width = the rate at that step. Where the bar is narrow is where you're losing people.
                         </div>
@@ -4014,8 +4067,61 @@ export default function AdminPanel() {
                         <span style={{ color: '#222' }}>{eventLabelById(id)}</span>
                       </label>
                     );
+                    // Export the full end-to-end funnel for whichever events are
+                    // currently picked in the dropdown. One row per event, with
+                    // every stage count + the four key conversion rates.
+                    const downloadFunnelCsv = () => {
+                      const ids = Array.from(effectiveSelected).sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
+                      const pct = (n: number, d: number) => d > 0 ? `${Math.round((n / d) * 100)}%` : '';
+                      const cols = [
+                        'Event',
+                        'Details Opened', 'Calendar Opened', 'Join Plan Rate',
+                        'Date Picked', 'Date Pick Rate',
+                        'Reached Pricing', 'Tapped Book Now', 'Tapped Contact Us', 'Total CTA', 'Pricing Conversion Rate',
+                        'Application Started', 'Application Submitted', 'Application Completion Rate',
+                        'Approved', 'Advance Paid', 'Payment Conversion Rate',
+                        'Doubt-Askers', 'Doubts → Applied', 'Doubt Solved Rate',
+                      ];
+                      const rows: (string | number)[][] = ids.map(id => {
+                        const viewed   = detailsOpenedByEvent[id]   || 0;
+                        const opened   = calendarOpenedByEvent[id]  || 0;
+                        const picked   = datePickedByEvent[id]      || 0;
+                        const reached  = reachedByEvent[id]         || 0;
+                        const booked   = (bookCtaByEvent[id] || 0) + (legacyCtaByEvent[id] || 0);
+                        const contact  = contactCtaByEvent[id]      || 0;
+                        const totalCta = booked + contact;
+                        const started  = appStartedByEvent[id]      || 0;
+                        const submitted= appSubmittedByEvent[id]    || 0;
+                        const approved = appsApprovedByEvent[id]    || 0;
+                        const paid     = appsAdvancePaidByEvent[id] || 0;
+                        const doubts   = doubtsTotalByEvent[id]     || 0;
+                        const solved   = doubtsSolvedByEvent[id]    || 0;
+                        return [
+                          eventLabelById(id),
+                          viewed, opened, pct(opened, viewed),
+                          picked, pct(picked, opened),
+                          reached, booked, contact, totalCta, pct(totalCta, reached),
+                          started, submitted, pct(submitted, started),
+                          approved, paid, pct(paid, approved),
+                          doubts, solved, pct(solved, doubts),
+                        ];
+                      });
+                      downloadCsv(`funnel-${analyticsWindow}-${new Date().toISOString().slice(0, 10)}.csv`, cols, rows);
+                    };
                     return (
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+                        <button
+                          type="button"
+                          onClick={downloadFunnelCsv}
+                          disabled={effectiveSelected.size === 0}
+                          title="Download the full end-to-end funnel for the selected events as a CSV"
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 999, border: '1.5px solid #e0e0e0', background: '#fff', cursor: effectiveSelected.size === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: effectiveSelected.size === 0 ? 0.55 : 1 }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Download
+                        </button>
                         <div style={{ position: 'relative', minWidth: 220 }}>
                           <button
                             type="button"

@@ -5,7 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
-import { trackEvent, supabase, fetchEventCounts, fetchEventByIdOrSlug } from './supabase';
+import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { TermsContent } from './TermsContent';
 
 // Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
@@ -1740,15 +1740,18 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const priceFull    = Number(_cd?.price_full    > 0 ? _cd.price_full    : (event.price_full    ?? 0));
     const balanceAmount = Math.max(0, priceFull - priceAdvance);
     const dates = Array.isArray(event.event_dates) ? event.event_dates : [];
-    const firstDate = dates.map((d: any) => String(d.start_date ?? '')).filter(Boolean).sort()[0] ?? '';
-    // Resolve the WhatsApp group URL for THIS user's trip date. event_dates
-    // is one-row-per-date and each row has its own group URL (different trip
-    // dates = different cohorts = different group chats). We prefer the row
-    // matching applications.selected_date, fall back to the first available.
+    const earliestDate = dates.map((d: any) => String(d.start_date ?? '')).filter(Boolean).sort()[0] ?? '';
+    // Resolve THIS user's trip date. event_dates is one-row-per-date and each
+    // row has its own group URL + capacity is per-date. We prefer the row
+    // matching applications.selected_date, fall back to the earliest date.
+    // firstDate drives the visible date label, the per-date sold-out check,
+    // and the WhatsApp group URL — keeping all three on the same date is what
+    // stops users invited to July 19 from seeing "July 5 sold out" instead.
     const selectedDate: string | null = (appRow as any)?.selected_date ?? null;
     const matchedDateRow = selectedDate
       ? dates.find((d: any) => String(d.start_date ?? '') === selectedDate)
-      : dates[0];
+      : null;
+    const firstDate = String(matchedDateRow?.start_date ?? earliestDate ?? '');
     const resolvedGroupUrl: string | undefined = matchedDateRow?.whatsapp_group_url || undefined;
 
     // City-specific plan details (included list, itinerary, meeting_spot)
@@ -1803,11 +1806,22 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setSavedPickupPointId(
       parsedPickupPoints.length > 1 ? (appRow?.pickup_point_id ?? null) : null
     );
-    // Fetch application + reserved counts for the greeting message and sold-out check
-    fetchEventCounts(realSlug).then(({ registered, reserved }) => {
+    // Fetch application + reserved counts for the greeting message and sold-out
+    // check. invite_spots is per-date capacity, so reserved must be counted per
+    // the user's date too — otherwise an early date that's already sold out
+    // makes a later date the user was invited to look sold out as well.
+    // Registered (greeting/social-proof) stays slug-wide — it represents total
+    // interest in the plan, not per-date capacity pressure.
+    fetchEventCounts(realSlug).then(({ registered }) => {
       setInviteApplicationCount(registered);
-      setInviteReservedCount(reserved);
     });
+    if (firstDate) {
+      fetchEventDateCounts(realSlug).then(map => {
+        setInviteReservedCount(map[firstDate]?.reserved ?? 0);
+      });
+    } else {
+      fetchEventCounts(realSlug).then(({ reserved }) => setInviteReservedCount(reserved));
+    }
 
     return { isFullyPaid, isBalancePayment, inviteSpots: event.invite_spots ?? matchHint?.inviteSpots ?? null };
   };
@@ -2360,13 +2374,19 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const openSharedInviteBooking = async () => {
     if (!verifiedSlug) return;
 
-    // Check if sold out at the moment user taps "Tap to Continue"
+    // Check if sold out at the moment user taps "Tap to Continue". Capacity
+    // (pendingInviteSpots) is per-date, so reserved must be counted against
+    // THIS user's date (nativeEventData.firstDate is the resolved per-user
+    // date). Falls back to slug-wide if the date couldn't be resolved.
     if (pendingInviteSpots !== null) {
-      // reserved (advance_paid + fully_paid) via the SECURITY DEFINER RPC.
-      // A direct invite_payment_submissions read here is RLS-blocked for anon
-      // (returns 0), which would let a sold-out event through. Using the same
-      // reserved metric as the timeline's "spots left" keeps the two consistent.
-      const { reserved } = await fetchEventCounts(verifiedSlug);
+      const userDate = nativeEventData?.firstDate ?? '';
+      let reserved = 0;
+      if (userDate) {
+        const map = await fetchEventDateCounts(verifiedSlug);
+        reserved = map[userDate]?.reserved ?? 0;
+      } else {
+        ({ reserved } = await fetchEventCounts(verifiedSlug));
+      }
       if (reserved >= pendingInviteSpots) {
         setError('sold_out');
         setHasFailedOnce(true);
@@ -3655,10 +3675,19 @@ function NativeBookingTimeline({
     // Refresh in the background; keep the seeded value visible meanwhile (don't reset
     // to null) so an already-known count never flickers back to a loading state.
     if (!lookupSlug) { setSlotsLeft(prev => prev ?? inviteSpots); return; }
-    fetchEventCounts(lookupSlug)
-      .then(({ reserved: fresh }) => setSlotsLeft(Math.max(0, inviteSpots - fresh)))
-      .catch(() => setSlotsLeft(prev => prev ?? inviteSpots));
-  }, [isBalancePayment, eventSlug, inviteSlug, inviteSpots]);
+    // invite_spots is per-date capacity, so reserved must be per the user's
+    // date too — otherwise a sold-out earlier date wrongly makes a later date
+    // look sold out. eventDate is the date this user was invited to.
+    if (eventDate) {
+      fetchEventDateCounts(lookupSlug)
+        .then(map => setSlotsLeft(Math.max(0, inviteSpots - (map[eventDate]?.reserved ?? 0))))
+        .catch(() => setSlotsLeft(prev => prev ?? inviteSpots));
+    } else {
+      fetchEventCounts(lookupSlug)
+        .then(({ reserved: fresh }) => setSlotsLeft(Math.max(0, inviteSpots - fresh)))
+        .catch(() => setSlotsLeft(prev => prev ?? inviteSpots));
+    }
+  }, [isBalancePayment, eventSlug, inviteSlug, inviteSpots, eventDate]);
 
   const buildCountdown = (dateStr: string): string => {
     if (!dateStr) return '';
