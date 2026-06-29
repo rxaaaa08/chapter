@@ -1649,14 +1649,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   ): Promise<{ isFullyPaid: boolean; isBalancePayment: boolean; inviteSpots: number | null } | null> => {
     const { data: eventRow } = await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .eq('invite_slug', slug)
       .maybeSingle();
 
     // Fall back to slug match if invite_slug didn't find it
     const event = eventRow ?? (await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .eq('slug', slug)
       .maybeSingle()).data;
     if (!event) return null;
@@ -1776,7 +1776,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       resolvedCity: resolvedCity ?? undefined,
       title: event.title ?? matchHint?.title ?? '',
       firstDate,
-      bookingSteps: Array.isArray(event.booking_steps) ? event.booking_steps : undefined,
+      // Prefer the per-date booking_steps (admins set different settle/balance
+      // dates per cohort). Falls back to the event-level steps when a date
+      // hasn't been customised yet.
+      bookingSteps: Array.isArray((matchedDateRow as any)?.booking_steps) && (matchedDateRow as any).booking_steps.length > 0
+        ? (matchedDateRow as any).booking_steps
+        : Array.isArray(event.booking_steps) ? event.booking_steps : undefined,
       announcements: Array.isArray(event.announcements) ? event.announcements.filter(Boolean) : [],
       planDetails: {
         quickInfo: Array.isArray(event.quick_info) ? event.quick_info : [],
@@ -4650,7 +4655,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
     if (!slug) return;
     supabase
       .from('events')
-      .select('slug, invite_slug, booking_url, price_advance, price_full, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url)')
+      .select('slug, invite_slug, booking_url, price_advance, price_full, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .or(`slug.eq.${slug},invite_slug.eq.${slug}`)
       .eq('is_active', true)
       .maybeSingle()
