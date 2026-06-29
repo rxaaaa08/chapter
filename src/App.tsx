@@ -1812,20 +1812,23 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       parsedPickupPoints.length > 1 ? (appRow?.pickup_point_id ?? null) : null
     );
     // Fetch application + reserved counts for the greeting message and sold-out
-    // check. invite_spots is per-date capacity, so reserved must be counted per
-    // the user's date too — otherwise an early date that's already sold out
-    // makes a later date the user was invited to look sold out as well.
-    // Registered (greeting/social-proof) stays slug-wide — it represents total
-    // interest in the plan, not per-date capacity pressure.
-    fetchEventCounts(realSlug).then(({ registered }) => {
-      setInviteApplicationCount(registered);
-    });
+    // check, both scoped to THIS user's date (firstDate). invite_spots is
+    // per-date capacity, and the social-proof "out of N applications" line
+    // should reflect interest in the same cohort the user was invited to — not
+    // every date of the plan combined. Mirrors the booking-application flow,
+    // which already drives its social-proof number from per-date counts.
+    // Falls back to slug-wide totals only when the date can't be resolved.
     if (firstDate) {
       fetchEventDateCounts(realSlug).then(map => {
-        setInviteReservedCount(map[firstDate]?.reserved ?? 0);
+        const dc = map[firstDate];
+        setInviteApplicationCount(dc?.registered ?? 0);
+        setInviteReservedCount(dc?.reserved ?? 0);
       });
     } else {
-      fetchEventCounts(realSlug).then(({ reserved }) => setInviteReservedCount(reserved));
+      fetchEventCounts(realSlug).then(({ registered, reserved }) => {
+        setInviteApplicationCount(registered);
+        setInviteReservedCount(reserved);
+      });
     }
 
     return { isFullyPaid, isBalancePayment, inviteSpots: event.invite_spots ?? matchHint?.inviteSpots ?? null };

@@ -1236,26 +1236,59 @@ export default function AdminPanel() {
   const saveTimeline = async (trip: Trip, steps: Array<{ label: string; value: string; date: string }>, forDate?: string, ctaLabel?: string) => {
     setSavingTimeline(trip.id!);
     const editKey = forDate ? `${trip.id}:${forDate}` : trip.id!;
+    // Surface failures instead of silently showing "Saved!" — a single missed
+    // error here is how per-date booking_steps got stuck NULL even after the
+    // admin clicked Save multiple times.
+    const failures: string[] = [];
     if (forDate) {
       const dateRow = (trip.event_dates ?? []).find(d => d.start_date === forDate);
-      if (dateRow?.id) {
-        await supabase.from('event_dates').update({ booking_steps: steps }).eq('id', dateRow.id);
-        setTrips(prev => prev.map(t => t.id === trip.id
-          ? { ...t, event_dates: (t.event_dates ?? []).map(d => d.start_date === forDate ? { ...d, booking_steps: steps } : d) }
-          : t));
+      if (!dateRow?.id) {
+        const msg = `No event_dates row matched start_date=${forDate} for trip ${trip.slug ?? trip.id}`;
+        console.error('[saveTimeline]', msg, { event_dates: trip.event_dates });
+        failures.push('Could not find the date row to update');
+      } else {
+        // .select() so we get the affected rows back — a 0-row result with no
+        // error means the WHERE matched nothing (e.g. a stale row id from a
+        // page that drifted from the DB), which previously showed a misleading
+        // "Saved!" toast. Surfacing it tells the admin to refresh and retry.
+        const { data, error } = await supabase.from('event_dates').update({ booking_steps: steps }).eq('id', dateRow.id).select('id');
+        if (error) {
+          console.error('[saveTimeline] event_dates update failed', error);
+          failures.push(`event_dates update: ${error.message}`);
+        } else if (!data || data.length === 0) {
+          failures.push(`0 rows updated for date ${forDate} (id ${dateRow.id})`);
+        } else {
+          setTrips(prev => prev.map(t => t.id === trip.id
+            ? { ...t, event_dates: (t.event_dates ?? []).map(d => d.start_date === forDate ? { ...d, booking_steps: steps } : d) }
+            : t));
+        }
       }
     } else {
-      await supabase.from('events').update({ booking_steps: steps }).eq('id', trip.id!);
-      setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, booking_steps: steps } : t));
+      const { data, error } = await supabase.from('events').update({ booking_steps: steps }).eq('id', trip.id!).select('id');
+      if (error) {
+        console.error('[saveTimeline] events update failed', error);
+        failures.push(`events update: ${error.message}`);
+      } else if (!data || data.length === 0) {
+        failures.push(`0 rows updated for event ${trip.id}`);
+      } else {
+        setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, booking_steps: steps } : t));
+      }
     }
     if (ctaLabel !== undefined) {
-      await supabase.from('events').update({ cta_label: ctaLabel }).eq('id', trip.id!);
-      setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, cta_label: ctaLabel } : t));
+      const { error } = await supabase.from('events').update({ cta_label: ctaLabel }).eq('id', trip.id!);
+      if (error) {
+        console.error('[saveTimeline] cta_label update failed', error);
+        failures.push(`cta_label update: ${error.message}`);
+      } else {
+        setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, cta_label: ctaLabel } : t));
+      }
     }
-    setTimelineEdits(prev => { const next = { ...prev }; delete next[editKey]; return next; });
-    setCtaEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
+    if (failures.length === 0) {
+      setTimelineEdits(prev => { const next = { ...prev }; delete next[editKey]; return next; });
+      setCtaEdits(prev => { const next = { ...prev }; delete next[trip.id!]; return next; });
+    }
     setSavingTimeline(null);
-    showToast('Timeline saved!');
+    showToast(failures.length === 0 ? 'Timeline saved!' : `Save failed — ${failures.join(' · ')}`);
     logAdminAction('event_timeline_save', 'events', trip.id ?? null, {
       slug: trip.slug ?? null,
       for_date: forDate ?? null,

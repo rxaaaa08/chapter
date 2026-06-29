@@ -45,14 +45,25 @@ Populated by `prepareNativeInviteFlow()` and stored in React state. Contains:
 
 ### 2. `inviteApplicationCount` and `inviteReservedCount` — live counts
 
-Fetched separately at the end of `prepareNativeInviteFlow()` via
-`fetchEventCounts(realSlug)`:
+Fetched at the end of `prepareNativeInviteFlow()`, scoped to **the user's
+date** (`firstDate` — resolved from `applications.selected_date`, falling back
+to the event's earliest date). `invite_spots` is per-date capacity, so both
+counts are read from the per-date RPC `event_booking_counts_by_date`:
 
 ```ts
-fetchEventCounts(realSlug).then(({ registered, reserved }) => {
-  setInviteApplicationCount(registered);  // total applications submitted
-  setInviteReservedCount(reserved);       // only advance_paid + fully_paid
-});
+if (firstDate) {
+  fetchEventDateCounts(realSlug).then(map => {
+    const dc = map[firstDate];
+    setInviteApplicationCount(dc?.registered ?? 0); // apps for THIS date
+    setInviteReservedCount(dc?.reserved ?? 0);      // advance/fully paid, THIS date
+  });
+} else {
+  // Date couldn't be resolved → fall back to slug-wide totals.
+  fetchEventCounts(realSlug).then(({ registered, reserved }) => {
+    setInviteApplicationCount(registered);
+    setInviteReservedCount(reserved);
+  });
+}
 ```
 
 These are async — they arrive after `nativeEventData` is already set. This
@@ -60,10 +71,19 @@ means the chat may briefly show the fallback greeting before updating to the
 counts-aware version. In practice the fetch is fast enough that this is
 invisible.
 
-**What each count means:**
-- `registered` = total rows in `applications` for this event (any status)
-- `reserved` = rows where `status IN ('advance_paid', 'fully_paid')` only —
-  people who actually paid and locked a spot
+**What each count means (per the user's date):**
+- `registered` = rows in `applications` for this event **and this
+  `selected_date`** (any status)
+- `reserved` = those rows where `status IN ('advance_paid', 'fully_paid')` —
+  people who actually paid and locked a spot on this date
+
+> **Date scoping:** an invitee to July 19 sees July 19's numbers only — the
+> July 5 cohort never bleeds in. This matches the booking-application flow,
+> which already drives its social-proof number from per-date counts.
+>
+> **Legacy caveat:** `event_booking_counts_by_date` only counts rows where
+> `selected_date IS NOT NULL`. Applications submitted before per-date
+> selection existed are excluded from both counts.
 
 ### 3. Derived values computed inside the chat render
 
