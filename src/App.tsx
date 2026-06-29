@@ -3821,6 +3821,15 @@ function NativeBookingTimeline({
               const stepValue = resolveValue(step.value || '');
               const isAdvancePaidRow  = isBalancePayment && si === 0;
               const isBalanceDueRow   = isBalancePayment && si === 1;
+              // buildCountdown returns the 'Due soon' sentinel once the deadline
+              // has arrived or passed. Prefixing it with "due by" reads as
+              // "due by Due soon", so in that case show the status bare ("Due Now").
+              const balanceCountdown = isBalanceDueRow && balanceDueDate ? buildCountdown(balanceDueDate) : '';
+              const balanceBadgeLabel = !balanceDueDate
+                ? 'Now'
+                : balanceCountdown === 'Due soon'
+                  ? 'Due Now'
+                  : `due by ${balanceCountdown}`;
               const stepDateLabel = !isNowRow && step.date && !isBalanceDueRow
                 ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                 : null;
@@ -3836,7 +3845,7 @@ function NativeBookingTimeline({
                     </span>
                   ) : isBalanceDueRow ? (
                     <span className="text-[11px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3 tabular-nums">
-                      {balanceDueDate ? `due by ${buildCountdown(balanceDueDate)}` : 'Now'}
+                      {balanceBadgeLabel}
                     </span>
                   ) : isNowRow ? (
                     <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
