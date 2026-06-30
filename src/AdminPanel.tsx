@@ -850,6 +850,16 @@ export default function AdminPanel() {
     setApprovingId(id);
     const app = applications.find(a => a.id === id);
 
+    // Guard: never downgrade an already-paid applicant back to 'invited'.
+    // Re-approving someone who has paid (advance_paid/fully_paid) would wipe
+    // their payment status — exactly the bug that flipped a paid lead to
+    // 'invited' after a doubt/approve action.
+    if (app?.status === 'advance_paid' || app?.status === 'fully_paid') {
+      showToast('⚠️ Already paid — not re-inviting');
+      setApprovingId(null);
+      return;
+    }
+
     // 1. Update status to invited
     const { data: updatedApp, error } = await supabase
       .from('applications')
@@ -1017,6 +1027,9 @@ export default function AdminPanel() {
     //    (event_slug, phone) the person already applied — just flip that row to
     //    invited rather than clobbering their real application data.
     let appId: string | null = null;
+    // Set true if the matched existing application has already paid — in that
+    // case we must NOT re-invite (which would clobber advance_paid/fully_paid).
+    let alreadyPaid = false;
     const { data: inserted, error: insErr } = await supabase
       .from('applications')
       .insert({
@@ -1043,16 +1056,31 @@ export default function AdminPanel() {
     if (insErr) {
       if (insErr.code === '23505') {
         const { data: existing, error: findErr } = await supabase
-          .from('applications').select('id').eq('event_slug', slug).eq('phone', phone10).maybeSingle();
+          .from('applications').select('id, status').eq('event_slug', slug).eq('phone', phone10).maybeSingle();
         if (findErr || !existing) { showToast(`❌ ${findErr?.message || 'Application already exists but could not be located'}`); setApprovingDoubtId(null); return; }
         appId = existing.id;
-        await supabase.from('applications').update({ status: 'invited' }).eq('id', appId);
+        // Never downgrade an already-paid applicant. If they've paid, leave the
+        // status untouched and skip the invite side-effects entirely (below).
+        alreadyPaid = existing.status === 'advance_paid' || existing.status === 'fully_paid';
+        if (!alreadyPaid) {
+          await supabase.from('applications').update({ status: 'invited' }).eq('id', appId);
+        }
       } else {
         showToast(`❌ ${insErr.message}`); setApprovingDoubtId(null); return;
       }
     } else {
       appId = inserted?.id ?? null;
     }
+
+    // Already paid → don't re-invite (no status change, no AiSensy invite, no
+    // invited_numbers re-add). Their payment stands; just refresh and exit.
+    if (alreadyPaid) {
+      showToast('⚠️ Already paid — not re-inviting');
+      setApprovingDoubtId(null);
+      await loadApplications();
+      return;
+    }
+
     logAdminAction('doubt_approve_invite', 'applications', appId, {
       name: submission.name ?? null, phone: phone10, event_slug: slug, doubt_id: submission.id ?? null,
     });
