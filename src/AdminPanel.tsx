@@ -1,6 +1,6 @@
 // chaptera admin panel
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, parseHeroImages, fetchEventCounts } from './supabase';
+import { supabase, parseHeroImages, fetchEventCounts, fetchEventDateCounts } from './supabase';
 
 // ─── IMAGE INPUT ──────────────────────────────────────────────────────────────
 // We use Cloudinary for image hosting and paste the resulting URL here. The
@@ -396,6 +396,16 @@ export default function AdminPanel() {
   const [newFixedAmount, setNewFixedAmount] = useState('');
   const [marketerStats, setMarketerStats] = useState<Record<string, { total: number; ticketCount: number }>>({});
   const [eventMarketersMap, setEventMarketersMap] = useState<Record<string, string[]>>({});
+  // Per-date booking counts for the events the logged-in marketer is assigned to.
+  // Keyed slug → { 'YYYY-MM-DD' → { registered, reserved } }. Reserved is the
+  // TRUE total (all marketers + direct bookings) via the SECURITY DEFINER RPC —
+  // a marketer can't compute it from their own RLS-scoped leads. Powers the
+  // "assigned events / spots left" card above My Leads (marketer view only).
+  const [marketerEventDateCounts, setMarketerEventDateCounts] = useState<Record<string, Record<string, { registered: number; reserved: number }>>>({});
+  // Slugs the logged-in marketer is assigned to. Fetched directly (the admin
+  // eventMarketersMap isn't loaded in a marketer session); event_marketers has a
+  // self-select RLS policy (marketer_id = current_marketer_id()) so this works.
+  const [marketerAssignedSlugs, setMarketerAssignedSlugs] = useState<string[]>([]);
   const [addingMarketer, setAddingMarketer] = useState(false);
   const [newMarketerEmail, setNewMarketerEmail] = useState('');
   const [newMarketerName, setNewMarketerName] = useState('');
@@ -687,6 +697,27 @@ export default function AdminPanel() {
     });
     setEventMarketersMap(map);
   };
+
+  // Load per-date booking counts for the events the logged-in marketer is
+  // assigned to (powers the spots-left card). Marketer view only; uses the
+  // SECURITY DEFINER RPC so totals aren't capped by the marketer's RLS scope.
+  useEffect(() => {
+    if (!currentMarketer) { setMarketerAssignedSlugs([]); setMarketerEventDateCounts({}); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: emRows } = await supabase
+        .from('event_marketers')
+        .select('event_slug')
+        .eq('marketer_id', currentMarketer.id);
+      const slugs = Array.from(new Set((emRows ?? []).map((r: any) => r.event_slug).filter(Boolean)));
+      if (cancelled) return;
+      setMarketerAssignedSlugs(slugs);
+      if (slugs.length === 0) { setMarketerEventDateCounts({}); return; }
+      const entries = await Promise.all(slugs.map(async (slug) => [slug, await fetchEventDateCounts(slug)] as const));
+      if (!cancelled) setMarketerEventDateCounts(Object.fromEntries(entries));
+    })().catch(() => { /* card degrades gracefully if the fetch fails */ });
+    return () => { cancelled = true; };
+  }, [currentMarketer]);
 
   // Save (or create) a marketer. Admin-only flow from the Marketers tab.
   const saveNewMarketer = async () => {
@@ -2964,53 +2995,104 @@ export default function AdminPanel() {
                 const advanceOnly = applications.filter(a => a.status === 'advance_paid').length;
                 const paidAdvance = fullyPaid + advanceOnly;
                 const inr = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
+                // minWidth:0 lets the three tiles shrink to share one row on
+                // mobile (instead of wrapping unevenly); uniform value size keeps
+                // their heights equal.
                 const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
-                  <div style={{ flex: 1, minWidth: 120, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '12px 14px' }}>
-                    <div style={{ fontSize: 11, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
-                    <div style={{ fontSize: accent ? 30 : 22, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 4 }}>{value}</div>
+                  <div style={{ flex: 1, minWidth: 0, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 10, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 3 }}>{value}</div>
                   </div>
                 );
                 return (
                 <div style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {/* Your stats */}
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
                     <Tile label="Paid advance" value={paidAdvance} />
                     <Tile label="Fully paid" value={fullyPaid} />
-                    <Tile label="Estimated earning" value={inr(paidAdvance * (currentMarketer.commission_amount || 0))} accent />
+                    <Tile label="Est. earning" value={inr(paidAdvance * (currentMarketer.commission_amount || 0))} accent />
                   </div>
                   <div style={{ fontSize: 11, color: '#999', paddingLeft: 2 }}>
                     Estimated if everyone who paid the advance also pays their full balance — you're paid ₹{currentMarketer.commission_amount}/ticket only on full payment.
                   </div>
 
                   {/* Transparent team board */}
+                  {/* Flex rows (not a table) so it fits any width without
+                      horizontal scroll: name flexes + truncates, the two number
+                      columns are fixed-width and right-aligned. */}
                   {marketerBoard.length > 0 && (
-                    <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 360 }}>
-                        <thead>
-                          <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            <th style={{ textAlign: 'left', padding: '8px 16px' }}>The Team</th>
-                            <th style={{ textAlign: 'center', padding: '8px 12px' }}>Tickets Sold</th>
-                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Estimated Earnings</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {marketerBoard.map((m) => {
-                            const isMe = m.marketer_id === currentMarketer.id;
-                            return (
-                              <tr key={m.marketer_id} style={{ background: isMe ? '#f0fdf4' : 'transparent', borderTop: '1px solid #f5f5f0' }}>
-                                <td style={{ padding: '10px 16px', fontWeight: isMe ? 700 : 500, color: '#111' }}>{m.name}{isMe && <span style={{ fontSize: 10, color: '#16a34a', marginLeft: 6 }}>you</span>}</td>
-                                <td style={{ padding: '10px 12px', textAlign: 'center', color: '#111', fontWeight: 600 }}>{m.tickets_sold}</td>
-                                <td style={{ padding: '10px 16px', textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>{inr(m.estimated_earning)}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, overflow: 'hidden', fontSize: 13 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', color: '#999', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+                        <span style={{ flex: 1, minWidth: 0 }}>The Team</span>
+                        <span style={{ width: 48, textAlign: 'right' }}>Sold</span>
+                        <span style={{ width: 84, textAlign: 'right' }}>Earnings</span>
+                      </div>
+                      {marketerBoard.map((m) => {
+                        const isMe = m.marketer_id === currentMarketer.id;
+                        return (
+                          <div key={m.marketer_id} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderTop: '1px solid #f5f5f0', background: isMe ? '#f0fdf4' : 'transparent' }}>
+                            <span style={{ flex: 1, minWidth: 0, fontWeight: isMe ? 700 : 500, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {m.name}{isMe && <span style={{ fontSize: 10, color: '#16a34a', marginLeft: 6 }}>you</span>}
+                            </span>
+                            <span style={{ width: 48, textAlign: 'right', color: '#111', fontWeight: 600 }}>{m.tickets_sold}</span>
+                            <span style={{ width: 84, textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>{inr(m.estimated_earning)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
                 );
               })()}
+
+              {/* Assigned events + per-date spots left — marketer view only.
+                  Reserved totals come from the SECURITY DEFINER RPC, so they
+                  reflect ALL bookings, not just this marketer's leads. */}
+              {currentMarketer && (() => {
+                const today = new Date().toISOString().slice(0, 10);
+                const assigned = trips.filter(t =>
+                  t.is_active &&
+                  marketerAssignedSlugs.includes(t.slug ?? '') &&
+                  (t.event_dates ?? []).some(d => d.start_date && d.start_date >= today)
+                );
+                if (assigned.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 18 }}>
+                    <div style={{ fontSize: 11, color: '#999', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Your Events — Spots Left</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {assigned.map(t => {
+                        const capacity = (t.total_capacity ?? t.invite_spots) ?? null;
+                        const dateCounts = marketerEventDateCounts[t.slug ?? ''] ?? {};
+                        const dates = (t.event_dates ?? [])
+                          .filter(d => d.start_date && d.start_date >= today)
+                          .slice()
+                          .sort((a, b) => a.start_date.localeCompare(b.start_date));
+                        return (
+                          <div key={t.id ?? t.slug}>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#111', marginBottom: 3 }}>{t.title}</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 16px', fontSize: 13 }}>
+                              {dates.map(d => {
+                                const reserved = dateCounts[d.start_date]?.reserved ?? 0;
+                                const spotsLeft = capacity != null ? Math.max(0, capacity - reserved) : null;
+                                const soldOut = d.status === 'sold_out' || (spotsLeft !== null && spotsLeft <= 0);
+                                const dateLabel = new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                const text = soldOut ? 'Sold out' : spotsLeft != null ? `${spotsLeft} left` : statusLabel[d.status];
+                                return (
+                                  <span key={d.start_date} style={{ whiteSpace: 'nowrap' }}>
+                                    <span style={{ color: '#111', fontWeight: 600 }}>{dateLabel}</span>{' '}
+                                    <span style={{ color: soldOut ? '#bbb' : '#666' }}>{text}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 700, fontSize: 22 }}>{currentMarketer ? 'My Leads' : 'People'}</div>
