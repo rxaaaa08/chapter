@@ -363,6 +363,7 @@ export default function AdminPanel() {
   const [expandedTimelineId, setExpandedTimelineId] = useState<string | null>(null);
   const [savingTimeline, setSavingTimeline] = useState<string | null>(null);
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
+  const [savingDateId, setSavingDateId] = useState<string | null>(null);
   const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
   const [conversionFunnel, setConversionFunnel] = useState<any | null>(null);
   // Most recent weekly DB-storage snapshot (cron writes one every Monday).
@@ -824,6 +825,25 @@ export default function AdminPanel() {
       setCallNotesEdits(cn);
     }
     setApplicationsLoading(false);
+  };
+
+  // Move an applicant to a different date of the same event (Call tab dropdown).
+  const updateApplicationDate = async (id: string, newDate: string) => {
+    // Guard: a paid applicant (advance or full) is committed to their date's
+    // cohort — never reassign. The UI hides the dropdown for these, this just
+    // backstops against a stale render.
+    const target = applications.find(a => a.id === id);
+    if (target && (target.status === 'advance_paid' || target.status === 'fully_paid')) {
+      showToast('❌ Date locked — applicant has paid');
+      return;
+    }
+    setSavingDateId(id);
+    const { error } = await supabase.from('applications').update({ selected_date: newDate }).eq('id', id);
+    setSavingDateId(null);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    setApplications(prev => prev.map(a => a.id === id ? { ...a, selected_date: newDate } : a));
+    logAdminAction('application_date_change', 'applications', id, { selected_date: newDate });
+    showToast('✓ Date updated');
   };
 
   const approveApplication = async (id: string) => {
@@ -2704,6 +2724,17 @@ export default function AdminPanel() {
           const successPayments = payuPayments.filter(p => p.status === 'success');
           const titleBySlug: Record<string, string> = {};
           trips.forEach(t => { if (t.slug && t.title) titleBySlug[t.slug] = t.title; });
+          // Per-event date list (sorted), so the Call tab can offer a date dropdown
+          // for multi-date events (move an applicant between dates).
+          const datesBySlug: Record<string, Array<{ date: string; status?: string }>> = {};
+          trips.forEach(t => {
+            if (!t.slug) return;
+            const ds = (t.event_dates ?? [])
+              .filter((d: any) => d.start_date)
+              .map((d: any) => ({ date: d.start_date as string, status: d.status as string | undefined }))
+              .sort((a: any, b: any) => a.date.localeCompare(b.date));
+            if (ds.length) datesBySlug[t.slug] = ds;
+          });
           const paymentsFor = (phone: string, eventSlug: string) => {
             const title = titleBySlug[eventSlug] ?? '';
             const matches = successPayments.filter(p =>
@@ -3230,12 +3261,19 @@ export default function AdminPanel() {
                         const eventTitle = titleBySlug[app.event_slug] ?? app.event_slug ?? '—';
                         // The date this applicant actually chose (shown muted next to the
                         // event name so the caller knows which date's cohort this lead is in).
-                        const eventDateText = app.selected_date
-                          ? (() => {
-                              const d = new Date(`${app.selected_date}T00:00:00`);
-                              return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            })()
-                          : '';
+                        const fmtShortDate = (iso: string) => {
+                          const d = new Date(`${iso}T00:00:00`);
+                          return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        };
+                        const eventDateText = app.selected_date ? fmtShortDate(app.selected_date) : '';
+                        // Multi-date events get a dropdown to move the applicant between dates.
+                        const eventDates = datesBySlug[app.event_slug] ?? [];
+                        // Once money has changed hands the date is locked: advance_paid
+                        // (split) and fully_paid (full / single full payment) both mean
+                        // the applicant is committed to a specific date's cohort, so the
+                        // date can't be reassigned from here.
+                        const dateLocked = app.status === 'advance_paid' || app.status === 'fully_paid';
+                        const hasMultipleDates = eventDates.length > 1 && !dateLocked;
 
                         // ─── CALL MODE ───
                         const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
@@ -3271,11 +3309,26 @@ export default function AdminPanel() {
                             </td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180 }} title={meetingLine ? `${eventTitle}\n${meetingLine}` : eventTitle}>
                               <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eventTitle}</div>
-                              {(meetingLine || eventDateText) && (
-                                <div style={{ fontSize: 10, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {meetingLine}
-                                  {meetingLine && eventDateText && <span style={{ color: '#bbb' }}> · </span>}
-                                  {eventDateText && <span style={{ color: '#aaa' }}>{eventDateText}</span>}
+                              {(meetingLine || eventDateText || hasMultipleDates) && (
+                                <div style={{ fontSize: 10, color: '#888', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                                  {meetingLine && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meetingLine}</span>}
+                                  {meetingLine && (eventDateText || hasMultipleDates) && <span style={{ color: '#bbb' }}>·</span>}
+                                  {hasMultipleDates ? (
+                                    <select
+                                      value={app.selected_date ?? ''}
+                                      disabled={savingDateId === app.id}
+                                      onChange={e => updateApplicationDate(app.id, e.target.value)}
+                                      title="Move this applicant to a different date"
+                                      style={{ fontSize: 10, color: '#444', fontWeight: 600, background: '#f3f3f3', border: '1px solid #e0e0e0', borderRadius: 5, padding: '1px 4px', cursor: savingDateId === app.id ? 'wait' : 'pointer', maxWidth: 120 }}
+                                    >
+                                      {!app.selected_date && <option value="" disabled>Pick date</option>}
+                                      {eventDates.map(d => (
+                                        <option key={d.date} value={d.date}>{fmtShortDate(d.date)}{d.status === 'sold_out' ? ' (sold out)' : ''}</option>
+                                      ))}
+                                    </select>
+                                  ) : eventDateText ? (
+                                    <span style={{ color: '#aaa' }}>{eventDateText}</span>
+                                  ) : null}
                                 </div>
                               )}
                             </td>
@@ -5152,9 +5205,13 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
             <label style={s.label}>Booking Type</label>
             <div style={{ display: 'flex', gap: 0, marginBottom: 10, border: '1.5px solid #e0e0e0', borderRadius: 10, overflow: 'hidden' }}>
               {([
-                { mode: 'invite-only', label: 'Invite Only',  bookingUrl: 'native-application', inviteOnly: true,  bookingFlow: null },
-                { mode: 'open-event',  label: 'Open Event',   bookingUrl: 'payu-hosted',        inviteOnly: false, bookingFlow: null },
-                { mode: 'external',    label: 'External Link', bookingUrl: '',                  inviteOnly: false, bookingFlow: null },
+                // booking_flow is NOT NULL + CHECK (payment | whatsapp). Only
+                // Community uses 'whatsapp'; the paid/invite/external modes all
+                // use 'payment'. Writing null here violated the constraint and
+                // blocked saving when switching an event's booking type.
+                { mode: 'invite-only', label: 'Invite Only',  bookingUrl: 'native-application', inviteOnly: true,  bookingFlow: 'payment' },
+                { mode: 'open-event',  label: 'Open Event',   bookingUrl: 'payu-hosted',        inviteOnly: false, bookingFlow: 'payment' },
+                { mode: 'external',    label: 'External Link', bookingUrl: '',                  inviteOnly: false, bookingFlow: 'payment' },
                 { mode: 'community',   label: 'Community',    bookingUrl: '',                   inviteOnly: false, bookingFlow: 'whatsapp' },
               ] as const).map(option => {
                 const current =
