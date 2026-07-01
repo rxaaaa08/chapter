@@ -1248,7 +1248,24 @@ export default function AdminPanel() {
       await supabase.from('event_dates').delete().eq('event_id', eventId);
       if (normalizedEventDates.length > 0) {
         await supabase.from('event_dates').insert(
-          normalizedEventDates.map(d => ({ event_id: eventId, start_date: d.start_date, status: d.status, label: d.label, whatsapp_group_url: d.whatsapp_group_url ?? null }))
+          // Preserve ALL per-date fields on the delete+reinsert. Previously this
+          // only wrote start_date/status/label/whatsapp_group_url, so every event
+          // save silently WIPED each date's booking_steps (per-date timeline) back
+          // to null — the "steps get reset" bug, which then made the advance/balance
+          // WhatsApp fall back to stale event-level dates. Defaults match the DB so
+          // the NOT NULL columns never receive null (and new UI dates still work).
+          normalizedEventDates.map(d => ({
+            event_id: eventId,
+            start_date: d.start_date,
+            status: d.status,
+            label: d.label,
+            whatsapp_group_url: d.whatsapp_group_url ?? null,
+            booking_steps:      (d as any).booking_steps ?? null,
+            duration_days:      (d as any).duration_days ?? 1,
+            advance_due_offset: (d as any).advance_due_offset ?? -5,
+            dot_color:          (d as any).dot_color ?? '#16a34a',
+            highlight_color:    (d as any).highlight_color ?? '#dcfce7',
+          }))
         );
       }
     }
@@ -2776,8 +2793,14 @@ export default function AdminPanel() {
           // Only include slugs that map to a known trip title — this prevents deleted/renamed
           // events from showing up as raw slugs when they still have old applications in the DB.
           const nativeEventSlugs = trips
-            .filter(t => (t.invite_only || t.booking_url === 'native-application') && t.slug && t.title)
+            .filter(t => (t.invite_only || t.booking_url === 'native-application' || t.booking_url === 'payu-hosted') && t.slug && t.title)
             .map(t => t.slug as string);
+          // Open events (payu-hosted) use 'pending' as their "in progress" state,
+          // unlike invite events where 'pending' = awaiting approval. Used by
+          // displayStatus to surface open leads correctly.
+          const openEventSlugs = new Set(
+            trips.filter(t => t.booking_url === 'payu-hosted' && t.slug).map(t => t.slug as string)
+          );
 
           // Build a phone+event → payu payment index
           const successPayments = payuPayments.filter(p => p.status === 'success');
@@ -2812,6 +2835,12 @@ export default function AdminPanel() {
           // status itself stays 'invited' (so payment + invite-flow auth
           // keep working); we only surface it differently in this admin view.
           const displayStatus = (a: any): string => {
+            // Open-event leads sit at 'pending' until they pay. Surface that as
+            // "in progress", or "cart abandoned" once the bill was opened and
+            // never completed (the cart-abandonment cron sets the flag).
+            if (openEventSlugs.has(a.event_slug) && a.status === 'pending') {
+              return a.cart_abandoned ? 'cart_abandoned' : 'in_progress';
+            }
             if (a.status !== 'invited') return a.status;
             if (a.cart_abandoned) return 'cart_abandoned';
             if (a.re_target) return 're_target';
@@ -2821,7 +2850,9 @@ export default function AdminPanel() {
             const pays = paymentsFor(a.phone, a.event_slug);
             const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
             const statusMatch = applicationsStatusFilter === 'all'
-              || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0 : displayStatus(a) === applicationsStatusFilter);
+              || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0
+                  : applicationsStatusFilter === 'recovered' ? !!a.recovered_at
+                  : displayStatus(a) === applicationsStatusFilter);
             const searchMatch = !searchLower
               || String(a.name  ?? '').toLowerCase().includes(searchLower)
               || String(a.phone ?? '').includes(searchLower)
@@ -2871,10 +2902,18 @@ export default function AdminPanel() {
             if (status === 'cart_abandoned') return '#b45309';
             if (status === 're_target')      return '#7c3aed';
             if (status === 'waitlist')       return '#a855f7';
+            if (status === 'in_progress')    return '#0891b2';
             if (status === 'pending')        return '#f97316';
             if (status === 'rejected')       return '#dc2626';
             return '#999';
           };
+
+          // "Recovered" = a paid lead who had previously been cart-abandoned
+          // (recovered_at stamped by payu-callback). Shown as a small badge on
+          // top of their paid status, not as a replacement.
+          const recoveredBadge = (a: any) => a.recovered_at ? (
+            <span style={{ marginLeft: 6, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', borderRadius: 6, padding: '2px 7px', fontSize: 10, fontWeight: 700, textTransform: 'none' }}>Recovered</span>
+          ) : null;
 
           const callStatusOptions = [
             { value: 'not_called',     label: 'Not Called' },
@@ -2967,13 +3006,15 @@ export default function AdminPanel() {
           // Count summary for footer
           const counts = {
             total:        peopleMode === 'doubts' ? filteredDoubtSubmissions.length : filteredApps.length,
-            pending:      filteredApps.filter(a => a.status === 'pending').length,
+            pending:      filteredApps.filter(a => displayStatus(a) === 'pending').length,
+            in_progress:  filteredApps.filter(a => displayStatus(a) === 'in_progress').length,
             invited:        filteredApps.filter(a => displayStatus(a) === 'invited').length,
             cart_abandoned: filteredApps.filter(a => displayStatus(a) === 'cart_abandoned').length,
             re_target:      filteredApps.filter(a => displayStatus(a) === 're_target').length,
             waitlist:       filteredApps.filter(a => a.status === 'waitlist').length,
             advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
             fully_paid:   filteredApps.filter(a => a.status === 'fully_paid').length,
+            recovered:    filteredApps.filter(a => !!a.recovered_at).length,
           };
 
           // Header columns per mode
@@ -3158,12 +3199,14 @@ export default function AdminPanel() {
                 >
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
                   <option value="invited">Invited</option>
                   <option value="cart_abandoned">Cart Abandoned</option>
                   <option value="re_target">Re-Target</option>
                   <option value="waitlist">Waitlist</option>
                   <option value="advance_paid">Advance Paid</option>
                   <option value="fully_paid">Fully Paid</option>
+                  <option value="recovered">Recovered</option>
                   <option value="has_doubt">Raised Doubt</option>
                 </select>
                 {/* Marketer filter — admin-only (ops users only ever see their own leads). */}
@@ -3489,7 +3532,7 @@ export default function AdminPanel() {
                                 >
                                   {savingCallId === app.id ? 'Saving…' : 'Save'}
                                 </button>
-                              ) : app.status === 'pending' ? (
+                              ) : (app.status === 'pending' && !openEventSlugs.has(app.event_slug)) ? (
                                 <button
                                   disabled={approvingId === app.id}
                                   onClick={() => approveApplication(app.id)}
@@ -3498,7 +3541,7 @@ export default function AdminPanel() {
                                   {approvingId === app.id ? 'Sending…' : '✓ Approve'}
                                 </button>
                               ) : (
-                                <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{String(displayStatus(app) ?? '').replace(/_/g, ' ')}</span>
+                                <><span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{String(displayStatus(app) ?? '').replace(/_/g, ' ')}</span>{recoveredBadge(app)}</>
                               )}
                             </td>
                           </tr>
@@ -3512,7 +3555,7 @@ export default function AdminPanel() {
                               <div style={{ maxHeight: 80, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>{app.why_join || '—'}</div>
                             </td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
-                              {app.status === 'pending' ? (
+                              {(app.status === 'pending' && !openEventSlugs.has(app.event_slug)) ? (
                                 <button
                                   disabled={approvingId === app.id}
                                   onClick={() => approveApplication(app.id)}
@@ -3521,9 +3564,12 @@ export default function AdminPanel() {
                                   {approvingId === app.id ? 'Sending…' : '✓ Approve'}
                                 </button>
                               ) : (
-                                <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'capitalize' }}>
-                                  ✓ {String(displayStatus(app) ?? '').replace(/_/g, ' ')}
-                                </span>
+                                <>
+                                  <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'capitalize' }}>
+                                    ✓ {String(displayStatus(app) ?? '').replace(/_/g, ' ')}
+                                  </span>
+                                  {recoveredBadge(app)}
+                                </>
                               )}
                             </td>
                           </tr>
@@ -3538,6 +3584,7 @@ export default function AdminPanel() {
                               <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize' }}>
                                 {String(displayStatus(app) ?? 'pending').replace(/_/g, ' ')}
                               </span>
+                              {recoveredBadge(app)}
                             </td>
                             <td style={{ padding: '11px 12px', fontSize: 11, color: '#888', maxWidth: 200 }}>
                               {pays.all.length === 0 ? (
@@ -3568,12 +3615,14 @@ export default function AdminPanel() {
                 <div style={{ marginTop: 18, color: '#888', fontSize: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <span>Total: <b style={{ color: '#333' }}>{counts.total}</b></span>
                   {counts.pending      > 0 && <span style={{ color: statusColor('pending')      }}>pending: <b>{counts.pending}</b></span>}
+                  {counts.in_progress  > 0 && <span style={{ color: statusColor('in_progress')  }}>in progress: <b>{counts.in_progress}</b></span>}
                   {counts.invited        > 0 && <span style={{ color: statusColor('invited')        }}>invited: <b>{counts.invited}</b></span>}
                   {counts.cart_abandoned > 0 && <span style={{ color: statusColor('cart_abandoned') }}>cart abandoned: <b>{counts.cart_abandoned}</b></span>}
                   {counts.re_target      > 0 && <span style={{ color: statusColor('re_target')      }}>re-target: <b>{counts.re_target}</b></span>}
                   {counts.waitlist       > 0 && <span style={{ color: statusColor('waitlist')       }}>waitlist: <b>{counts.waitlist}</b></span>}
                   {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
                   {counts.fully_paid   > 0 && <span style={{ color: statusColor('fully_paid')   }}>fully paid: <b>{counts.fully_paid}</b></span>}
+                  {counts.recovered    > 0 && <span style={{ color: '#059669' }}>recovered: <b>{counts.recovered}</b></span>}
                 </div>
               )}
             </div>
