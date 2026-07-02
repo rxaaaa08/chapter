@@ -3118,10 +3118,21 @@ export default function AdminPanel() {
                                 const soldOut = d.status === 'sold_out' || (spotsLeft !== null && spotsLeft <= 0);
                                 const dateLabel = new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                                 const text = soldOut ? 'Sold out' : spotsLeft != null ? `${spotsLeft} left` : statusLabel[d.status];
+                                // Balance due = this date's "remaining balance" step date.
+                                // Split events only — single-payment ('full') events have no
+                                // balance step, so nothing is shown for them.
+                                const balStep = ((d as any).booking_steps as Array<{ label: string; value: string; date: string }> | undefined)
+                                  ?.find(s => /\{balance\}/i.test(s.value ?? '') || /balance/i.test(s.label ?? ''));
+                                const balRaw = balStep?.date ?? '';
+                                const balDateObj = balRaw ? new Date(`${balRaw}T00:00:00`) : null;
+                                const balanceDue = balDateObj && !Number.isNaN(balDateObj.getTime())
+                                  ? balDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                  : null;
                                 return (
                                   <span key={d.start_date} style={{ whiteSpace: 'nowrap' }}>
                                     <span style={{ color: '#111', fontWeight: 600 }}>{dateLabel}</span>{' '}
                                     <span style={{ color: soldOut ? '#bbb' : '#666' }}>{text}</span>
+                                    {balanceDue && <span style={{ color: '#999' }}> · balance by {balanceDue}</span>}
                                   </span>
                                 );
                               })}
