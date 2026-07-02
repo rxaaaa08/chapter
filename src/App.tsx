@@ -4952,6 +4952,10 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
   // booking flow, so an applicant shouldn't be able to change their email there
   // any more than they can on the original bill.
   const [appEmailForEvent, setAppEmailForEvent] = React.useState<string>('');
+  // The date this applicant chose (from their application). Multi-date events
+  // give each date its own booking timeline, so the warm-note balance/details
+  // dates must be read from THIS date's steps, not the event-level fallback.
+  const [appSelectedDate, setAppSelectedDate] = React.useState<string>('');
 
   // get-user-context cross-checks the supplied phone against the stored phone
   // on the txnid (server-side). Returns the payment row only on match,
@@ -4981,8 +4985,12 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
       const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim());
       const apps = Array.isArray(d.applications) ? d.applications : [];
       const targetSlug = String(p?.event_slug ?? '').trim();
-      const onFile = targetSlug ? apps.find((a: any) => String(a.event_slug) === targetSlug)?.email : '';
+      const matchedApp = targetSlug ? apps.find((a: any) => String(a.event_slug) === targetSlug) : null;
+      const onFile = matchedApp?.email ?? '';
       setAppEmailForEvent(isValidEmail(onFile) ? String(onFile).trim() : '');
+      // Stash the applicant's chosen date so the warm note reads the right
+      // per-date booking steps for a multi-date event.
+      setAppSelectedDate(String(matchedApp?.selected_date ?? ''));
       return p;
     } catch { return null; }
   }, [txnid]);
@@ -5016,12 +5024,20 @@ function PayUReturnScreen({ status, txnid, onDone }: { status: 'success' | 'fail
     };
     fetchEventByIdOrSlug(slug).then(ev => {
       if (cancelled) return;
-      const steps: any[] = Array.isArray(ev?.bookingSteps) ? ev.bookingSteps : [];
+      // Prefer the booking steps for the DATE this applicant chose (multi-date
+      // events give each date its own timeline). Fall back to the event-level
+      // steps when there's no per-date match (single-date events, or missing).
+      const perDate = (appSelectedDate && Array.isArray(ev?.dates))
+        ? ev.dates.find((d: any) => String(d?.date ?? '') === appSelectedDate)?.bookingSteps
+        : undefined;
+      const steps: any[] = (Array.isArray(perDate) && perDate.length > 0)
+        ? perDate
+        : (Array.isArray(ev?.bookingSteps) ? ev.bookingSteps : []);
       setBalanceDate(fmt(steps[2]?.date));
       setDetailsDate(fmt(steps[3]?.date));
     }).catch(() => { /* silent — warm note just drops the date clause */ });
     return () => { cancelled = true; };
-  }, [payment?.event_slug]);
+  }, [payment?.event_slug, appSelectedDate]);
 
   // The retry bill (NativePaymentOverlay below) is a full-screen overlay shown
   // in place, without its own route. The Try Again button pushes a history
