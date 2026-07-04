@@ -8,6 +8,11 @@
       ],
       "destination": "/lifestyle",
       "permanent": false
+    },
+    {
+      "source": "/@:handle",
+      "destination": "/lifestyle?ref=:handle",
+      "permanent": false
     }
   ],
   "rewrites": [

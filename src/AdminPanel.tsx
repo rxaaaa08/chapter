@@ -59,6 +59,11 @@ type Trip = {
   // 'split' = advance + remaining balance (default). 'full' = single payment
   // for the full price (advance is ignored; status jumps straight to paid).
   payment_mode?: string;
+  // Creator affiliate commissions: off by default. When on, a fully-paid ticket
+  // booked via a creator's link pays affiliate_commission_pct% (default 8) of the
+  // full price. See the Creators tab.
+  affiliate_enabled?: boolean;
+  affiliate_commission_pct?: number;
   description: string;
   // Meeting spot shown on the community sheet's Essentials card
   start_location?: string;
@@ -96,6 +101,7 @@ type Trip = {
   invite_faqs?: FAQ[];
   city_details?: Record<string, { included: string[]; not_included: string[]; optional_activities: string[]; itinerary: ItineraryDay[]; meeting_spot?: string; transport?: string; price_full?: number; price_advance?: number }>;
 };
+type AffiliateStat = { clicks: number; apps: number; tickets: number; earned: number; unpaid: number };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type DoubtSubmission = {
   id?: string;
@@ -241,10 +247,10 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'analytics' | 'settings'>(
-    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'marketers' | 'analytics' | 'settings') ?? 'people'
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings'>(
+    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') ?? 'people'
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -411,6 +417,17 @@ export default function AdminPanel() {
   const [newMarketerName, setNewMarketerName] = useState('');
   const [newMarketerCommission, setNewMarketerCommission] = useState('50');
   const [savingMarketer, setSavingMarketer] = useState(false);
+
+  // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
+  const [affiliatesLoading, setAffiliatesLoading] = useState(false);
+  const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean }>>([]);
+  // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
+  const [affiliateStats, setAffiliateStats] = useState<Record<string, AffiliateStat>>({});
+  const [addingAffiliate, setAddingAffiliate] = useState(false);
+  const [newAffiliateHandle, setNewAffiliateHandle] = useState('');
+  const [newAffiliateName, setNewAffiliateName] = useState('');
+  const [newAffiliateEmail, setNewAffiliateEmail] = useState('');
+  const [savingAffiliate, setSavingAffiliate] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<'24h' | 'week' | 'month' | '90d'>('week');
   // Funnel event filter. null = default (active events only). A Set = the
   // explicit set of event ids the admin has chosen to show (lets them toggle
@@ -758,6 +775,76 @@ export default function AdminPanel() {
     }
     setEventMarketersMap(prev => ({ ...prev, [eventSlug]: nextIds }));
     logAdminAction('event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
+  };
+
+  // ── Affiliates (creators) — admin-only management ───────────────────────────
+  // Pull roster + build per-creator rollups from clicks, attributed applications
+  // and the sales ledger (admin has full RLS on all three).
+  const loadAffiliatesData = async () => {
+    setAffiliatesLoading(true);
+    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }] = await Promise.all([
+      supabase.from('affiliates').select('id, handle, name, email, active').order('created_at'),
+      supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
+      supabase.from('affiliate_clicks').select('affiliate_id'),
+      supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
+    ]);
+    setAffiliatesLoading(false);
+    setAffiliates((affRows ?? []) as any);
+    const stats: Record<string, AffiliateStat> = {};
+    const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 });
+    (clickRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).clicks += 1; });
+    (appRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).apps += 1; });
+    (salesRows ?? []).forEach((r: any) => {
+      const cur = bump(r.affiliate_id);
+      cur.tickets += 1;
+      cur.earned += Number(r.amount);
+      if (!r.paid_out_at) cur.unpaid += Number(r.amount);
+    });
+    setAffiliateStats(stats);
+  };
+
+  const saveNewAffiliate = async () => {
+    // Normalise the handle to match the DB CHECK (lowercase, [a-z0-9._], ≤40).
+    const handle = newAffiliateHandle.trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 40);
+    const name = newAffiliateName.trim();
+    const email = newAffiliateEmail.trim().toLowerCase();
+    if (!handle || !name || !email) { showToast('Handle, name and email required'); return; }
+    setSavingAffiliate(true);
+    const { error } = await supabase.from('affiliates').insert({ handle, name, email });
+    setSavingAffiliate(false);
+    if (error) {
+      showToast(error.code === '23505' ? 'That handle or email already exists' : `Failed: ${error.message}`);
+      return;
+    }
+    showToast('Creator added');
+    setAddingAffiliate(false);
+    setNewAffiliateHandle(''); setNewAffiliateName(''); setNewAffiliateEmail('');
+    logAdminAction('affiliate_create', 'affiliates', null, { handle, name, email });
+    loadAffiliatesData();
+  };
+
+  const toggleAffiliateActive = async (af: { id: string; active: boolean; name: string }) => {
+    const { error } = await supabase.from('affiliates').update({ active: !af.active }).eq('id', af.id);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(`${af.name} ${!af.active ? 'reactivated' : 'paused'}`);
+    logAdminAction(af.active ? 'affiliate_deactivate' : 'affiliate_reactivate', 'affiliates', af.id, {});
+    loadAffiliatesData();
+  };
+
+  // Settle a creator's outstanding commission: stamp paid_out_at on every unpaid
+  // sale row for them. Append-only ledger keeps the full history.
+  const markAffiliatePaid = async (af: { id: string; name: string; unpaid: number }) => {
+    if (af.unpaid <= 0) return;
+    if (!window.confirm(`Mark ₹${Math.round(af.unpaid).toLocaleString('en-IN')} as paid out to ${af.name}? This can't be undone.`)) return;
+    const { error } = await supabase
+      .from('affiliate_sales')
+      .update({ paid_out_at: new Date().toISOString() })
+      .eq('affiliate_id', af.id)
+      .is('paid_out_at', null);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(`Marked paid for ${af.name}`);
+    logAdminAction('affiliate_payout', 'affiliate_sales', af.id, { amount: af.unpaid });
+    loadAffiliatesData();
   };
 
   // ── Performance: per-event cost-per-ticket + fixed-costs ledger ─────────────
@@ -1839,6 +1926,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
         {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); }}>Performance</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'affiliates')} onClick={() => { switchTab('affiliates'); loadAffiliatesData(); }}>Creators</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
@@ -2313,6 +2401,11 @@ export default function AdminPanel() {
                       const activeDateRow = sortedDates.find(d => d.start_date === selectedDate);
                       const perDateSteps = (activeDateRow as any)?.booking_steps as Array<{ label: string; value: string; date: string }> | undefined;
                       const isNativeApp = trip.booking_url === 'native-application';
+                      const isOpenApp = trip.booking_url === 'payu-hosted';
+                      // Both invite (native) and open events use a FIXED-row timeline
+                      // (no free-form add/remove). Open drops the invite "vibe check"
+                      // application step (they pay immediately): split = 4 rows, single = 3.
+                      const isFixedTimeline = isNativeApp || isOpenApp;
                       const isFullPay = trip.payment_mode === 'full';
                       // Single-payment native events have no remaining-balance step (4 rows).
                       const nativeDefaultSteps = isFullPay
@@ -2329,17 +2422,36 @@ export default function AdminPanel() {
                             { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
                             { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
                           ];
+                      // Open events: no invitation step. Single (3): Payment → Meeting Point
+                      // Details → Event Date. Split (4): Advance → Balance → Meeting Point
+                      // Details → Event Date. The last row carries {application_count} so the
+                      // customer timeline pulls it out as the yellow Event Date card (its
+                      // count line is hidden for open — gated on isNativeApplicationFlow).
+                      const openDefaultSteps = isFullPay
+                        ? [
+                            { label: 'Payment',              value: '{price}',                  date: '' },
+                            { label: "you'll receive exact", value: 'Meeting Point Details 📍',  date: '' },
+                            { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
+                          ]
+                        : [
+                            { label: 'Advance',              value: '{advance}',                date: '' },
+                            { label: 'remaining balance',    value: '{balance}',                date: '' },
+                            { label: "you'll receive exact", value: 'Meeting Point Details 📍',  date: '' },
+                            { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
+                          ];
                       // Auto-heal: only reuse stored steps if they match the current
                       // payment mode (split needs a {balance} row, single must not).
                       // Steps left over from a mode switch fall back to the mode default.
                       const defaultSteps = isNativeApp
                         ? (bookingStepsMatchMode(trip.booking_steps, isFullPay) ? trip.booking_steps! : nativeDefaultSteps)
+                        : isOpenApp
+                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay) ? trip.booking_steps! : openDefaultSteps)
                         : trip.booking_steps ?? [
                           { label: 'Advance', value: '{advance}', date: '' },
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
-                      const healedPerDateSteps = isNativeApp && !bookingStepsMatchMode(perDateSteps, isFullPay) ? undefined : perDateSteps;
+                      const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay) ? undefined : perDateSteps;
                       const rawStepsAll: Array<{ label: string; value: string; date: string }> =
                         timelineEdits[editKey] ?? (hasMultipleDates ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
                       // Single-payment events drop the remaining-balance step in the editor too,
@@ -2349,12 +2461,14 @@ export default function AdminPanel() {
                         : rawStepsAll;
                       // Native app events show a fixed row count — 4 for single-payment, else 5 —
                       // padding missing steps from defaults. The last row defaults to the event title.
-                      const nativeRowCount = isFullPay ? 4 : 5;
-                      const currentSteps: Array<{ label: string; value: string; date: string }> = isNativeApp
-                        ? Array.from({ length: nativeRowCount }, (_, i) => {
+                      // Fixed row count: invite full=4/split=5; open full=3/split=4.
+                      const fixedDefaults = isOpenApp ? openDefaultSteps : nativeDefaultSteps;
+                      const fixedRowCount = isOpenApp ? (isFullPay ? 3 : 4) : (isFullPay ? 4 : 5);
+                      const currentSteps: Array<{ label: string; value: string; date: string }> = isFixedTimeline
+                        ? Array.from({ length: fixedRowCount }, (_, i) => {
                             if (rawSteps[i]) return rawSteps[i];
-                            const def = nativeDefaultSteps[i];
-                            return i === nativeRowCount - 1 ? { ...def, value: trip.title ?? def.value } : def;
+                            const def = fixedDefaults[i];
+                            return i === fixedRowCount - 1 ? { ...def, value: trip.title ?? def.value } : def;
                           })
                         : rawSteps;
                       const setStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) => {
@@ -2423,10 +2537,11 @@ export default function AdminPanel() {
                             <div onClick={e => e.stopPropagation()}>
                           {currentSteps.map((step, i) => {
                             const isNowRow = i === 0;
-                            // Native app: steps 0 (request invitation) and 4 (enjoy the plan) have no date
-                            const nativeNoDate = isNativeApp && (i === 0 || i === currentSteps.length - 1);
+                            // Fixed-timeline (invite/open): first row (pay now / vibe check)
+                            // and last row (Event Date card) have no free date input.
+                            const nativeNoDate = isFixedTimeline && (i === 0 || i === currentSteps.length - 1);
                             return (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isNativeApp ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isFixedTimeline ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
                                 {/* Left: label + value stacked */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <input
@@ -2437,7 +2552,7 @@ export default function AdminPanel() {
                                   />
                                   <input
                                     style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 15, fontWeight: 700, color: '#111', padding: 0 }}
-                                    placeholder={i === 1 ? (isFullPay ? '{price}' : '{advance}') : (!isFullPay && i === 2) ? '{balance}' : 'Value or text'}
+                                    placeholder={i === (isOpenApp ? 0 : 1) ? (isFullPay ? '{price}' : '{advance}') : (!isFullPay && i === (isOpenApp ? 1 : 2)) ? '{balance}' : 'Value or text'}
                                     value={step.value}
                                     onChange={e => setStep(i, { value: e.target.value })}
                                   />
@@ -2459,7 +2574,7 @@ export default function AdminPanel() {
                                             </option>
                                           ))}
                                         </select>
-                                    : isNowRow && !isNativeApp
+                                    : isNowRow && !isFixedTimeline
                                     ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
                                     : <input
                                         type="date"
@@ -2468,7 +2583,7 @@ export default function AdminPanel() {
                                         onChange={e => setStep(i, { date: e.target.value })}
                                       />
                                   }
-                                  {!isNativeApp && (
+                                  {!isFixedTimeline && (
                                     <button type="button" onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 18, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>×</button>
                                   )}
                                 </div>
@@ -2477,7 +2592,7 @@ export default function AdminPanel() {
                           })}
 
                           {/* Reference row — styled like a step row, dropdown on the right */}
-                          {!isNativeApp && sortedDates.length > 0 && (
+                          {!isFixedTimeline && sortedDates.length > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: '1px solid #ebebeb', borderRadius: 10, marginBottom: 6, marginTop: 2 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>{trip.title}</div>
@@ -2503,7 +2618,7 @@ export default function AdminPanel() {
                           )}
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                            {!isNativeApp && (
+                            {!isFixedTimeline && (
                               <button type="button" onClick={addStep} style={{ padding: '5px 14px', background: 'transparent', color: '#555', border: '1.5px solid #ddd', borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>+ Add Step</button>
                             )}
                             <div style={{ flex: 1 }}>
@@ -4943,6 +5058,104 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {/* ── CREATORS (AFFILIATES) TAB ────────────────────────────────────── */}
+        {tab === 'affiliates' && adminRole === 'admin' && (() => {
+          const inr = (n: any) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+          const linkFor = (h: string) => `${window.location.origin}/@${h}`;
+          const copyLink = (h: string) => {
+            navigator.clipboard?.writeText(linkFor(h)).then(() => showToast(`Copied ${linkFor(h)}`), () => showToast('Copy failed'));
+          };
+          const totalUnpaid = Object.keys(affiliateStats).reduce((s, k) => s + affiliateStats[k].unpaid, 0);
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 22 }}>Creators</div>
+              <span style={{ fontSize: 13, color: '#888' }}>{affiliates.length} {affiliates.length === 1 ? 'creator' : 'creators'}</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => loadAffiliatesData()} disabled={affiliatesLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: affiliatesLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: affiliatesLoading ? 0.55 : 1 }}>
+                {affiliatesLoading ? 'Refreshing' : 'Refresh'}
+              </button>
+              <button style={s.btn()} onClick={() => setAddingAffiliate(true)}>+ Add Creator</button>
+            </div>
+
+            <div style={{ background: '#eef2ff', border: '1.5px solid #c7d2fe', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#3730a3', lineHeight: 1.55 }}>
+              <b>How this works:</b> each creator gets a link <code>{window.location.origin}/@handle</code>. When someone books through it and pays in full for an <b>affiliate-enabled</b> event, the creator earns <b>8%</b> of the ticket price. Turn commissions on per event from the event editor. Creators log in with the Google email you set here to see their own dashboard.
+            </div>
+
+            {addingAffiliate && (
+              <div style={{ background: '#fff', border: '1.5px solid #e0e0e0', borderRadius: 12, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={s.label}>Handle (the @ in the link)</label>
+                  <input style={s.input} placeholder="e.g. traveller.tanya" value={newAffiliateHandle} onChange={e => setNewAffiliateHandle(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>Name</label>
+                  <input style={s.input} placeholder="Full name / brand" value={newAffiliateName} onChange={e => setNewAffiliateName(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>Google email (their login)</label>
+                  <input style={s.input} placeholder="creator@gmail.com" value={newAffiliateEmail} onChange={e => setNewAffiliateEmail(e.target.value)} />
+                </div>
+                <button style={s.btn()} disabled={savingAffiliate} onClick={saveNewAffiliate}>{savingAffiliate ? 'Saving…' : 'Save'}</button>
+                <button style={s.outlineBtn} onClick={() => { setAddingAffiliate(false); setNewAffiliateHandle(''); setNewAffiliateName(''); setNewAffiliateEmail(''); }}>Cancel</button>
+              </div>
+            )}
+
+            {totalUnpaid > 0 && (
+              <div style={{ fontSize: 13, color: '#888' }}>Outstanding to pay out across all creators: <b style={{ color: '#dc2626' }}>{inr(totalUnpaid)}</b></div>
+            )}
+
+            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
+                <thead>
+                  <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <th style={{ textAlign: 'left', padding: '8px 16px' }}>Creator</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Clicks</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Bookings</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Paid tickets</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Earned</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid</th>
+                    <th style={{ textAlign: 'right', padding: '8px 16px' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {affiliates.length === 0 && <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No creators yet. Add your first one above.</td></tr>}
+                  {affiliates.map((af) => {
+                    const st = affiliateStats[af.id] ?? { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 };
+                    const conv = st.clicks > 0 ? Math.round((st.tickets / st.clicks) * 100) : null;
+                    return (
+                      <tr key={af.id} style={{ borderTop: '1px solid #f5f5f0', opacity: af.active ? 1 : 0.5 }}>
+                        <td style={{ padding: '10px 16px' }}>
+                          <div style={{ fontWeight: 700, color: '#111' }}>{af.name}{!af.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>paused</span>}</div>
+                          <div style={{ fontSize: 12, color: '#6366f1', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <span>/@{af.handle}</span>
+                            <button onClick={() => copyLink(af.handle)} style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 11, textDecoration: 'underline', padding: 0 }}>copy link</button>
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{st.clicks}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{st.apps}{conv != null && <span style={{ color: '#bbb', fontSize: 11 }}> · {conv}%</span>}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{st.tickets}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>{inr(st.earned)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: st.unpaid > 0 ? '#dc2626' : '#bbb', fontWeight: st.unpaid > 0 ? 700 : 400 }}>{inr(st.unpaid)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {st.unpaid > 0 && <button style={{ ...s.btn('#111'), padding: '4px 10px', fontSize: 12, marginRight: 6 }} onClick={() => markAffiliatePaid({ id: af.id, name: af.name, unpaid: st.unpaid })}>Mark paid</button>}
+                          <button style={s.outlineBtn} onClick={() => toggleAffiliateActive(af)}>{af.active ? 'Pause' : 'Resume'}</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
+              Bookings = people who reached checkout via their link (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
+            </div>
+          </div>
+          );
+        })()}
+
         {/* ── SETTINGS TAB ─────────────────────────────────────────────────── */}
         {tab === 'settings' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
@@ -5582,6 +5795,37 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 ? 'Customers pay the full price in one payment. The Advance amount is ignored.'
                 : 'Customers pay an advance now and the remaining balance later.'}
             </p>
+          </div>
+
+          {/* Creator commissions: pay affiliates for tickets booked via their link */}
+          <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
+            <label style={s.label}>Creator Commissions</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', border: '1.5px solid #e0e0e0', borderRadius: 10, background: trip.affiliate_enabled ? '#eef2ff' : '#fafafa' }}>
+              <button
+                type="button"
+                onClick={() => set('affiliate_enabled', !trip.affiliate_enabled)}
+                style={{ position: 'relative', width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: trip.affiliate_enabled ? '#6366f1' : '#ccc', transition: 'background 0.15s', flexShrink: 0 }}
+                aria-pressed={!!trip.affiliate_enabled}
+              >
+                <span style={{ position: 'absolute', top: 3, left: trip.affiliate_enabled ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
+              </button>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#111' }}>{trip.affiliate_enabled ? 'On — creators earn on this event' : 'Off — no creator commissions'}</div>
+                <div style={{ fontSize: 11, color: '#888' }}>When on, a fully-paid ticket booked via a creator link pays them a commission.</div>
+              </div>
+              {trip.affiliate_enabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="number" min={0} max={100} step={0.5}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                    value={trip.affiliate_commission_pct ?? 8}
+                    onChange={e => set('affiliate_commission_pct', Number(e.target.value))}
+                    style={{ width: 60, padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>% of full price</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Per-city pricing */}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts } from './supabase';
+import { getAffiliateRef } from './affiliate';
 import { TermsContent } from './TermsContent';
+import { NativePaymentOverlay } from './PaymentOverlay';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -411,70 +413,6 @@ const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submission
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 
-function PayUCheckout({ paymentContext, onError }: {
-  paymentContext: { name: string; phone: string; email?: string; amount: number; eventId?: string; eventTitle: string; tripDateFull: string; whatsappGroupUrl?: string };
-  onError: () => void;
-}) {
-  const formRef = React.useRef<HTMLFormElement>(null);
-  const [fields, setFields] = React.useState<Record<string, string> | null>(null);
-  const [payuUrl, setPayuUrl] = React.useState('');
-  const [error, setError] = React.useState('');
-
-  React.useEffect(() => {
-    fetch(`${SUPABASE_FUNCTIONS_URL}/create-payu-order`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: paymentContext.name,
-        phone: paymentContext.phone,
-        email: paymentContext.email ?? null,
-        amount: paymentContext.amount,
-        event_id: paymentContext.eventId ?? null,
-        event_slug: paymentContext.eventId ?? null,
-        event_title: paymentContext.eventTitle,
-        trip_date: paymentContext.tripDateFull,
-        whatsapp_group_url: paymentContext.whatsappGroupUrl ?? null,
-      }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) throw new Error(data.error);
-        setPayuUrl(data.payu_url);
-        setFields(data.fields);
-      })
-      .catch(() => setError('Could not initiate payment. Please try again.'));
-  }, []);
-
-  React.useEffect(() => {
-    if (fields && formRef.current) formRef.current.submit();
-  }, [fields]);
-
-  return (
-    <div className="absolute inset-0 z-[70] bg-white flex flex-col items-center justify-center gap-4">
-      {error ? (
-        <div className="flex flex-col items-center gap-3 px-8 text-center">
-          <p className="text-red-500 text-sm font-medium">{error}</p>
-          <button onClick={onError} className="text-sm text-gray-500 underline">Go back</button>
-        </div>
-      ) : (
-        <>
-          <svg className="w-10 h-10 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-          </svg>
-          <p className="text-gray-500 text-sm font-medium">Redirecting to PayU...</p>
-        </>
-      )}
-      {fields && payuUrl && (
-        <form ref={formRef} method="POST" action={payuUrl} className="hidden">
-          {Object.entries(fields).map(([key, value]) => (
-            <input key={key} type="hidden" name={key} value={value} />
-          ))}
-        </form>
-      )}
-    </div>
-  );
-}
 
 // ─── APPLICATION FORM ──────────────────────────────────────────────────────────
 function ApplicationForm({
@@ -532,6 +470,10 @@ function ApplicationForm({
         pickup_point_id: chosenPoint?.id ?? selectedPickupId ?? null,
         pickup_label: chosenPoint?.label ?? null,
         selected_city: selectedCity ?? null,
+        // Creator affiliate attribution: stamp the session ref at application
+        // time (invite events attribute at apply). A BEFORE INSERT trigger
+        // resolves it to affiliate_id; null/unknown = founder's own link.
+        affiliate_code: getAffiliateRef(),
       });
 
       if (sbError) {
@@ -918,6 +860,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     isBalancePayment?: boolean;
     whatsappGroupUrl?: string;
     email?: string;
+    selectedCity?: string;
   } | null>(null);
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
@@ -1002,9 +945,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     });
   }, [msgsReady, eventsLoaded]);
 
-  // Fetch application count for native-application events
+  // Fetch per-date reserved counts for native-application AND open (payu-hosted)
+  // events — both drive per-date capacity/spots-left in the calendar. The same
+  // event_booking_counts(_by_date) RPC counts advance_paid/fully_paid as reserved
+  // for either flow.
   useEffect(() => {
-    if (!isNativeApplicationFlow || !selectedEvent?.id) {
+    const wantsCounts = isNativeApplicationFlow || selectedEvent?.bookingUrl === 'payu-hosted';
+    if (!wantsCounts || !selectedEvent?.id) {
       setApplicationCount(null);
       setReservedCount(null);
       setDateCounts(null);
@@ -1015,7 +962,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       setReservedCount(reserved);
     });
     fetchEventDateCounts(selectedEvent.id).then(setDateCounts);
-  }, [isNativeApplicationFlow, selectedEvent?.id]);
+  }, [isNativeApplicationFlow, selectedEvent?.id, selectedEvent?.bookingUrl]);
 
   const doubtCtaLabel = (msgs.doubt_cta_label || '').trim() || 'Vera Doubt Iruku';
   const getSelectedEventQuickInfoValue = (labels: string[]) =>
@@ -1749,6 +1696,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
       email: googleUser?.email ?? undefined,
+      // Sent to create-payu-order so it charges the correct city-aware price
+      // directly from the client's current selection (server validates it
+      // against event.cities) instead of depending on the applications-row
+      // fallback, which can be stale for a returning lead.
+      selectedCity,
     };
     // sessionStorage instead of localStorage so the buyer's phone/name
     // doesn't outlive the booking tab on a shared/borrowed device. The
@@ -1762,6 +1714,57 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       // ignore storage errors in restricted environments
     }
     trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
+
+    // Open events: create a `pending` applications row so the lead is tracked
+    // (In progress → Cart abandoned → Paid) and the PayU callback can flip its
+    // status by (event_slug, phone). Mirrors the invite ApplicationForm insert.
+    // Insert-or-ignore on the (event_slug, phone) unique key: if a row already
+    // exists (e.g. a prior abandonment), leave it untouched so its status and
+    // cart_abandoned flag survive for the "Recovered" flow. Phone is normalised
+    // to 10 digits to match what create-payu-order writes to payu_payments
+    // (the callback matches on it). Open events have no event_marketers rows, so
+    // the assign-marketer trigger no-ops — no human resources pulled in.
+    if (isPayUFlow) {
+      const normalizedPhone = detailsForm.phone.replace(/\D/g, '').slice(-10);
+      const chosenPoint = (selectedEvent.pickupPoints ?? []).find((p: any) => p.label === selectedMeetingPoint);
+      const affRef = getAffiliateRef();
+      const openSlug = String(selectedEvent.id ?? '').toLowerCase();
+      const { error: appErr } = await supabase
+        .from('applications')
+        .upsert({
+          event_slug: openSlug,
+          name: detailsForm.name.trim(),
+          phone: normalizedPhone,
+          email: googleUser?.email ?? null,
+          // gender / why_join are NOT NULL on applications but the open form
+          // doesn't collect them (low-friction impulse booking) — send empty.
+          gender: '',
+          why_join: '',
+          status: 'pending',
+          selected_date: dateStr || null,
+          pickup_point_id: chosenPoint?.id ?? null,
+          pickup_label: selectedMeetingPoint || null,
+          selected_city: selectedCity ?? null,
+          // Creator affiliate attribution on first insert (BEFORE INSERT trigger
+          // resolves affiliate_code → affiliate_id).
+          affiliate_code: affRef,
+        }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
+      // Never block the payment on tracking — log and continue to checkout.
+      if (appErr) console.error('open application upsert failed:', appErr);
+
+      // Open-event rule: the creator whose link is active at PAYMENT time wins.
+      // The upsert above ignores conflicts, so a pre-existing (abandoned) row
+      // keeps its old ref — re-attribute the latest session ref onto the UNPAID
+      // row (incl. clearing it to founder's-own when there's no ref). The RPC
+      // guards against advance_paid/fully_paid rows. Fire-and-forget.
+      const { error: attrErr } = await supabase.rpc('attribute_open_application', {
+        p_event_slug: openSlug,
+        p_phone: normalizedPhone,
+        p_code: affRef,
+      });
+      if (attrErr) console.error('open affiliate re-attribution failed:', attrErr);
+    }
+
     setPaymentContext(ctx);
     setShowDetailsForm(false);
     setPaymentView('checkout');
@@ -2368,16 +2371,30 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                         const selectedDateEntry = selectedEvent.dates.find(d => d.date === bookingDate);
                         const eventSteps = selectedDateEntry?.bookingSteps ?? selectedEvent.bookingSteps ?? (
-                          selectedEvent.paymentMode === 'full'
-                            ? [
-                                { label: 'Entry Ticket', value: '{price}', date: '' },
-                                { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
-                              ]
-                            : [
-                                { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
-                                { label: 'Remaining Balance', value: '{balance}', date: '' },
-                                { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
-                              ]
+                          isPayUFlow
+                            // Open events pay immediately (no invitation step). Single-payment
+                            // (3): Payment → Meeting Point Details (+ Event Date = yellow card).
+                            // Split (4): Advance → Balance → Meeting Point Details (+ yellow card).
+                            ? (selectedEvent.paymentMode === 'full'
+                                ? [
+                                    { label: 'Payment', value: '{price}', date: '' },
+                                    { label: "you'll receive", value: 'Meeting Point Details 📍', date: '' },
+                                  ]
+                                : [
+                                    { label: 'Advance', value: '{advance}', date: '' },
+                                    { label: 'Remaining Balance', value: '{balance}', date: '' },
+                                    { label: "you'll receive", value: 'Meeting Point Details 📍', date: '' },
+                                  ])
+                            : (selectedEvent.paymentMode === 'full'
+                                ? [
+                                    { label: 'Entry Ticket', value: '{price}', date: '' },
+                                    { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                                  ]
+                                : [
+                                    { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
+                                    { label: 'Remaining Balance', value: '{balance}', date: '' },
+                                    { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                                  ])
                         );
 
                         // Social-proof row: the last booking_steps entry whose label contains
@@ -2391,7 +2408,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const socialProofRow = socialProofIdx >= 0 ? eventSteps[socialProofIdx] : null;
                         const steps = (socialProofIdx >= 0 ? eventSteps.filter((_: any, i: number) => i !== socialProofIdx) : eventSteps)
                           // Single-payment events have no remaining-balance step.
-                          .filter((s: any) => selectedEvent.paymentMode === 'full' ? !/balance/i.test(`${s.label} ${s.value}`) : true);
+                          .filter((s: any) => selectedEvent.paymentMode === 'full' ? !/balance/i.test(`${s.label} ${s.value}`) : true)
+                          // Drop blank rows (no label and no value) — stale/empty steps from an
+                          // earlier save must never render as an empty numbered step.
+                          .filter((s: any) => String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== '');
 
                         const yellowTitle = socialProofRow?.value ? resolveValue(socialProofRow.value) : selectedEvent.title;
                         const yellowDateStr = (socialProofRow?.date) || bookingDate || selectedEvent.dates?.[0]?.date || '';
@@ -2410,7 +2430,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                               // in place of the date (same gray pill styling). Applies to the
                               // single-payment row ({price}) and, for invite-only events, the
                               // advance row ({advance}).
+                              // Open events pay immediately, so they never show the
+                              // invite-only "After Invitation" pill.
                               const isAfterInviteRow = !isNowRow
+                                && !isPayUFlow
                                 && /\{advance\}|\{price\}/i.test(step.value || '')
                                 && (selectedEvent.paymentMode === 'full' || selectedEvent.inviteOnly);
                               return (
@@ -3010,13 +3033,34 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           )}
         </AnimatePresence>
 
-        {/* PayU Hosted Checkout */}
-        {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl === 'payu-hosted' && (
-          <PayUCheckout
-            paymentContext={paymentContext}
-            onError={() => { setPaymentView('idle'); setShowDetailsForm(true); }}
-          />
-        )}
+        {/* Bill page — the exact same review/pay screen as the invite flow
+            (shared PaymentOverlay). Open flow is now: details form → bill page →
+            PayU, mirroring invite. The bill collects the payment method + fee and
+            calls create-payu-order itself; payment_type drives full vs advance. */}
+        {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl === 'payu-hosted' && (() => {
+          const isBalance = !!paymentContext.isBalancePayment;
+          const isFull = selectedEvent?.paymentMode === 'full' && !isBalance;
+          const billPaymentType = isBalance ? 'balance' : (isFull ? 'full' : 'advance');
+          // For a single-payment (full) event the bill shows the full price as
+          // "Entry Ticket"; for split it shows the advance (or the balance). The
+          // server recomputes the real charge from the DB regardless.
+          const billBase = isFull ? (paymentContext.amount + paymentContext.remainingBalance) : paymentContext.amount;
+          return (
+            <NativePaymentOverlay
+              eventTitle={paymentContext.eventTitle}
+              eventDate={paymentContext.tripDateFull}
+              priceAdvance={billBase}
+              paymentType={billPaymentType}
+              prefillName={paymentContext.name}
+              prefillPhone={paymentContext.phone}
+              prefillEmail={paymentContext.email ?? ''}
+              lockEmail={!!paymentContext.email}
+              eventSlug={paymentContext.eventId}
+              selectedCity={paymentContext.selectedCity ?? ''}
+              onClose={() => { setPaymentView('idle'); setShowDetailsForm(true); }}
+            />
+          );
+        })()}
 
         {/* Payment Success Screen */}
         <AnimatePresence>
@@ -3742,8 +3786,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const [headerImageIndex, setHeaderImageIndex] = useState(0);
   const [headerCarouselPaused, setHeaderCarouselPaused] = useState(false);
   const isPreviewLink = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('preview_event');
-  const isPayUFlow = event.bookingUrl === 'payu-hosted';
-
   // City-specific content: prefer city_details[selectedCity], fall back to flat event fields
   const _cd = (event as any).cityDetails?.[selectedCity];
   const activeIncluded: string[] = _cd?.included ?? (event.included ?? []);
@@ -3752,19 +3794,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const activeItinerary: any[] = _cd?.itinerary ?? (event.itinerary ?? []);
   const activePriceFull: number    = _cd?.price_full    ?? event.priceFull    ?? 0;
   const activePriceAdvance: number = _cd?.price_advance ?? event.priceAdvance ?? event.advanceAmount ?? 0;
-  const [openSpotsLeft, setOpenSpotsLeft] = useState<number | null>(null);
-  useEffect(() => {
-    if (!(event as any).totalCapacity || !isPayUFlow) return;
-    supabase
-      .from('payu_payments')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_id', event.id)
-      .eq('status', 'success')
-      .then(({ count }) => {
-        const left = Math.max(0, (event as any).totalCapacity - (count ?? 0));
-        setOpenSpotsLeft(left);
-      });
-  }, [event.id, (event as any).totalCapacity, isPayUFlow]);
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
@@ -3959,9 +3988,12 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	    // Rules: a date with 0 left auto-sells-out; the EARLIEST date that's ≥50%
 	    // reserved (and still has spots) is the only one shown amber + "Only X left";
 	    // every other non-sold date stays green.
-	    const isNative = event.bookingUrl === 'native-application';
+	    // Per-date capacity/sold-out applies to native-application AND open
+	    // (payu-hosted) events — both have a totalCapacity and per-date reserved
+	    // counts (dateCounts loaded above for either flow).
+	    const capEligible = event.bookingUrl === 'native-application' || event.bookingUrl === 'payu-hosted';
 	    const nativeCapacity = (event as any).totalCapacity as number | null;
-	    const cap = isNative && typeof nativeCapacity === 'number' && nativeCapacity > 0 ? nativeCapacity : null;
+	    const cap = capEligible && typeof nativeCapacity === 'number' && nativeCapacity > 0 ? nativeCapacity : null;
 	    const reservedForDate = (baseDate?: string) => (baseDate && dateCounts ? (dateCounts[baseDate]?.reserved ?? 0) : 0);
 	    const sortedTripDates = (event.dates ?? []).filter(d => d.date).slice().sort((a, b) => a.date.localeCompare(b.date));
 	    // Classify each trip date: 'sold' | 'amber' (earliest filling-fast) | 'green'.
@@ -3979,7 +4011,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      // Only classify ACTUAL trip/event dates. Non-trip days have no status
 	      // (dbStatus undefined); without this guard they have 0 reservations →
 	      // available = capacity > 0 → wrongly painted green across the whole month.
-	      if (!isNative || !cap || !baseDate || !dbStatus) return null;
+	      if (!capEligible || !cap || !baseDate || !dbStatus) return null;
 	      const avail = cap - reservedForDate(baseDate);
 	      if (dbStatus === 'sold_out' || avail <= 0) return 'sold';
 	      if (baseDate === earliestFillingFastDate) return 'amber';
@@ -4881,22 +4913,11 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                 const displayTotal = pricing.total;
                                 const displayRemaining = Math.max(displayTotal - displayAdvance, 0);
 
-                                return isPayUFlow ? (
-                              <div className="flex flex-col gap-2">
-                                {openSpotsLeft !== null && openSpotsLeft < 10 && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${openSpotsLeft <= 3 ? 'bg-red-500' : 'bg-orange-400'}`} />
-                                    <span className={`text-[12px] font-bold ${openSpotsLeft <= 3 ? 'text-red-600' : 'text-orange-500'}`}>
-                                      {openSpotsLeft === 0 ? 'Sold out' : `Only ${openSpotsLeft} spot${openSpotsLeft === 1 ? '' : 's'} left`}
-                                    </span>
-                                  </div>
-                                )}
-                                <div className="flex items-end justify-between gap-3">
-                                  <p className="text-[11px] font-semibold text-gray-500">Total</p>
-                                  <p className="text-2xl font-black text-black leading-tight">{formatINR(pricing.total)}</p>
-                                </div>
-                              </div>
-                                ) : event.paymentMode === 'full' ? (
+                                // Open events mirror invite-only single-step pricing exactly:
+                                // single-payment (payment_mode='full') → centered "Entry Ticket"
+                                // + price; split → Advance + Remaining Balance. Spots-left is
+                                // surfaced via the calendar key, not here.
+                                return event.paymentMode === 'full' ? (
                               <div className="flex flex-col items-center text-center gap-1 text-[11px] font-semibold text-gray-700">
                                 <p>Entry Ticket</p>
                                 <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>

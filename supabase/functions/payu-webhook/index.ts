@@ -66,8 +66,11 @@ const AISENSY_CAMPAIGN_BALANCE  = 'fullpaid';
 const AISENSY_CAMPAIGN_FAILED   = 'payment_failed';
 // Single-payment ('full') events: paid-in-full confirmation. NOTE: this
 // campaign/template must exist in the AiSensy dashboard or sends will fail.
-// Params: {{1}} = amount (₹…), {{2}} = details date (from booking_steps[3]).
-const AISENSY_CAMPAIGN_FULL     = 'paid_full';
+// Params: {{1}} = amount (₹…, same format as advance_paid), {{2}} = meeting-spot
+// details date (located by label, NOT a fixed index — see pickMeetingSpotStep).
+// MUST match payu-callback's constant — the two race via claimSendFlag, and the
+// race winner sends, so a name mismatch makes delivery a coin flip.
+const AISENSY_CAMPAIGN_FULL     = 'single_payment_sucessful';
 
 // Resolve booking-timeline steps for an applicant: prefer the per-date steps for
 // the date they chose (multi-date events can have different deadlines per date),
@@ -80,6 +83,16 @@ function pickBookingSteps(ev: any, selectedDate?: string | null): any[] {
     if (perDate.length > 0) return perDate;
   }
   return eventLevel;
+}
+
+// Locate the meeting-spot step ("you'll receive exact … Meeting Spot/Point
+// Details") in a booking timeline. Its index varies by event type — invite full
+// = 2, invite split = 3, open single = 1, open split = 2 — so match by
+// label/value, never a fixed index. Mirrors payu-callback.
+function pickMeetingSpotStep(steps: any[]): any {
+  return (Array.isArray(steps) ? steps : []).find((s: any) =>
+    /meeting\s*(spot|point)|you'?ll receive/i.test(`${s?.label ?? ''} ${s?.value ?? ''}`)
+  ) ?? null;
 }
 
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
@@ -157,7 +170,7 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
       .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
-    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
+    const detailsStep = pickMeetingSpotStep(pickBookingSteps(ev, app.selected_date));
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
@@ -209,7 +222,7 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
       .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
-    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
+    const detailsStep = pickMeetingSpotStep(pickBookingSteps(ev, app.selected_date));
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
@@ -390,9 +403,21 @@ Deno.serve(async (req) => {
       if (rawSlug && phone) {
         const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
 
+        // Recovered: stamp recovered_at when a cart_abandoned lead first pays.
+        // Mirrors payu-callback — the webhook may be the ONLY path that runs
+        // (user paid but closed the tab before PayU redirected the browser),
+        // so without this the Recovered badge would be missed for those.
+        const { data: appRow } = await supabase
+          .from('applications')
+          .select('cart_abandoned, recovered_at')
+          .eq('event_slug', eventSlug)
+          .eq('phone', phone)
+          .maybeSingle();
+        const isRecovery = !!(appRow as any)?.cart_abandoned && !(appRow as any)?.recovered_at;
+
         await supabase
           .from('applications')
-          .update({ status: newStatus })
+          .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
           .eq('event_slug', eventSlug)
           .eq('phone', phone);
 

@@ -79,8 +79,9 @@ const AISENSY_CAMPAIGN_FAILED  = 'payment_failed';
 const AISENSY_CAMPAIGN_BALANCE = 'fullpaid';
 // Single-payment ('full') events: paid-in-full confirmation. NOTE: this
 // campaign/template must exist in the AiSensy dashboard or sends will fail.
-// Params: {{1}} = amount (₹…), {{2}} = details date (from booking_steps[3]).
-const AISENSY_CAMPAIGN_FULL    = 'paid_full';
+// Params: {{1}} = amount (₹…, same format as advance_paid), {{2}} = meeting-spot
+// details date (located by label, NOT a fixed index — see pickMeetingSpotStep).
+const AISENSY_CAMPAIGN_FULL    = 'single_payment_sucessful';
 
 // Resolve booking-timeline steps for an applicant: prefer the per-date steps for
 // the date they chose (multi-date events can have different deadlines per date),
@@ -93,6 +94,17 @@ function pickBookingSteps(ev: any, selectedDate?: string | null): any[] {
     if (perDate.length > 0) return perDate;
   }
   return eventLevel;
+}
+
+// Locate the meeting-spot step ("you'll receive exact … Meeting Spot/Point
+// Details") in a booking timeline. Its index varies by event type — invite full
+// = 2, invite split = 3, open single = 1, open split = 2 — so match by
+// label/value, never a fixed index (a hardcoded [3] blanked the date for open
+// single events, which only have 3 steps).
+function pickMeetingSpotStep(steps: any[]): any {
+  return (Array.isArray(steps) ? steps : []).find((s: any) =>
+    /meeting\s*(spot|point)|you'?ll receive/i.test(`${s?.label ?? ''} ${s?.value ?? ''}`)
+  ) ?? null;
 }
 
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
@@ -179,15 +191,15 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
   if (!(await claimSendFlag(supabase, app.id, 'aisensy_balance_paid_sent'))) return;
 
   try {
-    // {{2}} comes from the 4th booking step's date — same source as the
-    // receipt warm note and the invite-flow chat copy. Formatted as
-    // May 22nd / Aug 26th per the approved AiSensy template spec.
+    // {{2}} is the meeting-spot step's date — same source as the receipt warm
+    // note and the invite-flow chat copy. Located by label (invite split = index
+    // 3, open split = index 2), formatted May 22nd / Aug 26th per the template.
     const { data: ev } = await supabase
       .from('events')
       .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
-    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
+    const detailsStep = pickMeetingSpotStep(pickBookingSteps(ev, app.selected_date));
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
@@ -249,7 +261,7 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
       .select('booking_steps, event_dates(start_date, booking_steps)')
       .eq('slug', args.eventSlug)
       .maybeSingle();
-    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
+    const detailsStep = pickMeetingSpotStep(pickBookingSteps(ev, app.selected_date));
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
@@ -411,13 +423,28 @@ Deno.serve(async (req) => {
       payu_response: { ...p, _hash_matches: true },
     }).eq('txnid', txnid);
 
+    // Open events (booking_url='payu-hosted') run in the /plans flow, not the
+    // invite flow, so their post-payment return must route to /plans. Resolve it
+    // once here so every redirect branch below picks the right destination.
+    const { data: evRow } = await supabase
+      .from('events')
+      .select('booking_url')
+      .or(`slug.eq.${stored.event_slug},invite_slug.eq.${stored.event_slug}`)
+      .maybeSingle();
+    const isOpenEvent = (evRow as any)?.booking_url === 'payu-hosted';
+
     // Pending (e.g. a slow UPI collect, or a bank transfer still settling).
     // Do NOT treat it as a failure: don't fire the payment-failed WhatsApp and
     // don't touch the application status. PayU sends the final success/failure
     // later (webhook or a follow-up callback), which resolves it. Showing a
     // 'failed' screen here would wrongly nudge a retry and risk a double charge.
     if (status === 'pending') {
-      return Response.redirect(`${FRONTEND_URL}/invite?payment_status=pending&txnid=${encodeURIComponent(txnid)}`, 302);
+      return Response.redirect(
+        isOpenEvent
+          ? `${FRONTEND_URL}/plans?payment_status=pending&txnid=${encodeURIComponent(txnid)}&event=${encodeURIComponent(stored.event_slug ?? '')}`
+          : `${FRONTEND_URL}/invite?payment_status=pending&txnid=${encodeURIComponent(txnid)}`,
+        302,
+      );
     }
 
     if (status === 'success') {
@@ -429,9 +456,21 @@ Deno.serve(async (req) => {
       if (rawSlug && phone) {
         const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
 
+        // Recovered: if this lead had been marked cart_abandoned, stamp
+        // recovered_at on the first payment that clears it — so the admin can
+        // badge them "Recovered" and measure recovery from marketing nudges.
+        // Set once (don't overwrite an earlier recovery on a later balance pay).
+        const { data: appRow } = await supabase
+          .from('applications')
+          .select('cart_abandoned, recovered_at')
+          .eq('event_slug', eventSlug)
+          .eq('phone', phone)
+          .maybeSingle();
+        const isRecovery = !!(appRow as any)?.cart_abandoned && !(appRow as any)?.recovered_at;
+
         await supabase
           .from('applications')
-          .update({ status: newStatus })
+          .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
           .eq('event_slug', eventSlug)
           .eq('phone', phone);
 
@@ -468,7 +507,9 @@ Deno.serve(async (req) => {
         }
 
         return Response.redirect(
-          `${FRONTEND_URL}/invite/${eventSlug}?payment_status=success&txnid=${encodeURIComponent(txnid)}&payment_type=${paymentType}`,
+          isOpenEvent
+            ? `${FRONTEND_URL}/plans?payment_status=success&txnid=${encodeURIComponent(txnid)}&event=${encodeURIComponent(eventSlug)}&payment_type=${paymentType}`
+            : `${FRONTEND_URL}/invite/${eventSlug}?payment_status=success&txnid=${encodeURIComponent(txnid)}&payment_type=${paymentType}`,
           302,
         );
       }
@@ -488,7 +529,9 @@ Deno.serve(async (req) => {
         });
       }
       return Response.redirect(
-        `${FRONTEND_URL}/invite?payment_status=failed&txnid=${encodeURIComponent(txnid)}`,
+        isOpenEvent
+          ? `${FRONTEND_URL}/plans?payment_status=failed&txnid=${encodeURIComponent(txnid)}&event=${encodeURIComponent(stored.event_slug ?? '')}`
+          : `${FRONTEND_URL}/invite?payment_status=failed&txnid=${encodeURIComponent(txnid)}`,
         302,
       );
     }

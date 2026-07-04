@@ -174,12 +174,35 @@ ALTER TABLE payu_payments ADD COLUMN balance_due_date DATE;
 
 ---
 
+### 3. Cart Abandonment — Open Events
+
+**What it does:** Sent to someone who opened the bill page of an **open event** (`booking_url='payu-hosted'`) 2+ hours ago and never clicked Pay. A friendly nudge naming the event and the date they'd miss. (Invite events send the separate `cart_abandonment` template; open events get this one instead.)
+
+**Where it's triggered:** `supabase/functions/cart-abandonment/index.ts` — the `if (isOpenEvent)` branch inside the 30-min pg_cron loop.
+
+**AiSensy Campaign Name:** `cart_abandon_open`
+
+**Template Parameters:**
+| # | Value | Example |
+|---|-------|---------|
+| 1 | User name | `Krutesh` |
+| 2 | Event name | `Chill-pill in Himalayas` |
+| 3 | Event date the user chose (formatted) | `Monday, March 5th` |
+
+- `{{3}}` comes from `applications.selected_date` (the exact date they picked, which matters for recurring events), falling back to the event's first `event_dates.start_date`. Formatted `Monday, March 5th` — same style as the invitation template.
+- **Dedup:** uses the `bill_opens.cart_abandonment_sent` flag (per bill-open row), same as the invite cart-abandonment. Only set to `true` on a successful send, so a transient AiSensy failure retries on the next cron run.
+- **Not sent** if the lead already has a `payu_payments` row (they clicked Pay) or has already paid.
+- ⚠️ **Undeployed** — part of the held open-event batch; the founder deploys.
+
+---
+
 ## Summary Table
 
 | Message | Campaign | Triggered by | Template params | Dedup DB flag |
 |---------|----------|-------------|-----------------|---------------|
 | Invitation | `Invite-Only Automation` | Admin clicks Approve | Event name, event date | `aisensy_invite_sent` |
 | Advance confirmed | `advance_paid+balance` | PayU callback + webhook | Amount, balance due date, txnid | `aisensy_advance_paid_sent` |
+| Cart abandon (open) | `cart_abandon_open` | cart-abandonment cron (30 min) | Name, event name, event date | `bill_opens.cart_abandonment_sent` |
 
 ---
 
