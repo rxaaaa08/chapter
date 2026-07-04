@@ -1360,6 +1360,33 @@ export default function AdminPanel() {
       });
     }
 
+    // ── Re-point bookings when an existing date's start_date is edited ───────
+    // applications reference a date by its DATE STRING (selected_date), not by
+    // event_dates.id. The delete+reinsert below therefore strands every booking
+    // on the OLD date whenever an admin edits a date in the event editor — the
+    // per-date reserved counts vanish (event_booking_counts_by_date groups by
+    // selected_date) and the calendar reverts that date to fully-green. Detect
+    // dates whose start_date changed (matched by the row id that survived the
+    // edit) and migrate their applications to the new date first. This
+    // deliberately moves paid bookings too: a confirmed booking must follow its
+    // date when the organiser reschedules it.
+    if (id) {
+      const original = trips.find(t => t.id === id);
+      const renames = (event_dates ?? [])
+        .filter(d => d.id)
+        .map(d => ({ from: original?.event_dates?.find(o => o.id === d.id)?.start_date, to: d.start_date }))
+        .filter((r): r is { from: string; to: string } => !!r.from && !!r.to && r.from !== r.to);
+      for (const { from, to } of renames) {
+        const slugFilter = [tripWithSlug.slug, tripWithSlug.invite_slug].filter(Boolean) as string[];
+        const { error } = await supabase.from('applications')
+          .update({ selected_date: to })
+          .in('event_slug', slugFilter)
+          .eq('selected_date', from);
+        if (error) console.error('[saveTrip] date re-point failed', { from, to, error });
+        else logAdminAction('event_date_repoint', 'applications', id, { slug: tripWithSlug.slug, from, to });
+      }
+    }
+
     if (eventId && normalizedEventDates) {
       await supabase.from('event_dates').delete().eq('event_id', eventId);
       if (normalizedEventDates.length > 0) {
@@ -3020,21 +3047,34 @@ export default function AdminPanel() {
               .map(a => String(a.selected_date ?? ''))
               .filter(d => !!d)
           )).sort();
-          // A doubt is "handled" the moment that person actually submits an
-          // application for the same event — a real, non-gameable outcome (a
-          // marketer can't fake it; the person fills the form themselves).
-          // Derived from the applications list, so it's always accurate.
+          // A doubt is "handled" once that person has been INVITED (or beyond)
+          // for the same event. Note: a still-`pending` application does NOT
+          // count as handled — that person applied but was never invited, so
+          // the Approve button must stay available to invite them straight from
+          // the doubt tab. Derived from the applications list, so it's accurate.
           const last10 = (p: any) => String(p ?? '').replace(/\D/g, '').slice(-10);
-          const appliedKeys = new Set(
-            applications.map(a => `${last10(a.phone)}__${String(a.event_slug ?? '').toLowerCase()}`)
+          const appliedStatusByKey = new Map<string, string>(
+            applications.map(a => [`${last10(a.phone)}__${String(a.event_slug ?? '').toLowerCase()}`, a.status])
           );
-          const doubtHasApplied = (submission: any): boolean => {
+          // Status of the application behind a doubt (null = never applied).
+          // Slug resolution mirrors approveDoubtSubmission / getDoubtSubmissionPlanName:
+          // prefer the stable event_id so a plan rename can't break the match.
+          const doubtAppStatus = (submission: any): string | null => {
             const phone10 = last10(submission.phone);
-            if (!phone10) return false;
+            if (!phone10) return null;
+            const id = String(submission.event_id ?? '').trim();
             const raw = (submission.event_title || submission.event_slug || '').trim();
-            const trip = trips.find(t => t.title === raw || t.slug === raw || t.invite_slug === raw);
-            const slug = String(trip?.slug ?? submission.event_slug ?? '').toLowerCase();
-            return !!slug && appliedKeys.has(`${phone10}__${slug}`);
+            const trip = trips.find(t =>
+              (id && (t.id === id || t.slug === id || t.invite_slug === id))
+              || t.title === raw || t.slug === raw || t.invite_slug === raw
+            );
+            const slug = String(trip?.slug ?? submission.event_id ?? submission.event_slug ?? '').toLowerCase();
+            if (!slug) return null;
+            return appliedStatusByKey.get(`${phone10}__${slug}`) ?? null;
+          };
+          const doubtHasApplied = (submission: any): boolean => {
+            const st = doubtAppStatus(submission);
+            return st !== null && st !== 'pending';
           };
 
           const filteredDoubtSubmissions = (planDoubts ?? []).filter((submission) => {
