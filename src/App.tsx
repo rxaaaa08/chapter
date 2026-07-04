@@ -2714,10 +2714,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   inputMode="tel"
                   value={form.phone}
                   onChange={event => {
-                    const digits = event.target.value.replace(/\D/g, '');
-                    const phone = digits.startsWith('91') && digits.length > 10
-                      ? digits.slice(2, 12)
-                      : digits.slice(0, 10);
+                    // Keep only digits and hard-cap at 10 — never strip a leading
+                    // "91", so numbers that legitimately start with 91 stay intact.
+                    const phone = event.target.value.replace(/\D/g, '').slice(0, 10);
                     setForm(current => ({ ...current, phone }));
                     setError('');
                     setMatches([]);
