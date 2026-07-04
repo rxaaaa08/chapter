@@ -932,9 +932,35 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         const event = events.find(e => e.id === slug);
         const capacity = (event as any)?.totalCapacity ?? null;
         if (!event || !capacity) return null;
-        const { registered, reserved } = await fetchEventCounts(slug);
         const title = (event.title ?? slug).toLowerCase();
-        if (reserved >= capacity) return `${title} - sold out`;
+
+        // Recurring events: capacity applies to EACH date independently (same
+        // rule the booking calendar uses). Summing bookings across all dates and
+        // comparing to a single capacity wrongly reported "1 spot left" when each
+        // date still had spots. Instead, announce the EARLIEST date that isn't
+        // sold out; only when EVERY date is sold out do we say "sold out".
+        const tripDates = (event.dates ?? [])
+          .filter(d => d.date)
+          .slice()
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        let registered: number;
+        let reserved: number;
+        if (tripDates.length > 0) {
+          const perDate = await fetchEventDateCounts(slug);
+          const earliest = tripDates.find(d => {
+            const r = perDate[d.date]?.reserved ?? 0;
+            return d.status !== 'sold_out' && capacity - r > 0;
+          });
+          if (!earliest) return `${title} - sold out`;
+          reserved   = perDate[earliest.date]?.reserved   ?? 0;
+          registered = perDate[earliest.date]?.registered ?? 0;
+        } else {
+          // No per-date structure → fall back to event-level counts.
+          ({ registered, reserved } = await fetchEventCounts(slug));
+          if (reserved >= capacity) return `${title} - sold out`;
+        }
+
         if (reserved / capacity >= 0.5) return `${title} - ${capacity - reserved} spots left`;
         const displayed = (capacity * 3) + registered;
         return `${title} - ${displayed} people have registered`;
@@ -2114,7 +2140,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   };
 
   const isNameValid = detailsForm.name.trim().length >= 1;
-  const isPhoneValid = /^\d{10,}$/.test(detailsForm.phone);
+  const isPhoneValid = /^[6-9]\d{9}$/.test(detailsForm.phone);
   const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && (!isPayUFlow || !!googleUser);
 
   if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
@@ -2629,8 +2655,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     >
                       {(!existingBooking || forceNewBooking) && (
                       <div className="px-6 pt-3 pb-4">
-                        <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">
-                          Let's Lock This In! 🔐
+                        <p className="text-[17px] text-gray-900 leading-snug">
+                          We all start as strangers... <span className="font-black">until we meet.</span>
                         </p>
                       </div>
                       )}
@@ -2768,7 +2794,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                               <input
                                 type="tel"
                                 value={detailsForm.phone}
-                                onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '') })}
+                                onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
                                 placeholder="Updates & reminders are sent here"
                                 className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                                 inputMode="tel"
@@ -2810,7 +2836,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             isDetailsFormValid ? 'bg-black text-white active:opacity-80' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
-                          <span>Pay Advance</span>
+                          <span>{selectedEvent.ctaLabel || 'Pay Advance'}</span>
                           <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
                         </button>
                       </div>
