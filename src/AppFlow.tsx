@@ -1729,9 +1729,17 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       const chosenPoint = (selectedEvent.pickupPoints ?? []).find((p: any) => p.label === selectedMeetingPoint);
       const affRef = getAffiliateRef();
       const openSlug = String(selectedEvent.id ?? '').toLowerCase();
+      // Use a PLAIN insert, not an upsert. Anon/authenticated have INSERT but no
+      // SELECT policy on applications (the PII lockdown), and PostgREST's upsert
+      // (`ON CONFLICT DO NOTHING`) needs to SEE the conflicting row to skip it —
+      // so RLS rejects the whole upsert with 42501, and the open lead's row was
+      // never created (invisible in People, no cart-abandon tracking). A plain
+      // insert passes RLS; a returning/abandoned lead simply hits the
+      // (event_slug, phone) unique key (23505), which we treat as success — their
+      // row already exists and refresh_open_application below updates its fields.
       const { error: appErr } = await supabase
         .from('applications')
-        .upsert({
+        .insert({
           event_slug: openSlug,
           name: detailsForm.name.trim(),
           phone: normalizedPhone,
@@ -1748,9 +1756,26 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           // Creator affiliate attribution on first insert (BEFORE INSERT trigger
           // resolves affiliate_code → affiliate_id).
           affiliate_code: affRef,
-        }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
-      // Never block the payment on tracking — log and continue to checkout.
-      if (appErr) console.error('open application upsert failed:', appErr);
+        });
+      // 23505 = returning lead already has a row (expected, fine). Never block the
+      // payment on tracking — log anything else and continue to checkout.
+      if (appErr && appErr.code !== '23505') console.error('open application insert failed:', appErr);
+
+      // A returning lead's row is left as-is by the 23505 above — so if they now
+      // pick a DIFFERENT date/pickup their stale selected_date would no longer match
+      // any event_date and would break the per-date group-chat link, warm-note dates,
+      // and balance lookups. Anon has no UPDATE policy on applications, so refresh the
+      // booking-choice fields via a SECURITY DEFINER RPC that guards against
+      // advance_paid/fully_paid. Fire-and-forget.
+      const { error: refreshErr } = await supabase.rpc('refresh_open_application', {
+        p_event_slug: openSlug,
+        p_phone: normalizedPhone,
+        p_selected_date: dateStr || null,
+        p_pickup_point_id: chosenPoint?.id ?? null,
+        p_pickup_label: selectedMeetingPoint || null,
+        p_selected_city: selectedCity ?? null,
+      });
+      if (refreshErr) console.error('open application detail refresh failed:', refreshErr);
 
       // Open-event rule: the creator whose link is active at PAYMENT time wins.
       // The upsert above ignores conflicts, so a pre-existing (abandoned) row
