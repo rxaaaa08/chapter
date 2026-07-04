@@ -437,6 +437,9 @@ export default function AdminPanel() {
   const [applications, setApplications] = useState<any[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
+  // Filters leads by their selected_date (ISO). 'all' = every date. Handy for
+  // multi-date events where one plan has leads across several dates.
+  const [applicationsDateFilter, setApplicationsDateFilter] = useState<'all' | string>('all');
   const [applicationsStatusFilter, setApplicationsStatusFilter] = useState<'all' | string>('all');
   // 'all' | 'unassigned' | <marketer id>. Admin-only filter.
   const [applicationsMarketerFilter, setApplicationsMarketerFilter] = useState<'all' | string>('all');
@@ -2964,6 +2967,7 @@ export default function AdminPanel() {
           const filteredApps = applications.filter(a => {
             const pays = paymentsFor(a.phone, a.event_slug);
             const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
+            const dateMatch   = applicationsDateFilter   === 'all' || a.selected_date === applicationsDateFilter;
             const statusMatch = applicationsStatusFilter === 'all'
               || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0
                   : applicationsStatusFilter === 'recovered' ? !!a.recovered_at
@@ -2976,8 +2980,21 @@ export default function AdminPanel() {
               || (applicationsMarketerFilter === 'unassigned'
                     ? !a.assigned_marketer_id
                     : a.assigned_marketer_id === applicationsMarketerFilter);
-            return eventMatch && statusMatch && searchMatch && marketerMatch;
+            return eventMatch && dateMatch && statusMatch && searchMatch && marketerMatch;
           });
+          // Dates that actually have leads (respecting the current event filter),
+          // so the date dropdown only ever offers dates worth picking. Formatted
+          // for the option labels; sorted chronologically.
+          const fmtFilterDate = (iso: string) => {
+            const d = new Date(`${iso}T00:00:00`);
+            return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          };
+          const dateFilterOptions: string[] = Array.from(new Set<string>(
+            applications
+              .filter(a => applicationsEventFilter === 'all' || a.event_slug === applicationsEventFilter)
+              .map(a => String(a.selected_date ?? ''))
+              .filter(d => !!d)
+          )).sort();
           // A doubt is "handled" the moment that person actually submits an
           // application for the same event — a real, non-gameable outcome (a
           // marketer can't fake it; the person fills the form themselves).
@@ -3310,7 +3327,7 @@ export default function AdminPanel() {
               <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
                 <select
                   value={applicationsEventFilter}
-                  onChange={e => setApplicationsEventFilter(e.target.value)}
+                  onChange={e => { setApplicationsEventFilter(e.target.value); setApplicationsDateFilter('all'); }}
                   style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
                 >
                   <option value="all">All Events</option>
@@ -3318,6 +3335,18 @@ export default function AdminPanel() {
                     <option key={slug} value={slug}>{titleBySlug[slug] ?? slug}</option>
                   ))}
                 </select>
+                {dateFilterOptions.length > 1 && (
+                  <select
+                    value={applicationsDateFilter}
+                    onChange={e => setApplicationsDateFilter(e.target.value)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    <option value="all">All Dates</option>
+                    {dateFilterOptions.map(d => (
+                      <option key={d} value={d}>{fmtFilterDate(d)}</option>
+                    ))}
+                  </select>
+                )}
                 <select
                   value={applicationsStatusFilter}
                   onChange={e => setApplicationsStatusFilter(e.target.value)}
@@ -3358,8 +3387,8 @@ export default function AdminPanel() {
                   onChange={e => setPeopleSearch(e.target.value)}
                   style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', minWidth: 220 }}
                 />
-                {(applicationsEventFilter !== 'all' || applicationsStatusFilter !== 'all' || applicationsMarketerFilter !== 'all' || peopleSearch) && (
-                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsStatusFilter('all'); setApplicationsMarketerFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
+                {(applicationsEventFilter !== 'all' || applicationsDateFilter !== 'all' || applicationsStatusFilter !== 'all' || applicationsMarketerFilter !== 'all' || peopleSearch) && (
+                  <button onClick={() => { setApplicationsEventFilter('all'); setApplicationsDateFilter('all'); setApplicationsStatusFilter('all'); setApplicationsMarketerFilter('all'); setPeopleSearch(''); }} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>
                 )}
               </div>
               ) : (
