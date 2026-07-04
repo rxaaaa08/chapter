@@ -248,7 +248,12 @@ export default function AdminPanel() {
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
   const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings'>(
-    () => (localStorage.getItem('adminTab') as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') ?? 'people'
+    () => {
+      const stored = localStorage.getItem('adminTab');
+      // 'affiliates' is no longer its own tab — Creators now live inside Performance.
+      if (stored === 'affiliates') return 'marketers';
+      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') ?? 'people';
+    }
   );
   const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
@@ -747,19 +752,40 @@ export default function AdminPanel() {
     if (!email || !name) { showToast('Email and name required'); return; }
     setSavingMarketer(true);
     const { error } = await supabase.from('call_marketers').insert({ email, name, commission_amount: commission });
+    if (error) { setSavingMarketer(false); showToast(`Failed: ${error.message}`); return; }
+    // Grant admin-panel login: an 'ops' row in admin_users is the master gate a
+    // marketer needs to get past the /admin front door. RLS (admin_users_admin_write)
+    // already lets an admin write this. Skip if the email is already in admin_users
+    // (23505) so we never overwrite/demote an existing admin — we only ADD ops access.
+    const { error: accessErr } = await supabase.from('admin_users').insert({ email, role: 'ops' });
     setSavingMarketer(false);
-    if (error) { showToast(`Failed: ${error.message}`); return; }
-    showToast('Marketer added');
+    if (accessErr && accessErr.code !== '23505') {
+      showToast(`Added, but login not granted: ${accessErr.message}`);
+    } else {
+      showToast('Marketer added — they can log in now');
+    }
     setAddingMarketer(false);
     setNewMarketerEmail(''); setNewMarketerName(''); setNewMarketerCommission('50');
     logAdminAction('marketer_create', 'call_marketers', null, { email, name, commission });
     loadMarketersData();
   };
 
-  const toggleMarketerActive = async (mk: { id: string; active: boolean; name: string }) => {
-    const { error } = await supabase.from('call_marketers').update({ active: !mk.active }).eq('id', mk.id);
+  const toggleMarketerActive = async (mk: { id: string; active: boolean; name: string; email: string }) => {
+    const activating = !mk.active;
+    const { error } = await supabase.from('call_marketers').update({ active: activating }).eq('id', mk.id);
     if (error) { showToast(`Failed: ${error.message}`); return; }
-    showToast(`${mk.name} ${!mk.active ? 'reactivated' : 'deactivated'}`);
+    // Mirror admin-panel login access: deactivating a marketer fully revokes their
+    // /admin login (delete their 'ops' row), reactivating re-grants it. We ONLY ever
+    // touch a role='ops' row, never an 'admin' row — so a marketer who is also an
+    // admin never loses admin access.
+    if (mk.email) {
+      if (activating) {
+        await supabase.from('admin_users').insert({ email: mk.email.toLowerCase(), role: 'ops' }); // 23505 if already present — harmless
+      } else {
+        await supabase.from('admin_users').delete().eq('email', mk.email.toLowerCase()).eq('role', 'ops');
+      }
+    }
+    showToast(`${mk.name} ${activating ? 'reactivated' : 'deactivated'}`);
     logAdminAction(mk.active ? 'marketer_deactivate' : 'marketer_reactivate', 'call_marketers', mk.id, {});
     loadMarketersData();
   };
@@ -1928,8 +1954,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); }}>Performance</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'affiliates')} onClick={() => { switchTab('affiliates'); loadAffiliatesData(); }}>Creators</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
@@ -4850,7 +4875,7 @@ export default function AdminPanel() {
                     <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
                     <div style={{ flex: 1 }} />
                     <button
-                      onClick={() => loadMarketersData()}
+                      onClick={() => { loadMarketersData(); loadAffiliatesData(); }}
                       disabled={marketersLoading}
                       style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: marketersLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: marketersLoading ? 0.55 : 1 }}
                     >
@@ -5024,7 +5049,7 @@ export default function AdminPanel() {
             </div>
 
             <div style={{ background: '#fef3c7', border: '1.5px solid #fcd34d', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#92400e', lineHeight: 1.55 }}>
-              <b>How this works:</b> add a marketer here, then add their email to <code>admin_users</code> with role <code>ops</code> in Supabase. When they log in, they only see leads assigned to them. Assignment is round-robin per event — assign marketers to events from the event-edit form.
+              <b>How this works:</b> add a marketer here with their Google email — they can log straight into the admin panel and will only see leads assigned to them. Assignment is round-robin per event — assign marketers to events from the event-edit form. Deactivating a marketer also revokes their login.
             </div>
 
             {addingMarketer && (
@@ -5087,24 +5112,22 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* ── CREATORS (AFFILIATES) TAB ────────────────────────────────────── */}
-        {tab === 'affiliates' && adminRole === 'admin' && (() => {
-          const inr = (n: any) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+        {/* ── CREATORS (AFFILIATES) — a card inside the Performance tab ─────── */}
+        {tab === 'marketers' && adminRole === 'admin' && (() => {
+          // 2 decimals — matches the creator dashboard so small commissions
+          // (e.g. 8% of a ₹1 ticket = ₹0.08) aren't hidden as ₹0 in Earned/Unpaid.
+          const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const linkFor = (h: string) => `${window.location.origin}/@${h}`;
           const copyLink = (h: string) => {
             navigator.clipboard?.writeText(linkFor(h)).then(() => showToast(`Copied ${linkFor(h)}`), () => showToast('Copy failed'));
           };
           const totalUnpaid = Object.keys(affiliateStats).reduce((s, k) => s + affiliateStats[k].unpaid, 0);
           return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 22 }}>Creators</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Creators</div>
               <span style={{ fontSize: 13, color: '#888' }}>{affiliates.length} {affiliates.length === 1 ? 'creator' : 'creators'}</span>
               <div style={{ flex: 1 }} />
-              <button onClick={() => loadAffiliatesData()} disabled={affiliatesLoading}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: affiliatesLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: affiliatesLoading ? 0.55 : 1 }}>
-                {affiliatesLoading ? 'Refreshing' : 'Refresh'}
-              </button>
               <button style={s.btn()} onClick={() => setAddingAffiliate(true)}>+ Add Creator</button>
             </div>
 
@@ -5141,7 +5164,7 @@ export default function AdminPanel() {
                   <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     <th style={{ textAlign: 'left', padding: '8px 16px' }}>Creator</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Clicks</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Bookings</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Sign-ups</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Paid tickets</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Earned</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid</th>
@@ -5179,7 +5202,7 @@ export default function AdminPanel() {
             </div>
 
             <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
-              Bookings = people who reached checkout via their link (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
+              Sign-ups = people who gave their details / started a booking via their link — for invite events they submitted the application form, for open events they reached checkout; neither has paid yet (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
             </div>
           </div>
           );
