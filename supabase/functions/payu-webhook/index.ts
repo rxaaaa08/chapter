@@ -351,7 +351,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -414,6 +414,30 @@ Deno.serve(async (req) => {
           .eq('phone', phone)
           .maybeSingle();
         const isRecovery = !!(appRow as any)?.cart_abandoned && !(appRow as any)?.recovered_at;
+
+        // Guarantee the paid buyer has a backing application row. The open flow's
+        // best-effort client insert can fail (RLS reject, rate-limit, tab closed),
+        // leaving a PAID customer with no row: invisible in the People tab,
+        // uncounted toward capacity, and no fully-paid WhatsApp (it needs the row).
+        // The webhook is often the ONLY path that runs (tab closed on PayU), so it
+        // must self-heal too. Insert as 'pending' so the UPDATE below drives the
+        // normal pending→paid transition; insert-or-ignore guards the race with the
+        // callback twin / a late client insert. gender/why_join are NOT NULL with no
+        // default (open form omits them) → empty; selected_date left null (only the
+        // display-formatted trip_date is stored) → WhatsApp date falls back to event.
+        if (!appRow) {
+          await supabase
+            .from('applications')
+            .upsert({
+              event_slug: eventSlug,
+              name: stored.name ?? '',
+              phone,
+              email: stored.email ?? null,
+              gender: '',
+              why_join: '',
+              status: 'pending',
+            }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
+        }
 
         await supabase
           .from('applications')

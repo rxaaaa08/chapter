@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -467,6 +467,33 @@ Deno.serve(async (req) => {
           .eq('phone', phone)
           .maybeSingle();
         const isRecovery = !!(appRow as any)?.cart_abandoned && !(appRow as any)?.recovered_at;
+
+        // Guarantee the paid buyer has a backing application row. The open flow
+        // creates a 'pending' row client-side before PayU, but that best-effort
+        // insert can fail (RLS reject, rate-limit, tab closed) — leaving a PAID
+        // customer with no row: invisible in the People tab, uncounted toward
+        // capacity, and (since fireFullPaidWhatsApp needs the row) no group-chat
+        // WhatsApp. Create it now from the trusted payment record. Insert as
+        // 'pending' (not the paid status) so the UPDATE below drives the normal
+        // pending→paid transition the accrual/notify triggers expect. Insert-or-
+        // ignore guards the race with a late client insert / the webhook twin.
+        // gender/why_join are NOT NULL with no default and the open form doesn't
+        // collect them, so send empty (mirrors the client insert). selected_date
+        // is left null (payu_payments only stores the display-formatted trip_date),
+        // so the WhatsApp meeting-spot date falls back to the event-level steps.
+        if (!appRow) {
+          await supabase
+            .from('applications')
+            .upsert({
+              event_slug: eventSlug,
+              name: stored.name ?? '',
+              phone,
+              email: stored.email ?? null,
+              gender: '',
+              why_join: '',
+              status: 'pending',
+            }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
+        }
 
         await supabase
           .from('applications')
