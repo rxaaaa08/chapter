@@ -4257,11 +4257,18 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   }, [txnid, status, fetchReceipt]);
 
   // Once we know the event_slug from the payment, look up the event for two
-  // dates used by the receipt warm note. Both come from the canonical 5-step
-  // invite-only booking timeline (vibe check → advance → balance → meeting
-  // spot → social proof), so they're read positionally:
-  //   - balanceDate = step index 2 ("remaining balance") → advance-paid note
-  //   - detailsDate = step index 3 ("Meeting Spot Details") → balance/full note
+  // dates used by the receipt warm note:
+  //   - balanceDate = the "remaining balance" step → advance-paid note
+  //   - detailsDate = the "Meeting Spot Details" step → balance/full note
+  // Located by FIXED index PER FLOW (not by matching the step copy — so
+  // re-wording a label won't break these). Each flow has its own canonical
+  // row layout (see AdminPanel nativeDefaultSteps/openDefaultSteps), which is
+  // why a single hardcoded [2]/[3] was wrong: it blanked the date on open +
+  // invite-single events and fired the "details will be shared soon" fallback.
+  //   invite single (native+full):  [vibe, price, meeting, social]        → spot 2, no balance
+  //   invite split  (native+split): [vibe, adv, balance, meeting, social] → spot 3, balance 2
+  //   open single   (open+full):    [payment, meeting, eventDate]         → spot 1, no balance
+  //   open split    (open+split):   [adv, balance, meeting, eventDate]    → spot 2, balance 1
   // Best-effort: if a step or date is missing the warm note drops that
   // clause gracefully.
   React.useEffect(() => {
@@ -4284,8 +4291,12 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
       const steps: any[] = (Array.isArray(perDate) && perDate.length > 0)
         ? perDate
         : (Array.isArray(ev?.bookingSteps) ? ev.bookingSteps : []);
-      setBalanceDate(fmt(steps[2]?.date));
-      setDetailsDate(fmt(steps[3]?.date));
+      const isOpen = ev?.bookingUrl === 'payu-hosted';
+      const isFull = (ev?.paymentMode ?? 'split') === 'full';
+      const balanceIdx = isFull ? -1 : (isOpen ? 1 : 2);          // full-pay flows have no balance step
+      const detailsIdx = isOpen ? (isFull ? 1 : 2) : (isFull ? 2 : 3);
+      setBalanceDate(balanceIdx >= 0 ? fmt(steps[balanceIdx]?.date) : '');
+      setDetailsDate(fmt(steps[detailsIdx]?.date));
     }).catch(() => { /* silent — warm note just drops the date clause */ });
     return () => { cancelled = true; };
   }, [payment?.event_slug, appSelectedDate]);
