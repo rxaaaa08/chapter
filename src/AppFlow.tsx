@@ -769,20 +769,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     });
   }, []);
 
-  // Check for an existing Google session on mount (skip if this is a gauth return — handled above)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('gauth') === '1') return; // handled by preview_event effect
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.user) return;
-      const fullName =
-        session.user.user_metadata?.full_name ??
-        session.user.user_metadata?.name ??
-        '';
-      const email = session.user.email ?? '';
-      if (fullName) setGoogleUser({ name: fullName, email });
-    });
-  }, []);
+  // Google login was removed from the open-event details form — the form now
+  // collects name/phone/gender/email manually. We intentionally no longer hydrate
+  // googleUser from a lingering Supabase session, so the (dormant) already-booked
+  // detection never fires and every booking is treated as fresh.
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [step, setStep] = useState('INIT');
@@ -829,7 +819,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [detailsForm, setDetailsForm] = useState({ name: '', phone: '' });
+  const [detailsForm, setDetailsForm] = useState({ name: '', phone: '', gender: '', email: '' });
   const [tcAccepted, setTcAccepted] = useState(false);
   const [googleUser, setGoogleUser] = useState<{ name: string; email: string } | null>(null);
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
@@ -943,6 +933,23 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
   const isNativeApplicationFlow = selectedEvent?.bookingUrl === 'native-application';
+
+  // Open-event funnel: ping when the open details form becomes visible, so the
+  // admin Analytics tab can measure form-open → details-submitted completion —
+  // the one open-funnel step not derivable from DB rows. Server counts distinct
+  // sessions, so re-opens (e.g. back navigation) don't inflate it. Fires only
+  // for the open (payU) flow; invite/PhonePe/community flows are untouched.
+  useEffect(() => {
+    if (showDetailsForm && isPayUFlow && selectedEvent) {
+      trackEvent('details_form_opened', {
+        city: formatCityLabel(selectedCity),
+        category: selectedCategory || selectedEvent.category,
+        event_id: selectedEvent.id,
+        event_title: selectedEvent.title,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDetailsForm, isPayUFlow]);
 
   // Compute dynamic global announcements from invite-only events once msgs + events are ready
   useEffect(() => {
@@ -1748,7 +1755,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       issuedAt: new Date().toISOString(),
       girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
-      email: googleUser?.email ?? undefined,
+      email: detailsForm.email.trim() || undefined,
       // Sent to create-payu-order so it charges the correct city-aware price
       // directly from the client's current selection (server validates it
       // against event.cities) instead of depending on the applications-row
@@ -1796,10 +1803,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           event_slug: openSlug,
           name: detailsForm.name.trim(),
           phone: normalizedPhone,
-          email: googleUser?.email ?? null,
-          // gender / why_join are NOT NULL on applications but the open form
-          // doesn't collect them (low-friction impulse booking) — send empty.
-          gender: '',
+          email: detailsForm.email.trim() || null,
+          // Open form now collects gender in-form; why_join stays empty (NOT NULL
+          // on applications, but the open flow doesn't ask for it).
+          gender: detailsForm.gender || '',
           why_join: '',
           status: 'pending',
           selected_date: dateStr || null,
@@ -2168,7 +2175,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const isNameValid = detailsForm.name.trim().length >= 1;
   const isPhoneValid = /^[6-9]\d{9}$/.test(detailsForm.phone);
-  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && (!isPayUFlow || !!googleUser);
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(detailsForm.email.trim());
+  const isGenderValid = !!detailsForm.gender;
+  // Open (PayU) events collect email in-form (Google login removed) and always
+  // require it. Gender is asked ONLY for girls-only events (female confirmation) —
+  // regular chapter events drop it.
+  const detailsFormGirlsOnly = !!(selectedEvent?.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent?.quickInfo));
+  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && (!isPayUFlow || (isEmailValid && (!detailsFormGirlsOnly || isGenderValid)));
 
   if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
 
@@ -2681,9 +2694,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       className="flex flex-col"
                     >
                       {(!existingBooking || forceNewBooking) && (
-                      <div className="px-6 pt-3 pb-4">
-                        <p className="text-[17px] text-gray-900 leading-snug">
-                          We all start as strangers... <span className="font-black">until we meet.</span>
+                      <div className="px-6 pt-6 pb-5 flex-shrink-0">
+                        <p className="text-[17px] text-gray-900 leading-snug text-left">
+                          We have one life... <span className="font-black">so why not?</span>
                         </p>
                       </div>
                       )}
@@ -2736,69 +2749,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           </div>
                         )}
 
-                        {/* Google Sign-In */}
+                        {/* Details — Google login removed; the open flow now collects
+                            name/phone and (open/PayU events) gender + email directly. */}
                         {(!existingBooking || forceNewBooking) && (
-                          <>
-                            {googleUser ? (
-                              /* Already signed in — show pill with avatar */
-                              <div className="flex items-center gap-3 bg-[#F2F2F7] rounded-2xl px-4 py-3">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0 select-none">
-                                  {googleUser.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[13px] font-semibold text-gray-800 leading-tight truncate">{googleUser.name}</p>
-                                  <p className="text-[11px] text-gray-400 leading-tight truncate">{googleUser.email}</p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await supabase.auth.signOut();
-                                    setGoogleUser(null);
-                                    setDetailsForm(f => ({ ...f, name: '' }));
-                                  }}
-                                  className="text-[11px] text-gray-400 font-medium flex-shrink-0 active:opacity-60"
-                                >
-                                  Switch
-                                </button>
-                              </div>
-                            ) : (
-                              /* Not signed in — show Google button */
-                              <button
-                                type="button"
-                                onClick={handleGoogleSignIn}
-                                disabled={googleSignInLoading}
-                                className="w-full flex items-center justify-center gap-2.5 bg-white border border-gray-200 rounded-2xl px-4 py-[14px] text-[15px] font-semibold text-gray-800 shadow-sm active:opacity-70 transition-all disabled:opacity-50"
-                              >
-                                {googleSignInLoading ? (
-                                  <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                                  </svg>
-                                ) : (
-                                  <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-                                    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
-                                    <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-                                    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-                                  </svg>
-                                )}
-                                <span>{googleSignInLoading ? 'Redirecting…' : 'Continue with Google'}</span>
-                              </button>
-                            )}
-
-                            {/* Divider — only for non-PayU (invite / UPI flows) */}
-                            {!isPayUFlow && (
-                              <div className="flex items-center gap-3">
-                                <div className="flex-1 h-px bg-gray-100" />
-                                <span className="text-[11px] text-gray-300 font-semibold uppercase tracking-wider">or enter manually</span>
-                                <div className="flex-1 h-px bg-gray-100" />
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        {/* Name + phone — shown for non-PayU always, for PayU only after Google sign-in (and not if already booked, unless booking another) */}
-                        {(!isPayUFlow || googleUser) && (!existingBooking || forceNewBooking) && (
                           <>
                             <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                               <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Full Name</label>
@@ -2822,11 +2775,51 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                 type="tel"
                                 value={detailsForm.phone}
                                 onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                                placeholder="Updates & reminders are sent here"
+                                placeholder="We'll reach you here"
                                 className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                                 inputMode="tel"
                               />
                             </div>
+
+                            {isPayUFlow && (
+                              <>
+                                {/* Gender — girls-only events only (female confirmation).
+                                    Regular chapter events don't collect it. */}
+                                {detailsFormGirlsOnly && (
+                                  <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3 relative">
+                                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">I confirm that I'm Female</label>
+                                    <select
+                                      value={detailsForm.gender}
+                                      onChange={e => setDetailsForm({ ...detailsForm, gender: e.target.value })}
+                                      className={`w-full bg-transparent text-[17px] focus:outline-none appearance-none cursor-pointer pr-6 ${detailsForm.gender ? 'text-gray-900' : 'text-gray-300'}`}
+                                    >
+                                      <option value="" disabled>Select option</option>
+                                      <option value="Female">Female</option>
+                                    </select>
+                                    <ChevronDown size={16} className="absolute right-4 bottom-3.5 text-gray-400 pointer-events-none" />
+                                  </div>
+                                )}
+
+                                <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest">Email</label>
+                                    {detailsForm.email.length > 0 && !isEmailValid && (
+                                      <span className="text-[11px] text-amber-500 font-medium">Invalid</span>
+                                    )}
+                                  </div>
+                                  <input
+                                    type="email"
+                                    value={detailsForm.email}
+                                    onChange={e => setDetailsForm({ ...detailsForm, email: e.target.value })}
+                                    placeholder="Booking updates are sent here"
+                                    className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                                    inputMode="email"
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                  />
+                                </div>
+                              </>
+                            )}
                           </>
                         )}
 
@@ -2863,7 +2856,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             isDetailsFormValid ? 'bg-black text-white active:opacity-80' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
-                          <span>{selectedEvent.ctaLabel || 'Pay Advance'}</span>
+                          <span>Continue to Payment</span>
                           <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
                         </button>
                       </div>

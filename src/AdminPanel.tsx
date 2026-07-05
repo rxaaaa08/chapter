@@ -64,6 +64,9 @@ type Trip = {
   // full price. See the Creators tab.
   affiliate_enabled?: boolean;
   affiliate_commission_pct?: number;
+  // Per-event marketer commission (₹ per fully-paid ticket). NULL/undefined =
+  // fall back to each marketer's own call_marketers.commission_amount (₹50).
+  marketer_commission?: number | null;
   description: string;
   // Meeting spot shown on the community sheet's Essentials card
   start_location?: string;
@@ -804,6 +807,17 @@ export default function AdminPanel() {
     }
     setEventMarketersMap(prev => ({ ...prev, [eventSlug]: nextIds }));
     logAdminAction('event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
+  };
+
+  // Save the per-event marketer commission (₹ per fully-paid ticket). NULL
+  // clears the override → marketers fall back to their ₹50 default. Writes
+  // immediately (like the marketer chips) and keeps the open editor in sync.
+  const setEventCommission = async (eventSlug: string, value: number | null) => {
+    const { error } = await supabase.from('events').update({ marketer_commission: value }).eq('slug', eventSlug);
+    if (error) { showToast('Commission save failed: ' + error.message); return; }
+    setEditingTrip(prev => (prev && prev.slug === eventSlug ? { ...prev, marketer_commission: value } : prev));
+    logAdminAction('event_commission_set', 'events', null, { event_slug: eventSlug, marketer_commission: value });
+    showToast(value == null ? 'Commission reset to ₹50 default' : `Commission set to ₹${value}/ticket`);
   };
 
   // ── Affiliates (creators) — admin-only management ───────────────────────────
@@ -2089,6 +2103,8 @@ export default function AdminPanel() {
                                 marketers={marketers.filter(m => m.active)}
                                 selectedIds={eventMarketersMap[trip.slug] ?? []}
                                 onChange={ids => setEventMarketers(trip.slug, ids)}
+                                commission={editingTrip.marketer_commission ?? null}
+                                onSaveCommission={val => setEventCommission(trip.slug, val)}
                                 onOpen={loadMarketersData}
                                 s={s}
                               />
@@ -4142,6 +4158,19 @@ export default function AdminPanel() {
           const solvedDoubtsAll = Object.values(doubtsSolvedByEvent).reduce((s, n) => s + n, 0);
           const doubtSolvedPctAll = totalDoubtsAll > 0 ? Math.round((solvedDoubtsAll / totalDoubtsAll) * 100) : null;
 
+          // ── Open-event funnel (get_analytics_summary.open_funnel) ────────────
+          // Open events have no approval step, so their funnel is DB-derived
+          // (not analytics-event-derived): details submitted (an applications
+          // row) → clicked Pay (a payu_payments row) → paid, plus the two rates
+          // the founder tracks — cart abandonment and recovery. Keyed by the
+          // canonical event id so it joins with tripById + the event filter.
+          type OpenRow = { event_id: string; details_submitted: number; pay_clicked: number; paid: number; abandoned: number; recovered: number; messaged: number; recovered_messaged: number };
+          const openFunnelByEvent: Record<string, OpenRow> = {};
+          ((summary?.open_funnel ?? []) as OpenRow[]).forEach((r) => { openFunnelByEvent[r.event_id] = r; });
+          // Open details-form opens (client ping 'details_form_opened'); powers
+          // the open Form Completion rate. Empty until the ping starts landing.
+          const detailsFormOpenedByEvent = stageMap('details_form_opened');
+
           // Cities pie (count of city_selected rows per city). The tracked
           // value is often a pickup-point phrasing — "I'll join in Chennai",
           // "Pick me up in Chennai", "I'll come to Chennai by own transport" —
@@ -4260,6 +4289,8 @@ export default function AdminPanel() {
           const allAppFunnelEvents = Array.from(new Set([
             ...Object.keys(appStartedByEvent), ...Object.keys(appSubmittedByEvent),
             ...Object.keys(appsApprovedByEvent), ...Object.keys(appsAdvancePaidByEvent),
+            // Open events (funnel + form-open pings) so they're filterable too.
+            ...Object.keys(openFunnelByEvent), ...Object.keys(detailsFormOpenedByEvent),
           ]));
           const allFunnelEventOptions = Array.from(
             new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allAppFunnelEvents])
@@ -4283,7 +4314,34 @@ export default function AdminPanel() {
           // For Application Completion + Payment Conversion: iterate ALL selected
           // events (even those without data); each row shows "—" + "no data yet"
           // if its denominator is 0. Sorted alphabetically for stability.
-          const visibleAppEvents = Array.from(effectiveSelected).sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
+          // Invite-flow per-event sections (Application Completion, Payment
+          // Conversion) — exclude open events; they have no approval step and
+          // live in the open branch of the Journey fork instead.
+          const visibleAppEvents = Array.from(effectiveSelected)
+            .filter(id => tripById.get(id)?.booking_url !== 'payu-hosted')
+            .sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
+
+          // Open-event funnel pooled GLOBALLY across every open event with data
+          // in the window — like the rest of the Journey overview, which is
+          // "all events combined" (the per-event sections lower down are the
+          // ones filtered by the event picker). Global pooling also means the
+          // open branch shows even when the only open event is inactive — open
+          // events are ephemeral and get deactivated after they run, so an
+          // active-only filter would otherwise hide all open data.
+          const openAgg = Object.values(openFunnelByEvent).reduce((acc, r) => {
+            acc.details += r.details_submitted; acc.payClicked += r.pay_clicked; acc.paid += r.paid;
+            acc.abandoned += r.abandoned; acc.recovered += r.recovered;
+            acc.messaged += r.messaged; acc.recoveredMessaged += r.recovered_messaged;
+            return acc;
+          }, { details: 0, payClicked: 0, paid: 0, abandoned: 0, recovered: 0, messaged: 0, recoveredMessaged: 0 });
+          // Form opens for open events (client ping), summed across open events.
+          const openFormOpened = Object.entries(detailsFormOpenedByEvent).reduce(
+            (s, [id, n]) => s + (tripById.get(id)?.booking_url === 'payu-hosted' ? n : 0), 0);
+          // Whether to render the open branch at all — based on the CLIENT's
+          // knowledge that an open event exists, so the fork structure appears
+          // immediately (the branch fills once the open_funnel migration is
+          // applied + analytics refreshed). Pure-invite setups never see it.
+          const hasOpenEvents = trips.some(t => (t as any).booking_url === 'payu-hosted');
 
           const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
@@ -4339,11 +4397,13 @@ export default function AdminPanel() {
 
               {!analyticsLoading && (
                 <>
-                  {/* JOURNEY — vertical bar funnel, 6 steps, all rates POOLED
-                      globally (sum across events / sum across events). Visitors
-                      is shown as a count (no bar). Application Completion shows
-                      "—" until app-open tracking populates. Time to Payment is
-                      shown inline as part of the Payment Conversion sub-text. */}
+                  {/* JOURNEY — the funnel is SHARED up to Pricing Conversion (the
+                      same browsing UI for every event), then FORKS at the CTA
+                      under the price: invite events show "Apply Now" (→ application
+                      → approval → payment); open events show "Book Now" (→ details
+                      → pay → paid). We render the shared trunk, then a branch per
+                      flow. All Journey figures are pooled globally (all events
+                      combined); the per-event sections lower down are filtered. */}
                   {(() => {
                     const fmt = (n: number) => Number(n || 0).toLocaleString('en-IN');
                     const cf = conversionFunnel;
@@ -4354,26 +4414,91 @@ export default function AdminPanel() {
                       : ttpHours < 48 ? `${ttpHours} hrs`
                       : `${(ttpHours / 24).toFixed(1)} days`;
                     type Step = { label: string; pct: number | null; num: number; den: number; descr: string; emptyText?: string; extra?: string };
-                    const steps: Step[] = [
-                      { label: 'Join Plan Rate',        pct: pooledJoinPlanPct,    num: totalCalendarOpens,  den: totalDetailViews,    descr: 'who reached event details clicked Join Our Plan' },
-                      { label: 'Date Pick Rate',        pct: pooledDatePickPct,    num: totalDatePicks,      den: totalCalendarOpens,  descr: 'who opened the calendar picked a date' },
-                      { label: 'Pricing Conversion',    pct: pooledPricingConvPct, num: totalCtaClicked,     den: totalReachedPricing, descr: 'who reached pricing tapped a CTA' },
-                      { label: 'Application Completion',pct: pooledAppComplPct,    num: totalAppSubmitted,   den: totalAppStarted,     descr: 'who opened the form submitted', emptyText: 'collecting data — form opens tracked from now' },
-                      { label: 'Payment Conversion',    pct: pooledPaymentConvPct, num: totalAdvancePaid,    den: totalApproved,       descr: 'approved paid the advance', extra: ttpLabel ? ` · median ${ttpLabel} (n=${ttpN})` : '' },
+                    // Per-flow Pricing Conversion. The price screen is identical for
+                    // both flows, but the CTA under it differs (Apply Now vs Book
+                    // Now), so we split the reached-pricing → CTA-tapped rate by flow
+                    // to see whether one CTA drops off more than the other at the
+                    // SAME price. reachedByEvent/convertedByEvent are keyed by
+                    // resolved event id, so bucket them by the trip's booking_url.
+                    const isOpenId = (id: string) => tripById.get(id)?.booking_url === 'payu-hosted';
+                    const sumFlow = (m: Record<string, number>, wantOpen: boolean) =>
+                      Object.entries(m).reduce((s, [id, n]) => s + (isOpenId(id) === wantOpen ? n : 0), 0);
+                    const inviteReached   = sumFlow(reachedByEvent, false);
+                    const inviteConverted = sumFlow(convertedByEvent, false);
+                    const openReached     = sumFlow(reachedByEvent, true);
+                    const openConverted   = sumFlow(convertedByEvent, true);
+                    // Shared trunk — every event, up to the shared price screen.
+                    const sharedSteps: Step[] = [
+                      { label: 'Join Plan Rate', pct: pooledJoinPlanPct, num: totalCalendarOpens, den: totalDetailViews,   descr: 'who reached event details clicked Join Our Plan' },
+                      { label: 'Date Pick Rate', pct: pooledDatePickPct, num: totalDatePicks,     den: totalCalendarOpens, descr: 'who opened the calendar picked a date' },
                     ];
+                    // Invite branch — Apply Now → application → approval → payment.
+                    const inviteSteps: Step[] = [
+                      { label: 'Pricing Conversion',     pct: pooledPct(inviteConverted, inviteReached), num: inviteConverted,   den: inviteReached,   descr: 'who saw the price tapped Apply Now' },
+                      { label: 'Application Completion', pct: pooledAppComplPct,    num: totalAppSubmitted, den: totalAppStarted, descr: 'who opened the form submitted', emptyText: 'collecting data — form opens tracked from now' },
+                      { label: 'Payment Conversion',     pct: pooledPaymentConvPct, num: totalAdvancePaid,  den: totalApproved,   descr: 'approved paid the advance', extra: ttpLabel ? ` · median ${ttpLabel} (n=${ttpN})` : '' },
+                    ];
+                    // Open branch — Book Now → open form → submit → pay. Each step
+                    // is "of the people at the previous step, how many moved on":
+                    //   Pricing Conversion  saw the price → tapped Book Now
+                    //   Form Open Rate      tapped Book Now → the details form opened
+                    //   Form Completion     opened the form → submitted (Continue to Payment)
+                    //   Payment Rate        submitted → paid
+                    // ("Continue to Payment" is the form submit — it creates the
+                    // booking row, then the bill page opens; there is no separate
+                    // clicked-Pay vs paid split worth showing.)
+                    const openSteps: Step[] = [
+                      { label: 'Pricing Conversion', pct: pooledPct(openConverted, openReached),      num: openConverted,   den: openReached,     descr: 'who saw the price tapped Book Now' },
+                      { label: 'Form Open Rate',     pct: pooledPct(openFormOpened, openConverted),  num: openFormOpened,  den: openConverted,   descr: 'who tapped Book Now reached the form', emptyText: 'collecting data — form opens tracked from now' },
+                      { label: 'Form Completion',    pct: pooledPct(openAgg.details, openFormOpened),num: openAgg.details, den: openFormOpened,  descr: 'who opened the form submitted (Continue to Payment)', emptyText: 'collecting data — form opens tracked from now' },
+                      { label: 'Payment Rate',       pct: pooledPct(openAgg.paid, openAgg.details),  num: openAgg.paid,    den: openAgg.details, descr: 'who submitted the form paid' },
+                    ];
+                    const openAbandon  = pooledPct(openAgg.abandoned, openAgg.details);
+                    const openRecovery = pooledPct(openAgg.recovered, openAgg.abandoned);
+
+                    const csvLine = (label: string, s: Step) => [label, s.pct === null ? '' : `${s.pct}%`, s.pct === null ? '' : fmt(s.num), s.pct === null ? '' : fmt(s.den), s.pct === null ? (s.emptyText || 'no data yet') : `${s.descr}${s.extra ?? ''}`];
                     const downloadJourneyCsv = () => {
                       const rows: (string | number)[][] = [
                         ['Visitors', '', fmt(visitors), '', `${windowLabel} · unique sessions`],
-                        ...steps.map(step => [
-                          step.label,
-                          step.pct === null ? '' : `${step.pct}%`,
-                          step.pct === null ? '' : fmt(step.num),
-                          step.pct === null ? '' : fmt(step.den),
-                          step.pct === null ? (step.emptyText || 'no data yet') : `${step.descr}${step.extra ?? ''}`,
-                        ]),
+                        ...sharedSteps.map(s => csvLine(`Shared · ${s.label}`, s)),
+                        ['Shared · Reached Pricing', '', fmt(totalReachedPricing), '', 'saw the price screen'],
+                        ...inviteSteps.map(s => csvLine(`Invite · ${s.label}`, s)),
                       ];
+                      if (hasOpenEvents) {
+                        rows.push(['Open · Details Submitted', '', fmt(openAgg.details), '', 'entered details & reached the bill page']);
+                        openSteps.forEach(s => rows.push(csvLine(`Open · ${s.label}`, s)));
+                        rows.push(['Open · Cart Abandonment', openAbandon === null ? '' : `${openAbandon}%`, fmt(openAgg.abandoned), fmt(openAgg.details), 'submitted the form but never paid']);
+                        rows.push(['Open · Recovery Rate', openRecovery === null ? '' : `${openRecovery}%`, fmt(openAgg.recovered), fmt(openAgg.abandoned), 'paid after being flagged cart-abandoned']);
+                      }
                       downloadCsv(`journey-${analyticsWindow}-${new Date().toISOString().slice(0, 10)}.csv`, ['Step', 'Rate', 'Numerator', 'Denominator', 'Description'], rows);
                     };
+
+                    // One bar row, reused by the trunk and both branches.
+                    const renderBar = (step: Step) => {
+                      const isEmpty = step.pct === null;
+                      return (
+                        <div key={step.label} style={{ paddingTop: 16, borderTop: '1px solid #f0f0ea' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{step.label}</span>
+                            <span style={{ fontSize: 22, fontWeight: 800, color: isEmpty ? '#bbb' : '#111' }}>{isEmpty ? '—' : `${step.pct}%`}</span>
+                          </div>
+                          <div style={{ height: 8, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden', marginBottom: 6 }}>
+                            <div style={{ width: isEmpty ? '4%' : `${Math.min(100, step.pct as number)}%`, height: '100%', background: isEmpty ? '#e5e5e5' : '#bbf7d0', borderRadius: 99, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb' }}>
+                            {isEmpty ? (step.emptyText || 'no data yet') : `${fmt(step.num)} of ${fmt(step.den)} ${step.descr}${step.extra ?? ''}`}
+                          </div>
+                        </div>
+                      );
+                    };
+                    const miniStat = (label: string, value: string, sub: string) => (
+                      <div style={{ flex: 1, minWidth: 120, background: '#fafafa', border: '1px solid #f0f0ea', borderRadius: 10, padding: '10px 12px' }}>
+                        <div style={{ fontSize: 11, color: '#999', fontWeight: 600 }}>{label}</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#111', lineHeight: 1.1 }}>{value}</div>
+                        <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{sub}</div>
+                      </div>
+                    );
+
                     return (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -4390,40 +4515,50 @@ export default function AdminPanel() {
                           </button>
                         </div>
                         <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                          The full customer journey, all events combined for {windowLabel.toLowerCase()}. Each bar width = the rate at that step. Where the bar is narrow is where you're losing people.
+                          Shared for {windowLabel.toLowerCase()} up to the price screen, then it forks: everyone sees the same price but a different CTA — <strong>Apply Now</strong> (invite) vs <strong>Book Now</strong> (open). Each branch has its own Pricing Conversion so you can compare drop-off at the CTA. Where a bar is narrow is where you're losing people.
                         </div>
-                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '20px 22px', marginBottom: 24 }}>
-                          {/* Step 1: Visitors — count, no bar, no top border */}
-                          <div style={{ marginBottom: 16 }}>
+
+                        {/* SHARED TRUNK */}
+                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '20px 22px', marginBottom: 12 }}>
+                          <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                               <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>Visitors</span>
                               <span style={{ fontSize: 24, fontWeight: 800, color: '#111' }}>{fmt(visitors)}</span>
                             </div>
-                            <div style={{ fontSize: 11, color: '#bbb' }}>
-                              {windowLabel.toLowerCase()} · unique sessions
-                            </div>
+                            <div style={{ fontSize: 11, color: '#bbb', marginBottom: 16 }}>{windowLabel.toLowerCase()} · unique sessions</div>
                           </div>
-                          {/* Steps 2-6: each is a pooled rate with a bar */}
-                          {steps.map((step, i, arr) => {
-                            const isLast = i === arr.length - 1;
-                            const isEmpty = step.pct === null;
-                            return (
-                              <div key={step.label} style={{ marginBottom: isLast ? 0 : 16, paddingTop: 16, borderTop: '1px solid #f0f0ea' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                                  <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{step.label}</span>
-                                  <span style={{ fontSize: 22, fontWeight: 800, color: isEmpty ? '#bbb' : '#111' }}>{isEmpty ? '—' : `${step.pct}%`}</span>
-                                </div>
-                                <div style={{ height: 8, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden', marginBottom: 6 }}>
-                                  <div style={{ width: isEmpty ? '4%' : `${Math.min(100, step.pct as number)}%`, height: '100%', background: isEmpty ? '#e5e5e5' : '#bbf7d0', borderRadius: 99, transition: 'width 0.4s' }} />
-                                </div>
-                                <div style={{ fontSize: 11, color: '#bbb' }}>
-                                  {isEmpty
-                                    ? (step.emptyText || 'no data yet')
-                                    : `${fmt(step.num)} of ${fmt(step.den)} ${step.descr}${step.extra ?? ''}`}
-                                </div>
+                          {sharedSteps.map(renderBar)}
+                          {/* Reached Pricing — the SHARED endpoint (same price
+                              screen for both flows). Shown as a count; each branch
+                              then computes its own Pricing Conversion from here. */}
+                          <div style={{ paddingTop: 16, borderTop: '1px solid #f0f0ea' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>Reached Pricing</span>
+                              <span style={{ fontSize: 22, fontWeight: 800, color: '#111' }}>{fmt(totalReachedPricing)}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#bbb' }}>saw the price screen — {fmt(inviteReached)} on invite events, {fmt(openReached)} on open events</div>
+                          </div>
+                        </div>
+
+                        {/* BRANCHES — invite (Apply Now) + open (Book Now) */}
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24, alignItems: 'flex-start' }}>
+                          {/* Invite branch */}
+                          <div style={{ flex: 1, minWidth: 300, background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '18px 20px' }}>
+                            <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 800, color: '#7c3aed', background: '#ede9fe', borderRadius: 999, padding: '3px 10px', marginBottom: 6 }}>INVITE · Apply Now</div>
+                            {inviteSteps.map(renderBar)}
+                          </div>
+
+                          {/* Open branch */}
+                          {hasOpenEvents && (
+                            <div style={{ flex: 1, minWidth: 300, background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '18px 20px' }}>
+                              <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 800, color: '#0369a1', background: '#e0f2fe', borderRadius: 999, padding: '3px 10px', marginBottom: 6 }}>OPEN · Book Now</div>
+                              {openSteps.map(renderBar)}
+                              <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {miniStat('Cart Abandonment', openAbandon === null ? '—' : `${openAbandon}%`, `${fmt(openAgg.abandoned)} of ${fmt(openAgg.details)} never paid`)}
+                                {miniStat('Recovery Rate', openRecovery === null ? '—' : `${openRecovery}%`, `${fmt(openAgg.recovered)} of ${fmt(openAgg.abandoned)} paid after`)}
                               </div>
-                            );
-                          })}
+                            </div>
+                          )}
                         </div>
                       </>
                     );
@@ -4970,7 +5105,7 @@ export default function AdminPanel() {
                   {/* Per-event unit economics (editable cost per ticket) */}
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Per-Event Unit Economics</div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Type your cost to deliver one ticket. Price = full ticket (advance + balance). Profit per ticket = price − your cost − ₹50 commission.</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Type your cost to deliver one ticket. Price = full ticket (advance + balance). Profit per ticket = price − your cost − marketer commission (per-event rate, ₹50 default).</div>
                     <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 620 }}>
                         <thead>
@@ -4989,7 +5124,8 @@ export default function AdminPanel() {
                             const tickets = num(ev.tickets);
                             const price = num(ev.price_per_ticket);
                             const cost = costEdits[ev.event_id] !== undefined ? Number(costEdits[ev.event_id]) || 0 : num(ev.cost_per_ticket);
-                            const perTicket = price - cost - 50;
+                            const commission = ev.commission_per_ticket != null ? num(ev.commission_per_ticket) : 50;
+                            const perTicket = price - cost - commission;
                             const margin = price > 0 ? Math.round((perTicket / price) * 100) : null;
                             const dirty = costEdits[ev.event_id] !== undefined && Number(costEdits[ev.event_id]) !== num(ev.cost_per_ticket);
                             return (
@@ -5081,7 +5217,7 @@ export default function AdminPanel() {
                   </div>
 
                   <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
-    Each event's profit (full price − your ticket cost − ₹50 commission, summed over tickets sold) lands in the month its balance is due, minus fixed costs. Only tickets already sold count — it's a committed-income forecast, not a sales projection. Amounts are net of PayU fees, in IST months. Keep your ticket costs and fixed costs current.
+    Each event's profit (full price − your ticket cost − marketer commission, summed over tickets sold) lands in the month its balance is due, minus fixed costs. Only tickets already sold count — it's a committed-income forecast, not a sales projection. Amounts are net of PayU fees, in IST months. Keep your ticket costs and fixed costs current.
                   </div>
                 </>
               );
@@ -5337,11 +5473,13 @@ export default function AdminPanel() {
 // Renders below the TripForm. Picking marketers writes to event_marketers;
 // the DB redistribute trigger handles fanning existing applications across
 // the new set (no client-side redistribute needed).
-function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, onOpen, s }: {
+function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commission, onSaveCommission, onOpen, s }: {
   eventSlug: string;
   marketers: Array<{ id: string; name: string; email: string }>;
   selectedIds: string[];
   onChange: (ids: string[]) => void;
+  commission: number | null;
+  onSaveCommission: (val: number | null) => void;
   onOpen?: () => void;
   s: any;
 }) {
@@ -5350,6 +5488,12 @@ function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, onOpe
     if (selectedIds.includes(id)) onChange(selectedIds.filter(x => x !== id));
     else onChange([...selectedIds, id]);
   };
+  // Local edit buffer for the commission input; blank = use the ₹50 default.
+  const [commInput, setCommInput] = React.useState(commission == null ? '' : String(commission));
+  React.useEffect(() => { setCommInput(commission == null ? '' : String(commission)); }, [commission]);
+  const parsedComm = commInput.trim() === '' ? null : Number(commInput);
+  const commValid = parsedComm == null || (Number.isFinite(parsedComm) && parsedComm >= 0);
+  const commDirty = commValid && parsedComm !== commission;
   return (
     <div style={{ marginTop: 18, padding: 16, background: '#fafafa', borderRadius: 12, border: '1.5px solid #eee' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
@@ -5380,6 +5524,38 @@ function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, onOpe
       )}
       <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
         New applications round-robin among the selected marketers. Existing unassigned/unconverted leads auto-redistribute when you change this list.
+      </div>
+
+      {/* Per-event commission — what each marketer earns per fully-paid ticket
+          on THIS event. Blank = the ₹50 default. */}
+      <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #ededed' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          Commission per ticket
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 14, color: '#111' }}>
+            ₹<input
+              type="number" min={0} value={commInput}
+              placeholder="50"
+              onChange={e => setCommInput(e.target.value)}
+              onWheel={e => (e.target as HTMLInputElement).blur()}
+              style={{ width: 90, padding: '6px 8px', border: '1.5px solid ' + (commValid ? '#ddd' : '#dc2626'), borderRadius: 6, fontSize: 14, textAlign: 'right' }}
+            />
+            <span style={{ fontSize: 13, color: '#888' }}>/ ticket</span>
+          </span>
+          {commDirty && (
+            <button
+              type="button"
+              onClick={() => onSaveCommission(parsedComm)}
+              style={{ ...s.btn('#111'), padding: '6px 12px', fontSize: 12 }}
+            >
+              Save
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+          Paid to the assigned marketer only when a ticket is fully paid. Leave blank to use the ₹50 default. Changing this affects future sales only — commissions already earned keep their old rate.
+        </div>
       </div>
     </div>
   );
@@ -5475,9 +5651,11 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const addStay = () => setStays([...stays, { name: '', images: ['', '', ''], features: ['', '', ''] }]);
   const removeStay = (index: number) => setStays(stays.filter((_, i) => i !== index));
 
-  // Native-application flag (used by the Trip Dates "Spots auto" layout below).
-  // The booking-timeline editor lives in its own dedicated section, not here.
-  const isNativeAppEvent = trip.booking_url === 'native-application';
+  // Capacity-driven flag (used by the Trip Dates "Spots auto" layout below).
+  // Both invite (native-application) and open (payu-hosted) events auto-flip
+  // date status from the paid count, so neither shows the manual status dropdown.
+  // Mirrors the customer-side `capEligible` in AppFlow.tsx.
+  const isCapEligible = trip.booking_url === 'native-application' || trip.booking_url === 'payu-hosted';
 
   const setPickup = (i: number, key: keyof PickupPoint, val: any) => {
     const updated = pickups.map((p, idx) => idx === i ? { ...p, [key]: val } : p);
@@ -6146,9 +6324,9 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
         {dates.length === 0 && <div style={{ color: '#aaa', fontSize: 13, marginBottom: 8 }}>No dates added yet.</div>}
         {dates.map((d, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, padding: '10px 12px', background: '#f9f9f9', borderRadius: 10, border: '1px solid #eee' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isNativeAppEvent ? '1fr auto auto' : '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isCapEligible ? '1fr auto auto' : '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
               <input type="date" style={s.input} value={d.start_date} onChange={e => setDate(i, 'start_date', e.target.value)} />
-              {isNativeAppEvent ? (
+              {isCapEligible ? (
                 <div style={{ color: '#16a34a', background: '#dcfce7', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '9px 12px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   Spots auto
                 </div>
