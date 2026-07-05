@@ -985,12 +985,19 @@ export default function AdminPanel() {
       return;
     }
     setSavingDateId(id);
-    const { error } = await supabase.from('applications').update({ selected_date: newDate }).eq('id', id);
+    // A waitlisted applicant only landed on the waitlist because their *previous*
+    // date was full. Moving them to a new (open) date restores their spot, so flip
+    // them back to 'invited' in the same write. Without this the invite flow keeps
+    // showing the sold-out / "join the waitlist" screen (it keys off status, not
+    // the date) even though the new date has room.
+    const patch: { selected_date: string; status?: string } = { selected_date: newDate };
+    if (target && target.status === 'waitlist') patch.status = 'invited';
+    const { error } = await supabase.from('applications').update(patch).eq('id', id);
     setSavingDateId(null);
     if (error) { showToast(`❌ ${error.message}`); return; }
-    setApplications(prev => prev.map(a => a.id === id ? { ...a, selected_date: newDate } : a));
-    logAdminAction('application_date_change', 'applications', id, { selected_date: newDate });
-    showToast('✓ Date updated');
+    setApplications(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+    logAdminAction('application_date_change', 'applications', id, patch);
+    showToast(patch.status ? '✓ Date updated · moved off waitlist' : '✓ Date updated');
   };
 
   const approveApplication = async (id: string) => {
