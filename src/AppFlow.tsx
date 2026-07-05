@@ -421,8 +421,8 @@ function ApplicationForm({
 }: {
   event: any; selectedDate?: string; selectedPickupId?: string; selectedCity?: string;
   reservedCount: number | null; step: 1 | 2;
-  form: { name: string; phone: string; gender: string; whyJoin: string };
-  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; gender: string; whyJoin: string }>>;
+  form: { name: string; phone: string; gender: string; email: string; whyJoin: string };
+  setForm: React.Dispatch<React.SetStateAction<{ name: string; phone: string; gender: string; email: string; whyJoin: string }>>;
   onNext: () => void; onBack: () => void; onClose: () => void; onSubmitted: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -432,7 +432,11 @@ function ApplicationForm({
   const [step1Attempted, setStep1Attempted] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
 
-  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && form.gender;
+  // Chapter events collect an email (invite is delivered there); galcode keeps
+  // the gender / "confirm Female" dropdown instead.
+  const isChapter = !event.girlsOnly;
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
+  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && (isChapter ? emailValid : !!form.gender);
   const step2Valid = form.whyJoin.trim();
   const formValid = step1Valid && step2Valid; // single-page form: all fields required
 
@@ -463,7 +467,10 @@ function ApplicationForm({
         event_slug: String(event.id ?? '').toLowerCase(),
         name: form.name.trim(),
         phone: form.phone,
-        gender: form.gender,
+        // gender is NOT NULL: galcode stores the selection, chapter has no
+        // gender field so it stores '' (same as the open-event form).
+        gender: isChapter ? '' : form.gender,
+        email: isChapter ? (form.email.trim() || null) : null,
         why_join: form.whyJoin.trim(),
         status: 'pending',
         selected_date: selectedDate ?? null,
@@ -539,7 +546,7 @@ function ApplicationForm({
     </div>
   );
 
-  /* ── Single-page form: Name, Phone, Email, Gender, Why Join ── */
+  /* ── Single-page form: Name, Phone, Email (chapter) / Gender (galcode), Why Join ── */
   return (
     <div className="flex-1 overflow-y-auto px-5 pt-1 pb-6 flex flex-col gap-4">
       {/* Name */}
@@ -583,34 +590,54 @@ function ApplicationForm({
         </div>
       </div>
 
-      {/* Gender */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between px-1">
-          <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">{event.girlsOnly ? "I confirm that I'm Female" : 'Gender'}</label>
-          {step1Attempted && !form.gender && (
-            <span className="text-[11px] text-amber-500 font-medium">Required</span>
-          )}
-        </div>
-        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !form.gender ? 'ring-2 ring-red-500' : ''}`}>
-          <select
-            value={form.gender}
-            onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
-            className={`w-full bg-transparent text-[16px] font-semibold outline-none appearance-none cursor-pointer pr-6 ${form.gender ? 'text-gray-900' : 'text-gray-300'}`}
-          >
-            <option value="" disabled>Select Option</option>
-            {event.girlsOnly ? (
-              <option value="Female">Yes</option>
-            ) : (
-              <>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Non-Binary">Non-Binary</option>
-              </>
+      {isChapter ? (
+        /* Email (chapter) — the invitation is delivered here */
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-1">
+            <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+            {step1Attempted && !emailValid && (
+              <span className="text-[11px] text-amber-500 font-medium">Invalid Email</span>
             )}
-          </select>
-          <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !emailValid ? 'ring-2 ring-red-500' : ''}`}>
+            <input
+              type="email" value={form.email} placeholder="You'll receive your invite here"
+              onChange={e => setForm(f => ({ ...f, email: e.target.value.slice(0, 100) }))}
+              className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
+              inputMode="email" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        /* Gender / "confirm Female" (galcode) */
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-1">
+            <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">{event.girlsOnly ? "I confirm that I'm Female" : 'Gender'}</label>
+            {step1Attempted && !form.gender && (
+              <span className="text-[11px] text-amber-500 font-medium">Required</span>
+            )}
+          </div>
+          <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !form.gender ? 'ring-2 ring-red-500' : ''}`}>
+            <select
+              value={form.gender}
+              onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+              className={`w-full bg-transparent text-[16px] font-semibold outline-none appearance-none cursor-pointer pr-6 ${form.gender ? 'text-gray-900' : 'text-gray-300'}`}
+            >
+              <option value="" disabled>Select Option</option>
+              {event.girlsOnly ? (
+                <option value="Female">Yes</option>
+              ) : (
+                <>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Non-Binary">Non-Binary</option>
+                </>
+              )}
+            </select>
+            <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      )}
 
       {/* Why join */}
       <div className="flex flex-col gap-1.5">
@@ -784,7 +811,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   // Tapping its chip opens this sheet directly — no user message, no bot
   // reply, no step change; closing returns to the untouched chat.
   const [communityEvent, setCommunityEvent] = useState<Event | null>(null);
-  const [appFormData, setAppFormData] = useState({ name: '', phone: '', gender: '', whyJoin: '' });
+  const [appFormData, setAppFormData] = useState({ name: '', phone: '', gender: '', email: '', whyJoin: '' });
   const [appFormSubmitted, setAppFormSubmitted] = useState(false);
   const [applicationCount, setApplicationCount] = useState<number | null>(null);
   const [reservedCount, setReservedCount] = useState<number | null>(null);
@@ -2539,7 +2566,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     {isNativeApplicationFlow ? (
                       <>
                         <button
-                          onClick={() => { trackEvent('application_started', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title }); setShowBookingTimeline(false); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', whyJoin: '' }); setShowApplicationForm(true); }}
+                          onClick={() => { trackEvent('application_started', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title }); setShowBookingTimeline(false); setAppFormSubmitted(false); setAppFormData({ name: '', phone: '', gender: '', email: '', whyJoin: '' }); setShowApplicationForm(true); }}
                           className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                         >
                           <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
