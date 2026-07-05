@@ -113,10 +113,20 @@ So **adding a 2nd marketer re-splits the existing load**, not just new leads.
 ### d) Commission accrual — `accrue_marketer_sale()`
 **`AFTER UPDATE OF status`** trigger `trg_accrue_marketer_sale`. When
 `status` flips to `fully_paid` (from anything else) AND the row has an
-`assigned_marketer_id`, inserts a `marketer_sales` row with the marketer's
-current `commission_amount`. Idempotent via `UNIQUE(application_id)` +
-`ON CONFLICT DO NOTHING`. Fires regardless of who flipped the status (payment
-webhook or admin), as long as it's a `status` UPDATE.
+`assigned_marketer_id`, inserts a `marketer_sales` row with the **effective**
+commission — `COALESCE(events.marketer_commission, call_marketers.commission_amount)`,
+i.e. the per-event override if set, else the marketer's own default (₹50).
+Idempotent via `UNIQUE(application_id)` + `ON CONFLICT DO NOTHING`. Fires
+regardless of who flipped the status (payment webhook or admin), as long as
+it's a `status` UPDATE.
+
+**Per-event commission** (`events.marketer_commission`, nullable): set from the
+admin event editor, in the `MarketerAssignment` block right under the marketer
+chips (writes immediately, like the chips). NULL = fall back to the marketer's
+₹50 default. Because the amount is snapshotted at sale time, editing an event's
+rate only affects **future** sales. Migration:
+`supabase/migrations/20260705_marketer_commission_per_event.sql` — also makes
+the Performance tab's two live commission reads event-aware (see §8b).
 
 ---
 
@@ -273,7 +283,9 @@ Months are **IST** calendar months.
   config, so approximate; manual/cash advances with no payu row overstate it).
 - **6-month trend** = profit per IST month (green/red bars).
 - **Per-event unit economics** = avg price collected/ticket − editable
-  `events.cost_per_ticket` − ₹50 commission = profit/ticket + margin.
+  `events.cost_per_ticket` − the event's marketer commission
+  (`COALESCE(events.marketer_commission, 50)`, exposed as `commission_per_ticket`
+  in the RPC) = profit/ticket + margin.
 - **Marketer ROI** = revenue generated (sum of payments from their assigned
   customers) vs commission earned; "for you" = the difference.
 - **Fixed costs** = editable `fixed_costs` table (admin-only RLS), summed into
@@ -292,6 +304,7 @@ Migration: `supabase/migrations/20260618_performance_dashboard.sql`.
 | `supabase/migrations/20260617_marketers_functions_and_triggers.sql` | all functions + triggers |
 | `supabase/migrations/20260617_marketers_rls.sql` | RLS policies |
 | `supabase/migrations/20260618_admin_push_subscriptions_delete_admin_only.sql` | ops can't delete push devices |
+| `supabase/migrations/20260705_marketer_commission_per_event.sql` | `events.marketer_commission` + event-aware `accrue_marketer_sale` / `get_performance_summary` |
 | `src/AdminPanel.tsx` | Marketers tab, commission banner, `MarketerAssignment`, client logic |
 
 Related: the **Re-Target** flag (`applications.re_target`) and `retarget-check`
