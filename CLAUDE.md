@@ -6,7 +6,7 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 1. **The Supabase DB is PRODUCTION with live customers.** For test rows use phone `90000000xx`, verify writes with `RETURNING`, and delete test rows afterwards. Never mutate rows whose status is `advance_paid`/`fully_paid` without explicit instruction — guard UPDATEs with `status not in ('advance_paid','fully_paid')`.
 2. **Pushing to `main` deploys the live site.** Never `git push` without the user's explicit go-ahead in that conversation turn.
 3. **Never deploy edge functions** (CLI or MCP) — the user deploys, or grants one-off approval.
-4. **Deploy hold (active):** the open-event batch — changes in `src/App.tsx`, `src/AppFlow.tsx`, `src/PaymentOverlay.tsx`, `supabase/functions/payu-callback`, `supabase/functions/cart-abandonment` — stays UNCOMMITTED until the user lifts the hold. Ship unrelated fixes as isolated commits (`src/AdminPanel.tsx` is usually safe to ship alone). Verify isolation with `git status --short` before and after committing.
+4. **Deploy hold:** none active — the open-event batch (`src/App.tsx`, `src/AppFlow.tsx`, `src/PaymentOverlay.tsx`, `supabase/functions/payu-callback`, `supabase/functions/cart-abandonment`) was shipped on 2026-07-05. Still prefer isolated, one-concern commits and verify with `git status --short` before and after committing. If a new hold is put in place, record its file list and "active" status here.
 5. Local `npm run dev` talks to PROD Supabase — UI testing creates real rows and real admin notifications.
 
 ## File map (large files — read targeted line ranges, never whole files)
