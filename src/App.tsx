@@ -1098,6 +1098,7 @@ type SharedInviteMatch = {
   dateLabel: string;
   status?: string;
   inviteSpots?: number | null;
+  bookingUrl?: string;
 };
 
 function InviteChatEssentialsCard({
@@ -1612,6 +1613,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const isChoosingInvitePlan = isInviteRevealed && matches.length > 0 && !verifiedSlug;
   const normalizeInviteStatus = (status?: string) => status === 'full_paid' ? 'fully_paid' : (status ?? 'pending');
   const isInviteActionableStatus = (status?: string) => ['invited', 'advance_paid', 'fully_paid'].includes(normalizeInviteStatus(status));
+  // Open-event leads sit at pending until they pay — still actionable on /invite
+  // for chat, doubts, and continuing checkout (e.g. cart-abandon email deep-link).
+  const isMatchActionable = (match: SharedInviteMatch) =>
+    isInviteActionableStatus(match.status) ||
+    (match.bookingUrl === 'payu-hosted' && normalizeInviteStatus(match.status) === 'pending');
   const invitePlanStatus = (status?: string) => {
     switch (normalizeInviteStatus(status)) {
       case 'fully_paid':
@@ -1872,7 +1878,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   };
 
   const selectInviteMatch = async (match: SharedInviteMatch, openDirectly = false) => {
-    if (!isInviteActionableStatus(match.status)) return;
+    if (!isMatchActionable(match)) return;
     const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '');
     const chooseFromRevealedPoster = isChoosingInvitePlan || openDirectly;
     const shouldRestorePickerOnChatBack = isChoosingInvitePlan && !openDirectly;
@@ -1902,9 +1908,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     triggerWipe(match.slug);
   };
 
-  const findInviteMatches = async () => {
-    const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '');
-    if (!form.name.trim()) {
+  const findInviteMatches = async (overrides?: { name?: string; phone?: string }) => {
+    const tenDigit = (overrides?.phone ?? form.phone).replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    const nameTrimmed = (overrides?.name ?? form.name).trim();
+    if (!nameTrimmed) {
       setError('Please enter your full name.');
       return;
     }
@@ -1978,7 +1985,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       // disabled plan still sees that plan listed as 'Invited'.
       const { data: event } = await supabase
         .from('events')
-        .select('slug, title, invite_slug, invite_spots, event_dates(start_date, status)')
+        .select('slug, title, invite_slug, invite_spots, booking_url, event_dates(start_date, status)')
         .or(`invite_slug.eq.${candidateSlug},slug.eq.${candidateSlug}`)
         .eq('is_active', true)
         .maybeSingle();
@@ -2004,6 +2011,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
         dateLabel,
         status,
         inviteSpots: event.invite_spots ?? null,
+        bookingUrl: event.booking_url ?? '',
       };
     }));
 
@@ -2070,7 +2078,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       return;
     }
 
-    if (found.length === 1 && isInviteActionableStatus(found[0].status)) {
+    if (found.length === 1 && isMatchActionable(found[0])) {
       await selectInviteMatch(found[0], true);
       return;
     }
@@ -2078,6 +2086,27 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setMatches(found);
     triggerWipe('');
   };
+
+  // Cart-abandon emails deep-link with ?phone=&name= — skip the poster form and
+  // run the same verification path as tapping the CTA after filling it in.
+  const inviteDeeplinkAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || inviteDeeplinkAttemptedRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment_status')) return;
+    const rawPhone = params.get('phone') ?? '';
+    const rawName = params.get('name') ?? '';
+    const tenDigit = rawPhone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    const name = rawName.trim();
+    if (tenDigit.length !== 10 || !name) return;
+
+    inviteDeeplinkAttemptedRef.current = true;
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+    setForm({ name, phone: tenDigit });
+    setTcAccepted(true);
+    void findInviteMatches({ name, phone: tenDigit });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2764,8 +2793,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                 {/* Single unified card — rows divided by lines */}
                 <div className="overflow-y-auto rounded-2xl border border-[#c9a84c] bg-[#f5f0e8]/92 backdrop-blur-sm shadow-[0_8px_18px_rgba(49,42,23,0.1)] divide-y divide-[#c9a84c]/35">
                   {matches.map(match => {
-                    const status = invitePlanStatus(match.status);
-                    const isActionable = isInviteActionableStatus(match.status);
+                    const status = match.bookingUrl === 'payu-hosted' && normalizeInviteStatus(match.status) === 'pending'
+                      ? { label: 'In progress', tone: 'green' as const }
+                      : invitePlanStatus(match.status);
+                    const isActionable = isMatchActionable(match);
                     const isFullyPaid = normalizeInviteStatus(match.status) === 'fully_paid';
                     return (
                       <button
