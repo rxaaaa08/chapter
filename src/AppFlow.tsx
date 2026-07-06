@@ -404,8 +404,6 @@ const GENERAL_ANNOUNCEMENTS = [
 ];
 
 
-const formatUpiINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
-const LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY = 'chaptera_invite_payment_submissions';
 
 // Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
 // call prod edge functions. supabase.ts already throws if the env var is
@@ -810,7 +808,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [dateCounts, setDateCounts] = useState<Record<string, { registered: number; reserved: number }> | null>(null);
   // Dynamic global announcements computed from invite-only events
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<string[]>([]);
-  const [detailsFormStep, setDetailsFormStep] = useState<'details' | 'instructions'>('details');
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
   const [detailsPlanSwitcherOpen, setDetailsPlanSwitcherOpen] = useState(false);
@@ -1250,11 +1247,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setPaymentView('checkout');
       } else if (activeHistoryLayer === 'payment-checkout') {
         setPaymentView('idle');
-        setDetailsFormStep('instructions');
         setShowDetailsForm(true);
       } else if (activeHistoryLayer === 'details-form') {
         setShowDetailsForm(false);
-        setDetailsFormStep('details');
         setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
@@ -1875,76 +1870,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         balance_due: paymentContext.balanceDue,
       }, { onConflict: 'receipt_no' });
     setPaymentView('success');
-  };
-
-  const recordPaymentSubmission = async (
-    amount: number,
-    options: { event?: Event; name?: string; phone?: string; dateStr?: string } = {}
-  ) => {
-    const eventForSubmission = options.event ?? selectedEvent;
-    if (!eventForSubmission) return;
-    const tenDigit = (options.phone ?? detailsForm.phone).replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
-    const submittedAt = new Date().toISOString();
-    const dateStr = options.dateStr ?? (bookingDate || eventForSubmission.dates?.[0]?.date || '');
-    const name = options.name ?? detailsForm.name.trim();
-    const { error: submissionError } = await supabase.rpc('upsert_payment_submission', {
-      p_invite_slug: null,
-      p_event_id: eventForSubmission.id,
-      p_event_slug: eventForSubmission.id,
-      p_event_title: eventForSubmission.title,
-      p_selected_date: dateStr,
-      p_name: name,
-      p_phone: tenDigit,
-      p_amount: amount,
-      p_submitted_at: submittedAt,
-    });
-    if (submissionError) {
-      // RPC doesn't exist — fall back to direct insert so admin can see submissions
-      await supabase.from('invite_payment_submissions').insert({
-        invite_slug: null,
-        event_id: eventForSubmission.id,
-        event_slug: eventForSubmission.id,
-        event_title: eventForSubmission.title,
-        selected_date: dateStr,
-        name,
-        phone: tenDigit,
-        amount,
-        status: 'pending_verification',
-        submitted_at: submittedAt,
-      });
-      // Also keep a local copy as backup
-      try {
-        const localRows = JSON.parse(localStorage.getItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY) || '[]');
-        localRows.unshift({
-          id: `local-${Date.now()}`,
-          invite_slug: null,
-          event_id: eventForSubmission.id,
-          event_slug: eventForSubmission.id,
-          event_title: eventForSubmission.title,
-          selected_date: dateStr,
-          name,
-          phone: tenDigit,
-          amount,
-          status: 'pending_verification',
-          submitted_at: submittedAt,
-          source: 'localStorage',
-        });
-        localStorage.setItem(LOCAL_INVITE_PAYMENT_SUBMISSIONS_KEY, JSON.stringify(localRows));
-      } catch {
-        // ignore storage errors
-      }
-    }
-  };
-
-  // Called when user taps "Get Payment Details" — inserts submission + refreshes slots
-  const handleGetPaymentDetails = async () => {
-    if (!paymentContext || !selectedEvent) return;
-    const selectedMeetingPoint = journeyCardData?.meetingPoint || '';
-    const _cd2 = (selectedEvent as any).cityDetails?.[selectedCity];
-    const pricing = getMeetingPointPricing(selectedEvent, selectedMeetingPoint, selectedCity, _cd2?.price_full > 0 ? _cd2.price_full : undefined, _cd2?.price_advance > 0 ? _cd2.price_advance : undefined);
-    await recordPaymentSubmission(pricing.advance);
-    setShowDetailsForm(false);
-    setPaymentView('checkout');
   };
 
   const renderOptions = () => {
@@ -2658,7 +2583,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
                 onClick={() => {
                   setShowDetailsForm(false);
-                  setDetailsFormStep('details');
                   setTimeout(() => setShowBookingTimeline(true), 80);
                 }}
               />
@@ -2674,7 +2598,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   type="button"
                   onClick={() => {
                     setShowDetailsForm(false);
-                    setDetailsFormStep('details');
                     setTimeout(() => setShowBookingTimeline(true), 80);
                   }}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
@@ -2683,9 +2606,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 </button>
                 <AnimatePresence mode="wait">
 
-                  {/* ── Step 1: Details form ── */}
-                  {detailsFormStep === 'details' && (
-                    <motion.div
+                  {/* ── Details form (single step → checkout) ── */}
+                  <motion.div
                       key="details"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -2862,59 +2784,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       </div>
                       )}
                     </motion.div>
-                  )}
-
-                  {/* ── Step 2: Payment instructions ── */}
-                  {detailsFormStep === 'instructions' && (
-                    <motion.div
-                      key="instructions"
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.22, ease: 'easeOut' }}
-                      className="flex flex-col"
-                    >
-                      <div className="px-6 pt-3 pb-5">
-                        <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">{paymentContext?.isBalancePayment ? 'One last step! 🎉' : 'Almost there! 🤠'}</p>
-                      </div>
-
-                      {/* Step rows */}
-                      <div className="px-6 space-y-3">
-                        {/* Step 1 */}
-                        <div className="flex gap-4 items-start bg-[#F7F7F8] rounded-2xl px-4 py-4">
-                          <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[13px] font-black flex-shrink-0">1</div>
-                          <div>
-                            <p className="text-[15px] font-bold text-gray-900 leading-snug mb-0.5">{paymentContext?.isBalancePayment ? `Settle Balance ${paymentContext ? formatUpiINR(paymentContext.amount) : ''}` : `Pay ${paymentContext ? formatUpiINR(paymentContext.amount) : ''} advance`}</p>
-                            <p className="text-[13px] text-gray-500 leading-relaxed">Scan QR code or copy our UPI ID on the next page.</p>
-                          </div>
-                        </div>
-
-                        {/* Step 2 */}
-                        <div className="flex gap-4 items-start bg-[#F7F7F8] rounded-2xl px-4 py-4">
-                          <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[13px] font-black flex-shrink-0">2</div>
-                          <div>
-                            <p className="text-[15px] font-bold text-gray-900 leading-snug mb-0.5">Send Us Payment Screenshot</p>
-                            <p className="text-[13px] text-gray-500 leading-relaxed">Send payment screenshot to the WhatsApp number you got this invite from.</p>
-                            <p className="text-[13px] text-gray-500 leading-relaxed mt-1">Your payment will be confirmed within 24 hours.</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="px-6 pt-6 pb-6">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDetailsFormStep('details');
-                            handleGetPaymentDetails();
-                          }}
-                          className="w-full py-[17px] rounded-2xl text-[17px] font-semibold bg-black text-white active:opacity-80 transition-all inline-flex items-center justify-center gap-2"
-                        >
-                          <span>Get Payment Details</span>
-                          <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
 
                 </AnimatePresence>
               </motion.div>
