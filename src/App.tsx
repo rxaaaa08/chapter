@@ -3199,7 +3199,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                 <Send size={16} />
                               </button>
                             )}
-                            {!isSoldOut && (
+                            {/* Doubt chip hidden once fully paid — a paid guest only gets
+                                Join Groupchat + Re-check plan details. Advance-paid guests keep
+                                it (they may still have questions before the balance). */}
+                            {!isSoldOut && !isFullyPaid && (
                               <button className={btnClass} onClick={() => {
                                 const botIntro = inviteFaqs.length > 0
                                   ? 'Here are some common questions — tap one for an instant answer 💬'
