@@ -1145,6 +1145,50 @@ export default function AdminPanel() {
       } catch {
         showToast('✅ Approved — WhatsApp send failed (network error)');
       }
+
+      // 2b. Additionally send an email invite via Brevo when the applicant left
+      // an email (chapter events collect one on the form). WhatsApp stays the
+      // primary channel — this is best-effort and never blocks the approval.
+      // The Brevo key lives only in the send-brevo-invite edge-function secret.
+      const inviteEmail = String((app as any).email ?? '').trim();
+      if (inviteEmail) {
+        try {
+          const { data: { session: emailSession } } = await supabase.auth.getSession();
+          const brevoRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-brevo-invite`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${emailSession?.access_token ?? ''}`,
+            },
+            body: JSON.stringify({
+              email: inviteEmail,
+              userName: app.name ?? '',
+              eventName,
+              eventDate,
+            }),
+          });
+          const brevoJson = await brevoRes.json().catch(() => ({}));
+          const emailOk = brevoRes.ok && brevoJson.ok;
+          const { data: emApp } = await supabase
+            .from('applications')
+            .update({
+              email_invite_sent: emailOk,
+              ...(emailOk ? { email_invite_sent_at: new Date().toISOString() } : {}),
+            })
+            .eq('id', id)
+            .select('*')
+            .maybeSingle();
+          if (emApp) setApplications(prev => prev.map(a => a.id === id ? { ...a, ...emApp } : a));
+          // Only toast on failure — the WhatsApp toast already reported the
+          // primary outcome; surface the Brevo error so the admin can act on it.
+          if (!emailOk) {
+            const reason = brevoJson.error ? ` — ${String(brevoJson.error).slice(0, 120)}` : '';
+            showToast(`✉️ Email invite failed${reason}`);
+          }
+        } catch {
+          showToast('✉️ Email invite failed (network error)');
+        }
+      }
     } else {
       showToast('✅ Approved — status set to invited');
     }
