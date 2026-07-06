@@ -83,6 +83,9 @@ Deno.serve(async (req) => {
     const userName  = String(body.userName  ?? '').trim();
     const eventName = String(body.eventName ?? '').trim();
     const eventDate = String(body.eventDate ?? '').trim();
+    // Optional: the exact event slug. New frontends send it; stale ones don't,
+    // in which case we resolve it from eventName (title OR slug) below.
+    const eventSlug = String(body.eventSlug ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '');
 
     if (phone.length !== 10)   return json(400, { error: 'invalid phone' }, cors);
     if (!eventName)            return json(400, { error: 'missing eventName' }, cors);
@@ -112,6 +115,48 @@ Deno.serve(async (req) => {
       status: aiRes.status,
       body: aiBody.slice(0, 100),
     });
+
+    // 4. Email invite (Brevo) — server-side so it fires regardless of which
+    // frontend version the admin/marketer is running (a stale PWA that never
+    // learned to call send-brevo-invite still triggers the email through here).
+    // Runs AFTER WhatsApp (the message above has already been sent, so the
+    // primary channel never waits on Brevo). Best-effort — wrapped so it can
+    // never change the WhatsApp result returned below. Only chapter events have
+    // an email on file; galcode/no-email rows are skipped. send-brevo-invite
+    // stays the single source of truth for the email design — we just call it,
+    // forwarding the admin's token, then stamp email_invite_sent on the row.
+    try {
+      const slug = eventSlug
+        || String((await supabase.rpc('resolve_event_slug', { p_title: eventName })).data ?? '').toLowerCase();
+      if (slug) {
+        const { data: appRow } = await supabase
+          .from('applications')
+          .select('email, email_invite_sent')
+          .eq('event_slug', slug)
+          .eq('phone', phone)
+          .maybeSingle();
+        const inviteEmail = String(appRow?.email ?? '').trim();
+        if (inviteEmail && !appRow?.email_invite_sent) {
+          const emailRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-brevo-invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+            body: JSON.stringify({ email: inviteEmail, userName, eventName, eventDate }),
+          });
+          const emailJson = await emailRes.json().catch(() => ({}));
+          if (emailRes.ok && emailJson.ok) {
+            await supabase
+              .from('applications')
+              .update({ email_invite_sent: true, email_invite_sent_at: new Date().toISOString() })
+              .eq('event_slug', slug)
+              .eq('phone', phone);
+          } else {
+            console.warn('[send-aisensy-invite] brevo email not sent:', emailJson?.error ?? emailRes.status);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[send-aisensy-invite] email step failed:', err);
+    }
 
     // Include a truncated AiSensy response body when the call failed, so the
     // admin toast can show the actual reason (bad key / unknown template /
