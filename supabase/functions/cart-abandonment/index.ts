@@ -42,6 +42,99 @@ function formatEventDate(iso: string): string {
   return `${dayName}, ${month} ${day}${suffix}`;
 }
 
+// ── Cart-abandonment EMAIL (Brevo) — invite-only chapter events ────────────────
+// Mirrors the send-brevo-invite design (beige header, Inter wordmark, yellow
+// button) with cart-abandon copy. Sent only to invite-event applicants who left
+// an email; open events keep WhatsApp only. Best-effort — WhatsApp is primary.
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function cartAbandonEmailHtml(args: {
+  userName: string; eventName: string; contactUrl: string; senderName: string; logoUrl: string;
+}): string {
+  const name = esc(args.userName || 'there');
+  const event = esc(args.eventName);
+  const url = args.contactUrl;
+  const logo = esc(args.logoUrl);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;color-scheme:light;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden;">
+        <tr><td style="background:#EDE6D6;padding:20px 32px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td style="vertical-align:middle;text-align:left;">
+              <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:#000000;">chapter &#2949;</span>
+            </td>
+            <td align="right" style="vertical-align:middle;text-align:right;">
+              <table role="presentation" cellpadding="0" cellspacing="0" align="right"><tr>
+                <td style="background:#000000;border-radius:14px;padding:4px;">
+                  <img src="${logo}" width="40" height="40" alt="chapter &#2949; logo" style="display:block;width:40px;height:40px;border-radius:10px;object-fit:contain;">
+                </td>
+              </tr></table>
+            </td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#111827;">We're here to help you&hellip;</p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#4b5563;">Hey ${name}, we're trying to give you the best <strong style="color:#111827;">${event}</strong> experience.</p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#4b5563;">You were only 1 step away from joining us&hellip;</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">If you need any help, feel free to Contact Us.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
+            <tr><td style="border-radius:14px;background:#FFD700;">
+              <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#111827;text-decoration:none;border-radius:14px;">Contact Us &#8594;</a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:13px;line-height:20px;color:#9ca3af;">If the button doesn't work, open this link:<br><a href="${url}" target="_blank" style="color:#2563eb;word-break:break-all;">${url}</a></p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;border-top:1px solid #f3f4f6;">
+          <p style="margin:0 0 10px;font-size:12px;line-height:18px;color:#9ca3af;">Sent by ${esc(args.senderName)}. You received this because you started an application for a chapter &#2949; experience.</p>
+          <p style="margin:0;font-size:12px;line-height:18px;color:#9ca3af;">Do not reply to this email. To contact us press the <strong style="color:#6b7280;">Contact Us</strong> button.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+async function sendCartAbandonEmail(args: { email: string; userName: string; eventName: string }): Promise<boolean> {
+  const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
+  if (!BREVO_API_KEY) {
+    console.warn('[cart-abandonment] BREVO_API_KEY not set, skipping email');
+    return false;
+  }
+  const baseUrl     = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
+  const contactUrl  = `${baseUrl}/invite`;
+  const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
+  const senderName  = Deno.env.get('BREVO_SENDER_NAME')  ?? 'chapter அ';
+  const logoUrl     = Deno.env.get('BREVO_LOGO_URL')     ?? 'https://chaptera.in/chat-profile.jpg';
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'accept': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: args.email, name: args.userName || undefined }],
+        subject: `We don't want you to miss our ${args.eventName}…`,
+        htmlContent: cartAbandonEmailHtml({ userName: args.userName, eventName: args.eventName, contactUrl, senderName, logoUrl }),
+        tags: ['chapter-cart-abandon-email'],
+      }),
+    });
+    const ok = res.status >= 200 && res.status < 300;
+    const body = await res.text().catch(() => '');
+    console.log('[cart-abandonment] brevo email:', { to_tail: args.email.slice(-8), status: res.status, ok, body: body.slice(0, 120) });
+    return ok;
+  } catch (err) {
+    console.error('[cart-abandonment] brevo email failed:', err);
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
   if (!AISENSY_API_KEY) {
@@ -78,7 +171,7 @@ Deno.serve(async (req) => {
   // per-flow threshold inside the loop once we know the event type.
   let query = supabase
     .from('bill_opens')
-    .select('id, phone, name, event_slug, event_title, opened_at')
+    .select('id, phone, name, event_slug, event_title, opened_at, cart_abandon_email_sent')
     .eq('cart_abandonment_sent', false);
 
   if (isForce) {
@@ -164,12 +257,13 @@ Deno.serve(async (req) => {
     // bill_opens poster name, then 'there'.
     const { data: appRows } = await supabase
       .from('applications')
-      .select('name, selected_date')
+      .select('name, selected_date, email')
       .eq('phone', row.phone)
       .eq('event_slug', row.event_slug)
       .limit(1);
     const displayName = appRows?.[0]?.name || row.name || 'there';
     const selectedDate = (appRows?.[0]?.selected_date as string | null) ?? null;
+    const applicantEmail = String((appRows?.[0] as any)?.email ?? '').trim();
 
     // ── OPEN events: cart_abandon_open template ──────────────────────────────
     // Open events get the cart_abandoned flag above (admin visibility +
@@ -232,7 +326,8 @@ Deno.serve(async (req) => {
     }
 
     // ── INVITE events: cart_abandonment template ─────────────────────────────
-    // Fire AiSensy cart_abandonment campaign
+    // Fire AiSensy cart_abandonment campaign FIRST — WhatsApp is the primary
+    // channel and must not wait on Brevo latency; the email follows below.
     try {
       const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
         method: 'POST',
@@ -277,6 +372,24 @@ Deno.serve(async (req) => {
       }
     } catch (err) {
       console.error('[cart-abandonment] aisensy fetch failed:', err);
+    }
+
+    // Email channel (invite-only chapter events that left an email). Runs AFTER
+    // the WhatsApp so any Brevo slowness can't delay the primary channel. Its own
+    // flag keeps it independent: a WhatsApp retry can't re-email, and a
+    // permanently-failing WhatsApp number still gets the email once.
+    if (applicantEmail && !(row as any).cart_abandon_email_sent) {
+      const emailed = await sendCartAbandonEmail({
+        email: applicantEmail,
+        userName: displayName,
+        eventName: row.event_title || 'our next experience',
+      });
+      if (emailed) {
+        await supabase
+          .from('bill_opens')
+          .update({ cart_abandon_email_sent: true })
+          .eq('id', row.id);
+      }
     }
   }
 
