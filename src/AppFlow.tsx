@@ -430,11 +430,11 @@ function ApplicationForm({
   const [step1Attempted, setStep1Attempted] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
 
-  // Chapter events collect email only; galcode collects email plus the
-  // gender / "confirm Female" dropdown.
+  // Invite applications collect the same visible fields for chapter and galcode.
+  // Galcode still stores Female behind the scenes for the existing DB shape.
   const isChapter = !event.girlsOnly;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
-  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && emailValid && (isChapter || !!form.gender);
+  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && emailValid;
   const step2Valid = form.whyJoin.trim();
   const formValid = step1Valid && step2Valid; // single-page form: all fields required
 
@@ -465,9 +465,9 @@ function ApplicationForm({
         event_slug: String(event.id ?? '').toLowerCase(),
         name: form.name.trim(),
         phone: form.phone,
-        // gender is NOT NULL: galcode stores the selection, chapter has no
-        // gender field so it stores '' (same as the open-event form).
-        gender: isChapter ? '' : form.gender,
+        // gender is NOT NULL: galcode invite applications auto-store Female;
+        // chapter has no gender field so it stores ''.
+        gender: isChapter ? '' : 'Female',
         email: form.email.trim() || null,
         why_join: form.whyJoin.trim(),
         status: 'pending',
@@ -544,7 +544,7 @@ function ApplicationForm({
     </div>
   );
 
-  /* ── Single-page form: Name, Phone, Email, optional Gender (galcode), Why Join ── */
+  /* ── Single-page form: Name, Phone, Email, Why Join ── */
   return (
     <div className="flex-1 overflow-y-auto px-5 pt-1 pb-6 flex flex-col gap-4">
       {/* Name */}
@@ -606,37 +606,6 @@ function ApplicationForm({
         </div>
       </div>
 
-      {!isChapter && (
-        /* Gender / "confirm Female" (galcode) */
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between px-1">
-            <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">{event.girlsOnly ? "I confirm that I'm Female" : 'Gender'}</label>
-            {step1Attempted && !form.gender && (
-              <span className="text-[11px] text-amber-500 font-medium">Required</span>
-            )}
-          </div>
-          <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 relative focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !form.gender ? 'ring-2 ring-red-500' : ''}`}>
-            <select
-              value={form.gender}
-              onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
-              className={`w-full bg-transparent text-[16px] font-semibold outline-none appearance-none cursor-pointer pr-6 ${form.gender ? 'text-gray-900' : 'text-gray-300'}`}
-            >
-              <option value="" disabled>Select Option</option>
-              {event.girlsOnly ? (
-                <option value="Female">Yes</option>
-              ) : (
-                <>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Non-Binary">Non-Binary</option>
-                </>
-              )}
-            </select>
-            <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </div>
-        </div>
-      )}
-
       {/* Why join */}
       <div className="flex flex-col gap-1.5">
         <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider px-1">Why do you want to join us?</label>
@@ -645,7 +614,7 @@ function ApplicationForm({
             value={form.whyJoin} placeholder="Tell us why this plan excites you..."
             onChange={e => setForm(f => ({ ...f, whyJoin: e.target.value.slice(0, 300) }))}
             rows={1}
-            className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-300 outline-none resize-none leading-relaxed"
+            className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none resize-none leading-relaxed"
           />
         </div>
       </div>
