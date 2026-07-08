@@ -4,10 +4,13 @@
 # log_feature_release() RPC (see supabase/migrations/20260708_feature_releases.sql).
 # The admin can rename/annotate/delete entries from the Experiments tab.
 #
-# Setup (one-time): add repository secrets named RELEASE_LOG_SECRET and
-# SUPABASE_ANON_KEY. RELEASE_LOG_SECRET must match the release_log_secret row in
-# app_secrets. Without both secrets, this workflow skips silently — it never
-# fails a deploy.
+# Setup (one-time): add one repository secret named RELEASE_LOG_SECRET. Its value
+# must match the release_log_secret row in the app_secrets table. Without it,
+# this workflow skips silently — it never fails a deploy.
+#
+# The apikey below is the PUBLIC Supabase anon key, the same kind of key the
+# website uses in the browser. It is not the private service-role key; the real
+# protection is RELEASE_LOG_SECRET.
 
 name: Log release
 
@@ -22,12 +25,12 @@ jobs:
       - name: Log pushed commits to the release log
         env:
           RELEASE_LOG_SECRET: ${{ secrets.RELEASE_LOG_SECRET }}
-          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           COMMITS: ${{ toJson(github.event.commits) }}
           SUPABASE_URL: https://txcmismkdttgsyhbnexf.supabase.co
+          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4Y21pc21rZHR0Z3N5aGJuZXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMzEyMzksImV4cCI6MjA5MDkwNzIzOX0.0GTg30cJz28QiTzadCjCAAxa8ZPRkV5EptNXNMjTRI0 # nosecret
         run: |
-          if [ -z "$RELEASE_LOG_SECRET" ] || [ -z "$ANON_KEY" ]; then
-            echo "Release-log repo secrets not set — skipping release logging."
+          if [ -z "$RELEASE_LOG_SECRET" ]; then
+            echo "RELEASE_LOG_SECRET repo secret not set — skipping release logging."
             exit 0
           fi
           echo "$COMMITS" | jq -c '.[]' | while read -r c; do
