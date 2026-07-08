@@ -7,12 +7,12 @@
 // the email is in admin_users before forwarding to Brevo.
 //
 // Fired in addition to the WhatsApp invite — email is a secondary channel for
-// chapter events, which collect an email on the application form.
+// approved applications that have an email on file.
 //
 // Required secrets: BREVO_API_KEY.
 // Optional overrides: BREVO_SENDER_EMAIL (default info@chaptera.in),
-//   BREVO_SENDER_NAME (default "chapter அ"), BREVO_INVITE_BASE_URL
-//   (default https://chaptera.in).
+//   BREVO_SENDER_NAME (default "chapter அ"), BREVO_GALCODE_SENDER_NAME
+//   (default "galcode"), BREVO_INVITE_BASE_URL (default https://chaptera.in).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -47,13 +47,28 @@ function esc(s: string): string {
 }
 
 function inviteEmailHtml(args: {
-  userName: string; eventName: string; eventDate: string; inviteUrl: string; senderName: string; logoUrl: string;
+  userName: string;
+  eventName: string;
+  eventDate: string;
+  inviteUrl: string;
+  senderName: string;
+  brandName: string;
+  experienceName: string;
+  brandColor: string;
+  bannerColor: string;
+  buttonColor: string;
+  buttonTextColor: string;
 }): string {
   const name = esc(args.userName || 'there');
   const event = esc(args.eventName);
   const date = esc(args.eventDate);
   const url = args.inviteUrl; // already a sanitised same-origin URL
-  const logo = esc(args.logoUrl);
+  const brand = esc(args.brandName);
+  const experience = esc(args.experienceName);
+  const brandColor = esc(args.brandColor);
+  const bannerColor = esc(args.bannerColor);
+  const buttonColor = esc(args.buttonColor);
+  const buttonTextColor = esc(args.buttonTextColor);
   const dateLine = date
     ? `<p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">Plan Date: <strong style="color:#111827;">${date}</strong></p>`
     : '';
@@ -64,17 +79,10 @@ function inviteEmailHtml(args: {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden;">
-        <tr><td style="background:#EDE6D6;padding:20px 32px;">
+        <tr><td style="background:${bannerColor};padding:20px 32px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:middle;text-align:left;">
-              <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:#000000;">chapter &#2949;</span>
-            </td>
-            <td align="right" style="vertical-align:middle;text-align:right;">
-              <table role="presentation" cellpadding="0" cellspacing="0" align="right"><tr>
-                <td style="background:#000000;border-radius:14px;padding:4px;">
-                  <img src="${logo}" width="40" height="40" alt="chapter &#2949; logo" style="display:block;width:40px;height:40px;border-radius:10px;object-fit:contain;">
-                </td>
-              </tr></table>
+              <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:${brandColor};">${brand}</span>
             </td>
           </tr></table>
         </td></tr>
@@ -83,14 +91,14 @@ function inviteEmailHtml(args: {
           <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">Hey ${name}, you're invited to our <strong style="color:#111827;">${event}</strong>.</p>
           ${dateLine}
           <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
-            <tr><td style="border-radius:14px;background:#FFD700;">
-              <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#111827;text-decoration:none;border-radius:14px;">Open Invitation &#8594;</a>
+            <tr><td style="border-radius:14px;background:${buttonColor};">
+              <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:${buttonTextColor};text-decoration:none;border-radius:14px;">Open Invitation &#8594;</a>
             </td></tr>
           </table>
           <p style="margin:0;font-size:13px;line-height:20px;color:#9ca3af;">If the button doesn't work, open this link:<br><a href="${url}" target="_blank" style="color:#2563eb;word-break:break-all;">${url}</a></p>
         </td></tr>
         <tr><td style="padding:20px 32px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0 0 10px;font-size:12px;line-height:18px;color:#9ca3af;">Sent by ${esc(args.senderName)}. You received this because you applied to join a chapter &#2949; experience.</p>
+          <p style="margin:0 0 10px;font-size:12px;line-height:18px;color:#9ca3af;">Sent by ${esc(args.senderName)}. You received this because you applied to join a ${experience} experience.</p>
           <p style="margin:0;font-size:12px;line-height:18px;color:#9ca3af;">Do not reply to this email. To contact us press the <strong style="color:#6b7280;">Open Invitation</strong> button.</p>
         </td></tr>
       </table>
@@ -98,6 +106,47 @@ function inviteEmailHtml(args: {
   </table>
 </body>
 </html>`;
+}
+
+function eventLooksGalcode(eventRow: any): boolean {
+  const labels = new Set(['galcode event', 'girls only event', "girl's only event", 'girls_only_event']);
+  return Array.isArray(eventRow?.quick_info) && eventRow.quick_info.some((item: any) =>
+    labels.has(String(item?.label ?? '').trim().toLowerCase())
+  );
+}
+
+async function resolveIsGalcodeEmail(supabase: any, eventName: string): Promise<boolean> {
+  const raw = eventName.trim();
+  if (!raw) return false;
+
+  const slugCandidate = raw.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+  const { data: byTitle } = await supabase
+    .from('events')
+    .select('quick_info')
+    .eq('title', raw)
+    .maybeSingle();
+  if (byTitle) return eventLooksGalcode(byTitle);
+
+  if (slugCandidate) {
+    const { data: bySlug } = await supabase
+      .from('events')
+      .select('quick_info')
+      .eq('slug', slugCandidate)
+      .maybeSingle();
+    if (bySlug) return eventLooksGalcode(bySlug);
+  }
+
+  const { data: resolvedSlug } = await supabase.rpc('resolve_event_slug', { p_title: raw });
+  const slug = String(resolvedSlug ?? '').toLowerCase();
+  if (!slug) return false;
+
+  const { data: byResolvedSlug } = await supabase
+    .from('events')
+    .select('quick_info')
+    .eq('slug', slug)
+    .maybeSingle();
+  return eventLooksGalcode(byResolvedSlug);
 }
 
 Deno.serve(async (req) => {
@@ -151,6 +200,8 @@ Deno.serve(async (req) => {
     const userName   = String(body.userName  ?? '').trim();
     const eventName  = String(body.eventName ?? '').trim();
     const eventDate  = String(body.eventDate ?? '').trim();
+    const emailMode  = String(body.mode ?? '').trim().toLowerCase();
+    const isResend   = emailMode === 'resend' || emailMode === 'resend_invite';
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'invalid email' }, cors);
     if (!eventName)                                return json(400, { error: 'missing eventName' }, cors);
@@ -161,8 +212,16 @@ Deno.serve(async (req) => {
     const baseUrl     = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
     const inviteUrl   = `${baseUrl}/invite`;
     const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
-    const senderName  = Deno.env.get('BREVO_SENDER_NAME')  ?? 'chapter அ';
-    const logoUrl     = Deno.env.get('BREVO_LOGO_URL')     ?? 'https://chaptera.in/chat-profile.jpg';
+    const isGalcode   = body.isGalcode === true || await resolveIsGalcodeEmail(supabase, eventName);
+    const senderName  = isGalcode
+      ? (Deno.env.get('BREVO_GALCODE_SENDER_NAME') ?? 'galcode')
+      : (Deno.env.get('BREVO_SENDER_NAME') ?? 'chapter அ');
+    const brandName = isGalcode ? 'galcode' : 'chapter அ';
+    const experienceName = isGalcode ? 'galcode' : 'chapter அ';
+    const brandColor = isGalcode ? '#000000' : '#ffffff';
+    const bannerColor = isGalcode ? '#FF1493' : '#000000';
+    const buttonColor = isGalcode ? '#FF1493' : '#000000';
+    const buttonTextColor = isGalcode ? '#111827' : '#ffffff';
 
     // 3. Forward to Brevo
     const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -176,8 +235,8 @@ Deno.serve(async (req) => {
         sender: { name: senderName, email: senderEmail },
         to: [{ email, name: userName || undefined }],
         subject: `You're invited to our ${eventName}!`,
-        htmlContent: inviteEmailHtml({ userName, eventName, eventDate, inviteUrl, senderName, logoUrl }),
-        tags: ['chapter-invite-email'],
+        htmlContent: inviteEmailHtml({ userName, eventName, eventDate, inviteUrl, senderName, brandName, experienceName, brandColor, bannerColor, buttonColor, buttonTextColor }),
+        tags: [isResend ? 'resend invite' : isGalcode ? 'galcode-invite-email' : 'chapter-invite-email'],
       }),
     });
     const brevoBody = await brevoRes.text().catch(() => '');

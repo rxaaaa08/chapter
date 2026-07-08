@@ -250,15 +250,15 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings'>(
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'settings'>(
     () => {
       const stored = localStorage.getItem('adminTab');
       // 'affiliates' is no longer its own tab — Creators now live inside Performance.
       if (stored === 'affiliates') return 'marketers';
-      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') ?? 'people';
+      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'settings') ?? 'people';
     }
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -442,6 +442,34 @@ export default function AdminPanel() {
   // hidden/inactive events on via checkboxes).
   const [funnelSelected, setFunnelSelected] = useState<Set<string> | null>(null);
   const [funnelDropdownOpen, setFunnelDropdownOpen] = useState(false);
+  // ── Experiments tab state ──
+  // Releases come straight from feature_releases (small table, admin-strict
+  // RLS). Daily metrics come via the get_experiments_daily RPC — NOT a direct
+  // table select, which would silently truncate at PostgREST's 1000-row cap.
+  const [expReleases, setExpReleases] = useState<Array<{ id: number; released_at: string; title: string; description: string | null; area: string | null; expected_effect: string | null; source: string; commit_hash: string | null }>>([]);
+  const [expDaily, setExpDaily] = useState<Array<{ day: string; metric: string; value: number }>>([]);
+  const [expLoading, setExpLoading] = useState(false);
+  const [expMetric, setExpMetric] = useState('form_completion');
+  const [expGranularity, setExpGranularity] = useState<'daily' | 'weekly'>('weekly');
+  const [expCompareReleaseId, setExpCompareReleaseId] = useState<number | null>(null);
+  const [expCompareWindow, setExpCompareWindow] = useState(14);
+  // null = form closed; id null = adding a new release, id set = editing.
+  const [expRelForm, setExpRelForm] = useState<{ id: number | null; released_at: string; title: string; area: string; description: string; expected_effect: string } | null>(null);
+  const [expRelSaving, setExpRelSaving] = useState(false);
+  // '' = all events pooled site-wide; otherwise an events.id — scopes both the
+  // trend chart and the Before/After card to that one event.
+  const [expEventId, setExpEventId] = useState<string>('');
+  // Which releases draw markers on the trend chart. null = all of them; a Set
+  // = only those ids (funnelSelected-style, so the chart stays readable as the
+  // log grows). The Before/After picker is unaffected — every release stays
+  // selectable there.
+  const [expChartReleases, setExpChartReleases] = useState<Set<number> | null>(null);
+  // ── Test-data purger (scan → retype number → delete) ──
+  const [purgePhone, setPurgePhone] = useState('');
+  const [purgeScan, setPurgeScan] = useState<any | null>(null);
+  const [purgeConfirm, setPurgeConfirm] = useState('');
+  const [purgeBusy, setPurgeBusy] = useState(false);
+  const [purgeResult, setPurgeResult] = useState<any | null>(null);
   const [applications, setApplications] = useState<any[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
@@ -453,6 +481,7 @@ export default function AdminPanel() {
   const [applicationsMarketerFilter, setApplicationsMarketerFilter] = useState<'all' | string>('all');
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
+  const [resendingDetailsId, setResendingDetailsId] = useState<string | null>(null);
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
   const [callNotesEdits, setCallNotesEdits] = useState<Record<string, string>>({});
   const [savingCallId, setSavingCallId] = useState<string | null>(null);
@@ -1014,6 +1043,98 @@ export default function AdminPanel() {
     showToast(patch.status ? '✓ Date updated · moved off waitlist' : '✓ Date updated');
   };
 
+  const getFreshAdminAccessToken = async () => {
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+    const accessToken = refreshData.session?.access_token;
+    if (refreshError || !accessToken) return null;
+
+    const { error: userError } = await supabase.auth.getUser(accessToken);
+    if (userError) return null;
+
+    return accessToken;
+  };
+
+  const formatInviteEmailDate = (iso?: string | null) => {
+    if (!iso) return '';
+    const d = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return '';
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+    const month = d.toLocaleDateString('en-US', { month: 'long' });
+    const day = d.getDate();
+    const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
+    return `${dayName}, ${month} ${day}${suffix}`;
+  };
+
+  const resendInviteDetails = async (id: string) => {
+    const app = applications.find(a => a.id === id);
+    if (!app) return;
+    if (!(app.status === 'invited' && app.re_target && !app.cart_abandoned)) {
+      showToast('Resend details is only available for Re-Target leads.');
+      return;
+    }
+    if (!String(callNotesEdits[id] ?? app.call_notes ?? '').trim()) {
+      showToast('Select an option above.');
+      return;
+    }
+    const email = String(app.email ?? '').trim();
+    if (!email) {
+      showToast('No email on this lead.');
+      return;
+    }
+
+    setResendingDetailsId(id);
+    const adminAccessToken = await getFreshAdminAccessToken();
+    if (!adminAccessToken) {
+      showToast('⚠️ Admin session expired. Please log in again, then resend.');
+      setResendingDetailsId(null);
+      return;
+    }
+
+    const appSlugLower = String(app.event_slug ?? '').toLowerCase();
+    const trip = trips.find(t => String(t.slug ?? t.id ?? '').toLowerCase() === appSlugLower);
+    const eventName = trip?.title ?? app.event_slug ?? '';
+    const eventDate = formatInviteEmailDate((app.selected_date as string) || trip?.event_dates?.[0]?.start_date || '');
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-brevo-invite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminAccessToken}`,
+        },
+        body: JSON.stringify({
+          email,
+          userName: app.name ?? '',
+          eventName,
+          eventDate,
+          mode: 'resend',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        showToast(`❌ Resend failed${json.error ? ` — ${String(json.error).slice(0, 120)}` : ''}`);
+      } else {
+        const sentAt = new Date().toISOString();
+        const { data: patchedApp } = await supabase
+          .from('applications')
+          .update({ resend_details_email_sent_at: sentAt })
+          .eq('id', id)
+          .select('*')
+          .maybeSingle();
+        setApplications(prev => prev.map(a => a.id === id ? { ...a, resend_details_email_sent_at: sentAt, ...(patchedApp ?? {}) } : a));
+        logAdminAction('resend_invite_details_email', 'applications', id, {
+          event_slug: app.event_slug ?? null,
+          email_tail: email.slice(-8),
+        });
+        showToast('✅ Invite details resent. Ask them to check spam too.');
+      }
+    } catch {
+      showToast('❌ Resend failed (network error)');
+    } finally {
+      setResendingDetailsId(null);
+    }
+  };
+
   const approveApplication = async (id: string) => {
     setApprovingId(id);
     const app = applications.find(a => a.id === id);
@@ -1024,6 +1145,13 @@ export default function AdminPanel() {
     // 'invited' after a doubt/approve action.
     if (app?.status === 'advance_paid' || app?.status === 'fully_paid') {
       showToast('⚠️ Already paid — not re-inviting');
+      setApprovingId(null);
+      return;
+    }
+
+    const adminAccessToken = await getFreshAdminAccessToken();
+    if (!adminAccessToken) {
+      showToast('⚠️ Admin session expired. Please log in again, then approve.');
       setApprovingId(null);
       return;
     }
@@ -1063,15 +1191,7 @@ export default function AdminPanel() {
       // event date if their selection is missing. (Was always event_dates[0],
       // so multi-date events sent the wrong date in the invite.)
       const firstDate = (app.selected_date as string) || trip?.event_dates?.[0]?.start_date || '';
-      const eventDate = (() => {
-        if (!firstDate) return '';
-        const d = new Date(firstDate + 'T00:00:00');
-        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
-        const month = d.toLocaleDateString('en-US', { month: 'long' });
-        const day = d.getDate();
-        const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
-        return `${dayName}, ${month} ${day}${suffix}`;
-      })();
+      const eventDate = formatInviteEmailDate(firstDate);
       const phone = '91' + String(app.phone).replace(/\D/g, '').slice(-10);
 
       // Add phone to invited_numbers so the /invite flow works
@@ -1094,12 +1214,11 @@ export default function AdminPanel() {
         // visitor's browser. It now lives in the AISENSY_API_KEY secret on
         // the send-aisensy-invite edge function, which verifies the caller
         // is an admin before forwarding to AiSensy.
-        const { data: { session } } = await supabase.auth.getSession();
         const aiRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-aisensy-invite`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token ?? ''}`,
+            'Authorization': `Bearer ${adminAccessToken}`,
           },
           body: JSON.stringify({
             phone: phone.replace(/^91/, ''),
@@ -1200,6 +1319,13 @@ export default function AdminPanel() {
 
     setApprovingDoubtId(submission.id);
 
+    const adminAccessToken = await getFreshAdminAccessToken();
+    if (!adminAccessToken) {
+      showToast('⚠️ Admin session expired. Please log in again, then approve.');
+      setApprovingDoubtId(null);
+      return;
+    }
+
     // 1. Create the application row (status invited). On a unique-key clash
     //    (event_slug, phone) the person already applied — just flip that row to
     //    invited rather than clobbering their real application data.
@@ -1283,10 +1409,9 @@ export default function AdminPanel() {
 
     let ok = false; let errReason = '';
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const aiRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-aisensy-invite`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminAccessToken}` },
         body: JSON.stringify({ phone: phone10, userName: submission.name ?? '', eventName, eventDate, eventSlug: slug }),
       });
       const aiJson = await aiRes.json().catch(() => ({}));
@@ -1327,6 +1452,21 @@ export default function AdminPanel() {
       showToast('✅ Saved');
     }
     setSavingCallId(null);
+  };
+
+  const updateUserStatus = async (id: string, value: string) => {
+    setCallNotesEdits(prev => ({ ...prev, [id]: value }));
+    setApplications(prev => prev.map(a => a.id === id ? { ...a, call_notes: value } : a));
+    const { error } = await supabase
+      .from('applications')
+      .update({ call_notes: value })
+      .eq('id', id);
+    if (error) {
+      showToast(`❌ ${error.message}`);
+      const current = applications.find(a => a.id === id)?.call_notes ?? '';
+      setCallNotesEdits(prev => ({ ...prev, [id]: current }));
+      setApplications(prev => prev.map(a => a.id === id ? { ...a, call_notes: current } : a));
+    }
   };
 
 
@@ -1613,6 +1753,79 @@ export default function AdminPanel() {
       }
     } catch (_) { /* silent — non-critical */ }
     setAnalyticsLoading(false);
+  };
+
+  const loadExperiments = async (eventId: string = expEventId) => {
+    setExpLoading(true);
+    const [relRes, dailyRes] = await Promise.all([
+      supabase.from('feature_releases').select('*').order('released_at', { ascending: false }).order('id', { ascending: false }).limit(500),
+      supabase.rpc('get_experiments_daily', { p_event_id: eventId || null }),
+    ]);
+    if (relRes.error) {
+      showToast(`❌ Failed to load releases: ${relRes.error.message}`);
+    } else {
+      setExpReleases(relRes.data ?? []);
+    }
+    if (dailyRes.error) {
+      showToast(`❌ Failed to load daily metrics: ${dailyRes.error.message}`);
+    } else {
+      setExpDaily(Array.isArray(dailyRes.data) ? dailyRes.data : []);
+    }
+    setExpLoading(false);
+  };
+
+  const saveExpRelease = async () => {
+    if (!expRelForm || !expRelForm.title.trim() || !expRelForm.released_at) { showToast('Date and title are required'); return; }
+    setExpRelSaving(true);
+    const payload = {
+      released_at: expRelForm.released_at,
+      title: expRelForm.title.trim(),
+      area: expRelForm.area.trim() || null,
+      description: expRelForm.description.trim() || null,
+      expected_effect: expRelForm.expected_effect.trim() || null,
+    };
+    const res = expRelForm.id == null
+      ? await supabase.from('feature_releases').insert({ ...payload, source: 'manual' })
+      : await supabase.from('feature_releases').update(payload).eq('id', expRelForm.id);
+    setExpRelSaving(false);
+    if (res.error) { showToast(`❌ ${res.error.message}`); return; }
+    setExpRelForm(null);
+    showToast(expRelForm.id == null ? 'Release logged.' : 'Release updated.');
+    loadExperiments();
+  };
+
+  const deleteExpRelease = async (id: number, title: string) => {
+    if (!confirm(`Remove "${title}" from the release log?`)) return;
+    const { error } = await supabase.from('feature_releases').delete().eq('id', id);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    showToast('Release removed.');
+    loadExperiments();
+  };
+
+  // Step 1 of the purger: read-only report of everything the number touches.
+  const scanPurgePhone = async () => {
+    setPurgeBusy(true); setPurgeScan(null); setPurgeResult(null); setPurgeConfirm('');
+    const { data, error } = await supabase.rpc('scan_phone_data', { p_phone: purgePhone });
+    setPurgeBusy(false);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    setPurgeScan(data);
+  };
+
+  // Step 2: the actual delete. Requires the number to be retyped to match the
+  // scanned one — no single-click wipes.
+  const runPurgePhone = async () => {
+    if (!purgeScan?.phone) return;
+    if (purgeConfirm.replace(/\D/g, '').slice(-10) !== purgeScan.phone) {
+      showToast('The confirmation number does not match the scanned number');
+      return;
+    }
+    setPurgeBusy(true);
+    const { data, error } = await supabase.rpc('purge_phone_data', { p_phone: purgeScan.phone });
+    setPurgeBusy(false);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    setPurgeResult(data); setPurgeScan(null); setPurgeConfirm(''); setPurgePhone('');
+    showToast('🧹 Purged.');
+    loadExperiments();
   };
 
   const deleteTrip = async (id: string, title: string) => {
@@ -2013,6 +2226,7 @@ export default function AdminPanel() {
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
         {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
@@ -2484,7 +2698,6 @@ export default function AdminPanel() {
                       const selectedDate = sortedDates.length > 0
                         ? (selectedTimelineDates[trip.id!] ?? sortedDates[0]?.start_date ?? '')
                         : '';
-                      const editKey = hasMultipleDates ? `${trip.id}:${selectedDate}` : trip.id!;
                       const activeDateRow = sortedDates.find(d => d.start_date === selectedDate);
                       const perDateSteps = (activeDateRow as any)?.booking_steps as Array<{ label: string; value: string; date: string }> | undefined;
                       const isNativeApp = trip.booking_url === 'native-application';
@@ -2494,6 +2707,8 @@ export default function AdminPanel() {
                       // application step (they pay immediately): split = 4 rows, single = 3.
                       const isFixedTimeline = isNativeApp || isOpenApp;
                       const isFullPay = trip.payment_mode === 'full';
+                      const saveTimelineForDate = isFixedTimeline && !!selectedDate;
+                      const editKey = saveTimelineForDate ? `${trip.id}:${selectedDate}` : trip.id!;
                       // Single-payment native events have no remaining-balance step (4 rows).
                       const nativeDefaultSteps = isFullPay
                         ? [
@@ -2516,8 +2731,8 @@ export default function AdminPanel() {
                       // count line is hidden for open — gated on isNativeApplicationFlow).
                       const openDefaultSteps = isFullPay
                         ? [
-                            { label: 'Payment',              value: '{price}',                  date: '' },
-                            { label: "you'll receive exact", value: 'Meeting Point Details 📍',  date: '' },
+                            { label: 'settle payment',       value: '{price}',                  date: '' },
+                            { label: "you'll receive exact", value: 'Meeting Spot Details 📍',   date: '' },
                             { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
                           ]
                         : [
@@ -2540,7 +2755,7 @@ export default function AdminPanel() {
                         ];
                       const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay) ? undefined : perDateSteps;
                       const rawStepsAll: Array<{ label: string; value: string; date: string }> =
-                        timelineEdits[editKey] ?? (hasMultipleDates ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
+                        timelineEdits[editKey] ?? (saveTimelineForDate ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
                       // Single-payment events drop the remaining-balance step in the editor too,
                       // so it matches the customer timeline and won't re-save a stale balance row.
                       const rawSteps = isFullPay
@@ -2608,7 +2823,7 @@ export default function AdminPanel() {
                                   disabled={savingTimeline === trip.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    saveTimeline(trip, currentSteps, hasMultipleDates ? selectedDate : undefined, ctaEdits[trip.id!]);
+                                    saveTimeline(trip, currentSteps, saveTimelineForDate ? selectedDate : undefined, ctaEdits[trip.id!]);
                                   }}
                                 >
                                   {savingTimeline === trip.id ? 'Saving…' : 'Save'}
@@ -3032,8 +3247,8 @@ export default function AdminPanel() {
           // "Cart Abandoned" and "Re-Target" are derived display states for
           // invited applicants. cart_abandoned = bill opened, never paid.
           // re_target = AiSensy invite >= 24h ago, bill never opened (i.e.
-          // either delivery failed or they ignored it). Mutually exclusive
-          // by construction; cart_abandoned wins ties (more recent signal).
+          // either delivery failed or they ignored it). Email-open signals are
+          // shown as muted sub-labels under the main lifecycle state.
           // status itself stays 'invited' (so payment + invite-flow auth
           // keep working); we only surface it differently in this admin view.
           const displayStatus = (a: any): string => {
@@ -3054,7 +3269,6 @@ export default function AdminPanel() {
             const dateMatch   = applicationsDateFilter   === 'all' || a.selected_date === applicationsDateFilter;
             const statusMatch = applicationsStatusFilter === 'all'
               || (applicationsStatusFilter === 'has_doubt' ? (a.doubts?.length ?? 0) > 0
-                  : applicationsStatusFilter === 'recovered' ? !!a.recovered_at
                   : displayStatus(a) === applicationsStatusFilter);
             const searchMatch = !searchLower
               || String(a.name  ?? '').toLowerCase().includes(searchLower)
@@ -3137,12 +3351,80 @@ export default function AdminPanel() {
             return '#999';
           };
 
-          // "Recovered" = a paid lead who had previously been cart-abandoned
-          // (recovered_at stamped by payu-callback). Shown as a small badge on
-          // top of their paid status, not as a replacement.
-          const recoveredBadge = (a: any) => a.recovered_at ? (
-            <span style={{ marginLeft: 6, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', borderRadius: 6, padding: '2px 7px', fontSize: 10, fontWeight: 700, textTransform: 'none' }}>Recovered</span>
-          ) : null;
+          // Secondary signals shown below the main lifecycle chip. They do not
+          // replace the status or create separate status filters.
+          const secondaryStatusLabels = (a: any) => {
+            const state = displayStatus(a);
+            const mailLabel = a.cart_abandoned && a.cart_abandon_email_opened_at
+              ? 'Recovery Mail'
+              : !a.cart_abandoned && (state === 'invited' || state === 're_target') && a.email_opened_at
+              ? 'Mail'
+              : null;
+            const unsubscribedLabel = a.email_unsubscribed_at ? 'Unsubscribed' : null;
+            const recoveredLabel = a.recovered_at ? 'Recovered' : null;
+            const detailsLabel = a.resend_details_link_clicked_at || a.resend_details_email_sent_at ? 'Details' : null;
+            if (!mailLabel && !detailsLabel && !unsubscribedLabel && !recoveredLabel) return null;
+            const labels = [mailLabel, detailsLabel, recoveredLabel, unsubscribedLabel].filter(Boolean);
+            return (
+            <div style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {labels.map(label => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {label === mailLabel || (label === detailsLabel && a.resend_details_link_clicked_at) ? (
+                    <svg width="15" height="10" viewBox="0 0 17 12" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#34b7f1' }}>
+                      <path d="M1.5 6.6 4 9.1 9.2 3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M1.5 6.6 4 9.1 9.2 3.2" transform="translate(5 0)" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : label === detailsLabel ? (
+                    <svg width="15" height="10" viewBox="0 0 17 12" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#999' }}>
+                      <path d="M4 6.6 6.5 9.1 11.7 3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : label === recoveredLabel ? (
+                    <svg width="11" height="9" viewBox="0 0 16 14" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#999' }}>
+                      <path d="M12.8 5.2A4.8 4.8 0 0 0 4.2 3.4L2.8 4.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M2.8 2.1v2.7h2.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M3.2 8.8a4.8 4.8 0 0 0 8.6 1.8l1.4-1.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M13.2 11.9V9.2h-2.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <span style={{ width: 15, color: '#aaa', display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>-</span>
+                  )}
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+            );
+          };
+
+          const resendDetailsButton = (a: any) => {
+            if (displayStatus(a) !== 're_target' || !String(a.email ?? '').trim() || a.resend_details_email_sent_at) return null;
+            const busy = resendingDetailsId === a.id;
+            const hasUserStatus = !!String(callNotesEdits[a.id] ?? a.call_notes ?? '').trim();
+            return (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => resendInviteDetails(a.id)}
+                style={{
+                  marginTop: 5,
+                  background: '#fff',
+                  color: '#777',
+                  border: '1px solid #e5e5e5',
+                  borderRadius: 999,
+                  padding: '2px 7px',
+                  fontSize: 10,
+	                  fontWeight: 600,
+	                  cursor: busy ? 'not-allowed' : 'pointer',
+	                  opacity: busy ? 0.6 : hasUserStatus ? 1 : 0.45,
+	                  whiteSpace: 'nowrap',
+                }}
+              >
+                {busy ? 'Sending...' : 'Resend Details'}
+              </button>
+            );
+          };
+
+          const statusLabel = (st: string) =>
+            st.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
           const callStatusOptions = [
             { value: 'not_called',     label: 'Not Called' },
@@ -3151,6 +3433,17 @@ export default function AdminPanel() {
             { value: 'has_doubts',     label: 'Has Doubts' },
             { value: 'not_interested', label: 'Not Interested' },
             { value: 'no_answer',      label: 'No Answer' },
+          ];
+          const userStatusOptions = [
+            "Didn't Get Invite",
+            'Saw Invite, But Forgot',
+            'Needed Date/Time/Location Clarity',
+            'Needed Price/Payment Clarity',
+            'Had Safety/Trust Doubts',
+            'Wanted Friend Confirmation',
+            'Website/Payment Issue',
+            'Test',
+            'Other',
           ];
 
           const callBadgeColor = (cs: string) => {
@@ -3161,12 +3454,10 @@ export default function AdminPanel() {
             if (cs === 'no_answer')      return '#64748b';
             return '#555';
           };
-
           // Download exactly what's on screen (current mode + active filters) as a
           // CSV. Excel/Google Sheets open it directly; the BOM keeps unicode intact.
           const exportCsv = () => {
             const esc = (v: any) => `"${(v == null ? '' : String(v)).replace(/"/g, '""')}"`;
-            const prettyStatus = (st: string) => st.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
             const callLabel = (cs: string) => callStatusOptions.find(o => o.value === cs)?.label ?? cs;
 
             let cols: string[];
@@ -3180,7 +3471,7 @@ export default function AdminPanel() {
               ]);
             } else {
               cols = ['Name', 'Phone', 'Event', 'City', 'Meeting Point', 'Status', 'Call Status',
-                      'Call Notes', 'Why Join', 'Marketer', 'Applied At', 'Transaction IDs', 'Amount Paid'];
+                      'User Status', 'Why Join', 'Marketer', 'Applied At', 'Transaction IDs', 'Amount Paid'];
               rows = filteredApps.map(app => {
                 const pays = paymentsFor(app.phone, app.event_slug);
                 const txns = pays.all.map((p: any) => p.txnid).filter(Boolean).join(' | ');
@@ -3192,7 +3483,7 @@ export default function AdminPanel() {
                   app.name ?? '', app.phone ?? '',
                   titleBySlug[app.event_slug] ?? app.event_slug ?? '',
                   app.selected_city ?? '', pickupSpot,
-                  prettyStatus(displayStatus(app)), callLabel(callSt), callNt, app.why_join ?? '',
+                  statusLabel(displayStatus(app)), callLabel(callSt), callNt, app.why_join ?? '',
                   (app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id]) || '',
                   formatAdminDateTime(app.created_at), txns, amount || '',
                 ];
@@ -3243,13 +3534,12 @@ export default function AdminPanel() {
             waitlist:       filteredApps.filter(a => a.status === 'waitlist').length,
             advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
             fully_paid:   filteredApps.filter(a => a.status === 'fully_paid').length,
-            recovered:    filteredApps.filter(a => !!a.recovered_at).length,
           };
 
           // Header columns per mode
-          const headers: Record<typeof peopleMode, string[]> =
-            peopleMode === 'call'
-              ? { call: ['Name', 'Phone', 'Event', 'Call Status', 'Notes', 'Date', 'Action'], approval: [], payments: [], doubts: [] }
+	          const headers: Record<typeof peopleMode, string[]> =
+	            peopleMode === 'call'
+              ? { call: ['Name', 'Phone', 'Event', 'User Status', 'Date', 'Action'], approval: [], payments: [], doubts: [] }
               : peopleMode === 'approval'
               ? { call: [], approval: ['Plan Name', 'Why Join', 'Action'], payments: [], doubts: [] }
               : peopleMode === 'payments'
@@ -3458,7 +3748,6 @@ export default function AdminPanel() {
                   <option value="waitlist">Waitlist</option>
                   <option value="advance_paid">Advance Paid</option>
                   <option value="fully_paid">Fully Paid</option>
-                  <option value="recovered">Recovered</option>
                   <option value="has_doubt">Raised Doubt</option>
                 </select>
                 {/* Marketer filter — admin-only (ops users only ever see their own leads). */}
@@ -3659,9 +3948,7 @@ export default function AdminPanel() {
                     </thead>
                     <tbody>
                       {filteredApps.map(app => {
-                        const callSt  = callStatusEdits[app.id] ?? app.call_status ?? 'not_called';
                         const callNt  = callNotesEdits[app.id]  ?? app.call_notes  ?? '';
-                        const isDirty = callSt !== (app.call_status ?? 'not_called') || callNt !== (app.call_notes ?? '');
                         const pays = paymentsFor(app.phone, app.event_slug);
                         const eventTitle = titleBySlug[app.event_slug] ?? app.event_slug ?? '—';
                         // The date this applicant actually chose (shown muted next to the
@@ -3711,6 +3998,11 @@ export default function AdminPanel() {
                             </td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
                               <a href={`tel:${app.phone}`} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>{app.phone || '—'}</a>
+                              {adminRole === 'admin' && app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id] && (
+                                <div title={marketerNameById[app.assigned_marketer_id]} style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500 }}>
+                                  {marketerNameById[app.assigned_marketer_id].slice(0, 3)}
+                                </div>
+                              )}
                             </td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180 }} title={meetingLine ? `${eventTitle}\n${meetingLine}` : eventTitle}>
                               <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eventTitle}</div>
@@ -3722,10 +4014,26 @@ export default function AdminPanel() {
                                     <select
                                       value={app.selected_date ?? ''}
                                       disabled={savingDateId === app.id}
-                                      onChange={e => updateApplicationDate(app.id, e.target.value)}
-                                      title="Move this applicant to a different date"
-                                      style={{ fontSize: 10, color: '#444', fontWeight: 600, background: '#f3f3f3', border: '1px solid #e0e0e0', borderRadius: 5, padding: '1px 4px', cursor: savingDateId === app.id ? 'wait' : 'pointer', maxWidth: 120 }}
-                                    >
+	                                      onChange={e => updateApplicationDate(app.id, e.target.value)}
+	                                      title="Move this applicant to a different date"
+	                                      style={{
+	                                        appearance: 'none',
+	                                        WebkitAppearance: 'none',
+	                                        fontSize: 10,
+	                                        color: '#444',
+	                                        fontWeight: 600,
+	                                        backgroundColor: '#f5f5f5',
+	                                        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%278%27 height=%275%27 viewBox=%270 0 10 6%27%3E%3Cpath fill=%27%23555%27 d=%27M1 0l4 4 4-4 1 1-5 5-5-5z%27/%3E%3C/svg%3E")',
+	                                        backgroundRepeat: 'no-repeat',
+	                                        backgroundPosition: 'right 6px center',
+	                                        backgroundSize: '8px 5px',
+	                                        border: 'none',
+	                                        borderRadius: 99,
+	                                        padding: '2px 20px 2px 8px',
+	                                        cursor: savingDateId === app.id ? 'wait' : 'pointer',
+	                                        maxWidth: 120,
+	                                      }}
+	                                    >
                                       {!app.selected_date && <option value="" disabled>Pick date</option>}
                                       {eventDates.map(d => (
                                         <option key={d.date} value={d.date}>{fmtShortDate(d.date)}{d.status === 'sold_out' ? ' (sold out)' : ''}</option>
@@ -3734,21 +4042,6 @@ export default function AdminPanel() {
                                   ) : eventDateText ? (
                                     <span style={{ color: '#aaa' }}>{eventDateText}</span>
                                   ) : null}
-                                </div>
-                              )}
-                            </td>
-                            <td style={{ padding: '11px 12px', width: 110 }}>
-                              <select
-                                value={callSt}
-                                onChange={e => setCallStatusEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
-                                style={{ background: callBadgeColor(callSt) + '22', color: callBadgeColor(callSt), border: `1px solid ${callBadgeColor(callSt)}44`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer', fontWeight: 600, width: '100%' }}
-                              >
-                                {callStatusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                              </select>
-                              {/* Admin-only: which marketer owns this lead (first 3 letters). */}
-                              {adminRole === 'admin' && app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id] && (
-                                <div title={marketerNameById[app.assigned_marketer_id]} style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500 }}>
-                                  {marketerNameById[app.assigned_marketer_id].slice(0, 3)}
                                 </div>
                               )}
                             </td>
@@ -3766,34 +4059,53 @@ export default function AdminPanel() {
                                   )}
                                 </div>
                               )}
-                              <input
-                                type="text"
-                                placeholder="Call notes…"
-                                value={callNt}
-                                onChange={e => setCallNotesEdits(prev => ({ ...prev, [app.id]: e.target.value }))}
-                                style={{ background: '#fff', color: '#333', border: '1.5px solid #e0e0e0', borderRadius: 6, padding: '5px 9px', fontSize: 12, width: '100%', outline: 'none' }}
-                              />
+	                              <select
+	                                value={callNt}
+			                                onChange={e => updateUserStatus(app.id, e.target.value)}
+			                                style={{
+				                                  appearance: 'none',
+				                                  WebkitAppearance: 'none',
+				                                  backgroundColor: '#f5f5f5',
+				                                  backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%276%27 viewBox=%270 0 10 6%27%3E%3Cpath fill=%27%23555%27 d=%27M1 0l4 4 4-4 1 1-5 5-5-5z%27/%3E%3C/svg%3E")',
+				                                  backgroundRepeat: 'no-repeat',
+				                                  backgroundPosition: 'right 8px center',
+					                                  backgroundSize: '10px 6px',
+					                                  color: '#555',
+					                                  border: 'none',
+				                                  borderRadius: 99,
+			                                  padding: '4px 24px 4px 8px',
+		                                  fontSize: 12,
+		                                  width: '100%',
+		                                  outline: 'none',
+		                                  cursor: 'pointer',
+		                                  fontWeight: 600,
+		                                }}
+	                              >
+		                                <option value=""></option>
+	                                {callNt && !userStatusOptions.includes(callNt) && <option value={callNt}>{callNt}</option>}
+	                                {userStatusOptions.map(option => (
+	                                  <option key={option} value={option}>{option}</option>
+	                                ))}
+	                              </select>
+	                              {resendDetailsButton(app)}
                             </td>
                             <td style={{ padding: '11px 12px', color: '#888', whiteSpace: 'nowrap', fontSize: 10, width: 90 }}>{formatAdminDateTime(app.created_at)}</td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
-                              {isDirty ? (
-                                <button
-                                  disabled={savingCallId === app.id}
-                                  onClick={() => saveCallInfo(app.id)}
-                                  style={{ background: '#111', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: savingCallId === app.id ? 'not-allowed' : 'pointer', opacity: savingCallId === app.id ? 0.6 : 1, fontWeight: 600 }}
-                                >
-                                  {savingCallId === app.id ? 'Saving…' : 'Save'}
-                                </button>
-                              ) : (app.status === 'pending' && !openEventSlugs.has(app.event_slug)) ? (
+                              {((app.status === 'pending' || (app.status === 'invited' && app.aisensy_invite_sent === false && !app.invite_sent_at)) && !openEventSlugs.has(app.event_slug)) ? (
                                 <button
                                   disabled={approvingId === app.id}
                                   onClick={() => approveApplication(app.id)}
                                   style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: approvingId === app.id ? 'not-allowed' : 'pointer', opacity: approvingId === app.id ? 0.6 : 1, fontWeight: 600 }}
                                 >
-                                  {approvingId === app.id ? 'Sending…' : '✓ Approve'}
+                                  {approvingId === app.id ? 'Sending…' : app.status === 'invited' ? 'Resend invite' : '✓ Approve'}
                                 </button>
                               ) : (
-                                <><span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{String(displayStatus(app) ?? '').replace(/_/g, ' ')}</span>{recoveredBadge(app)}</>
+                                <>
+                                  <div>
+                                    <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'none' }}>{statusLabel(displayStatus(app))}</span>
+	                                  </div>
+	                                  {secondaryStatusLabels(app)}
+	                                </>
                               )}
                             </td>
                           </tr>
@@ -3807,21 +4119,21 @@ export default function AdminPanel() {
                               <div style={{ maxHeight: 80, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>{app.why_join || '—'}</div>
                             </td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
-                              {(app.status === 'pending' && !openEventSlugs.has(app.event_slug)) ? (
+                              {((app.status === 'pending' || (app.status === 'invited' && app.aisensy_invite_sent === false && !app.invite_sent_at)) && !openEventSlugs.has(app.event_slug)) ? (
                                 <button
                                   disabled={approvingId === app.id}
                                   onClick={() => approveApplication(app.id)}
                                   style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 13, cursor: approvingId === app.id ? 'not-allowed' : 'pointer', opacity: approvingId === app.id ? 0.6 : 1, fontWeight: 700 }}
                                 >
-                                  {approvingId === app.id ? 'Sending…' : '✓ Approve'}
+                                  {approvingId === app.id ? 'Sending…' : app.status === 'invited' ? 'Resend invite' : '✓ Approve'}
                                 </button>
                               ) : (
                                 <>
-                                  <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'capitalize' }}>
-                                    ✓ {String(displayStatus(app) ?? '').replace(/_/g, ' ')}
-                                  </span>
-                                  {recoveredBadge(app)}
-                                </>
+                                  <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'none' }}>
+                                    ✓ {statusLabel(displayStatus(app))}
+	                                  </span>
+	                                  {secondaryStatusLabels(app)}
+	                                </>
                               )}
                             </td>
                           </tr>
@@ -3833,11 +4145,11 @@ export default function AdminPanel() {
                             <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>{app.name || '—'}</td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
-                              <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize' }}>
-                                {String(displayStatus(app) ?? 'pending').replace(/_/g, ' ')}
-                              </span>
-                              {recoveredBadge(app)}
-                            </td>
+                              <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'none' }}>
+                                {statusLabel(displayStatus(app) ?? 'pending')}
+	                              </span>
+	                              {secondaryStatusLabels(app)}
+	                            </td>
                             <td style={{ padding: '11px 12px', fontSize: 11, color: '#888', maxWidth: 200 }}>
                               {pays.all.length === 0 ? (
                                 <span style={{ color: '#bbb' }}>—</span>
@@ -3874,7 +4186,6 @@ export default function AdminPanel() {
                   {counts.waitlist       > 0 && <span style={{ color: statusColor('waitlist')       }}>waitlist: <b>{counts.waitlist}</b></span>}
                   {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
                   {counts.fully_paid   > 0 && <span style={{ color: statusColor('fully_paid')   }}>fully paid: <b>{counts.fully_paid}</b></span>}
-                  {counts.recovered    > 0 && <span style={{ color: '#059669' }}>recovered: <b>{counts.recovered}</b></span>}
                 </div>
               )}
             </div>
@@ -5397,6 +5708,482 @@ export default function AdminPanel() {
               Sign-ups = people who gave their details / started a booking via their link — for invite events they submitted the application form, for open events they reached checkout; neither has paid yet (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
             </div>
           </div>
+          );
+        })()}
+
+        {/* ── EXPERIMENTS TAB ──────────────────────────────────────────────── */}
+        {tab === 'experiments' && (() => {
+          // Site-wide metrics, pooled across events per day by the RPC. Ratio
+          // metrics recompute from summed numerator/denominator per bucket —
+          // never by averaging daily percentages (small days would distort).
+          const METRICS: Record<string, { label: string; kind: 'ratio' | 'count'; num: string; den?: string }> = {
+            form_completion:    { label: 'Form completion % (submitted ÷ started)', kind: 'ratio', num: 'application_submitted', den: 'application_started' },
+            pricing_conversion: { label: 'Pricing → CTA conversion %',              kind: 'ratio', num: 'converted_any',         den: 'reached_pricing' },
+            // Rough ratio, not a matched cohort: a payment today may belong to an
+            // invite sent days earlier. Good for trend direction, not exact rates.
+            invite_to_payment:  { label: 'Payments ÷ invites sent %',               kind: 'ratio', num: 'payments_success',      den: 'invites_sent' },
+            date_pick:          { label: 'Calendar → date picked %',                kind: 'ratio', num: 'date_selected',         den: 'calendar_opened' },
+            visitors:           { label: 'Visitors',                                kind: 'count', num: 'visitors' },
+            application_started:{ label: 'Form starts',                             kind: 'count', num: 'application_started' },
+            application_submitted:{ label: 'Form submits',                          kind: 'count', num: 'application_submitted' },
+            apps_created:       { label: 'Applications created',                    kind: 'count', num: 'apps_created' },
+            payments_success:   { label: 'Successful payments',                     kind: 'count', num: 'payments_success' },
+          };
+          const metricDef = METRICS[expMetric] ?? METRICS.form_completion;
+          const denLabel = metricDef.den === 'application_started' ? 'starts' : metricDef.den === 'invites_sent' ? 'invites' : 'sessions';
+
+          const byMetric: Record<string, Record<string, number>> = {};
+          expDaily.forEach(r => { (byMetric[r.metric] = byMetric[r.metric] || {})[r.day] = r.value; });
+          const allDays: string[] = Array.from(new Set<string>(expDaily.map(r => r.day))).sort();
+          const firstDataDay = allDays[0];
+
+          const addDays = (iso: string, n: number) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+          const fmtDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+          const weekStart = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow); return d.toISOString().slice(0, 10); };
+          const bucketOf = (day: string) => expGranularity === 'daily' ? day : weekStart(day);
+
+          // Chart window: last 8 weeks daily, everything (capped 26 weeks) weekly.
+          const todayIso = new Date().toISOString().slice(0, 10);
+          const cutoff = expGranularity === 'daily' ? addDays(todayIso, -56) : addDays(todayIso, -182);
+          const chartDays = allDays.filter(d => d >= cutoff);
+          const bucketKeys = Array.from(new Set(chartDays.map(bucketOf))).sort();
+          const daysInBucket: Record<string, string[]> = {};
+          chartDays.forEach(d => { const b = bucketOf(d); (daysInBucket[b] = daysInBucket[b] || []).push(d); });
+          const sumIn = (metric: string, bucket: string) => (daysInBucket[bucket] || []).reduce((s, d) => s + (byMetric[metric]?.[d] ?? 0), 0);
+          const points = bucketKeys.map(b => {
+            const num = sumIn(metricDef.num, b);
+            if (metricDef.kind === 'count') return { b, val: num as number | null, n: num };
+            const den = sumIn(metricDef.den!, b);
+            return { b, val: den > 0 ? (num / den) * 100 : null, n: den };
+          });
+
+          // SVG line chart geometry
+          const W = 860, H = 250, PL = 46, PR = 14, PT = 30, PB = 36;
+          const plotW = W - PL - PR, plotH = H - PT - PB;
+          const vals = points.map(p => p.val).filter((v): v is number => v != null);
+          const yMax = vals.length === 0 ? 100 : metricDef.kind === 'ratio'
+            ? Math.min(100, Math.max(20, Math.ceil((Math.max(...vals) + 8) / 10) * 10))
+            : Math.max(...vals) * 1.15 || 10;
+          const xAt = (i: number) => PL + (points.length <= 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+          const yAt = (v: number) => PT + plotH - (v / yMax) * plotH;
+          const linePath = points.map((p, i) => (p.val == null ? null : `${xAt(i).toFixed(1)},${yAt(p.val).toFixed(1)}`)).filter(Boolean).join(' ');
+          const xLabelEvery = Math.max(1, Math.ceil(points.length / 7));
+          const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => yMax * f);
+
+          // Release markers: linear date interpolation across the x-range.
+          const t0 = bucketKeys.length ? new Date(bucketKeys[0]).getTime() : 0;
+          const tEnd = bucketKeys.length ? new Date(bucketKeys[bucketKeys.length - 1]).getTime() : 0;
+          const markerX = (iso: string): number | null => {
+            if (tEnd <= t0) return null;
+            const t = new Date(iso).getTime();
+            if (t < t0 || t > tEnd + (expGranularity === 'weekly' ? 6 : 0) * 86400000) return null;
+            return PL + Math.min(1, (t - t0) / (tEnd - t0)) * plotW;
+          };
+          const chartSelected: Set<number> = expChartReleases ?? new Set(expReleases.map(r => r.id));
+          const toggleChartRelease = (id: number) => {
+            const base = new Set(expChartReleases ?? expReleases.map(r => r.id));
+            if (base.has(id)) base.delete(id); else base.add(id);
+            setExpChartReleases(base);
+          };
+          const visibleReleases = [...expReleases]
+            .filter(r => markerX(r.released_at) != null && chartSelected.has(r.id))
+            .sort((a, b) => a.released_at.localeCompare(b.released_at));
+          // Releases in the chart's date range but unticked — surfaced as a count
+          // so a hidden marker never looks like a bug.
+          const hiddenInRange = expReleases.filter(r => markerX(r.released_at) != null && !chartSelected.has(r.id)).length;
+          // Same-day releases share one x — fan their numbered badges out
+          // horizontally so none of them hides another (the Jul 5 email +
+          // single-payment pair made a marker "disappear" before this).
+          const markerPts = visibleReleases.map(r => ({ r, mx: markerX(r.released_at)! }));
+          const mxTotal: Record<number, number> = {};
+          markerPts.forEach(p => { const k = Math.round(p.mx); mxTotal[k] = (mxTotal[k] || 0) + 1; });
+          const mxSeen: Record<number, number> = {};
+          const badgePts = markerPts.map(p => {
+            const k = Math.round(p.mx);
+            const idx = (mxSeen[k] = (mxSeen[k] || 0) + 1) - 1;
+            return { ...p, bx: p.mx + (idx - (mxTotal[k] - 1) / 2) * 20 };
+          });
+
+          // ── Before/After math ──
+          const cmpRelease = expReleases.find(r => r.id === expCompareReleaseId) ?? expReleases[0];
+          const rangeSum = (metric: string, from: string, to: string) =>
+            allDays.filter(d => d >= from && d < to).reduce((s, d) => s + (byMetric[metric]?.[d] ?? 0), 0);
+          const normCdf = (z: number) => {
+            const t = 1 / (1 + 0.2316419 * Math.abs(z));
+            const d = 0.3989423 * Math.exp(-z * z / 2);
+            const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+            return z > 0 ? 1 - p : p;
+          };
+          let cmp: null | {
+            beforeFrom: string; afterTo: string; beforeLabel: string; afterLabel: string;
+            beforeVal: number | null; afterVal: number | null; n1: number; n2: number;
+            verdict: string; verdictColor: string; note: string | null;
+          } = null;
+          if (cmpRelease) {
+            const rel = cmpRelease.released_at;
+            const beforeFrom = addDays(rel, -expCompareWindow);
+            const afterTo = addDays(rel, expCompareWindow);
+            let note: string | null = null;
+            if (firstDataDay && beforeFrom < firstDataDay) note = `Part of the "before" window predates tracking (data starts ${fmtDay(firstDataDay)}).`;
+            if (afterTo > todayIso) note = `The "after" window is still filling (${Math.max(0, Math.round((new Date(afterTo).getTime() - new Date(todayIso).getTime()) / 86400000))} days to go).`;
+            if (metricDef.kind === 'ratio') {
+              const x1 = rangeSum(metricDef.num, beforeFrom, rel), n1 = rangeSum(metricDef.den!, beforeFrom, rel);
+              const x2 = rangeSum(metricDef.num, rel, afterTo),    n2 = rangeSum(metricDef.den!, rel, afterTo);
+              const p1 = n1 > 0 ? x1 / n1 : null, p2 = n2 > 0 ? x2 / n2 : null;
+              let verdict = 'Too early to tell — not enough data yet.';
+              let verdictColor = '#6b7280';
+              if (p1 != null && p2 != null && n1 >= 20 && n2 >= 20) {
+                const pPool = (x1 + x2) / (n1 + n2);
+                const se = Math.sqrt(pPool * (1 - pPool) * (1 / n1 + 1 / n2));
+                const z = se > 0 ? (p2 - p1) / se : 0;
+                const conf = 1 - 2 * (1 - normCdf(Math.abs(z)));
+                const up = p2 > p1;
+                if (conf >= 0.95)      { verdict = up ? 'Improved — statistically confident (95%+).' : 'Worsened — statistically confident (95%+).'; verdictColor = up ? '#16a34a' : '#dc2626'; }
+                else if (conf >= 0.8)  { verdict = up ? `Looks better — not conclusive yet (${Math.round(conf * 100)}% confident).` : `Looks worse — not conclusive yet (${Math.round(conf * 100)}% confident).`; verdictColor = '#d97706'; }
+                else                   { verdict = 'No clear change so far.'; verdictColor = '#6b7280'; }
+              }
+              cmp = {
+                beforeFrom, afterTo,
+                beforeLabel: `${n1} ${denLabel}`,
+                afterLabel: `${n2} ${denLabel}`,
+                beforeVal: p1 == null ? null : p1 * 100, afterVal: p2 == null ? null : p2 * 100,
+                n1, n2, verdict, verdictColor, note,
+              };
+            } else {
+              const daysBefore = allDays.filter(d => d >= beforeFrom && d < rel).length || 1;
+              const daysAfter  = allDays.filter(d => d >= rel && d < afterTo).length || 1;
+              const s1 = rangeSum(metricDef.num, beforeFrom, rel) / daysBefore;
+              const s2 = rangeSum(metricDef.num, rel, afterTo) / daysAfter;
+              const changePct = s1 > 0 ? Math.round(((s2 - s1) / s1) * 100) : null;
+              cmp = {
+                beforeFrom, afterTo, beforeLabel: 'daily average', afterLabel: 'daily average',
+                beforeVal: s1, afterVal: s2, n1: daysBefore, n2: daysAfter,
+                verdict: changePct == null ? 'No baseline data.' : `${changePct >= 0 ? 'Up' : 'Down'} ${Math.abs(changePct)}% vs before (raw counts — traffic swings affect this; judgement needed).`,
+                verdictColor: changePct == null ? '#6b7280' : changePct >= 0 ? '#16a34a' : '#dc2626',
+                note,
+              };
+            }
+          }
+
+          const fmtVal = (v: number | null) => v == null ? '—' : metricDef.kind === 'ratio' ? `${Math.round(v)}%` : `${Math.round(v * 10) / 10}`;
+          const areaColor = (a: string | null) => a === 'form' ? '#7c3aed' : a === 'email' ? '#2563eb' : a === 'open-flow' ? '#0d9488' : a === 'payment' ? '#d97706' : '#6b7280';
+          const emptyRelForm = { id: null as number | null, released_at: new Date().toISOString().slice(0, 10), title: '', area: '', description: '', expected_effect: '' };
+
+          return (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 700, fontSize: 20, flex: 1, minWidth: 140 }}>Experiments</div>
+                <select
+                  value={expEventId}
+                  onChange={e => { setExpEventId(e.target.value); loadExperiments(e.target.value); }}
+                  style={{ ...s.input, width: 'auto', maxWidth: 280, fontSize: 13, fontWeight: 600, padding: '7px 10px' }}
+                >
+                  <option value="">All events (site-wide)</option>
+                  {[...trips]
+                    .sort((a, b) => (a.is_active === b.is_active) ? (a.title || '').localeCompare(b.title || '') : (a.is_active ? -1 : 1))
+                    .map(t => <option key={t.id as string} value={t.id as string}>{t.title}{t.is_active ? '' : ' (inactive)'}</option>)}
+                </select>
+                <button style={{ ...s.btn('#111'), fontSize: 12, padding: '6px 16px' }} onClick={() => loadExperiments()} disabled={expLoading}>
+                  {expLoading ? 'Loading…' : '↻ Refresh'}
+                </button>
+              </div>
+              {expEventId !== '' && (
+                <div style={{ fontSize: 12, color: '#a08050', marginBottom: 14 }}>
+                  Showing <b>{trips.find(t => (t.id as string) === expEventId)?.title ?? 'selected event'}</b> only. Visitors and pageviews are tracked site-wide, so those two show no data while an event is selected.
+                </div>
+              )}
+              <div style={{ marginBottom: 12 }} />
+              {expLoading && expDaily.length === 0 && <div style={{ color: '#aaa', fontSize: 14 }}>Fetching data…</div>}
+
+              {/* ── Metric trend with release markers ── */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 180 }}>Metric trend</div>
+                  <select value={expMetric} onChange={e => setExpMetric(e.target.value)} style={{ ...s.input, width: 'auto', fontSize: 13, fontWeight: 600, padding: '7px 10px' }}>
+                    {Object.entries(METRICS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                  <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #e5e5e5' }}>
+                    {(['weekly', 'daily'] as const).map(g => (
+                      <button key={g} onClick={() => setExpGranularity(g)}
+                        style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: expGranularity === g ? '#111' : '#fff', color: expGranularity === g ? '#fff' : '#666' }}>
+                        {g === 'weekly' ? 'Weekly' : 'Daily'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {points.length === 0 ? (
+                  <div style={{ color: '#aaa', fontSize: 13, padding: '24px 0' }}>No snapshot data in this window yet.</div>
+                ) : (
+                  <>
+                    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+                      {yTicks.map((v, i) => (
+                        <g key={i}>
+                          <line x1={PL} x2={W - PR} y1={yAt(v)} y2={yAt(v)} stroke="#f0f0eb" strokeWidth={1} />
+                          <text x={PL - 8} y={yAt(v) + 4} textAnchor="end" fontSize={11} fill="#999">{metricDef.kind === 'ratio' ? `${Math.round(v)}%` : Math.round(v)}</text>
+                        </g>
+                      ))}
+                      {badgePts.map((p, i) => (
+                        <g key={p.r.id}>
+                          <title>{`${fmtDay(p.r.released_at)} — ${p.r.title}`}</title>
+                          <line x1={p.mx} x2={p.mx} y1={PT - 4} y2={PT + plotH} stroke="#dc6b3c" strokeWidth={1.5} strokeDasharray="5 4" />
+                          <circle cx={p.bx} cy={PT - 12} r={9} fill="#dc6b3c" />
+                          <text x={p.bx} y={PT - 8} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{i + 1}</text>
+                        </g>
+                      ))}
+                      {linePath && <polyline points={linePath} fill="none" stroke="#4f46e5" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />}
+                      {points.map((p, i) => p.val == null ? null : (
+                        <circle key={p.b} cx={xAt(i)} cy={yAt(p.val)} r={3.5} fill="#4f46e5">
+                          <title>{`${expGranularity === 'weekly' ? 'Week of ' : ''}${fmtDay(p.b)}: ${fmtVal(p.val)}${metricDef.kind === 'ratio' ? ` (${p.n} ${denLabel})` : ''}`}</title>
+                        </circle>
+                      ))}
+                      {points.map((p, i) => i % xLabelEvery !== 0 ? null : (
+                        <text key={p.b} x={xAt(i)} y={H - 12} textAnchor="middle" fontSize={11} fill="#999">{fmtDay(p.b)}</text>
+                      ))}
+                    </svg>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 10, alignItems: 'center' }}>
+                      {visibleReleases.map((r, i) => (
+                        <div key={r.id} style={{ fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 17, height: 17, borderRadius: 99, background: '#dc6b3c', color: '#fff', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+                          {fmtDay(r.released_at)} — {r.title}
+                          <button title="Hide this marker" onClick={() => toggleChartRelease(r.id)}
+                            style={{ border: 'none', background: 'transparent', color: '#bbb', cursor: 'pointer', fontSize: 12, padding: '0 2px', lineHeight: 1 }}>✕</button>
+                        </div>
+                      ))}
+                      {hiddenInRange > 0 && (
+                        <div style={{ fontSize: 12, color: '#aaa' }}>
+                          {hiddenInRange} marker{hiddenInRange > 1 ? 's' : ''} hidden
+                          <button onClick={() => setExpChartReleases(null)}
+                            style={{ border: 'none', background: 'transparent', color: '#4f46e5', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: '0 4px' }}>show all</button>
+                        </div>
+                      )}
+                      {visibleReleases.length > 1 && (
+                        <button onClick={() => setExpChartReleases(new Set())}
+                          style={{ border: 'none', background: 'transparent', color: '#aaa', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}>hide all</button>
+                      )}
+                    </div>
+                    {metricDef.kind === 'ratio' && (
+                      <div style={{ fontSize: 11, color: '#bbb', marginTop: 8 }}>
+                        Hover a dot for the sample size behind it — points built on a handful of sessions swing wildly and mean little.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* ── Before / After ── */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 140 }}>Before / after a release</div>
+                  <select value={cmpRelease?.id ?? ''} onChange={e => setExpCompareReleaseId(Number(e.target.value))} style={{ ...s.input, width: 'auto', maxWidth: 340, fontSize: 13, padding: '7px 10px' }}>
+                    {expReleases.map(r => <option key={r.id} value={r.id}>{fmtDay(r.released_at)} — {r.title}</option>)}
+                  </select>
+                  <select value={expCompareWindow} onChange={e => setExpCompareWindow(Number(e.target.value))} style={{ ...s.input, width: 'auto', fontSize: 13, padding: '7px 10px' }}>
+                    <option value={7}>7 days each side</option>
+                    <option value={14}>14 days each side</option>
+                    <option value={28}>28 days each side</option>
+                  </select>
+                </div>
+                {!cmpRelease || !cmp ? (
+                  <div style={{ color: '#aaa', fontSize: 13 }}>Log a release to compare around it.</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
+                      <div style={{ flex: 1, minWidth: 150, background: '#fafaf7', borderRadius: 10, padding: '14px 18px' }}>
+                        <div style={{ fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 4 }}>BEFORE · {fmtDay(cmp.beforeFrom)} → {fmtDay(cmpRelease.released_at)}</div>
+                        <div style={{ fontSize: 26, fontWeight: 800 }}>{fmtVal(cmp.beforeVal)}</div>
+                        <div style={{ fontSize: 11, color: '#aaa' }}>{cmp.beforeLabel}</div>
+                      </div>
+                      <div style={{ alignSelf: 'center', color: '#ccc', fontSize: 20 }}>→</div>
+                      <div style={{ flex: 1, minWidth: 150, background: '#fafaf7', borderRadius: 10, padding: '14px 18px' }}>
+                        <div style={{ fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 4 }}>AFTER · {fmtDay(cmpRelease.released_at)} → {fmtDay(cmp.afterTo)}</div>
+                        <div style={{ fontSize: 26, fontWeight: 800 }}>{fmtVal(cmp.afterVal)}</div>
+                        <div style={{ fontSize: 11, color: '#aaa' }}>{cmp.afterLabel}</div>
+                      </div>
+                      <div style={{ flex: 1.4, minWidth: 220, borderRadius: 10, padding: '14px 18px', border: `1.5px solid ${cmp.verdictColor}22`, background: `${cmp.verdictColor}0d` }}>
+                        <div style={{ fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 4 }}>VERDICT · {metricDef.label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: cmp.verdictColor, lineHeight: 1.45 }}>{cmp.verdict}</div>
+                        {cmp.note && <div style={{ fontSize: 11, color: '#a08050', marginTop: 6 }}>⚠ {cmp.note}</div>}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#bbb', marginTop: 10, lineHeight: 1.5 }}>
+                      Other releases inside these windows also affect the numbers — check the release log for overlaps before crediting (or blaming) this one change.
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* ── Release log ── */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>Release log</div>
+                  {!expRelForm && <button style={{ ...s.btn('#111'), fontSize: 12, padding: '6px 16px' }} onClick={() => setExpRelForm(emptyRelForm)}>+ Log a release</button>}
+                </div>
+
+                {expRelForm && (
+                  <div style={{ background: '#fafaf7', borderRadius: 10, padding: 16, marginBottom: 14 }}>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                      <div>
+                        <label style={s.label}>Date</label>
+                        <input type="date" style={{ ...s.input, width: 160 }} value={expRelForm.released_at} onChange={e => setExpRelForm({ ...expRelForm, released_at: e.target.value })} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 220 }}>
+                        <label style={s.label}>What shipped</label>
+                        <input style={s.input} placeholder="e.g. Shorter application form" value={expRelForm.title} onChange={e => setExpRelForm({ ...expRelForm, title: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Area</label>
+                        <input style={{ ...s.input, width: 140 }} placeholder="form / email / …" value={expRelForm.area} onChange={e => setExpRelForm({ ...expRelForm, area: e.target.value })} />
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={s.label}>Details (optional)</label>
+                      <textarea style={{ ...s.textarea, minHeight: 56 }} value={expRelForm.description} onChange={e => setExpRelForm({ ...expRelForm, description: e.target.value })} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={s.label}>What you expect it to do (optional)</label>
+                      <input style={s.input} placeholder="e.g. raise form completion" value={expRelForm.expected_effect} onChange={e => setExpRelForm({ ...expRelForm, expected_effect: e.target.value })} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={s.btn('#16a34a')} onClick={saveExpRelease} disabled={expRelSaving}>{expRelSaving ? 'Saving…' : expRelForm.id == null ? 'Save release' : 'Update release'}</button>
+                      <button style={s.outlineBtn} onClick={() => setExpRelForm(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {expReleases.length === 0 && !expLoading && <div style={{ color: '#aaa', fontSize: 13 }}>Nothing logged yet.</div>}
+                {expReleases.map(r => (
+                  <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 0', borderTop: '1px solid #f2f2ed' }}>
+                    <div style={{ fontSize: 12, color: '#999', fontWeight: 600, width: 64, flexShrink: 0, paddingTop: 2 }}>{fmtDay(r.released_at)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {r.title}
+                        {r.area && <span style={{ fontSize: 10, fontWeight: 700, color: areaColor(r.area), background: `${areaColor(r.area)}14`, padding: '2px 8px', borderRadius: 99 }}>{r.area}</span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', background: '#f2f2ed', padding: '2px 8px', borderRadius: 99 }}>{r.source === 'git' ? 'auto-logged' : r.source}</span>
+                      </div>
+                      {r.expected_effect && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Expected: {r.expected_effect}</div>}
+                      {r.description && <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>{r.description}</div>}
+                    </div>
+                    <label title="Show this release as a marker line on the trend chart" style={{ fontSize: 11, color: '#888', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', paddingTop: 6 }}>
+                      <input type="checkbox" checked={chartSelected.has(r.id)} onChange={() => toggleChartRelease(r.id)} style={{ cursor: 'pointer' }} />
+                      chart
+                    </label>
+                    <button style={{ ...s.outlineBtn, padding: '5px 12px', fontSize: 12 }} onClick={() => setExpRelForm({ id: r.id, released_at: r.released_at, title: r.title, area: r.area ?? '', description: r.description ?? '', expected_effect: r.expected_effect ?? '' })}>Edit</button>
+                    <button style={{ ...s.outlineBtn, padding: '5px 12px', fontSize: 12, color: '#dc2626', borderColor: '#f3d1d1' }} onClick={() => deleteExpRelease(r.id, r.title)}>Delete</button>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: '#bbb', marginTop: 10, lineHeight: 1.5 }}>
+                  Pushes to the live site are logged automatically once the GitHub automation is enabled; you can edit any entry to give it a friendlier title or note what you expected it to do. Daily numbers are snapshotted every morning at 8:05 IST and kept forever — they survive the 90-day analytics cleanup.
+                </div>
+              </div>
+
+              {/* ── Test-data purger ── */}
+              <div style={{ ...s.card, border: '1.5px solid #f3d1d1' }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🧹 Test-data purger</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+                  Removes every trace of a phone number — bookings, payments, invites, doubts, commission rows — and corrects the daily metrics for the affected days. Scan first; nothing is deleted until you confirm.
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    style={{ ...s.input, width: 220 }}
+                    placeholder="10-digit phone number"
+                    value={purgePhone}
+                    inputMode="numeric"
+                    onChange={e => setPurgePhone(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !purgeBusy) scanPurgePhone(); }}
+                  />
+                  <button style={s.btn('#111')} onClick={scanPurgePhone} disabled={purgeBusy || purgePhone.replace(/\D/g, '').length < 10}>
+                    {purgeBusy && !purgeScan ? 'Scanning…' : 'Scan'}
+                  </button>
+                </div>
+
+                {purgeScan && (() => {
+                  const apps: any[] = purgeScan.applications ?? [];
+                  const pays: any[] = purgeScan.payments ?? [];
+                  const mComs: any[] = purgeScan.marketer_commissions ?? [];
+                  const cComs: any[] = purgeScan.creator_commissions ?? [];
+                  const others: Record<string, number> = purgeScan.other_counts ?? {};
+                  const otherTotal = Object.values(others).reduce((a, b) => a + b, 0);
+                  const total = apps.length + pays.length + mComs.length + cComs.length + otherTotal;
+                  const successPays = pays.filter(p => String(p.status).toLowerCase() === 'success');
+                  const paidOutComs = cComs.filter(c => c.paid_out);
+                  const otherLabels: Record<string, string> = {
+                    invited_numbers: 'invite grants', invite_payment_submissions: 'manual payment submissions',
+                    doubt_submissions: 'doubts (booking)', plan_doubts: 'doubts (invite chat)',
+                    doubt_conversations: 'doubt chats', bill_opens: 'bill opens',
+                    push_subscriptions: 'push subscriptions', push_debug_logs: 'push debug logs',
+                  };
+                  return total === 0 ? (
+                    <div style={{ marginTop: 14, fontSize: 13, color: '#888' }}>Nothing found for {purgeScan.phone} — the number is already clean.</div>
+                  ) : (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Found {total} row{total > 1 ? 's' : ''} for {purgeScan.phone}:</div>
+                      {apps.map((a, i) => (
+                        <div key={`a${i}`} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
+                          📋 Application — {a.event} · {a.name} · <b>{a.status}</b> · {a.created}
+                        </div>
+                      ))}
+                      {pays.map((p, i) => {
+                        const ok = String(p.status).toLowerCase() === 'success';
+                        return (
+                          <div key={`p${i}`} style={{ fontSize: 12.5, color: ok ? '#b91c1c' : '#555', padding: '3px 0', fontWeight: ok ? 600 : 400 }}>
+                            💳 Payment — {p.event} · ₹{Number(p.amount).toLocaleString('en-IN')} · {p.status} · {p.created}
+                          </div>
+                        );
+                      })}
+                      {mComs.map((c, i) => (
+                        <div key={`m${i}`} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
+                          🧑‍💼 Marketer commission — {c.marketer ?? 'unknown'} · ₹{Number(c.amount).toLocaleString('en-IN')} · {c.accrued}
+                        </div>
+                      ))}
+                      {cComs.map((c, i) => (
+                        <div key={`c${i}`} style={{ fontSize: 12.5, color: c.paid_out ? '#b91c1c' : '#555', padding: '3px 0', fontWeight: c.paid_out ? 600 : 400 }}>
+                          🎨 Creator commission — {c.creator ?? 'unknown'} · ₹{Number(c.amount).toLocaleString('en-IN')} · {c.accrued} · {c.paid_out ? 'ALREADY PAID OUT' : 'pending'}
+                        </div>
+                      ))}
+                      {Object.entries(others).filter(([, n]) => n > 0).map(([k, n]) => (
+                        <div key={k} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
+                          🗂 {n} × {otherLabels[k] ?? k}
+                        </div>
+                      ))}
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', margin: '12px 0', fontSize: 12, color: '#991b1b', lineHeight: 1.55 }}>
+                        {successPays.length > 0 && <div><b>⚠ {successPays.length} successful payment{successPays.length > 1 ? 's' : ''}</b> — deleting removes your record of real money; it does NOT refund anything, and PayU's own dashboard will still show the transaction.</div>}
+                        {paidOutComs.length > 0 && <div><b>⚠ {paidOutComs.length} creator commission{paidOutComs.length > 1 ? 's' : ''} already paid out</b> — deleting corrects future stats but can't undo the transfer you made.</div>}
+                        <div>Deletion is permanent. This does not touch anonymous click-tracking (no phone attached) or WhatsApp/emails already sent.</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          style={{ ...s.input, width: 220 }}
+                          placeholder={`Retype ${purgeScan.phone} to confirm`}
+                          value={purgeConfirm}
+                          inputMode="numeric"
+                          onChange={e => setPurgeConfirm(e.target.value)}
+                        />
+                        <button
+                          style={{ ...s.btn('#dc2626'), opacity: purgeConfirm.replace(/\D/g, '').slice(-10) === purgeScan.phone ? 1 : 0.4 }}
+                          onClick={runPurgePhone}
+                          disabled={purgeBusy || purgeConfirm.replace(/\D/g, '').slice(-10) !== purgeScan.phone}
+                        >
+                          {purgeBusy ? 'Deleting…' : `Delete all ${total} rows`}
+                        </button>
+                        <button style={s.outlineBtn} onClick={() => { setPurgeScan(null); setPurgeConfirm(''); }}>Cancel</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {purgeResult && (
+                  <div style={{ marginTop: 14, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#166534', lineHeight: 1.6 }}>
+                    <b>Purged.</b>{' '}
+                    {Object.entries(purgeResult as Record<string, number>)
+                      .filter(([k, n]) => k !== 'resnapshotted_days' && n > 0)
+                      .map(([k, n]) => `${n} × ${k.replace(/_/g, ' ')}`)
+                      .join(' · ') || 'No rows matched.'}
+                    {Number(purgeResult.resnapshotted_days) > 0 && ` — daily metrics recalculated for ${purgeResult.resnapshotted_days} day${Number(purgeResult.resnapshotted_days) > 1 ? 's' : ''}`}.
+                    {' '}Logged in the admin audit trail.
+                  </div>
+                )}
+              </div>
+            </div>
           );
         })()}
 

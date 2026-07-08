@@ -121,10 +121,10 @@ Deno.serve(async (req) => {
     // learned to call send-brevo-invite still triggers the email through here).
     // Runs AFTER WhatsApp (the message above has already been sent, so the
     // primary channel never waits on Brevo). Best-effort — wrapped so it can
-    // never change the WhatsApp result returned below. Only chapter events have
-    // an email on file; galcode/no-email rows are skipped. send-brevo-invite
-    // stays the single source of truth for the email design — we just call it,
-    // forwarding the admin's token, then stamp email_invite_sent on the row.
+    // never change the WhatsApp result returned below. send-brevo-invite
+    // stays the single source of truth for the email design + variant selection
+    // — we just call it, forwarding the admin's token, then stamp
+    // email_invite_sent on the row.
     try {
       const slug = eventSlug
         || String((await supabase.rpc('resolve_event_slug', { p_title: eventName })).data ?? '').toLowerCase();

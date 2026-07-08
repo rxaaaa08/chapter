@@ -7,7 +7,7 @@
 // in the URL, no creator is credited (it's treated as the founder's own/official
 // link). Attribution is stamped onto the application at the decisive moment:
 // application submit for invite events, the details-form step for open events.
-import { supabase } from './supabase';
+import { supabase, getSessionId, isInAppBrowserBlocked } from './supabase';
 
 const REF_KEY = 'ca_affiliate_ref';
 
@@ -42,8 +42,15 @@ export function captureAffiliateRef(): void {
 
     // Log a click only when the active handle changes this session — avoids
     // re-counting every route change / re-render under the same link.
-    if (prev !== handle) {
-      const sid = sessionStorage.getItem('ca_session_id') ?? '';
+    // The ref itself is still stored above even inside the blocked IG/FB
+    // browser (harmless), but the click is only logged from a real browser —
+    // the blocked landing is a duplicate of the external one that follows.
+    if (prev !== handle && !isInAppBrowserBlocked()) {
+      // getSessionId() CREATES the id if absent. captureAffiliateRef runs before
+      // the first trackEvent on a fresh visit — reading sessionStorage directly
+      // here logged NULL session_ids for exactly the clicks that matter most
+      // (first landing via a creator link), breaking unique-click dedup.
+      const sid = getSessionId();
       supabase.rpc('record_affiliate_click', { p_code: handle, p_session_id: sid })
         .then(() => {}, () => {}); // fire-and-forget; never block the page
     }

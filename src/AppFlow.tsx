@@ -430,11 +430,11 @@ function ApplicationForm({
   const [step1Attempted, setStep1Attempted] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
 
-  // Chapter events collect an email (invite is delivered there); galcode keeps
-  // the gender / "confirm Female" dropdown instead.
+  // Chapter events collect email only; galcode collects email plus the
+  // gender / "confirm Female" dropdown.
   const isChapter = !event.girlsOnly;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
-  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && (isChapter ? emailValid : !!form.gender);
+  const step1Valid = form.name.trim() && /^[6-9]\d{9}$/.test(form.phone) && emailValid && (isChapter || !!form.gender);
   const step2Valid = form.whyJoin.trim();
   const formValid = step1Valid && step2Valid; // single-page form: all fields required
 
@@ -468,7 +468,7 @@ function ApplicationForm({
         // gender is NOT NULL: galcode stores the selection, chapter has no
         // gender field so it stores '' (same as the open-event form).
         gender: isChapter ? '' : form.gender,
-        email: isChapter ? (form.email.trim() || null) : null,
+        email: form.email.trim() || null,
         why_join: form.whyJoin.trim(),
         status: 'pending',
         selected_date: selectedDate ?? null,
@@ -544,7 +544,7 @@ function ApplicationForm({
     </div>
   );
 
-  /* ── Single-page form: Name, Phone, Email (chapter) / Gender (galcode), Why Join ── */
+  /* ── Single-page form: Name, Phone, Email, optional Gender (galcode), Why Join ── */
   return (
     <div className="flex-1 overflow-y-auto px-5 pt-1 pb-6 flex flex-col gap-4">
       {/* Name */}
@@ -588,25 +588,25 @@ function ApplicationForm({
         </div>
       </div>
 
-      {isChapter ? (
-        /* Email (chapter) — the invitation is delivered here */
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between px-1">
-            <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
-            {step1Attempted && !emailValid && (
-              <span className="text-[11px] text-amber-500 font-medium">Invalid Email</span>
-            )}
-          </div>
-          <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !emailValid ? 'ring-2 ring-red-500' : ''}`}>
-            <input
-              type="email" value={form.email} placeholder="You'll receive your invite here"
-              onChange={e => setForm(f => ({ ...f, email: e.target.value.slice(0, 100) }))}
-              className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
-              inputMode="email" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            />
-          </div>
+      {/* Email — the invitation is delivered here */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between px-1">
+          <label className="text-[12px] font-bold text-gray-400 uppercase tracking-wider">Email</label>
+          {step1Attempted && !emailValid && (
+            <span className="text-[11px] text-amber-500 font-medium">Invalid Email</span>
+          )}
         </div>
-      ) : (
+        <div className={`bg-[#F2F2F7] rounded-2xl px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#FFD700] transition-shadow ${step1Attempted && !emailValid ? 'ring-2 ring-red-500' : ''}`}>
+          <input
+            type="email" value={form.email} placeholder="You'll receive your invite here"
+            onChange={e => setForm(f => ({ ...f, email: e.target.value.slice(0, 100) }))}
+            className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 outline-none"
+            inputMode="email" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          />
+        </div>
+      </div>
+
+      {!isChapter && (
         /* Gender / "confirm Female" (galcode) */
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between px-1">
@@ -644,7 +644,7 @@ function ApplicationForm({
           <textarea
             value={form.whyJoin} placeholder="Tell us why this plan excites you..."
             onChange={e => setForm(f => ({ ...f, whyJoin: e.target.value.slice(0, 300) }))}
-            rows={2}
+            rows={1}
             className="w-full bg-transparent text-[15px] font-medium text-gray-900 placeholder-gray-300 outline-none resize-none leading-relaxed"
           />
         </div>
@@ -1573,7 +1573,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const handleReadyToBook = () => {
     trackEvent('book_clicked', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-    setTimeout(() => setShowBookingTimeline(true), 150);
+    setShowBookingTimeline(true);
     setShowWaitlistForm(false);
     setStep('DONE');
   };
@@ -1781,7 +1781,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     // the assign-marketer trigger no-ops — no human resources pulled in.
     if (isPayUFlow) {
       const normalizedPhone = detailsForm.phone.replace(/\D/g, '').slice(-10);
-      const chosenPoint = (selectedEvent.pickupPoints ?? []).find((p: any) => p.label === selectedMeetingPoint);
+      // journeyCardData.meetingPoint holds the pickup point's ID (the same value the
+      // invite flow passes as selectedPickupId). Match by id (with label/meetingSpot
+      // fallbacks) and store the human-readable label — previously this matched by
+      // label against an id, so pickup_label got the raw id (e.g. "pt_1783194739092")
+      // for any point beyond the first. Mirrors the invite ApplicationForm resolution.
+      const chosenPoint = (selectedEvent.pickupPoints ?? []).find((p: any) =>
+        p.id === selectedMeetingPoint || p.label === selectedMeetingPoint || p.meetingSpot === selectedMeetingPoint
+      );
       const affRef = getAffiliateRef();
       const openSlug = String(selectedEvent.id ?? '').toLowerCase();
       // Use a PLAIN insert, not an upsert. Anon/authenticated have INSERT but no
@@ -1805,8 +1812,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           why_join: '',
           status: 'pending',
           selected_date: dateStr || null,
-          pickup_point_id: chosenPoint?.id ?? null,
-          pickup_label: selectedMeetingPoint || null,
+          pickup_point_id: chosenPoint?.id ?? (selectedMeetingPoint || null),
+          pickup_label: chosenPoint?.label ?? null,
           selected_city: selectedCity ?? null,
           // Creator affiliate attribution on first insert (BEFORE INSERT trigger
           // resolves affiliate_code → affiliate_id).
@@ -1826,8 +1833,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         p_event_slug: openSlug,
         p_phone: normalizedPhone,
         p_selected_date: dateStr || null,
-        p_pickup_point_id: chosenPoint?.id ?? null,
-        p_pickup_label: selectedMeetingPoint || null,
+        p_pickup_point_id: chosenPoint?.id ?? (selectedMeetingPoint || null),
+        p_pickup_label: chosenPoint?.label ?? null,
         p_selected_city: selectedCity ?? null,
       });
       if (refreshErr) console.error('open application detail refresh failed:', refreshErr);
@@ -2306,21 +2313,39 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           />
         )}
 
+        {/* Shared modal backdrop for booking timeline → details form.
+            Keeping one mounted layer avoids the blur dipping during the handoff. */}
+        <AnimatePresence>
+          {(showBookingTimeline || showDetailsForm || paymentView === 'checkout') && (
+            <motion.div
+              key="booking-shared-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.22, ease: 'easeIn' } }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
+              onClick={() => {
+                if (showDetailsForm) {
+                  setShowDetailsForm(false);
+                  setShowBookingTimeline(true);
+                  return;
+                }
+                if (paymentView === 'checkout') {
+                  setPaymentView('idle');
+                  setShowDetailsForm(true);
+                  return;
+                }
+                setShowBookingTimeline(false);
+                if (selectedEvent) { setShowDetails(true); setShowChat(false); }
+              }}
+            />
+          )}
+        </AnimatePresence>
+
         {/* Booking Timeline Popup */}
         <AnimatePresence>
           {showBookingTimeline && selectedEvent && (
             <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.22, ease: 'easeIn' } }}
-                transition={{ duration: 0.2 }}
-                className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
-                onClick={() => {
-                  setShowBookingTimeline(false);
-                  if (selectedEvent) { setShowDetails(true); setShowChat(false); }
-                }}
-              />
               <motion.div
                 variants={{
                   hidden: { y: '100%', transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } },
@@ -2369,10 +2394,26 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const capacity = (selectedEvent as any).totalCapacity;
                         const socialProofDate = bookingDate || selectedEvent?.dates?.[0]?.date || '';
                         const perDateRegistered = dateCounts && socialProofDate ? (dateCounts[socialProofDate]?.registered ?? 0) : null;
+                        const rawPerDateReserved = dateCounts && socialProofDate
+                          ? (dateCounts[socialProofDate]?.reserved ?? reservedCount ?? 0)
+                          : reservedCount;
+                        const perDateReserved =
+                          isPayUFlow && selectedEvent.paymentMode === 'full' && (selectedEvent.dates?.length ?? 0) <= 1
+                            ? Math.max(Number(rawPerDateReserved ?? 0), Number(reservedCount ?? 0))
+                            : rawPerDateReserved;
                         const socialProofCount =
                           isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && perDateRegistered !== null
                             ? (capacity * 3) + perDateRegistered
                             : null;
+                        const openJoinedCount =
+                          isPayUFlow && selectedEvent.paymentMode === 'full' && typeof capacity === 'number' && capacity > 0 && perDateReserved !== null
+                            ? perDateReserved
+                            : null;
+                        const showOpenJoinedLabel =
+                          openJoinedCount !== null
+                          && typeof capacity === 'number'
+                          && capacity > 0
+                          && openJoinedCount / capacity >= 0.5;
 
                         const resolveValue = (v: string) => {
                           let out = (v || '')
@@ -2393,8 +2434,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             // Split (4): Advance → Balance → Meeting Point Details (+ yellow card).
                             ? (selectedEvent.paymentMode === 'full'
                                 ? [
-                                    { label: 'Payment', value: '{price}', date: '' },
-                                    { label: "you'll receive", value: 'Meeting Point Details 📍', date: '' },
+                                    { label: 'settle payment', value: '{price}', date: '' },
+                                    { label: "you'll receive exact", value: 'Meeting Spot Details 📍', date: '' },
                                   ]
                                 : [
                                     { label: 'Advance', value: '{advance}', date: '' },
@@ -2421,8 +2462,21 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         for (let i = eventSteps.length - 1; i >= 0; i--) {
                           if ((eventSteps[i].label || '').includes('{application_count}')) { socialProofIdx = i; break; }
                         }
-                        const socialProofRow = socialProofIdx >= 0 ? eventSteps[socialProofIdx] : null;
-                        const steps = (socialProofIdx >= 0 ? eventSteps.filter((_: any, i: number) => i !== socialProofIdx) : eventSteps)
+                        const displayEventSteps = isPayUFlow && selectedEvent.paymentMode === 'full'
+                          ? eventSteps.map((step: any, i: number) => {
+                              const text = `${step.label ?? ''} ${step.value ?? ''}`;
+                              if (i === 0 || /\{price\}|payment|settle/i.test(text)) {
+                                return { ...step, label: 'settle payment', value: '{price}' };
+                              }
+                              if (i === 1 || /receive|meeting/i.test(text)) {
+                                return { ...step, label: "you'll receive exact", value: 'Meeting Spot Details 📍' };
+                              }
+                              return step;
+                            })
+                          : eventSteps;
+
+                        const socialProofRow = socialProofIdx >= 0 ? displayEventSteps[socialProofIdx] : null;
+                        const steps = (socialProofIdx >= 0 ? displayEventSteps.filter((_: any, i: number) => i !== socialProofIdx) : displayEventSteps)
                           // Single-payment events have no remaining-balance step.
                           .filter((s: any) => selectedEvent.paymentMode === 'full' ? !/balance/i.test(`${s.label} ${s.value}`) : true)
                           // Drop blank rows (no label and no value) — stale/empty steps from an
@@ -2431,6 +2485,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                         const yellowTitle = socialProofRow?.value ? resolveValue(socialProofRow.value) : selectedEvent.title;
                         const yellowDateStr = (socialProofRow?.date) || bookingDate || selectedEvent.dates?.[0]?.date || '';
+                        const yellowSocialLabel = socialProofRow && socialProofCount !== null
+                          ? resolveValue(socialProofRow.label || '')
+                          : showOpenJoinedLabel
+                          ? `${openJoinedCount} ppl have already joined`
+                          : '';
 
                         return (
                           <>
@@ -2478,10 +2537,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             {/* Prize row — social-proof copy (driven by booking_steps), event title, and date */}
                             <div className="px-5 py-4 flex items-end justify-between bg-[#FFD700]/10">
                               <div>
-                                {socialProofRow && socialProofCount !== null ? (
+                                {yellowSocialLabel ? (
                                   <p className="text-[11px] text-gray-400 font-medium mb-0.5 flex items-center gap-1">
                                     <Users size={11} className="flex-shrink-0" />
-                                    {resolveValue(socialProofRow.label || '')}
+                                    {yellowSocialLabel}
                                   </p>
                                 ) : null}
                                 <p className="text-[15px] font-black text-gray-900 leading-tight">{yellowTitle}</p>
@@ -2577,28 +2636,20 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           {showDetailsForm && (
             <>
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
-                onClick={() => {
-                  setShowDetailsForm(false);
-                  setTimeout(() => setShowBookingTimeline(true), 80);
+                variants={{
+                  hidden: { y: '100%', transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } },
+                  visible: { y: 0, transition: { type: 'spring', damping: 32, stiffness: 300 } },
                 }}
-              />
-              <motion.div
-                layout
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
                 className="absolute bottom-0 left-0 right-0 z-[60] bg-white rounded-t-[2rem]"
               >
                 <button
                   type="button"
                   onClick={() => {
                     setShowDetailsForm(false);
-                    setTimeout(() => setShowBookingTimeline(true), 80);
+                    setShowBookingTimeline(true);
                   }}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 >
@@ -2749,11 +2800,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         <div className="flex items-center gap-3 select-none pt-1">
                           <div
                             onClick={() => setTcAccepted(!tcAccepted)}
-                            className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${tcAccepted ? 'bg-black border-black' : 'bg-white border-gray-300'}`}
+                            className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer ${tcAccepted ? 'bg-[#F2F2F7] border-[#F2F2F7]' : 'bg-white border-gray-400'}`}
                           >
                             {tcAccepted && (
                               <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                                <path d="M1 4L4 7L10 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <path d="M1 4L4 7L10 1" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                               </svg>
                             )}
                           </div>
@@ -2774,12 +2825,15 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           type="button"
                           disabled={!isDetailsFormValid}
                           onClick={handleProceedToPhonePe}
-                          className={`w-full py-[17px] rounded-2xl text-[17px] font-semibold transition-all inline-flex items-center justify-center gap-2 ${
-                            isDetailsFormValid ? 'bg-black text-white active:opacity-80' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
+                          className={`w-full py-[17px] rounded-2xl text-[17px] font-black flex items-center justify-center gap-2.5 transition-all relative overflow-hidden ${
+                            isDetailsFormValid ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
+                          {isDetailsFormValid && (
+                            <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
+                          )}
                           <span>Continue to Payment</span>
-                          <ArrowRight size={18} strokeWidth={3.0} className="shrink-0" />
+                          <ArrowRight size={18} strokeWidth={2.5} />
                         </button>
                       </div>
                       )}
@@ -2977,30 +3031,35 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             (shared PaymentOverlay). Open flow is now: details form → bill page →
             PayU, mirroring invite. The bill collects the payment method + fee and
             calls create-payu-order itself; payment_type drives full vs advance. */}
-        {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl === 'payu-hosted' && (() => {
-          const isBalance = !!paymentContext.isBalancePayment;
-          const isFull = selectedEvent?.paymentMode === 'full' && !isBalance;
-          const billPaymentType = isBalance ? 'balance' : (isFull ? 'full' : 'advance');
-          // For a single-payment (full) event the bill shows the full price as
-          // "Entry Ticket"; for split it shows the advance (or the balance). The
-          // server recomputes the real charge from the DB regardless.
-          const billBase = isFull ? (paymentContext.amount + paymentContext.remainingBalance) : paymentContext.amount;
-          return (
-            <NativePaymentOverlay
-              eventTitle={paymentContext.eventTitle}
-              eventDate={paymentContext.tripDateFull}
-              priceAdvance={billBase}
-              paymentType={billPaymentType}
-              prefillName={paymentContext.name}
-              prefillPhone={paymentContext.phone}
-              prefillEmail={paymentContext.email ?? ''}
-              lockEmail={!!paymentContext.email}
-              eventSlug={paymentContext.eventId}
-              selectedCity={paymentContext.selectedCity ?? ''}
-              onClose={() => { setPaymentView('idle'); setShowDetailsForm(true); }}
-            />
-          );
-        })()}
+        <AnimatePresence>
+          {paymentView === 'checkout' && paymentContext && paymentContext.phonepeUrl === 'payu-hosted' && (() => {
+            const isBalance = !!paymentContext.isBalancePayment;
+            const isFull = selectedEvent?.paymentMode === 'full' && !isBalance;
+            const billPaymentType = isBalance ? 'balance' : (isFull ? 'full' : 'advance');
+            // For a single-payment (full) event the bill shows the full price as
+            // "Entry Ticket"; for split it shows the advance (or the balance). The
+            // server recomputes the real charge from the DB regardless.
+            const billBase = isFull ? (paymentContext.amount + paymentContext.remainingBalance) : paymentContext.amount;
+            return (
+              <NativePaymentOverlay
+                eventTitle={paymentContext.eventTitle}
+                eventDate={paymentContext.tripDateFull}
+                priceAdvance={billBase}
+                paymentType={billPaymentType}
+                prefillName={paymentContext.name}
+                prefillPhone={paymentContext.phone}
+                prefillEmail={paymentContext.email ?? ''}
+                lockEmail={!!paymentContext.email}
+                eventSlug={paymentContext.eventId}
+                selectedCity={paymentContext.selectedCity ?? ''}
+                onClose={() => {
+                  setPaymentView('idle');
+                  setShowDetailsForm(true);
+                }}
+              />
+            );
+          })()}
+        </AnimatePresence>
 
         {/* Payment Success Screen */}
         <AnimatePresence>
@@ -3396,23 +3455,25 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       />
                     </div>
 
-                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Why do you want to join us?</label>
-                      <textarea
-                        required
-                        value={doubtFormData.whyJoin}
-                        onChange={e => setDoubtFormData({...doubtFormData, whyJoin: e.target.value})}
-                        placeholder="Tell us why this plan excites you..."
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none resize-none h-20"
-                      />
-                    </div>
+                    {!isPayUFlow && (
+                      <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                        <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Why do you want to join us?</label>
+                        <textarea
+                          required
+                          value={doubtFormData.whyJoin}
+                          onChange={e => setDoubtFormData({...doubtFormData, whyJoin: e.target.value})}
+                          placeholder="Tell us why this plan excites you..."
+                          className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none resize-none h-20"
+                        />
+                      </div>
+                    )}
                   </div>
 
 
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
-                      disabled={liveChatSending || !doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !doubtFormData.gender || !doubtFormData.message.trim() || !doubtFormData.whyJoin.trim()}
+                      disabled={liveChatSending || !doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !doubtFormData.gender || !doubtFormData.message.trim() || (!isPayUFlow && !doubtFormData.whyJoin.trim())}
                       className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden disabled:opacity-50"
                     >
                       <motion.div

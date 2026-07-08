@@ -24,6 +24,7 @@ type LeaderRow = { handle: string; name: string; tickets: number; earned: number
 // Always show 2 decimals — commissions can be small (8% of a low ticket price),
 // and rounding to whole rupees would hide real earnings (e.g. ₹0.08 → ₹0).
 const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const commissionPerTicket = (ev: EventRow) => ev.tickets > 0 ? Number(ev.earned) / ev.tickets : 0;
 
 // Palette — minimal, one accent.
 const INK = '#111';
@@ -59,6 +60,8 @@ export default function CreatorDashboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   const month = istMonth();
 
@@ -118,12 +121,34 @@ export default function CreatorDashboard() {
   }, [me, range]);
 
   const login = async () => {
+    setAuthError('');
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin + '/creator' },
     });
   };
-  const logout = async () => { await supabase.auth.signOut(); setMe(null); setEmail(null); };
+  const resetCreatorState = () => {
+    setMe(null);
+    setEmail(null);
+    setFunnel(null);
+    setEvents([]);
+    setMonthEarned(0);
+    setLeaderboard([]);
+    setCopied(false);
+  };
+  const logout = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    setAuthError('');
+    resetCreatorState();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      setAuthError('Could not fully sign out. Please refresh and try again.');
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   const link = me ? `${window.location.origin}/@${me.handle}` : '';
   const linkShort = link.replace(/^https?:\/\//, '');
@@ -148,6 +173,7 @@ export default function CreatorDashboard() {
         <div style={{ maxWidth: 340, width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5, marginBottom: 8 }}>Creator dashboard</div>
           <div style={{ color: MUTED, fontSize: 14, marginBottom: 26, lineHeight: 1.55 }}>Sign in to see your link's clicks, bookings and earnings.</div>
+          {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 12 }}>{authError}</div>}
           <button onClick={login} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: INK, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
             Continue with Google
           </button>
@@ -163,9 +189,16 @@ export default function CreatorDashboard() {
         <div style={{ maxWidth: 360, width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: 21, fontWeight: 800, marginBottom: 10 }}>Not a creator account</div>
           <div style={{ color: MUTED, fontSize: 14, marginBottom: 22, lineHeight: 1.55 }}>
-            <b style={{ color: INK }}>{email}</b> isn't set up as a creator yet. If you think this is a mistake, ask the chapter A team to add this exact email.
+            <b style={{ color: INK }}>{email}</b> isn't set up as a creator yet. If you think this is a mistake, contact the team to add this exact email.
           </div>
-          <button onClick={logout} style={{ padding: '11px 24px', borderRadius: 12, border: '1.5px solid ' + HAIR, background: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Sign out</button>
+          {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 12 }}>{authError}</div>}
+          <button
+            onClick={logout}
+            disabled={signingOut}
+            style={{ padding: '11px 24px', borderRadius: 12, border: '1.5px solid ' + HAIR, background: '#fff', fontWeight: 700, fontSize: 14, cursor: signingOut ? 'default' : 'pointer', opacity: signingOut ? 0.6 : 1 }}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </button>
         </div>
       </div>
     );
@@ -191,7 +224,13 @@ export default function CreatorDashboard() {
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.1 }}>Hi {me.name.split(' ')[0]}</div>
             {!me.active && <div style={{ fontSize: 12.5, color: '#dc2626', marginTop: 2 }}>Your account is paused — contact the team.</div>}
           </div>
-          <button onClick={logout} style={{ padding: '6px 12px', borderRadius: 9, border: 'none', background: 'none', fontSize: 13, fontWeight: 600, color: MUTED, cursor: 'pointer' }}>Sign out</button>
+          <button
+            onClick={logout}
+            disabled={signingOut}
+            style={{ padding: '6px 12px', borderRadius: 9, border: 'none', background: 'none', fontSize: 13, fontWeight: 600, color: MUTED, cursor: signingOut ? 'default' : 'pointer', opacity: signingOut ? 0.6 : 1 }}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </button>
         </div>
 
         {/* Earnings — the hero, this month (payout cycle) */}
@@ -203,14 +242,14 @@ export default function CreatorDashboard() {
 
         {/* Your link */}
         <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, padding: 16 }}>
-          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Your link</div>
+          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Your Custom Link</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkShort}</div>
             <button onClick={copyLink} style={{ flexShrink: 0, padding: '8px 16px', borderRadius: 10, border: 'none', background: copied ? GREEN : INK, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.15s' }}>
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <div style={{ fontSize: 12, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>Share it anywhere. You earn when someone books through it and pays in full.</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>You earn when someone books a chapter அ experience through it.</div>
         </div>
 
         {/* Funnel — with range picker */}
@@ -218,16 +257,40 @@ export default function CreatorDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase' }}>Your funnel</div>
             <div style={{ flex: 1 }} />
-            <div style={{ display: 'flex', gap: 4 }}>
-              {RANGES.map(r => {
-                const on = range === r.key;
-                return (
-                  <button key={r.key} onClick={() => setRange(r.key)} style={{
-                    padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    border: '1.5px solid ' + (on ? INK : HAIR), background: on ? INK : '#fff', color: on ? '#fff' : MUTED,
-                  }}>{r.label}</button>
-                );
-              })}
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <select
+                value={range}
+                onChange={e => setRange(e.target.value)}
+                aria-label="Funnel date range"
+                style={{
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                  border: '1.5px solid ' + HAIR,
+                  borderRadius: 999,
+                  background: '#fff',
+                  color: INK,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  padding: '6px 42px 6px 11px',
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                {RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+              </select>
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  right: 20,
+                  width: 8.2,
+                  height: 8.2,
+                  borderRight: '2.05px solid ' + INK,
+                  borderBottom: '2.05px solid ' + INK,
+                  transform: 'translateY(-2px) rotate(45deg)',
+                  pointerEvents: 'none',
+                }}
+              />
             </div>
           </div>
           <div style={{ display: 'flex', border: '1.5px solid ' + HAIR, borderRadius: 16, overflow: 'hidden', opacity: loading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
@@ -241,23 +304,35 @@ export default function CreatorDashboard() {
           </div>
         </div>
 
-        {/* Tickets by event — itemizes the "Paid" tile for the selected range */}
-        {events.length > 0 && (
-          <div>
-            <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>Tickets by event</div>
-            <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, overflow: 'hidden' }}>
-              {events.map((ev, i) => (
-                <div key={ev.event_slug} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderTop: i === 0 ? 'none' : '1px solid ' + HAIR }}>
+        {/* Your conversions — itemizes the "Paid" tile for the selected range */}
+        <div>
+          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>Your conversions</div>
+          <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, overflow: 'hidden' }}>
+            {events.length === 0 && (
+              <div style={{ padding: '18px 16px', color: MUTED, fontSize: 13.5, lineHeight: 1.5 }}>
+                No paid tickets in this range yet.
+              </div>
+            )}
+            {events.map((ev, i) => (
+              <div key={ev.event_slug} style={{ padding: '14px 16px', borderTop: i === 0 ? 'none' : '1px solid ' + HAIR }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</div>
-                    <div style={{ fontSize: 11.5, color: MUTED }}>{ev.tickets} {ev.tickets === 1 ? 'ticket' : 'tickets'}</div>
+                    <div style={{ fontWeight: 750, fontSize: 14.5, lineHeight: 1.25 }}>{ev.title}</div>
+                    <div style={{ fontSize: 11.5, color: MUTED, marginTop: 4 }}>{ev.tickets} {ev.tickets === 1 ? 'ticket bought' : 'tickets bought'}</div>
                   </div>
-                  <div style={{ fontWeight: 800, fontSize: 15, color: GREEN }}>{inr(ev.earned)}</div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: GREEN }}>{inr(ev.earned)}</div>
+                    <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>total</div>
+                  </div>
                 </div>
-              ))}
-            </div>
+                <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 12, background: '#f7f7f8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: MUTED, fontWeight: 700 }}>Commission per ticket</span>
+                  <span style={{ fontSize: 13.5, color: INK, fontWeight: 800 }}>{inr(commissionPerTicket(ev))}</span>
+                </div>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
 
         {/* The Team */}
         <div>
@@ -280,7 +355,7 @@ export default function CreatorDashboard() {
         </div>
 
         <div style={{ fontSize: 11.5, color: MUTED, textAlign: 'center', lineHeight: 1.55, marginTop: 4 }}>
-          You earn a commission when someone books through your link and pays in full for an eligible event. Earnings are paid out monthly.
+          You earn a commission when someone books through your link and pays. Earnings are paid out monthly.
         </div>
       </div>
     </div>

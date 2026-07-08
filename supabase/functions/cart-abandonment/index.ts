@@ -4,11 +4,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 //
 // Fired every 30 min by pg_cron (job 'cart-abandonment-check'). For each
 // bill_opens row past its flow's window (open events 1h, invite events 2h) that
-// hasn't been messaged AND has no
-// payu_payments row, flags the application cart_abandoned and sends a
-// re-engagement WhatsApp: invite events get `cart_abandonment`, open events
-// (booking_url='payu-hosted') get `cart_abandon_open` (different copy + the
-// date they'd miss).
+// hasn't been messaged AND is still unpaid, flags the application
+// cart_abandoned and sends a re-engagement WhatsApp: invite events get
+// `cart_abandonment`, open events (booking_url='payu-hosted') get
+// `cart_abandon_open` (different copy + the date they'd miss). Applicants with
+// an email on file also get a Brevo cart-abandon email (/invite?phone=&name= deep
+// link). Skips only terminal states (paid application, successful
+// nudged via payment_failed) — pending payu_payments rows (clicked Pay, bailed
+// on PayU) remain eligible.
 //
 // SECURITY: the AiSensy API key and the force-mode secret used to be
 // hardcoded in this file (a leaked secret shipped in deployed code). Both
@@ -42,22 +45,30 @@ function formatEventDate(iso: string): string {
   return `${dayName}, ${month} ${day}${suffix}`;
 }
 
-// ── Cart-abandonment EMAIL (Brevo) — invite-only chapter events ────────────────
+// ── Cart-abandonment EMAIL (Brevo) — invite + open events ─────────────────────
 // Mirrors the send-brevo-invite design (beige header, Inter wordmark, yellow
-// button) with cart-abandon copy. Sent only to invite-event applicants who left
-// an email; open events keep WhatsApp only. Best-effort — WhatsApp is primary.
+// button) with cart-abandon copy. Sent when the applicant left an email on file.
+// Invite + open: Contact Us deep-links to /invite?phone=&name= so the poster
+// verification step is skipped. Best-effort — WhatsApp is primary and fires first.
+
+function buildInviteContactUrl(baseUrl: string, phone: string, name: string): string {
+  const params = new URLSearchParams();
+  params.set('phone', phone);
+  const n = (name || '').trim();
+  if (n && n !== 'there') params.set('name', n);
+  return `${baseUrl}/invite?${params.toString()}`;
+}
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function cartAbandonEmailHtml(args: {
-  userName: string; eventName: string; contactUrl: string; senderName: string; logoUrl: string;
+  userName: string; eventName: string; contactUrl: string; senderName: string;
 }): string {
   const name = esc(args.userName || 'there');
   const event = esc(args.eventName);
   const url = args.contactUrl;
-  const logo = esc(args.logoUrl);
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet"></head>
@@ -70,13 +81,6 @@ function cartAbandonEmailHtml(args: {
             <td style="vertical-align:middle;text-align:left;">
               <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:#000000;">chapter &#2949;</span>
             </td>
-            <td align="right" style="vertical-align:middle;text-align:right;">
-              <table role="presentation" cellpadding="0" cellspacing="0" align="right"><tr>
-                <td style="background:#000000;border-radius:14px;padding:4px;">
-                  <img src="${logo}" width="40" height="40" alt="chapter &#2949; logo" style="display:block;width:40px;height:40px;border-radius:10px;object-fit:contain;">
-                </td>
-              </tr></table>
-            </td>
           </tr></table>
         </td></tr>
         <tr><td style="padding:32px;">
@@ -85,8 +89,8 @@ function cartAbandonEmailHtml(args: {
           <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#4b5563;">You were only 1 step away from joining us&hellip;</p>
           <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">If you need any help, feel free to Contact Us.</p>
           <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
-            <tr><td style="border-radius:14px;background:#FFD700;">
-              <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#111827;text-decoration:none;border-radius:14px;">Contact Us &#8594;</a>
+            <tr><td style="border-radius:14px;background:#000000;">
+              <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:14px;">Contact Us &#8594;</a>
             </td></tr>
           </table>
           <p style="margin:0;font-size:13px;line-height:20px;color:#9ca3af;">If the button doesn't work, open this link:<br><a href="${url}" target="_blank" style="color:#2563eb;word-break:break-all;">${url}</a></p>
@@ -102,17 +106,17 @@ function cartAbandonEmailHtml(args: {
 </html>`;
 }
 
-async function sendCartAbandonEmail(args: { email: string; userName: string; eventName: string }): Promise<boolean> {
+async function sendCartAbandonEmail(args: {
+  email: string; userName: string; eventName: string; contactUrl: string;
+}): Promise<boolean> {
   const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
   if (!BREVO_API_KEY) {
     console.warn('[cart-abandonment] BREVO_API_KEY not set, skipping email');
     return false;
   }
-  const baseUrl     = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
-  const contactUrl  = `${baseUrl}/invite`;
+  const contactUrl  = args.contactUrl;
   const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
   const senderName  = Deno.env.get('BREVO_SENDER_NAME')  ?? 'chapter அ';
-  const logoUrl     = Deno.env.get('BREVO_LOGO_URL')     ?? 'https://chaptera.in/chat-profile.jpg';
   try {
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
@@ -121,7 +125,7 @@ async function sendCartAbandonEmail(args: { email: string; userName: string; eve
         sender: { name: senderName, email: senderEmail },
         to: [{ email: args.email, name: args.userName || undefined }],
         subject: `We don't want you to miss our ${args.eventName}…`,
-        htmlContent: cartAbandonEmailHtml({ userName: args.userName, eventName: args.eventName, contactUrl, senderName, logoUrl }),
+        htmlContent: cartAbandonEmailHtml({ userName: args.userName, eventName: args.eventName, contactUrl, senderName }),
         tags: ['chapter-cart-abandon-email'],
       }),
     });
@@ -132,6 +136,28 @@ async function sendCartAbandonEmail(args: { email: string; userName: string; eve
   } catch (err) {
     console.error('[cart-abandonment] brevo email failed:', err);
     return false;
+  }
+}
+
+async function maybeSendCartAbandonEmail(
+  supabase: ReturnType<typeof createClient>,
+  row: { id: string; event_title?: string | null; cart_abandon_email_sent?: boolean; phone: string },
+  args: { email: string; userName: string },
+): Promise<void> {
+  if (!args.email || row.cart_abandon_email_sent) return;
+  const baseUrl = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
+  const contactUrl = buildInviteContactUrl(baseUrl, row.phone, args.userName);
+  const emailed = await sendCartAbandonEmail({
+    email: args.email,
+    userName: args.userName,
+    eventName: row.event_title || 'our next experience',
+    contactUrl,
+  });
+  if (emailed) {
+    await supabase
+      .from('bill_opens')
+      .update({ cart_abandon_email_sent: true })
+      .eq('id', row.id);
   }
 }
 
@@ -214,36 +240,52 @@ Deno.serve(async (req) => {
       if (ageMs < windowHours * 60 * 60 * 1000) continue;
     }
 
-    // Skip if they already initiated a payment (any status — success, failure, or pending).
-    // Use .limit(1) instead of .maybeSingle() to safely handle multiple rows.
-    const { data: payments } = await supabase
-      .from('payu_payments')
-      .select('id')
+    // Application row drives skip logic and template params (name, date, email).
+    const { data: appRows } = await supabase
+      .from('applications')
+      .select('name, selected_date, email, status, aisensy_payment_failed_sent')
       .eq('phone', row.phone)
       .eq('event_slug', row.event_slug)
       .limit(1);
+    const app = appRows?.[0] as {
+      name?: string; selected_date?: string | null; email?: string | null;
+      status?: string; aisensy_payment_failed_sent?: boolean;
+    } | undefined;
 
-    if (payments && payments.length > 0) {
-      // Mark as sent so we don't keep checking this row
+    // Terminal states only — skip forever (mark handled so we stop re-checking).
+    const isPaid = app?.status === 'advance_paid' || app?.status === 'fully_paid';
+    const { data: payments } = await supabase
+      .from('payu_payments')
+      .select('id, status')
+      .eq('phone', row.phone)
+      .eq('event_slug', row.event_slug);
+    const hasSuccess = (payments ?? []).some((p) => p.status === 'success');
+    const allFailedWithNudge =
+      (payments?.length ?? 0) > 0 &&
+      payments!.every((p) => p.status === 'failure') &&
+      !!app?.aisensy_payment_failed_sent;
+
+    if (isPaid || hasSuccess || allFailedWithNudge) {
       await supabase
         .from('bill_opens')
         .update({ cart_abandonment_sent: true })
         .eq('id', row.id);
       skipped++;
-      console.log('[cart-abandonment] skipped (has payu_payments row):', row.phone, row.event_slug);
+      console.log('[cart-abandonment] skipped (terminal):', row.phone, row.event_slug, {
+        isPaid, hasSuccess, allFailedWithNudge,
+      });
       continue;
     }
 
     // Genuine abandonment (past the flow's window — open 1h / invite 2h — and
-    // never paid). Set the
+    // still unpaid). Includes bill-only abandoners AND people who clicked Pay
+    // but bailed on PayU (payu_payments stuck at pending). Set the
     // cart_abandoned flag on their application so the admin People page can
     // surface Cart-Abandoned for follow-up. This is a flag, NOT a status
     // change — the base status is preserved so the payment auth gates keep
     // working and the user can still pay later. Covers BOTH flows:
     //   invite → status 'invited' (post-approval)
     //   open   → status 'pending' (open bookings stay 'pending' until paid)
-    // Someone who already paid (advance_paid/fully_paid) is excluded — and is
-    // skipped above anyway if they have a payu_payments row.
     // Done regardless of WhatsApp delivery — it reflects behaviour, not send.
     await supabase
       .from('applications')
@@ -252,18 +294,9 @@ Deno.serve(async (req) => {
       .eq('event_slug', row.event_slug)
       .in('status', ['invited', 'pending']);
 
-    // Look up the application: name for the greeting, and selected_date so the
-    // open template can name the date they'd miss. Name falls back to the
-    // bill_opens poster name, then 'there'.
-    const { data: appRows } = await supabase
-      .from('applications')
-      .select('name, selected_date, email')
-      .eq('phone', row.phone)
-      .eq('event_slug', row.event_slug)
-      .limit(1);
-    const displayName = appRows?.[0]?.name || row.name || 'there';
-    const selectedDate = (appRows?.[0]?.selected_date as string | null) ?? null;
-    const applicantEmail = String((appRows?.[0] as any)?.email ?? '').trim();
+    const displayName = app?.name || row.name || 'there';
+    const selectedDate = (app?.selected_date as string | null) ?? null;
+    const applicantEmail = String(app?.email ?? '').trim();
 
     // ── OPEN events: cart_abandon_open template ──────────────────────────────
     // Open events get the cart_abandoned flag above (admin visibility +
@@ -322,6 +355,12 @@ Deno.serve(async (req) => {
       } catch (err) {
         console.error('[cart-abandonment] open aisensy fetch failed:', err);
       }
+      // Email channel (open events with an email on file). Runs AFTER WhatsApp
+      // so Brevo latency can't delay the primary channel — same pattern as invite.
+      await maybeSendCartAbandonEmail(supabase, row, {
+        email: applicantEmail,
+        userName: displayName,
+      });
       continue;
     }
 
@@ -374,23 +413,14 @@ Deno.serve(async (req) => {
       console.error('[cart-abandonment] aisensy fetch failed:', err);
     }
 
-    // Email channel (invite-only chapter events that left an email). Runs AFTER
-    // the WhatsApp so any Brevo slowness can't delay the primary channel. Its own
-    // flag keeps it independent: a WhatsApp retry can't re-email, and a
-    // permanently-failing WhatsApp number still gets the email once.
-    if (applicantEmail && !(row as any).cart_abandon_email_sent) {
-      const emailed = await sendCartAbandonEmail({
-        email: applicantEmail,
-        userName: displayName,
-        eventName: row.event_title || 'our next experience',
-      });
-      if (emailed) {
-        await supabase
-          .from('bill_opens')
-          .update({ cart_abandon_email_sent: true })
-          .eq('id', row.id);
-      }
-    }
+    // Email channel (invite events with an email on file). Runs AFTER WhatsApp
+    // so Brevo slowness can't delay the primary channel. Its own flag keeps it
+    // independent: a WhatsApp retry can't re-email, and a permanently-failing
+    // WhatsApp number still gets the email once.
+    await maybeSendCartAbandonEmail(supabase, row, {
+      email: applicantEmail,
+      userName: displayName,
+    });
   }
 
   console.log('[cart-abandonment] done:', { sent, skipped, total: rows.length });

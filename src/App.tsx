@@ -7,7 +7,7 @@ import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
 import CreatorDashboard from './CreatorDashboard';
 import { NativePaymentOverlay } from './PaymentOverlay';
-import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
+import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug, isInAppBrowserBlocked } from './supabase';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
 
@@ -35,6 +35,16 @@ type FAQ = {
 };
 
 type QuickInfoIcon = 'pin' | 'bus' | 'users' | 'home' | 'clock' | 'ticket' | 'map' | 'heart';
+
+function MobileShell({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className={`w-full bg-white flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white ${scroll ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 interface Event {
   quickInfo?: { icon: QuickInfoIcon; label: string; value: string }[];
@@ -1101,6 +1111,65 @@ type SharedInviteMatch = {
   bookingUrl?: string;
 };
 
+function parseInviteDeeplinkParams(): { active: boolean; phone: string; name: string } {
+  if (typeof window === 'undefined') return { active: false, phone: '', name: '' };
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('payment_status')) return { active: false, phone: '', name: '' };
+  const tenDigit = (params.get('phone') ?? '').replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+  const name = (params.get('name') ?? '').trim();
+  if (tenDigit.length !== 10 || !name) return { active: false, phone: '', name: '' };
+  return { active: true, phone: tenDigit, name };
+}
+
+function InviteLoaderMark({
+  profile = chatProfile,
+  imageClassName = 'w-full h-full object-contain scale-[1.02] translate-y-[2px]',
+  glowColor = LIFESTYLE_POSTER_THEME.loaderGlow,
+}: {
+  profile?: string;
+  imageClassName?: string;
+  glowColor?: string;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.85 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
+      className="relative"
+    >
+      <motion.div
+        animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
+        transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+        className="absolute inset-0 rounded-2xl"
+        style={{ background: glowColor, filter: 'blur(10px)' }}
+      />
+      <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
+        <img src={profile} alt="chapter அ" className={imageClassName} />
+      </div>
+    </motion.div>
+  );
+}
+
+function InviteBrandedLoader() {
+  return (
+    <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
+      <InviteLoaderMark />
+    </div>
+  );
+}
+
+function InvitePhoneShellLoader() {
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
+        <div className="absolute inset-0 bg-white flex flex-col items-center justify-center">
+          <InviteLoaderMark />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InviteChatEssentialsCard({
   quickInfo,
   transportPlan,
@@ -1532,6 +1601,7 @@ function InvitePlanDetailsSheet({
 }
 
 function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: () => void }) {
+  const inviteDeeplinkInit = parseInviteDeeplinkParams();
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [isRetryLoading, setIsRetryLoading] = useState(() => !!sessionStorage.getItem('ca_payu_retry_chat'));
   // Timeline restore takes priority over bill restore. If a back-from-retry-bill
@@ -1600,6 +1670,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatTransitionTimerRef = useRef<number | null>(null);
   const restoreInvitePickerOnChatBackRef = useRef(false);
+  // Cart-abandon emails land with ?phone=&name= — keep the branded loader up and
+  // skip the verification poster until chat or the plan picker is ready.
+  const [isDeeplinkResolving, setIsDeeplinkResolving] = useState(inviteDeeplinkInit.active);
+  const deeplinkFlowRef = useRef(inviteDeeplinkInit.active);
   // Set to true when chat is opened via payment retry — back button is disabled in that case
   const isRetryChatRef = useRef(false);
   const [billRestored, setBillRestored] = useState(false); // true when overlay is re-opened via browser-back from PayU
@@ -1767,6 +1841,17 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const includedList: string[] = Array.isArray(_cd?.included) ? _cd.included : (Array.isArray(event.included) ? event.included : []);
     const itinerary: any[] = Array.isArray(_cd?.itinerary) ? _cd.itinerary : (Array.isArray(event.itinerary) ? event.itinerary : []);
 
+    const dateBookingSteps = Array.isArray((matchedDateRow as any)?.booking_steps)
+      ? (matchedDateRow as any).booking_steps.filter((s: any) =>
+          String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
+        )
+      : [];
+    const eventBookingSteps = Array.isArray(event.booking_steps)
+      ? event.booking_steps.filter((s: any) =>
+          String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
+        )
+      : [];
+
     setNativeEventData({
       // Amount to pay now: full price for single-payment events, otherwise the
       // balance (if advance already paid) or the advance.
@@ -1788,9 +1873,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       // Prefer the per-date booking_steps (admins set different settle/balance
       // dates per cohort). Falls back to the event-level steps when a date
       // hasn't been customised yet.
-      bookingSteps: Array.isArray((matchedDateRow as any)?.booking_steps) && (matchedDateRow as any).booking_steps.length > 0
-        ? (matchedDateRow as any).booking_steps
-        : Array.isArray(event.booking_steps) ? event.booking_steps : undefined,
+      bookingSteps: dateBookingSteps.length > 0
+        ? dateBookingSteps
+        : eventBookingSteps.length > 0 ? eventBookingSteps : undefined,
       announcements: Array.isArray(event.announcements) ? event.announcements.filter(Boolean) : [],
       planDetails: {
         quickInfo: Array.isArray(event.quick_info) ? event.quick_info : [],
@@ -1843,6 +1928,27 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     return { isFullyPaid, isBalancePayment, inviteSpots: event.invite_spots ?? matchHint?.inviteSpots ?? null };
   };
 
+  const endDeeplinkResolving = () => {
+    setIsDeeplinkResolving(false);
+    deeplinkFlowRef.current = false;
+  };
+
+  const revealPlanPickerFast = () => {
+    const loaders = Object.values(INVITE_LAYER_SRC).map(src => new Promise<void>(resolve => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = src;
+    }));
+    Promise.all(loaders).then(() => {
+      setLoading(false);
+      setWipePhase('revealed');
+      verificationFrameControls.set({ clipPath: 'inset(0 0 100% 0)', opacity: 0 });
+      window.history.pushState({ chapteraInviteStep: 'revealed' }, '', window.location.href);
+      endDeeplinkResolving();
+    });
+  };
+
   const triggerWipe = (slug: string) => {
     setPendingSlug(slug);
     const loaders = Object.values(INVITE_LAYER_SRC).map(src => new Promise<void>(resolve => {
@@ -1890,6 +1996,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       setError('not_found');
       setHasFailedOnce(true);
       setLoading(false);
+      endDeeplinkResolving();
       return;
     }
 
@@ -1900,8 +2007,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
     if (chooseFromRevealedPoster) {
       restoreInvitePickerOnChatBackRef.current = shouldRestorePickerOnChatBack;
+      const skipChatLoader = deeplinkFlowRef.current && openDirectly;
       setLoading(false);
-      openChat();
+      endDeeplinkResolving();
+      openChat({ showTransitionLoader: !skipChatLoader });
       return;
     }
 
@@ -1913,10 +2022,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const nameTrimmed = (overrides?.name ?? form.name).trim();
     if (!nameTrimmed) {
       setError('Please enter your full name.');
+      endDeeplinkResolving();
       return;
     }
     if (!/^\d{10}$/.test(tenDigit)) {
       setError('Please enter a valid 10-digit WhatsApp number.');
+      endDeeplinkResolving();
       return;
     }
 
@@ -1953,6 +2064,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     } catch (err) {
       setError('Could not check invites right now. Please try again.');
       setLoading(false);
+      endDeeplinkResolving();
       return;
     }
 
@@ -2041,6 +2153,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       setError('waitlist_blocked');
       setHasFailedOnce(true);
       setLoading(false);
+      endDeeplinkResolving();
       return;
     }
 
@@ -2057,6 +2170,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
         const ready = await prepareNativeInviteFlow(eventSlug, tenDigit);
         if (ready) {
           setLoading(false);
+          endDeeplinkResolving();
           setVerifiedSlug(eventSlug);
           window.history.pushState({ chapteraInviteStep: 'chat' }, '', window.location.href);
           setInviteChatStep('prompt');
@@ -2075,6 +2189,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       setError("not_found");
       setHasFailedOnce(true);
       setLoading(false);
+      endDeeplinkResolving();
       return;
     }
 
@@ -2084,7 +2199,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }
 
     setMatches(found);
-    triggerWipe('');
+    if (deeplinkFlowRef.current) {
+      revealPlanPickerFast();
+    } else {
+      triggerWipe('');
+    }
   };
 
   // Cart-abandon emails deep-link with ?phone=&name= — skip the poster form and
@@ -2092,19 +2211,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const inviteDeeplinkAttemptedRef = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined' || inviteDeeplinkAttemptedRef.current) return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('payment_status')) return;
-    const rawPhone = params.get('phone') ?? '';
-    const rawName = params.get('name') ?? '';
-    const tenDigit = rawPhone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
-    const name = rawName.trim();
-    if (tenDigit.length !== 10 || !name) return;
+    if (!inviteDeeplinkInit.active) return;
 
     inviteDeeplinkAttemptedRef.current = true;
+    deeplinkFlowRef.current = true;
+    setIsDeeplinkResolving(true);
     window.history.replaceState(window.history.state, '', window.location.pathname);
-    setForm({ name, phone: tenDigit });
+    setForm({ name: inviteDeeplinkInit.name, phone: inviteDeeplinkInit.phone });
     setTcAccepted(true);
-    void findInviteMatches({ name, phone: tenDigit });
+    void findInviteMatches({ name: inviteDeeplinkInit.name, phone: inviteDeeplinkInit.phone });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2135,7 +2250,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     return () => window.clearInterval(interval);
   }, [chatOpen, nativeEventData?.announcements?.length]);
 
-  const openChat = () => {
+  const openChat = ({ showTransitionLoader = true }: { showTransitionLoader?: boolean } = {}) => {
     if (chatOpen || chatTransitioning) return;
     isRetryChatRef.current = false; // normal chat open — back is allowed
     setInviteChatStep('prompt');
@@ -2144,16 +2259,19 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setDoubtText('');
     setDoubtSubmitError('');
     setAskedFaqs([]);
-    setChatTransitioning(true);
+    setChatTransitioning(showTransitionLoader);
     setChatOpen(true);
     if (chatTransitionTimerRef.current) {
       window.clearTimeout(chatTransitionTimerRef.current);
+      chatTransitionTimerRef.current = null;
     }
     window.history.pushState({ chapteraInviteStep: 'chat' }, '', window.location.href);
-    chatTransitionTimerRef.current = window.setTimeout(() => {
-      setChatTransitioning(false);
-      chatTransitionTimerRef.current = null;
-    }, 900);
+    if (showTransitionLoader) {
+      chatTransitionTimerRef.current = window.setTimeout(() => {
+        setChatTransitioning(false);
+        chatTransitionTimerRef.current = null;
+      }, 900);
+    }
   };
 
   const nowInviteTimeStr = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2541,27 +2659,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   // Timeline restore (browser Back from the retry bill) is an in-app transition,
   // so show the branded loader during the async event fetch rather than a blank
   // frame — a bare `return null` makes the screen look like it goes dark.
-  if (!posterLoaded || isTimelineRestoreLoading) {
-    return (
-      <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="relative"
-        >
-          <motion.div
-            animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
-            transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-            className="absolute inset-0 rounded-2xl"
-            style={{ background: LIFESTYLE_POSTER_THEME.loaderGlow, filter: 'blur(10px)' }}
-          />
-          <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
-            <img src={chatProfile} alt="chapter அ" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
-          </div>
-        </motion.div>
-      </div>
-    );
+  if (isTimelineRestoreLoading || isDeeplinkResolving) {
+    return <InvitePhoneShellLoader />;
+  }
+
+  if (!posterLoaded) {
+    return <InviteBrandedLoader />;
   }
 
   return (
@@ -3045,22 +3148,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                       transition={{ duration: 0.2 }}
                       className="absolute inset-0 z-20 bg-white flex flex-col items-center justify-center"
                     >
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.85 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.35, ease: 'easeOut' }}
-                        className="relative"
-                      >
-                        <motion.div
-                          animate={{ opacity: [0.15, 0.45, 0.15], scale: [1, 1.18, 1] }}
-                          transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-                          className="absolute inset-0 rounded-2xl"
-                          style={{ background: '#FFD700', filter: 'blur(10px)' }}
-                        />
-                        <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
-                          <img src={chatHeaderProfile} alt="chat profile" className={chatHeaderProfileClass} />
-                        </div>
-                      </motion.div>
+                      <InviteLoaderMark
+                        profile={chatHeaderProfile}
+                        imageClassName={chatHeaderProfileClass}
+                        glowColor="#FFD700"
+                      />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -3659,6 +3751,13 @@ function NativeBookingTimeline({
      .replace(/\{price\}/gi, priceStr)
      .replace(/\{application_count\}/gi, countStr ?? '__')
      .replace(/\b__\b/g, countStr ?? '__');
+  const isTimelineMetaStep = (step: { label?: string; value?: string }) => {
+    const label = String(step.label ?? '').trim();
+    const value = String(step.value ?? '').trim();
+    return (!label && !value)
+      || /\{application_count\}/i.test(`${label} ${value}`)
+      || (!label && !!eventTitle.trim() && value.toLowerCase() === eventTitle.trim().toLowerCase());
+  };
 
   // Live countdown ticker (re-renders every second so due-by stays fresh)
   const [, setTick] = useState(0);
@@ -3723,7 +3822,7 @@ function NativeBookingTimeline({
     // to the full price) is relabeled "Single Entry Payment" — this timeline is
     // only shown after the user is invited, so the pre-invite label doesn't fit.
     ? (bookingSteps ?? [])
-        .filter(s => !/balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`))
+        .filter(s => !isTimelineMetaStep(s) && !/balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`))
         .map(s => /\{advance\}|\{price\}/i.test(s.value) ? { ...s, label: 'entry payment' } : s)
     : isBalancePayment
     ? [
@@ -3734,14 +3833,14 @@ function NativeBookingTimeline({
         // Any extra non-advance/non-balance/non-application steps (e.g. "Receive" with a date)
         // The user has already been invited so the vibe-check/application step is skipped.
         ...(bookingSteps ?? []).filter(s =>
-          !/advance|balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
+          !isTimelineMetaStep(s) && !/advance|balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
         ),
       ]
     : bookingSteps && bookingSteps.length > 0
       ? (() => {
           // User is invited but advance unpaid — skip application-phase steps too
           const filteredSteps = bookingSteps.filter(s =>
-            !/vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
+            !isTimelineMetaStep(s) && !/vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
           );
           const advIdx = filteredSteps.findIndex(s => /advance/i.test(`${s.label} ${s.value}`));
           const src = filteredSteps[advIdx] ?? filteredSteps[0];
@@ -3935,6 +4034,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
     bookingUrl: string;
     priceAdvance: number;
     priceFull: number;
+    paymentMode: 'split' | 'full';
     title: string;
     firstDate: string;
     bookingSteps?: Array<{ label: string; value: string; date?: string }>;
@@ -3949,21 +4049,36 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
     if (!slug) return;
     supabase
       .from('events')
-      .select('slug, invite_slug, booking_url, price_advance, price_full, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url, booking_steps)')
+      .select('slug, invite_slug, booking_url, price_advance, price_full, payment_mode, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .or(`slug.eq.${slug},invite_slug.eq.${slug}`)
       .eq('is_active', true)
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
           const dates = Array.isArray(data.event_dates) ? data.event_dates : [];
-          const firstDate = dates.map((d: any) => String(d.start_date ?? '')).filter(Boolean).sort()[0] ?? '';
+          const sortedDates = [...dates].sort((a: any, b: any) => String(a.start_date ?? '').localeCompare(String(b.start_date ?? '')));
+          const firstDateRow = sortedDates.find((d: any) => String(d.start_date ?? '')) ?? null;
+          const firstDate = String(firstDateRow?.start_date ?? '');
+          const dateBookingSteps = Array.isArray(firstDateRow?.booking_steps)
+            ? firstDateRow.booking_steps.filter((s: any) =>
+                String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
+              )
+            : [];
+          const eventBookingSteps = Array.isArray(data.booking_steps)
+            ? data.booking_steps.filter((s: any) =>
+                String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
+              )
+            : [];
           setEventInfo({
             bookingUrl: data.booking_url ?? '',
             priceAdvance: Number(data.price_advance ?? 0),
             priceFull: Number(data.price_full ?? 0),
+            paymentMode: data.payment_mode === 'full' ? 'full' : 'split',
             title: data.title ?? '',
             firstDate,
-            bookingSteps: Array.isArray(data.booking_steps) ? data.booking_steps : undefined,
+            bookingSteps: dateBookingSteps.length > 0
+              ? dateBookingSteps
+              : eventBookingSteps.length > 0 ? eventBookingSteps : undefined,
             inviteSpots: data.invite_spots ?? null,
             eventSlug: data.slug ?? slug,
             inviteSlug: data.invite_slug ?? data.slug ?? slug,
@@ -4137,6 +4252,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
               priceAdvance={eventInfo.priceAdvance}
               priceFull={eventInfo.priceFull}
               bookingSteps={eventInfo.bookingSteps}
+              isFullPay={eventInfo.paymentMode === 'full'}
               inviteSlug={eventInfo.inviteSlug}
               eventSlug={eventInfo.eventSlug}
               inviteSpots={eventInfo.inviteSpots ?? null}
@@ -4156,10 +4272,11 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
             <NativePaymentOverlay
               eventTitle={eventInfo.title}
               eventDate={eventInfo.firstDate}
-              priceAdvance={eventInfo.priceAdvance}
+              priceAdvance={eventInfo.paymentMode === 'full' ? eventInfo.priceFull : eventInfo.priceAdvance}
               prefillName={billPrefill?.name ?? ''}
               prefillPhone={billPrefill?.phone ?? ''}
               eventSlug={eventInfo.eventSlug ?? slug}
+              paymentType={eventInfo.paymentMode === 'full' ? 'full' : 'advance'}
               onClose={() => {
                 setBillPrefill(null);
                 setStep('timeline');
@@ -5104,10 +5221,10 @@ function LiveChatScreen({ onBack }: { onBack: () => void }) {
 
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
 function InAppBrowserNudge() {
-  const isInstagram = typeof navigator !== 'undefined' && /Instagram/i.test(navigator.userAgent);
-  const isFacebook  = typeof navigator !== 'undefined' && /FBAN|FBAV/i.test(navigator.userAgent);
-  const isAndroid   = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-  const isInApp = isInstagram || isFacebook;
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  // Shared detection (supabase.ts) so tracking suppression and this wall can
+  // never disagree about what counts as a blocked in-app browser.
+  const isInApp = isInAppBrowserBlocked();
 
   useEffect(() => {
     if (!isInApp) return;
@@ -5407,7 +5524,17 @@ export default function App() {
   if (isTermsPage) return <TermsScreen />;
 
   if (isAdmin) return <AdminPanel />;
-  if (isCreatorPage) return <CreatorDashboard />;
+  if (isCreatorPage) {
+    return (
+      <>
+        <InAppBrowserNudge />
+        <LandscapeBlocker />
+        <MobileShell scroll>
+          <CreatorDashboard />
+        </MobileShell>
+      </>
+    );
+  }
 
   if (isSharedInvitePage) {
     return (

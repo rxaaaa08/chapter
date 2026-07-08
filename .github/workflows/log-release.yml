@@ -1,0 +1,47 @@
+# Auto-log every push to main into the feature_releases table (Experiments tab).
+#
+# Each pushed commit becomes one row in the release log via the secret-guarded
+# log_feature_release() RPC (see supabase/migrations/20260708_feature_releases.sql).
+# The admin can rename/annotate/delete entries from the Experiments tab.
+#
+# Setup (one-time): add repository secrets named RELEASE_LOG_SECRET and
+# SUPABASE_ANON_KEY. RELEASE_LOG_SECRET must match the release_log_secret row in
+# app_secrets. Without both secrets, this workflow skips silently — it never
+# fails a deploy.
+
+name: Log release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log pushed commits to the release log
+        env:
+          RELEASE_LOG_SECRET: ${{ secrets.RELEASE_LOG_SECRET }}
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          COMMITS: ${{ toJson(github.event.commits) }}
+          SUPABASE_URL: https://txcmismkdttgsyhbnexf.supabase.co
+        run: |
+          if [ -z "$RELEASE_LOG_SECRET" ] || [ -z "$ANON_KEY" ]; then
+            echo "Release-log repo secrets not set — skipping release logging."
+            exit 0
+          fi
+          echo "$COMMITS" | jq -c '.[]' | while read -r c; do
+            title=$(echo "$c" | jq -r '.message | split("\n")[0]')
+            hash=$(echo "$c" | jq -r '.id[0:7]')
+            body=$(jq -n --arg s "$RELEASE_LOG_SECRET" --arg t "$title" --arg h "$hash" \
+              '{p_secret: $s, p_title: $t, p_commit: $h}')
+            if curl -sf -X POST "$SUPABASE_URL/rest/v1/rpc/log_feature_release" \
+                -H "apikey: $ANON_KEY" \
+                -H "Authorization: Bearer $ANON_KEY" \
+                -H "Content-Type: application/json" \
+                -d "$body" > /dev/null; then
+              echo "logged $hash — $title"
+            else
+              echo "::warning::failed to log $hash — $title"
+            fi
+          done
