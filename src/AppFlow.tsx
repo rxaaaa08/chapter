@@ -848,7 +848,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
-  const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', gender: '', message: '', whyJoin: '' });
+  const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' });
   const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat'>('form');
   // Once a doubt is submitted this session, hide the "ask a doubt" CTA in the
   // FAQ step so it isn't offered again (FAQs + "ready to book" stay visible).
@@ -1619,13 +1619,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     // Capture values and close sheet immediately — don't wait for the network
     const name = doubtFormData.name;
     const phone = doubtFormData.phone;
-    const gender = doubtFormData.gender;
+    const email = doubtFormData.email;
     const message = doubtFormData.message;
     const whyJoin = doubtFormData.whyJoin;
     setShowDoubtPopup(false);
     setDoubtSheetView('form');
     setDoubtSubmittedThisSession(true);
-    setDoubtFormData({ name: '', phone: '', gender: '', message: '', whyJoin: '' });
+    setDoubtFormData({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' });
 
     // Inject chat messages right away
     addUserMessage(message);
@@ -1639,7 +1639,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const payload = {
       name,
       phone,
-      gender: gender || null,
+      email: email.trim() || null,
+      gender: null,
       doubt: message,
       why_join: whyJoin || null,
       event_title: selectedEvent?.title ?? '',
@@ -3278,7 +3279,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="absolute inset-0 z-[55] bg-black/40 backdrop-blur-md"
-                onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', gender: '', message: '', whyJoin: '' }); }}
+                onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' }); }}
               />
               <motion.div
                 initial={{ y: '100%' }}
@@ -3289,7 +3290,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               >
                 <button
                   type="button"
-                  onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', gender: '', message: '', whyJoin: '' }); }}
+                  onClick={() => { setShowDoubtPopup(false); setDoubtFormData({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' }); }}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                   aria-label="Close doubt form"
                 >
@@ -3365,7 +3366,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         value={doubtFormData.name}
                         onChange={e => setDoubtFormData({...doubtFormData, name: e.target.value})}
                         placeholder="What should we call you"
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                        className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 focus:outline-none"
                       />
                     </div>
 
@@ -3387,52 +3388,48 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           setDoubtFormData({...doubtFormData, phone: digits});
                         }}
                         placeholder="We'll reach you here"
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                        className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 focus:outline-none"
                       />
                     </div>
 
-                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3 relative">
-                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">{isSelectedGirlsOnlyEvent ? "I confirm that I'm Female" : 'Gender'}</label>
-                      <select
+                    <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
+                      <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Email</label>
+                      <input
+                        type="email"
+                        inputMode="email"
                         required
-                        value={doubtFormData.gender}
-                        onChange={e => setDoubtFormData({...doubtFormData, gender: e.target.value})}
-                        className={`w-full bg-transparent text-[17px] font-medium outline-none appearance-none cursor-pointer pr-6 ${doubtFormData.gender ? 'text-gray-900' : 'text-gray-300'}`}
-                      >
-                        <option value="" disabled>Select Option</option>
-                        {isSelectedGirlsOnlyEvent ? (
-                          <option value="Female">Yes</option>
-                        ) : (
-                          <>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Non-Binary">Non-Binary</option>
-                          </>
-                        )}
-                      </select>
-                      <svg className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-600" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        value={doubtFormData.email}
+                        onChange={e => setDoubtFormData({...doubtFormData, email: e.target.value.slice(0, 100)})}
+                        placeholder="You'll get booking updates here"
+                        className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 focus:outline-none"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
                     </div>
 
                     <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                       <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Your Doubt</label>
-                      <textarea
+                      <input
+                        type="text"
                         required
                         value={doubtFormData.message}
                         onChange={e => setDoubtFormData({...doubtFormData, message: e.target.value})}
                         placeholder="What's the doubt"
-                        className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none resize-none h-20"
+                        className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 focus:outline-none"
                       />
                     </div>
 
                     {!isPayUFlow && (
                       <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                         <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Why do you want to join us?</label>
-                        <textarea
+                        <input
+                          type="text"
                           required
                           value={doubtFormData.whyJoin}
                           onChange={e => setDoubtFormData({...doubtFormData, whyJoin: e.target.value})}
                           placeholder="Tell us why this plan excites you..."
-                          className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none resize-none h-20"
+                          className="w-full bg-transparent text-[16px] font-semibold text-gray-900 placeholder-gray-300 focus:outline-none"
                         />
                       </div>
                     )}
@@ -3442,7 +3439,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
-                      disabled={liveChatSending || !doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !doubtFormData.gender || !doubtFormData.message.trim() || (!isPayUFlow && !doubtFormData.whyJoin.trim())}
+                      disabled={liveChatSending || !doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doubtFormData.email.trim()) || !doubtFormData.message.trim() || (!isPayUFlow && !doubtFormData.whyJoin.trim())}
                       className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden disabled:opacity-50"
                     >
                       <motion.div
