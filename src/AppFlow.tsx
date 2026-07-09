@@ -791,6 +791,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
   const [existingBooking, setExistingBooking] = useState<any>(null);
   const [forceNewBooking, setForceNewBooking] = useState(false);
+  const [openAlreadyPaid, setOpenAlreadyPaid] = useState(false);
+  const [checkingOpenBooking, setCheckingOpenBooking] = useState(false);
+  const [openBookingCheckError, setOpenBookingCheckError] = useState('');
 
   // Auto-fill name + check for existing booking when Google user is set
   useEffect(() => {
@@ -1687,6 +1690,48 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const handleProceedToPhonePe = async () => {
     if (!selectedEvent) return;
+
+    // Check before creating/reusing the open-event application or opening the
+    // bill. create-payu-order repeats this guard on the real payment request,
+    // so a stale page or direct request cannot bypass the one-ticket rule.
+    if (isPayUFlow) {
+      const normalizedPhone = detailsForm.phone.replace(/\D/g, '').slice(-10);
+      setCheckingOpenBooking(true);
+      setOpenBookingCheckError('');
+      try {
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payu-order`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            check_only: true,
+            name: detailsForm.name.trim(),
+            phone: normalizedPhone,
+            email: detailsForm.email.trim(),
+            event_slug: selectedEvent.id,
+            selected_city: selectedCity || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 409 && data?.error === 'already paid for this open event') {
+          setOpenAlreadyPaid(true);
+          return;
+        }
+        if (!res.ok) {
+          setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
+          return;
+        }
+      } catch (err) {
+        console.error('open booking eligibility check failed:', err);
+        setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
+        return;
+      } finally {
+        setCheckingOpenBooking(false);
+      }
+    }
 
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
     const selectedDateEntry = selectedEvent.dates?.find((d: any) => d.date === dateStr);
@@ -2646,7 +2691,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                       <div className="px-6 space-y-3">
 
-                        {/* Already booked — show options: view booking or book another */}
+                        {/* Google-account booking hint. A second ticket still needs a different phone. */}
                         {existingBooking && isPayUFlow && !forceNewBooking && (
                           <div className="bg-[#34C759]/8 border border-[#34C759]/25 rounded-2xl px-4 py-4 flex flex-col gap-3">
                             <div className="flex items-center gap-2.5">
@@ -2662,10 +2707,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             </p>
                             <button
                               type="button"
-                              onClick={() => setForceNewBooking(true)}
+                              onClick={() => {
+                                setForceNewBooking(true);
+                                setDetailsForm(f => ({ ...f, phone: '' }));
+                              }}
                               className="w-full text-center py-3 rounded-xl bg-[#34C759] text-white text-[13px] font-bold active:opacity-80 transition-all"
                             >
-                              Book Another Spot
+                              Use a Different Number
                             </button>
                             <a
                               href="/myplans"
@@ -2791,18 +2839,21 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                       {(!existingBooking || forceNewBooking) && (
                       <div className="px-6 pt-6 pb-6">
+                        {openBookingCheckError && (
+                          <p className="mb-3 text-center text-[13px] leading-relaxed text-red-500">{openBookingCheckError}</p>
+                        )}
                         <button
                           type="button"
-                          disabled={!isDetailsFormValid}
+                          disabled={!isDetailsFormValid || checkingOpenBooking}
                           onClick={handleProceedToPhonePe}
                           className={`w-full py-[17px] rounded-2xl text-[17px] font-black flex items-center justify-center gap-2.5 transition-all relative overflow-hidden ${
-                            isDetailsFormValid ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
+                            isDetailsFormValid && !checkingOpenBooking ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
-                          {isDetailsFormValid && (
+                          {isDetailsFormValid && !checkingOpenBooking && (
                             <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                           )}
-                          <span>Continue to Payment</span>
+                          <span>{checkingOpenBooking ? 'Checking your booking...' : 'Continue to Payment'}</span>
                           <ArrowRight size={18} strokeWidth={2.5} />
                         </button>
                       </div>
@@ -2810,6 +2861,59 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     </motion.div>
 
                 </AnimatePresence>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* Open-event duplicate booking result — shown before a bill can open. */}
+        <AnimatePresence>
+          {showDetailsForm && openAlreadyPaid && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[65] bg-black/40 backdrop-blur-md"
+              />
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+                className="absolute bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[2rem] px-6 pt-8 pb-8"
+              >
+                <div className="flex flex-col items-center justify-center gap-4 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">👋</div>
+                  <p className="text-[20px] font-black text-gray-900">Spot Already Reserved!</p>
+                  <p className="text-[14px] text-gray-500 leading-relaxed max-w-[310px]">
+                    A payment has already been made for this event with this WhatsApp number.
+                  </p>
+                  <p className="text-[14px] text-gray-500 leading-relaxed max-w-[310px]">
+                    To get another ticket, please use a different WhatsApp number.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenAlreadyPaid(false);
+                      setDetailsForm(f => ({ ...f, phone: '' }));
+                    }}
+                    className="mt-2 w-full py-4 rounded-2xl bg-[#FFD700] text-black font-black text-[16px] active:scale-95 transition-all"
+                  >
+                    Use a Different Number
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenAlreadyPaid(false);
+                      setShowDetailsForm(false);
+                      setShowBookingTimeline(true);
+                    }}
+                    className="w-full py-3 text-[14px] text-gray-500 font-semibold active:opacity-60 transition-all"
+                  >
+                    Back to event details
+                  </button>
+                </div>
               </motion.div>
             </>
           )}

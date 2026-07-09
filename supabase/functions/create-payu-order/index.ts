@@ -31,7 +31,7 @@ async function resolveEvent(supabase: any, inputSlug: string) {
   if (!inputSlug) return null;
   const { data } = await supabase
     .from('events')
-    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details, payment_mode')
+    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details, payment_mode, booking_url')
     .or(`slug.eq.${inputSlug},invite_slug.eq.${inputSlug}`)
     .maybeSingle();
   return data ?? null;
@@ -176,6 +176,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
+    const checkOnly = body.check_only === true;
 
     // ── 1. Validate client inputs (do NOT trust amount / event_title) ──
     const name = sanitizeName(body.name);
@@ -220,10 +221,13 @@ Deno.serve(async (req) => {
     // single user (or a stolen invite_slug being shared) from creating
     // dozens of pending payu_payments rows that we then have to clean up.
     const ip = clientIp(req);
-    if (!(await checkRateLimit(supabase, 'create-payu:ip', ip, 60, 10))) {
+    const rateKind = checkOnly ? 'check-open-booking' : 'create-payu';
+    const ipLimit = checkOnly ? 20 : 10;
+    const phoneLimit = checkOnly ? 10 : 5;
+    if (!(await checkRateLimit(supabase, `${rateKind}:ip`, ip, 60, ipLimit))) {
       return err(429, 'rate limit exceeded (ip)', cors);
     }
-    if (!(await checkRateLimit(supabase, 'create-payu:phone', phone, 3600, 5))) {
+    if (!(await checkRateLimit(supabase, `${rateKind}:phone`, phone, 3600, phoneLimit))) {
       return err(429, 'rate limit exceeded (phone)', cors);
     }
 
@@ -239,6 +243,32 @@ Deno.serve(async (req) => {
     if (event.payment_mode === 'full') paymentType = 'full';
 
     const canonicalSlug = event.slug as string;
+
+    // One open-event spot per WhatsApp number. Enforce this in the payment
+    // function so a stale bill page or direct request cannot create a second
+    // advance/full charge. A legitimate split-payment balance is still allowed.
+    if (event.booking_url === 'payu-hosted' && paymentType !== 'balance') {
+      const { data: paidApplication, error: paidApplicationError } = await supabase
+        .from('applications')
+        .select('id')
+        .eq('event_slug', canonicalSlug)
+        .eq('phone', phone)
+        .in('status', ['advance_paid', 'fully_paid'])
+        .maybeSingle();
+      if (paidApplicationError) {
+        console.error('[create-payu-order] paid application lookup failed', paidApplicationError);
+        return err(500, 'could not verify booking status', cors);
+      }
+      if (paidApplication) return err(409, 'already paid for this open event', cors);
+    }
+
+    // Used by the open-event details form before it opens the bill. The actual
+    // order request repeats the guard above to close the preflight race window.
+    if (checkOnly) {
+      return new Response(JSON.stringify({ can_checkout: true }), {
+        headers: { 'Content-Type': 'application/json', ...cors },
+      });
+    }
     // Strip the pipe char before productinfo enters the |-delimited PayU hash
     // string. A title containing '|' would inject an extra delimiter and break
     // hash validation for that transaction (same reason sanitizeName strips it

@@ -408,6 +408,8 @@ export function NativePaymentOverlay({
         msg = "Too many attempts from your network — please try again in a minute.";
       } else if (raw.includes('phone not invited')) {
         msg = "This number isn't on the invite list for this plan. Check the number or contact us.";
+      } else if (raw.includes('already paid for this open event')) {
+        msg = 'This number already has a confirmed spot for this event. Use a different number for another ticket.';
       } else if (raw.includes('no application found for balance')) {
         msg = "We couldn't find your booking for the balance payment. Contact us if this looks wrong.";
       } else if (raw.includes('advance not yet paid')) {
