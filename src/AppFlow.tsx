@@ -2562,13 +2562,17 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                   ])
                         );
 
-                        // Social-proof row: the last booking_steps entry whose label contains
-                        // {application_count}. It's pulled OUT of the timeline list and used to
-                        // drive the yellow card at the bottom — so the admin can edit that copy
-                        // in one place, without it duplicating as a numbered step.
+                        // Invite timelines opt into their social-proof/event-date row with
+                        // {application_count}. An open single-payment event is simpler: its
+                        // final stored row is always the event-date card, so the admin never
+                        // has to configure a hidden marker for it.
+                        const isOpenSingleTimeline = isPayUFlow && selectedEvent.paymentMode === 'full';
                         let socialProofIdx = -1;
                         for (let i = eventSteps.length - 1; i >= 0; i--) {
                           if ((eventSteps[i].label || '').includes('{application_count}')) { socialProofIdx = i; break; }
+                        }
+                        if (socialProofIdx < 0 && isOpenSingleTimeline && eventSteps.length >= 3) {
+                          socialProofIdx = eventSteps.length - 1;
                         }
                         const displayEventSteps = isPayUFlow && selectedEvent.paymentMode === 'full'
                           ? eventSteps.map((step: any, i: number) => {
@@ -2591,9 +2595,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           // earlier save must never render as an empty numbered step.
                           .filter((s: any) => String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== '');
 
-                        const yellowTitle = socialProofRow?.value ? resolveValue(socialProofRow.value) : selectedEvent.title;
-                        const yellowDateStr = (socialProofRow?.date) || bookingDate || selectedEvent.dates?.[0]?.date || '';
-                        const yellowSocialLabel = socialProofRow && socialProofCount !== null
+                        const yellowTitle = isOpenSingleTimeline
+                          ? selectedEvent.title
+                          : socialProofRow?.value ? resolveValue(socialProofRow.value) : selectedEvent.title;
+                        const yellowDateStr = isOpenSingleTimeline
+                          ? bookingDate || selectedEvent.dates?.[0]?.date || ''
+                          : (socialProofRow?.date) || bookingDate || selectedEvent.dates?.[0]?.date || '';
+                        const yellowSocialLabel = !isOpenSingleTimeline && socialProofRow && socialProofCount !== null
                           ? resolveValue(socialProofRow.label || '')
                           : showOpenJoinedLabel
                           ? `${openJoinedCount} ppl have already joined`

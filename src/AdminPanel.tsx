@@ -2773,6 +2773,11 @@ export default function AdminPanel() {
                             return i === fixedRowCount - 1 ? { ...def, value: trip.title ?? def.value } : def;
                           })
                         : rawSteps;
+                      // Open single-payment events always have two editable booking steps
+                      // (pay now + meeting details). Their third stored row is the event-date
+                      // card and is rendered automatically, not something an admin configures.
+                      const isOpenSingleTimeline = isOpenApp && isFullPay;
+                      const editableSteps = isOpenSingleTimeline ? currentSteps.slice(0, 2) : currentSteps;
                       const setStep = (i: number, patch: Partial<{ label: string; value: string; date: string }>) => {
                         const next = currentSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s);
                         setTimelineEdits(prev => ({ ...prev, [editKey]: next }));
@@ -2793,7 +2798,7 @@ export default function AdminPanel() {
                               <div style={{ fontWeight: 700, fontSize: 15 }}>{trip.title}</div>
                               {!isExpanded && (
                                 <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
-                                  {currentSteps.length} steps{selectedDate ? ` · ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                                  {editableSteps.length} steps{isOpenSingleTimeline ? ' + event date card' : ''}{selectedDate ? ` · ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
                                 </div>
                               )}
                             </div>
@@ -2837,11 +2842,11 @@ export default function AdminPanel() {
 
                           {isExpanded && (
                             <div onClick={e => e.stopPropagation()}>
-                          {currentSteps.map((step, i) => {
+                          {editableSteps.map((step, i) => {
                             const isNowRow = i === 0;
                             // Fixed-timeline (invite/open): first row (pay now / vibe check)
                             // and last row (Event Date card) have no free date input.
-                            const nativeNoDate = isFixedTimeline && (i === 0 || i === currentSteps.length - 1);
+                            const nativeNoDate = isFixedTimeline && (i === 0 || (!isOpenSingleTimeline && i === currentSteps.length - 1));
                             return (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isFixedTimeline ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
                                 {/* Left: label + value stacked */}
@@ -2892,6 +2897,18 @@ export default function AdminPanel() {
                               </div>
                             );
                           })}
+
+                          {isOpenSingleTimeline && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#fff9d6', border: '1px solid #FFD700', borderRadius: 10, marginBottom: 6 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: '#8a7a24', marginBottom: 3 }}>X ppl have already joined</div>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>{trip.title}</div>
+                              </div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: '#111', whiteSpace: 'nowrap' }}>
+                                {selectedDate ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select date'}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Reference row — styled like a step row, dropdown on the right */}
                           {!isFixedTimeline && sortedDates.length > 0 && (
