@@ -269,6 +269,36 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json', ...cors },
       });
     }
+
+    // Open-event ticket purchases must prove control of the entered WhatsApp
+    // number before a bill (or a PayU order) can be opened. The browser passes
+    // an opaque token only after open-event-otp has verified the six-digit code;
+    // the DB row binds that token to this exact event, phone and email.
+    // Balance payments remain available to an already-verified booking without
+    // making the customer repeat OTP verification.
+    if (event.booking_url === 'payu-hosted' && paymentType !== 'balance') {
+      const verificationToken = String(body.otp_session ?? '');
+      if (!/^[a-f0-9]{64}$/.test(verificationToken)) {
+        return err(403, 'WhatsApp verification required before payment', cors);
+      }
+      const { data: otpSession, error: otpSessionError } = await supabase
+        .from('open_event_otp_sessions')
+        .select('event_slug, phone, email, expires_at, verified_at')
+        .eq('verification_token', verificationToken)
+        .maybeSingle();
+      const sessionEmail = String((otpSession as any)?.email ?? '').trim().toLowerCase();
+      if (
+        otpSessionError ||
+        !otpSession ||
+        !otpSession.verified_at ||
+        new Date(otpSession.expires_at).getTime() <= Date.now() ||
+        otpSession.event_slug !== canonicalSlug ||
+        otpSession.phone !== phone ||
+        sessionEmail !== email.toLowerCase()
+      ) {
+        return err(403, 'WhatsApp verification required before payment', cors);
+      }
+    }
     // Strip the pipe char before productinfo enters the |-delimited PayU hash
     // string. A title containing '|' would inject an extra delimiter and break
     // hash validation for that transaction (same reason sanitizeName strips it

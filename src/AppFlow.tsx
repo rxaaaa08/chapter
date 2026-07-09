@@ -794,6 +794,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [openAlreadyPaid, setOpenAlreadyPaid] = useState(false);
   const [checkingOpenBooking, setCheckingOpenBooking] = useState(false);
   const [openBookingCheckError, setOpenBookingCheckError] = useState('');
+  const [openOtpSession, setOpenOtpSession] = useState('');
+  const [openOtpDigits, setOpenOtpDigits] = useState<string[]>(() => Array(6).fill(''));
+  const [sendingOpenOtp, setSendingOpenOtp] = useState(false);
+  const [verifyingOpenOtp, setVerifyingOpenOtp] = useState(false);
+  const openOtpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
   // Auto-fill name + check for existing booking when Google user is set
   useEffect(() => {
@@ -1688,49 +1693,136 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     }
   };
 
-  const handleProceedToPhonePe = async () => {
+  const openEventFunctionHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+  };
+
+  const resetOpenOtp = () => {
+    setOpenOtpSession('');
+    setOpenOtpDigits(Array(6).fill(''));
+  };
+
+  const checkOpenBookingEligibility = async (): Promise<boolean> => {
+    if (!selectedEvent || !isPayUFlow) return true;
+    const normalizedPhone = detailsForm.phone.replace(/\D/g, '').slice(-10);
+    setCheckingOpenBooking(true);
+    setOpenBookingCheckError('');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payu-order`, {
+        method: 'POST',
+        headers: openEventFunctionHeaders,
+        body: JSON.stringify({
+          check_only: true,
+          name: detailsForm.name.trim(),
+          phone: normalizedPhone,
+          email: detailsForm.email.trim(),
+          event_slug: selectedEvent.id,
+          selected_city: selectedCity || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409 && data?.error === 'already paid for this open event') {
+        setOpenAlreadyPaid(true);
+        return false;
+      }
+      if (!res.ok) {
+        setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('open booking eligibility check failed:', err);
+      setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
+      return false;
+    } finally {
+      setCheckingOpenBooking(false);
+    }
+  };
+
+  const requestOpenEventOtp = async () => {
+    if (!selectedEvent || !isPayUFlow) return;
+    if (!(await checkOpenBookingEligibility())) return;
+
+    setSendingOpenOtp(true);
+    setOpenBookingCheckError('');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/open-event-otp`, {
+        method: 'POST',
+        headers: openEventFunctionHeaders,
+        body: JSON.stringify({
+          action: 'request',
+          name: detailsForm.name.trim(),
+          phone: detailsForm.phone,
+          email: detailsForm.email.trim(),
+          event_slug: selectedEvent.id,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.verification_token) {
+        setOpenBookingCheckError(data?.error || 'We could not send your WhatsApp code. Please try again.');
+        return;
+      }
+      setOpenOtpSession(data.verification_token);
+      setOpenOtpDigits(Array(6).fill(''));
+      window.setTimeout(() => openOtpInputsRef.current[0]?.focus(), 0);
+    } catch (err) {
+      console.error('open event OTP request failed:', err);
+      setOpenBookingCheckError('We could not send your WhatsApp code. Please try again.');
+    } finally {
+      setSendingOpenOtp(false);
+    }
+  };
+
+  const verifyOpenEventOtpAndProceed = async () => {
+    if (!selectedEvent || !openOtpSession) return;
+    const code = openOtpDigits.join('');
+    if (!/^\d{6}$/.test(code)) {
+      setOpenBookingCheckError('Enter the six-digit code we sent on WhatsApp.');
+      return;
+    }
+
+    setVerifyingOpenOtp(true);
+    setOpenBookingCheckError('');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/open-event-otp`, {
+        method: 'POST',
+        headers: openEventFunctionHeaders,
+        body: JSON.stringify({
+          action: 'verify',
+          verification_token: openOtpSession,
+          code,
+          phone: detailsForm.phone,
+          email: detailsForm.email.trim(),
+          event_slug: selectedEvent.id,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.verified) {
+        setOpenBookingCheckError(data?.error || 'We could not verify that code. Please try again.');
+        return;
+      }
+      await handleProceedToPhonePe(data.verification_token || openOtpSession);
+    } catch (err) {
+      console.error('open event OTP verification failed:', err);
+      setOpenBookingCheckError('We could not verify that code. Please try again.');
+    } finally {
+      setVerifyingOpenOtp(false);
+    }
+  };
+
+  const handleProceedToPhonePe = async (verifiedOtpSession = openOtpSession) => {
     if (!selectedEvent) return;
 
-    // Check before creating/reusing the open-event application or opening the
-    // bill. create-payu-order repeats this guard on the real payment request,
-    // so a stale page or direct request cannot bypass the one-ticket rule.
+    // The bill is gated by a WhatsApp OTP for open events. create-payu-order
+    // verifies this session again when the bill actually requests PayU fields.
     if (isPayUFlow) {
-      const normalizedPhone = detailsForm.phone.replace(/\D/g, '').slice(-10);
-      setCheckingOpenBooking(true);
-      setOpenBookingCheckError('');
-      try {
-        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payu-order`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            check_only: true,
-            name: detailsForm.name.trim(),
-            phone: normalizedPhone,
-            email: detailsForm.email.trim(),
-            event_slug: selectedEvent.id,
-            selected_city: selectedCity || undefined,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.status === 409 && data?.error === 'already paid for this open event') {
-          setOpenAlreadyPaid(true);
-          return;
-        }
-        if (!res.ok) {
-          setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
-          return;
-        }
-      } catch (err) {
-        console.error('open booking eligibility check failed:', err);
-        setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
+      if (!verifiedOtpSession) {
+        setOpenBookingCheckError('Please verify your WhatsApp number first.');
         return;
-      } finally {
-        setCheckingOpenBooking(false);
       }
+      if (!(await checkOpenBookingEligibility())) return;
     }
 
     const dateStr = bookingDate || selectedEvent.dates?.[0]?.date || '';
@@ -1766,6 +1858,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       girlsOnly: selectedEvent.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent.quickInfo),
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
       email: detailsForm.email.trim() || undefined,
+      otpSession: isPayUFlow ? verifiedOtpSession : undefined,
       // Sent to create-payu-order so it charges the correct city-aware price
       // directly from the client's current selection (server validates it
       // against event.cities) instead of depending on the applications-row
@@ -2765,7 +2858,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                               <input
                                 type="tel"
                                 value={detailsForm.phone}
-                                onChange={e => setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                                onChange={e => {
+                                  resetOpenOtp();
+                                  setDetailsForm({ ...detailsForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) });
+                                }}
                                 placeholder="We'll reach you here"
                                 className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                                 inputMode="tel"
@@ -2801,7 +2897,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                   <input
                                     type="email"
                                     value={detailsForm.email}
-                                    onChange={e => setDetailsForm({ ...detailsForm, email: e.target.value })}
+                                    onChange={e => {
+                                      resetOpenOtp();
+                                      setDetailsForm({ ...detailsForm, email: e.target.value });
+                                    }}
                                     placeholder="Booking updates are sent here"
                                     className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                                     inputMode="email"
@@ -2809,6 +2908,52 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                     autoCorrect="off"
                                   />
                                 </div>
+
+                                {openOtpSession && (
+                                  <div className="rounded-2xl border border-[#FFD700]/70 bg-[#FFFDF2] px-4 pt-3 pb-4">
+                                    <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">WhatsApp verification</p>
+                                    <p className="mt-1 text-[13px] leading-relaxed text-gray-600">Enter the six-digit code sent to {detailsForm.phone}.</p>
+                                    <div className="mt-3 flex justify-between gap-2">
+                                      {openOtpDigits.map((digit, index) => (
+                                        <input
+                                          key={index}
+                                          ref={node => { openOtpInputsRef.current[index] = node; }}
+                                          value={digit}
+                                          type="text"
+                                          inputMode="numeric"
+                                          autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                                          maxLength={1}
+                                          disabled={verifyingOpenOtp}
+                                          onChange={e => {
+                                            const nextDigit = e.target.value.replace(/\D/g, '').slice(-1);
+                                            setOpenOtpDigits(previous => previous.map((value, itemIndex) => itemIndex === index ? nextDigit : value));
+                                            if (nextDigit && index < 5) openOtpInputsRef.current[index + 1]?.focus();
+                                          }}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Backspace' && !digit && index > 0) openOtpInputsRef.current[index - 1]?.focus();
+                                          }}
+                                          onPaste={e => {
+                                            const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+                                            if (!pasted) return;
+                                            e.preventDefault();
+                                            setOpenOtpDigits(Array.from({ length: 6 }, (_, itemIndex) => pasted[itemIndex] ?? ''));
+                                            openOtpInputsRef.current[Math.min(pasted.length, 5)]?.focus();
+                                          }}
+                                          className="h-11 min-w-0 flex-1 rounded-xl border border-[#E4DFAF] bg-white text-center text-[19px] font-black text-gray-900 outline-none transition-colors focus:border-[#D3AD00] focus:ring-2 focus:ring-[#FFD700]/30 disabled:opacity-60"
+                                          aria-label={`OTP digit ${index + 1}`}
+                                        />
+                                      ))}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={requestOpenEventOtp}
+                                      disabled={sendingOpenOtp || verifyingOpenOtp}
+                                      className="mt-3 text-[12px] font-bold text-gray-600 underline underline-offset-2 disabled:opacity-40"
+                                    >
+                                      {sendingOpenOtp ? 'Sending a new code…' : 'Resend OTP'}
+                                    </button>
+                                  </div>
+                                )}
                               </>
                             )}
                           </>
@@ -2844,16 +2989,16 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         )}
                         <button
                           type="button"
-                          disabled={!isDetailsFormValid || checkingOpenBooking}
-                          onClick={handleProceedToPhonePe}
+                          disabled={!isDetailsFormValid || checkingOpenBooking || sendingOpenOtp || verifyingOpenOtp}
+                          onClick={isPayUFlow ? (openOtpSession ? verifyOpenEventOtpAndProceed : requestOpenEventOtp) : handleProceedToPhonePe}
                           className={`w-full py-[17px] rounded-2xl text-[17px] font-black flex items-center justify-center gap-2.5 transition-all relative overflow-hidden ${
-                            isDetailsFormValid && !checkingOpenBooking ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
+                            isDetailsFormValid && !checkingOpenBooking && !sendingOpenOtp && !verifyingOpenOtp ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
-                          {isDetailsFormValid && !checkingOpenBooking && (
+                          {isDetailsFormValid && !checkingOpenBooking && !sendingOpenOtp && !verifyingOpenOtp && (
                             <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                           )}
-                          <span>{checkingOpenBooking ? 'Checking your booking...' : 'Continue to Payment'}</span>
+                          <span>{checkingOpenBooking ? 'Checking your booking...' : sendingOpenOtp ? 'Sending OTP...' : verifyingOpenOtp ? 'Verifying OTP...' : isPayUFlow ? (openOtpSession ? 'Continue to Payment' : 'Get OTP') : 'Continue to Payment'}</span>
                           <ArrowRight size={18} strokeWidth={2.5} />
                         </button>
                       </div>
@@ -2883,6 +3028,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 transition={{ type: 'spring', damping: 32, stiffness: 300 }}
                 className="absolute bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[2rem] px-6 pt-8 pb-8"
               >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenAlreadyPaid(false);
+                    resetOpenOtp();
+                    setDetailsForm(f => ({ ...f, phone: '' }));
+                  }}
+                  className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+                  aria-label="Close and use a different number"
+                >
+                  <X size={14} strokeWidth={2.5} />
+                </button>
                 <div className="flex flex-col items-center justify-center gap-4 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">👋</div>
                   <p className="text-[20px] font-black text-gray-900">Spot Already Reserved!</p>
@@ -2896,22 +3053,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                     type="button"
                     onClick={() => {
                       setOpenAlreadyPaid(false);
+                      resetOpenOtp();
                       setDetailsForm(f => ({ ...f, phone: '' }));
                     }}
                     className="mt-2 w-full py-4 rounded-2xl bg-[#FFD700] text-black font-black text-[16px] active:scale-95 transition-all"
                   >
                     Use a Different Number
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenAlreadyPaid(false);
-                      setShowDetailsForm(false);
-                      setShowBookingTimeline(true);
-                    }}
-                    className="w-full py-3 text-[14px] text-gray-500 font-semibold active:opacity-60 transition-all"
-                  >
-                    Back to event details
                   </button>
                 </div>
               </motion.div>
@@ -3126,6 +3273,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 lockEmail={!!paymentContext.email}
                 eventSlug={paymentContext.eventId}
                 selectedCity={paymentContext.selectedCity ?? ''}
+                otpSession={paymentContext.otpSession ?? ''}
                 onClose={() => {
                   setPaymentView('idle');
                   setShowDetailsForm(true);
