@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <title>chapter அ</title>
-    <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -13,15 +12,23 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
       // Two installable apps share this single-page site: the admin PWA
-      // (default, /manifest.json → starts at /admin) and the creators PWA.
-      // Manifest + iOS icon/title are read from the page the user is on when
-      // they install, so on /creator swap them before anyone can hit
-      // "Install app" / "Add to Home Screen".
-      if (location.pathname.indexOf('/creator') === 0) {
-        document.querySelector('link[rel="manifest"]').href = '/creator-manifest.json';
-        document.querySelector('link[rel="apple-touch-icon"]').href = '/apple-touch-icon-creator.png';
-        document.querySelector('meta[name="apple-mobile-web-app-title"]').content = 'creators';
-      }
+      // (default, /manifest.json → starts at /admin) and the creators PWA on
+      // /creator. There is deliberately NO static <link rel="manifest"> above:
+      // Safari fetches the manifest the moment it parses that tag, so editing
+      // its href afterwards is too late — /creator kept installing the admin
+      // app (start_url /admin) under the creator icon. Decide the identity
+      // first, then inject the matching manifest link.
+      (function () {
+        var isCreator = location.pathname.indexOf('/creator') === 0;
+        var m = document.createElement('link');
+        m.rel = 'manifest';
+        m.href = isCreator ? '/creator-manifest.json' : '/manifest.json';
+        document.head.appendChild(m);
+        if (isCreator) {
+          document.querySelector('link[rel="apple-touch-icon"]').href = '/apple-touch-icon-creator.png';
+          document.querySelector('meta[name="apple-mobile-web-app-title"]').content = 'creators';
+        }
+      })();
     </script>
     <!-- Open Graph / social share preview (IG, WhatsApp, FB, LinkedIn). -->
     <meta property="og:type" content="website" />
