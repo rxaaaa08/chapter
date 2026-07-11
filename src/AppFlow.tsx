@@ -2972,47 +2972,36 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                         />
                                       ))}
                                     </div>
-                                    <div className="mt-3 flex min-h-5 items-center text-[12px]">
-                                      {openOtpAttemptsExhausted ? (
-                                        <span className="text-[13px] text-gray-500 leading-snug">
-                                          Need help?{' '}
-                                          <a
-                                            href={`https://wa.me/919940111564?text=${encodeURIComponent(`I'm trying to book a slot for ${selectedEvent?.title ?? 'this event'}, I need help with OTP`)}`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-gray-900 underline font-medium"
-                                          >
-                                            Contact Us
-                                          </a>
-                                        </span>
-                                      ) : openOtpDelivery === 'whatsapp' ? (
-                                        <div className="flex w-full items-end justify-between gap-3">
-                                          <div className="flex items-center gap-1">
-                                            {!sendingOpenOtp && (
-                                              <button
-                                                type="button"
-                                                onClick={() => requestOpenEventOtp('email')}
-                                                disabled={verifyingOpenOtp || openOtpEmailWaitSeconds > 0 || !isEmailValid}
-                                                className={`whitespace-nowrap underline disabled:cursor-not-allowed disabled:no-underline disabled:text-gray-400 ${
-                                                  openOtpEmailWaitSeconds > 0
-                                                    ? 'text-[12px] font-medium text-gray-400'
-                                                    : 'text-[13px] font-medium text-gray-900'
-                                                }`}
-                                              >
-                                                {openOtpEmailWaitSeconds > 0
-                                                  ? `Get OTP on Email (${openOtpEmailWaitSeconds} seconds)`
-                                                  : 'Get OTP on Email'}
-                                              </button>
-                                            )}
-                                          </div>
-                                          {openBookingCheckError && (
-                                            <span className="text-right text-[11px] font-normal leading-snug text-red-500">{openBookingCheckError}</span>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <div className="flex w-full items-end justify-between gap-3">
-                                          <span className="text-[13px] text-gray-500 leading-snug">
-                                            Need help?{' '}
+                                    <div className="mt-3 space-y-1.5">
+                                      {openBookingCheckError && (
+                                        <p className="text-[12px] font-normal leading-snug text-red-500">{openBookingCheckError}</p>
+                                      )}
+                                      <div className="min-h-5 text-[13px] leading-snug">
+                                        {openOtpDelivery === 'whatsapp' ? (
+                                          !sendingOpenOtp && (
+                                            <button
+                                              type="button"
+                                              onClick={() => requestOpenEventOtp('email')}
+                                              disabled={verifyingOpenOtp || openOtpEmailWaitSeconds > 0 || !isEmailValid}
+                                              className={`text-left leading-snug disabled:cursor-not-allowed ${
+                                                openOtpEmailWaitSeconds > 0
+                                                  ? 'text-[12px] font-medium text-gray-400'
+                                                  : 'text-[13px] font-medium'
+                                              }`}
+                                            >
+                                              {openOtpEmailWaitSeconds > 0 ? (
+                                                `Resend OTP (${openOtpEmailWaitSeconds} seconds)`
+                                              ) : (
+                                                <>
+                                                  <span className={`font-normal ${verifyingOpenOtp || !isEmailValid ? 'text-gray-400' : 'text-gray-500'}`}>Didn't Receive Code?</span>{' '}
+                                                  <span className={verifyingOpenOtp || !isEmailValid ? 'text-gray-400' : 'text-gray-900 underline'}>Get OTP on Email</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          )
+                                        ) : (
+                                          <span className="text-gray-500">
+                                            Need Help?{' '}
                                             <a
                                               href={`https://wa.me/919940111564?text=${encodeURIComponent(`I'm trying to book a slot for ${selectedEvent?.title ?? 'this event'}, I need help with OTP`)}`}
                                               target="_blank"
@@ -3022,11 +3011,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                               Contact Us
                                             </a>
                                           </span>
-                                          {openBookingCheckError && (
-                                            <span className="text-right text-[11px] font-normal leading-snug text-red-500">{openBookingCheckError}</span>
-                                          )}
-                                        </div>
-                                      )}
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 )}

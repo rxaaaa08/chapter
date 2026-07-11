@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
         previousSession.phone !== phone ||
         new Date(previousSession.expires_at).getTime() <= Date.now()
       ) {
-        return reply(400, { error: 'Your booking details changed. Please request a new WhatsApp code.' }, cors);
+        return reply(400, { error: 'This verification expired. Re-enter your WhatsApp number to start again.' }, cors);
       }
       const waitMs = new Date(previousSession.created_at).getTime() + EMAIL_FALLBACK_DELAY_MS - Date.now();
       if (waitMs > 0) {
@@ -195,11 +195,17 @@ Deno.serve(async (req) => {
     if (!(await checkRateLimit(supabase, 'open-event-otp:ip', ip, 60, 5))) {
       return reply(429, { error: 'Too many OTP requests from this network. Please wait a minute.' }, cors);
     }
-    if (!(await checkRateLimit(supabase, 'open-event-otp:phone', phone, 600, 3))) {
-      return reply(429, { error: 'Too many OTP requests. Please wait a few minutes and try again.' }, cors);
+    // Decoupled per-channel budgets: the paid WhatsApp channel is cost-capped
+    // (2/number/10min) WITHOUT ever starving the email fallback. Email draws on
+    // its own separate budget keyed by email, so a user whose WhatsApp never
+    // arrives can always get an email code — no matter how many WhatsApp tries
+    // they burned. (Email delivery still requires a valid prior WhatsApp session
+    // above, so this can't be abused independently.)
+    if (delivery === 'whatsapp' && !(await checkRateLimit(supabase, 'open-event-otp:phone', phone, 600, 2))) {
+      return reply(429, { error: 'Too many WhatsApp code requests for this number. Please wait about 10 minutes and try again.' }, cors);
     }
-    if (delivery === 'email' && !(await checkRateLimit(supabase, 'open-event-otp:email', email, 600, 3))) {
-      return reply(429, { error: 'Too many OTP emails. Please wait a few minutes and try again.' }, cors);
+    if (delivery === 'email' && !(await checkRateLimit(supabase, 'open-event-otp:email', email, 600, 2))) {
+      return reply(429, { error: 'Too many email code requests. Please wait about 10 minutes and try again.' }, cors);
     }
 
     const verificationToken = randomToken();
@@ -306,12 +312,12 @@ Deno.serve(async (req) => {
     .select('id, event_slug, phone, email, code_hash, expires_at, attempts, verified_at')
     .eq('verification_token', verificationToken)
     .maybeSingle();
-  if (sessionError || !session) return reply(400, { error: 'This code has expired. Please request a new one.' }, cors);
+  if (sessionError || !session) return reply(400, { error: 'This code has expired. Re-enter your WhatsApp number to get a new code.' }, cors);
   if (session.event_slug !== requestedSlug || session.phone !== phone || session.email !== email) {
-    return reply(400, { error: 'Your booking details changed. Please request a new code.' }, cors);
+    return reply(400, { error: 'Your details changed. Re-enter your WhatsApp number to get a new code.' }, cors);
   }
   if (new Date(session.expires_at).getTime() <= Date.now()) {
-    return reply(400, { error: 'This code has expired. Please request a new one.' }, cors);
+    return reply(400, { error: 'This code has expired. Re-enter your WhatsApp number to get a new code.' }, cors);
   }
   if (session.verified_at) return reply(200, { verified: true, verification_token: verificationToken }, cors);
   if (session.attempts >= MAX_ATTEMPTS) {
