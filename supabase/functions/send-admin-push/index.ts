@@ -113,6 +113,9 @@ async function sendWebPush(
       'Content-Type':     'application/octet-stream',
       'Content-Encoding': 'aes128gcm',
       'TTL':              '86400',
+      // Android delays/batches normal-urgency pushes under battery saver/doze;
+      // admin alerts are time-sensitive, so ask for immediate delivery.
+      'Urgency':          'high',
     },
     body: encBody,
   });
@@ -267,7 +270,8 @@ serve(async (req) => {
         const txt = await r.value.text().catch(() => '');
         console.log(`push result [${i}]: host=${host} status=${r.value.status} body=${txt.slice(0, 100)}`);
         perDevice.push({ i, host, status: r.value.status, body: txt.slice(0, 200) });
-        if (r.value.status === 410) expired.push(subs[i].endpoint);
+        // FCM signals a dead subscription with 404 as well as 410
+        if (r.value.status === 410 || r.value.status === 404) expired.push(subs[i].endpoint);
       } else {
         console.error(`push error [${i}]:`, r.reason);
         perDevice.push({ i, host, error: String(r.reason).slice(0, 200) });

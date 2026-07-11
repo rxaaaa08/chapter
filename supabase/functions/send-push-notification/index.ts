@@ -189,6 +189,8 @@ async function sendWebPush(
         'Content-Type':     'application/octet-stream',
         'Content-Encoding': 'aes128gcm',
         'TTL':              '86400',
+        // Android delays/batches normal-urgency pushes under battery saver/doze
+        'Urgency':          'high',
       },
       body,
     });
@@ -323,11 +325,11 @@ serve(async (req) => {
       }
     }
 
-    // Clean up expired subscriptions (HTTP 410)
+    // Clean up expired subscriptions (FCM signals a dead one with 404 or 410)
     const expired: string[] = [];
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      if (r.status === 'fulfilled' && r.value.status === 410) expired.push(subs[i].endpoint);
+      if (r.status === 'fulfilled' && (r.value.status === 410 || r.value.status === 404)) expired.push(subs[i].endpoint);
     }
     if (expired.length > 0) {
       await supabase.from('push_subscriptions').delete().in('endpoint', expired);
