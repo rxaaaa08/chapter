@@ -50,9 +50,14 @@ const istMonth = () => {
 };
 
 export default function CreatorDashboard() {
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
+  // Distinguishes "genuinely not a creator" (absent) from "lookup still running
+  // or failed" (loading/error). The error state is load-bearing: a flaky request
+  // must never fall through to the "not a creator" screen.
+  const [meStatus, setMeStatus] = useState<'loading' | 'found' | 'absent' | 'error'>('loading');
+  const [lookupNonce, setLookupNonce] = useState(0); // bump to retry the lookup
   const [range, setRange] = useState<string>('month');
   const [funnel, setFunnel] = useState<RangeStats | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -92,30 +97,72 @@ export default function CreatorDashboard() {
 
   const month = istMonth();
 
+  // Track only WHO is logged in here. The creator lookup is deliberately kept
+  // OUT of the auth callback: onAuthStateChange can fire before the new session
+  // token is attached to the client, so a query made inside it may run
+  // unauthenticated and — thanks to self-select RLS — come back empty. That
+  // false "no row" is what produced the intermittent "not a creator" screen
+  // right after signing in.
   useEffect(() => {
-    let done = false;
-    const finish = () => { if (!done) { done = true; setAuthLoading(false); } };
-    const resolve = async (userEmail: string | undefined) => {
+    let mounted = true;
+    const apply = (userEmail: string | undefined) => {
+      if (!mounted) return;
       setEmail(userEmail ?? null);
-      if (!userEmail) { setMe(null); finish(); return; }
-      try {
-        // Self-select RLS returns only this creator's own affiliates row.
-        const { data } = await supabase.from('affiliates').select('id, handle, name, email, active').maybeSingle();
-        setMe((data as Me) ?? null);
-      } catch {
-        setMe(null);
-      } finally {
-        finish();
-      }
+      setAuthReady(true);
     };
     // .catch so a rejected getSession (e.g. a failed token refresh) can't leave
     // the page stuck on "Loading…".
-    supabase.auth.getSession().then(({ data: { session } }) => resolve(session?.user?.email)).catch(finish);
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => resolve(session?.user?.email));
-    // Hard safety net: never hang on the loading screen, even if a promise stalls.
-    const t = setTimeout(finish, 6000);
-    return () => { subscription.unsubscribe(); clearTimeout(t); };
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => apply(session?.user?.email))
+      .catch(() => { if (mounted) setAuthReady(true); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => apply(session?.user?.email));
+    return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
+
+  // Look up the creator row once auth has settled (and again on manual retry).
+  // Failures surface as an error state with a Retry button — they must NEVER be
+  // silently treated as "not a creator". An empty result on the first try right
+  // after login is retried once, in case the auth token attached a beat late.
+  useEffect(() => {
+    if (!authReady) return;
+    if (!email) { setMe(null); setMeStatus('absent'); return; }
+    let cancelled = false;
+    setMeStatus('loading');
+    const withTimeout = <T,>(p: PromiseLike<T>, ms: number): Promise<T> =>
+      Promise.race([
+        Promise.resolve(p),
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+      ]);
+    (async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let data: any = null, error: any = null;
+        try {
+          // Self-select RLS returns only this creator's own affiliates row.
+          const res: any = await withTimeout(
+            supabase.from('affiliates').select('id, handle, name, email, active').maybeSingle(),
+            5000,
+          );
+          data = res.data; error = res.error;
+        } catch (e) {
+          error = e;
+        }
+        if (cancelled) return;
+        if (error) {
+          // Network/permission/timeout — retry once, then surface as an error.
+          if (attempt === 0) { await new Promise(r => setTimeout(r, 600)); if (cancelled) return; continue; }
+          setMeStatus('error');
+          return;
+        }
+        if (data) { setMe(data as Me); setMeStatus('found'); return; }
+        // No row — could be a token race on the first attempt; retry once.
+        if (attempt === 0) { await new Promise(r => setTimeout(r, 600)); if (cancelled) return; continue; }
+        setMe(null);
+        setMeStatus('absent');
+        return;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authReady, email, lookupNonce]);
 
   // Month earnings (calendar month, the payout cycle) + team board — load once.
   useEffect(() => {
@@ -156,6 +203,7 @@ export default function CreatorDashboard() {
   };
   const resetCreatorState = () => {
     setMe(null);
+    setMeStatus('absent');
     setEmail(null);
     setFunnel(null);
     setEvents([]);
@@ -188,8 +236,8 @@ export default function CreatorDashboard() {
 
   const wrap: React.CSSProperties = { minHeight: '100vh', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' };
 
-  // ── Loading ──
-  if (authLoading) {
+  // ── Loading (auth not settled, or logged in and lookup still running) ──
+  if (!authReady || (email && meStatus === 'loading')) {
     return <div style={{ ...wrap, display: 'grid', placeItems: 'center' }}><div style={{ color: MUTED, fontSize: 14 }}>Loading…</div></div>;
   }
 
@@ -203,6 +251,26 @@ export default function CreatorDashboard() {
           {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 12 }}>{authError}</div>}
           <button onClick={login} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: INK, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
             Continue with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Lookup failed (network / timeout) — must NOT read as "not a creator" ──
+  if (meStatus === 'error') {
+    return (
+      <div style={{ ...wrap, display: 'grid', placeItems: 'center', padding: 24 }}>
+        <div style={{ maxWidth: 340, width: '100%', textAlign: 'center' }}>
+          <div style={{ fontSize: 21, fontWeight: 800, marginBottom: 10 }}>Couldn't load your dashboard</div>
+          <div style={{ color: MUTED, fontSize: 14, marginBottom: 22, lineHeight: 1.55 }}>
+            Something went wrong reaching the server. Check your connection and try again.
+          </div>
+          <button
+            onClick={() => { setMeStatus('loading'); setLookupNonce(n => n + 1); }}
+            style={{ width: '100%', padding: '13px 0', borderRadius: 14, border: 'none', background: INK, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Retry
           </button>
         </div>
       </div>
