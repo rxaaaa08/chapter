@@ -108,11 +108,78 @@ function inviteEmailHtml(args: {
 </html>`;
 }
 
+function openEventDetailsEmailHtml(args: {
+  userName: string;
+  eventName: string;
+  eventDate: string;
+  detailsUrl: string;
+  senderName: string;
+  brandName: string;
+  brandColor: string;
+  bannerColor: string;
+  buttonColor: string;
+  buttonTextColor: string;
+}): string {
+  const name = esc(args.userName || 'there');
+  const event = esc(args.eventName);
+  const date = esc(args.eventDate);
+  const url = args.detailsUrl;
+  const dateLine = date
+    ? `<p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">Plan date: <strong style="color:#111827;">${date}</strong></p>`
+    : '';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;color-scheme:light;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden;">
+        <tr><td style="background:${esc(args.bannerColor)};padding:20px 32px;">
+          <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:${esc(args.brandColor)};">${esc(args.brandName)}</span>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#111827;">We're happy to help!</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">Hey ${name}, re-check <strong style="color:#111827;">${event}</strong> details and reserve your spot.</p>
+          ${dateLine}
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 12px;"><tr>
+            <td align="center" style="border-radius:14px;background:${esc(args.buttonColor)};">
+              <a href="${url}" target="_blank" style="display:block;padding:15px 20px;font-size:16px;font-weight:800;color:${esc(args.buttonTextColor)};text-decoration:none;border-radius:14px;">Reserve My Spot &#8594;</a>
+            </td>
+          </tr></table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;"><tr>
+            <td align="center" style="border:2px solid ${esc(args.buttonColor)};border-radius:14px;background:#ffffff;">
+              <a href="${url}" target="_blank" style="display:block;padding:13px 20px;font-size:16px;font-weight:800;color:${esc(args.buttonColor)};text-decoration:none;border-radius:12px;">Contact Us</a>
+            </td>
+          </tr></table>
+          <p style="margin:0;font-size:13px;line-height:20px;color:#9ca3af;">If the buttons don't work, open this link:<br><a href="${url}" target="_blank" style="color:#2563eb;word-break:break-all;">${url}</a></p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;border-top:1px solid #f3f4f6;">
+          <p style="margin:0 0 10px;font-size:12px;line-height:18px;color:#9ca3af;">Sent by ${esc(args.senderName)}. You received this because you asked a question about this experience.</p>
+          <p style="margin:0;font-size:12px;line-height:18px;color:#9ca3af;">Do not reply to this email. Use either button above to continue.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 function eventLooksGalcode(eventRow: any): boolean {
   const labels = new Set(['galcode event', 'girls only event', "girl's only event", 'girls_only_event']);
   return Array.isArray(eventRow?.quick_info) && eventRow.quick_info.some((item: any) =>
     labels.has(String(item?.label ?? '').trim().toLowerCase())
   );
+}
+
+function buildInviteUrl(baseUrl: string, phone: string, name: string): string {
+  const phone10 = phone.replace(/\D/g, '').slice(-10);
+  if (phone10.length !== 10) return `${baseUrl}/invite`;
+
+  const params = new URLSearchParams();
+  params.set('phone', phone10);
+  const trimmedName = name.trim();
+  if (trimmedName) params.set('name', trimmedName);
+  return `${baseUrl}/invite?${params.toString()}`;
 }
 
 async function resolveIsGalcodeEmail(supabase: any, eventName: string): Promise<boolean> {
@@ -197,20 +264,34 @@ Deno.serve(async (req) => {
     // 2. Validate inputs
     const body = await req.json().catch(() => ({}));
     const email      = String(body.email ?? '').trim();
+    const phone      = String(body.phone ?? '').trim();
     const userName   = String(body.userName  ?? '').trim();
     const eventName  = String(body.eventName ?? '').trim();
     const eventDate  = String(body.eventDate ?? '').trim();
+    const eventSlug  = String(body.eventSlug ?? '').trim().toLowerCase();
     const emailMode  = String(body.mode ?? '').trim().toLowerCase();
     const isResend   = emailMode === 'resend' || emailMode === 'resend_invite';
+    const isOpenDetails = emailMode === 'open_event_details';
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'invalid email' }, cors);
     if (!eventName)                                return json(400, { error: 'missing eventName' }, cors);
+
+    if (isOpenDetails) {
+      if (!eventSlug) return json(400, { error: 'missing eventSlug' }, cors);
+      const { data: openEvent } = await supabase
+        .from('events')
+        .select('slug')
+        .eq('slug', eventSlug)
+        .eq('booking_url', 'payu-hosted')
+        .maybeSingle();
+      if (!openEvent) return json(400, { error: 'not an open event' }, cors);
+    }
 
     // Always the canonical /invite entry point. The invite page resolves the
     // applicant by their session/phone — NOT a slug in the URL. A per-slug path
     // (…/invite/<slug>) is not a real route and 404s, so never build one.
     const baseUrl     = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
-    const inviteUrl   = `${baseUrl}/invite`;
+    const inviteUrl   = buildInviteUrl(baseUrl, phone, userName);
     const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
     const isGalcode   = body.isGalcode === true || await resolveIsGalcodeEmail(supabase, eventName);
     const senderName  = isGalcode
@@ -234,9 +315,11 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         sender: { name: senderName, email: senderEmail },
         to: [{ email, name: userName || undefined }],
-        subject: `You're invited to our ${eventName}!`,
-        htmlContent: inviteEmailHtml({ userName, eventName, eventDate, inviteUrl, senderName, brandName, experienceName, brandColor, bannerColor, buttonColor, buttonTextColor }),
-        tags: [isResend ? 'resend invite' : isGalcode ? 'galcode-invite-email' : 'chapter-invite-email'],
+        subject: isOpenDetails ? `Re-check ${eventName} details & reserve your spot` : `You're invited to our ${eventName}!`,
+        htmlContent: isOpenDetails
+          ? openEventDetailsEmailHtml({ userName, eventName, eventDate, detailsUrl: inviteUrl, senderName, brandName, brandColor, bannerColor, buttonColor, buttonTextColor })
+          : inviteEmailHtml({ userName, eventName, eventDate, inviteUrl, senderName, brandName, experienceName, brandColor, bannerColor, buttonColor, buttonTextColor }),
+        tags: [isOpenDetails ? 'open-event-details-email' : isResend ? 'resend invite' : isGalcode ? 'galcode-invite-email' : 'chapter-invite-email'],
       }),
     });
     const brevoBody = await brevoRes.text().catch(() => '');

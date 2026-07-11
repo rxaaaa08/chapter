@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Event Email Previews</title>
+  <style>
+    body { margin: 0; background: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111827; }
+    header { max-width: 1040px; margin: 0 auto; padding: 28px 18px 10px; }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    p { margin: 0; color: #6b7280; }
+    main { max-width: 1040px; margin: 0 auto; padding: 18px; display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    section { min-width: 0; }
+    h2 { margin: 0 0 10px; font-size: 15px; color: #374151; }
+    iframe { width: 100%; height: 660px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } iframe { height: 700px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Open Event Email Previews</h1>
+    <p>Open-event email previews shown beside the closest invite-only versions.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Open Event: Email OTP</h2>
+      <iframe src="./open-event-otp.html" title="Open event email OTP"></iframe>
+    </section>
+    <section>
+      <h2>Open Event: Cart Abandon</h2>
+      <iframe src="./open-event-cart-abandon.html" title="Open event cart abandon email"></iframe>
+    </section>
+    <section>
+      <h2>Open Event: Doubt Details</h2>
+      <iframe src="./open-event-doubt-details.html" title="Open event doubt details email"></iframe>
+    </section>
+    <section>
+      <h2>Invite Only: Invitation</h2>
+      <iframe src="./invite-only-invitation.html" title="Invite only invitation email"></iframe>
+    </section>
+    <section>
+      <h2>Invite Only: Cart Abandon</h2>
+      <iframe src="./invite-only-cart-abandon.html" title="Invite only cart abandon email"></iframe>
+    </section>
+    <section>
+      <h2>Payment Failure: Deeplink</h2>
+      <iframe src="./payment-failure-deeplink.html" title="Payment failure deeplink email"></iframe>
+    </section>
+  </main>
+</body>
+</html>

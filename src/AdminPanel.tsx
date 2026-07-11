@@ -128,11 +128,13 @@ type DoubtSubmission = {
   date?: string;
   submitted_at?: string;
   created_at?: string;
+  open_details_sent_at?: string;
 };
 type PayuPayment = {
   id?: string;
   txnid?: string;
   event_id?: string;
+  event_slug?: string;
   event_title?: string;
   amount?: number;
   name?: string;
@@ -511,12 +513,17 @@ export default function AdminPanel() {
   // log grows). The Before/After picker is unaffected — every release stays
   // selectable there.
   const [expChartReleases, setExpChartReleases] = useState<Set<number> | null>(null);
-  // ── Test-data purger (scan → retype number → delete) ──
+  // ── Test-data purger (scan many numbers → passcode → delete) ──
+  // purgePhone holds the raw multi-line/comma-separated input; parsePurgePhones
+  // splits it. The delete is gated by a 4-digit passcode verified server-side.
   const [purgePhone, setPurgePhone] = useState('');
   const [purgeScan, setPurgeScan] = useState<any | null>(null);
-  const [purgeConfirm, setPurgeConfirm] = useState('');
+  const [purgePasscode, setPurgePasscode] = useState('');
   const [purgeBusy, setPurgeBusy] = useState(false);
   const [purgeResult, setPurgeResult] = useState<any | null>(null);
+  // Split on commas / whitespace / newlines; keep only entries with digits.
+  const parsePurgePhones = (raw: string): string[] =>
+    raw.split(/[\s,;]+/).map(s => s.trim()).filter(s => /\d/.test(s));
   const [applications, setApplications] = useState<any[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsEventFilter, setApplicationsEventFilter] = useState<'all' | string>('all');
@@ -1143,40 +1150,85 @@ export default function AdminPanel() {
     const eventDate = formatInviteEmailDate((app.selected_date as string) || trip?.event_dates?.[0]?.start_date || '');
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-brevo-invite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${adminAccessToken}`,
-        },
-        body: JSON.stringify({
-          email,
-          userName: app.name ?? '',
-          eventName,
-          eventDate,
-          mode: 'resend',
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.ok) {
-        showToast(`❌ Resend failed${json.error ? ` — ${String(json.error).slice(0, 120)}` : ''}`);
-      } else {
-        const sentAt = new Date().toISOString();
-        const { data: patchedApp } = await supabase
+      const phone10 = String(app.phone ?? '').replace(/\D/g, '').slice(-10);
+      const needsWhatsApp = !app.resend_details_whatsapp_sent_at;
+      const needsEmail = !app.resend_details_email_sent_at;
+
+      const sendWhatsApp = async () => {
+        if (!needsWhatsApp) return { ok: true, skipped: true, error: '' };
+        try {
+          const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-aisensy-invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminAccessToken}` },
+            body: JSON.stringify({
+              phone: phone10,
+              userName: app.name ?? '',
+              eventName,
+              eventDate,
+              eventSlug: appSlugLower,
+              deliveryKind: 'resend_invite_details',
+            }),
+          });
+          const json = await res.json().catch(() => ({}));
+          return { ok: res.ok && json.ok, skipped: false, error: String(json.error ?? `HTTP ${res.status}`).slice(0, 120) };
+        } catch { return { ok: false, skipped: false, error: 'network error' }; }
+      };
+
+      const sendEmail = async () => {
+        if (!needsEmail) return { ok: true, skipped: true, error: '' };
+        try {
+          const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-brevo-invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminAccessToken}` },
+            body: JSON.stringify({
+              email,
+              phone: phone10,
+              userName: app.name ?? '',
+              eventName,
+              eventDate,
+              mode: 'resend',
+            }),
+          });
+          const json = await res.json().catch(() => ({}));
+          return { ok: res.ok && json.ok, skipped: false, error: String(json.error ?? `HTTP ${res.status}`).slice(0, 120) };
+        } catch { return { ok: false, skipped: false, error: 'network error' }; }
+      };
+
+      const [whatsappResult, emailResult] = await Promise.all([sendWhatsApp(), sendEmail()]);
+      const sentAt = new Date().toISOString();
+      const deliveryPatch: Record<string, string> = {};
+      if (needsWhatsApp && whatsappResult.ok) deliveryPatch.resend_details_whatsapp_sent_at = sentAt;
+      if (needsEmail && emailResult.ok) deliveryPatch.resend_details_email_sent_at = sentAt;
+
+      if (Object.keys(deliveryPatch).length > 0) {
+        const { data, error: patchError } = await supabase
           .from('applications')
-          .update({ resend_details_email_sent_at: sentAt })
+          .update(deliveryPatch)
           .eq('id', id)
           .select('*')
           .maybeSingle();
-        setApplications(prev => prev.map(a => a.id === id ? { ...a, resend_details_email_sent_at: sentAt, ...(patchedApp ?? {}) } : a));
-        logAdminAction('resend_invite_details_email', 'applications', id, {
-          event_slug: app.event_slug ?? null,
-          email_tail: email.slice(-8),
-        });
-        showToast('✅ Invite details resent. Ask them to check spam too.');
+        if (patchError) showToast(`⚠️ Sent, but delivery tracking failed — ${patchError.message}`);
+        setApplications(prev => prev.map(a => a.id === id ? { ...a, ...deliveryPatch, ...(data ?? {}) } : a));
+      }
+
+      logAdminAction('resend_invite_details', 'applications', id, {
+        event_slug: app.event_slug ?? null,
+        email_tail: email.slice(-8),
+        whatsapp_sent: needsWhatsApp ? whatsappResult.ok : 'already_sent',
+        email_sent: needsEmail ? emailResult.ok : 'already_sent',
+      });
+
+      if (whatsappResult.ok && emailResult.ok) {
+        showToast('✅ Details resent on WhatsApp & email');
+      } else {
+        const failures = [
+          !whatsappResult.ok ? `WhatsApp: ${whatsappResult.error}` : '',
+          !emailResult.ok ? `email: ${emailResult.error}` : '',
+        ].filter(Boolean).join(' · ');
+        showToast(`⚠️ Partially sent — ${failures}`);
       }
     } catch {
-      showToast('❌ Resend failed (network error)');
+      showToast('❌ Resend failed (unexpected error)');
     } finally {
       setResendingDetailsId(null);
     }
@@ -1346,11 +1398,9 @@ export default function AdminPanel() {
     setApprovingId(null);
   };
 
-  // Approve a doubt submission directly: create an `applications` row (status
-  // 'invited') from the doubt's captured details, then run the same invite
-  // side-effects as approveApplication (invited_numbers + AiSensy + push). This
-  // lets a marketer resolve a doubt AND invite the person without a re-apply.
-  // Admin-only — also enforced server-side by the applications_admin_insert RLS.
+  // Resolve a doubt directly into the event's real lead lifecycle. Invite-only
+  // events use the normal approval path; open events stay pending/in-progress
+  // and receive a self-serve details link without invite-only side effects.
   const approveDoubtSubmission = async (submission: any) => {
     // Resolve the canonical event slug + trip from whatever the doubt stored.
     const rawTitle = (submission.event_title || submission.event_slug || submission.event_id || '').trim();
@@ -1360,6 +1410,7 @@ export default function AdminPanel() {
     );
     const slug = String(trip?.slug ?? submission.event_id ?? '').toLowerCase();
     const phone10 = String(submission.phone ?? '').replace(/\D/g, '').slice(-10);
+    const isOpenEvent = trip?.booking_url === 'payu-hosted';
 
     if (!slug)                        { showToast('❌ Could not match this doubt to a plan'); return; }
     if (!/^[6-9]\d{9}$/.test(phone10)) { showToast('❌ Invalid phone number on this doubt'); return; }
@@ -1373,9 +1424,10 @@ export default function AdminPanel() {
       return;
     }
 
-    // 1. Create the application row (status invited). On a unique-key clash
-    //    (event_slug, phone) the person already applied — just flip that row to
-    //    invited rather than clobbering their real application data.
+    // 1. Create the application row in the event's real lifecycle state. Open
+    //    events have no approval gate: `pending` means an unpaid/in-progress
+    //    lead. Invite-only events become `invited` after approval. On a unique
+    //    key clash, update only the lifecycle fields and preserve their form.
     let appId: string | null = null;
     // Set true if the matched existing application has already paid — in that
     // case we must NOT re-invite (which would clobber advance_paid/fully_paid).
@@ -1389,7 +1441,7 @@ export default function AdminPanel() {
         email:         (submission.email ?? '').trim() || null,
         gender:        (submission.gender ?? '').trim(),    // doubt form collects this now
         why_join:      (submission.why_join ?? '').trim(),
-        status:        'invited',
+        status:        isOpenEvent ? 'pending' : 'invited',
         selected_date: submission.selected_date ?? null,
         selected_city: submission.city ?? null,
         pickup_label:  submission.meeting_spot ?? null,
@@ -1413,7 +1465,23 @@ export default function AdminPanel() {
         // status untouched and skip the invite side-effects entirely (below).
         alreadyPaid = existing.status === 'advance_paid' || existing.status === 'fully_paid';
         if (!alreadyPaid) {
-          await supabase.from('applications').update({ status: 'invited' }).eq('id', appId);
+          const lifecyclePatch = isOpenEvent
+            ? {
+                status: 'pending',
+                re_target: false,
+                aisensy_invite_sent: false,
+                invite_sent_at: null,
+              }
+            : { status: 'invited' };
+          const { error: updateErr } = await supabase
+            .from('applications')
+            .update(lifecyclePatch)
+            .eq('id', appId);
+          if (updateErr) {
+            showToast(`❌ ${updateErr.message}`);
+            setApprovingDoubtId(null);
+            return;
+          }
         }
       } else {
         showToast(`❌ ${insErr.message}`); setApprovingDoubtId(null); return;
@@ -1431,11 +1499,11 @@ export default function AdminPanel() {
       return;
     }
 
-    logAdminAction('doubt_approve_invite', 'applications', appId, {
+    logAdminAction(isOpenEvent ? 'doubt_send_open_details' : 'doubt_approve_invite', 'applications', appId, {
       name: submission.name ?? null, phone: phone10, event_slug: slug, doubt_id: submission.id ?? null,
     });
 
-    // 2. Invite side-effects (mirror of approveApplication).
+    // 2. Deliver either open-event details or the invite-only approval message.
     const eventName = trip?.title ?? slug;
     // Prefer the date the person chose on their doubt over the first event date.
     const firstDate = (submission.selected_date as string) || trip?.event_dates?.[0]?.start_date || '';
@@ -1449,6 +1517,90 @@ export default function AdminPanel() {
       return `${dayName}, ${month} ${day}${suffix}`;
     })();
     const inviteSlug = trip?.invite_slug;
+
+    // Open events remain in the self-serve `/plans` lifecycle. Send the known
+    // open-event details deeplink, but never whitelist them as invite-only,
+    // stamp invite delivery fields, or make them eligible for invite retarget.
+    if (isOpenEvent) {
+      let ok = false; let errReason = '';
+      try {
+        const detailsRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-aisensy-invite`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminAccessToken}` },
+          body: JSON.stringify({
+            phone: phone10,
+            userName: submission.name ?? '',
+            eventName,
+            eventDate,
+            eventSlug: slug,
+            deliveryKind: 'open_event_details',
+          }),
+        });
+        const detailsJson = await detailsRes.json().catch(() => ({}));
+        ok = detailsRes.ok && detailsJson.ok;
+        if (!ok && detailsJson.error) errReason = ` — ${String(detailsJson.error).slice(0, 120)}`;
+      } catch { errReason = ' (network error)'; }
+
+      const detailsEmail = String(submission.email ?? '').trim();
+      let emailAttempted = false;
+      let emailOk = false;
+      let emailError = '';
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(detailsEmail)) {
+        emailAttempted = true;
+        try {
+          const emailRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-brevo-invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminAccessToken}` },
+            body: JSON.stringify({
+              email: detailsEmail,
+              phone: phone10,
+              userName: submission.name ?? '',
+              eventName,
+              eventDate,
+              eventSlug: slug,
+              mode: 'open_event_details',
+            }),
+          });
+          const emailJson = await emailRes.json().catch(() => ({}));
+          emailOk = emailRes.ok && emailJson.ok;
+          if (!emailOk) emailError = String(emailJson.error ?? `HTTP ${emailRes.status}`).slice(0, 120);
+        } catch { emailError = 'network error'; }
+      }
+
+      if (ok && submission.id) {
+        const sentAt = new Date().toISOString();
+        const { error: stampError } = await supabase
+          .from('doubt_submissions')
+          .update({ open_details_sent_at: sentAt })
+          .eq('id', submission.id);
+        if (stampError) {
+          // The message was accepted, so don't claim delivery failed. Leaving
+          // the marker unset deliberately keeps the retry action available.
+          errReason = ` — sent, but could not mark it complete: ${stampError.message}`;
+        }
+      }
+
+      try {
+        await supabase.functions.invoke('send-push-notification', {
+          body: {
+            type: 'direct',
+            phone: phone10,
+            title: `${eventName} details`,
+            body: 'Your event details are ready. Open the app to continue your booking.',
+            url: `/invite?phone=${encodeURIComponent(phone10)}&name=${encodeURIComponent(submission.name ?? 'Guest')}`,
+          },
+        });
+      } catch { /* push is non-critical */ }
+
+      const emailNote = !emailAttempted ? '' : emailOk ? ' + email' : `; email failed — ${emailError}`;
+      showToast(ok
+        ? (errReason ? `⚠️ WhatsApp sent${emailNote}${errReason}` : `✅ Details sent on WhatsApp${emailNote}`)
+        : `✅ Open-event lead saved — WhatsApp failed${errReason}${emailNote}`);
+      setApprovingDoubtId(null);
+      await loadApplications();
+      return;
+    }
+
     if (inviteSlug) {
       await supabase.from('invited_numbers').insert({ event_slug: inviteSlug, phone: phone10 }).select();
       logAdminAction('invited_number_add', 'invited_numbers', null, { event_slug: inviteSlug, phone: phone10, via: 'approveDoubtSubmission', application_id: appId });
@@ -1849,28 +2001,29 @@ export default function AdminPanel() {
     loadExperiments();
   };
 
-  // Step 1 of the purger: read-only report of everything the number touches.
+  // Step 1 of the purger: read-only report of everything the numbers touch.
   const scanPurgePhone = async () => {
-    setPurgeBusy(true); setPurgeScan(null); setPurgeResult(null); setPurgeConfirm('');
-    const { data, error } = await supabase.rpc('scan_phone_data', { p_phone: purgePhone });
+    const phones = parsePurgePhones(purgePhone);
+    if (phones.length === 0) { showToast('Enter at least one phone number'); return; }
+    setPurgeBusy(true); setPurgeScan(null); setPurgeResult(null); setPurgePasscode('');
+    const { data, error } = await supabase.rpc('scan_phone_data', { p_phones: phones });
     setPurgeBusy(false);
     if (error) { showToast(`❌ ${error.message}`); return; }
     setPurgeScan(data);
   };
 
-  // Step 2: the actual delete. Requires the number to be retyped to match the
-  // scanned one — no single-click wipes.
+  // Step 2: the actual delete. Gated by the 4-digit passcode, which the RPC
+  // verifies server-side against app_secrets (so a shared login can't bypass
+  // it by calling the RPC directly).
   const runPurgePhone = async () => {
-    if (!purgeScan?.phone) return;
-    if (purgeConfirm.replace(/\D/g, '').slice(-10) !== purgeScan.phone) {
-      showToast('The confirmation number does not match the scanned number');
-      return;
-    }
+    const phones: string[] = purgeScan?.phones ?? [];
+    if (phones.length === 0) return;
+    if (!/^\d{4}$/.test(purgePasscode)) { showToast('Enter the 4-digit passcode'); return; }
     setPurgeBusy(true);
-    const { data, error } = await supabase.rpc('purge_phone_data', { p_phone: purgeScan.phone });
+    const { data, error } = await supabase.rpc('purge_phone_data', { p_phones: phones, p_passcode: purgePasscode });
     setPurgeBusy(false);
-    if (error) { showToast(`❌ ${error.message}`); return; }
-    setPurgeResult(data); setPurgeScan(null); setPurgeConfirm(''); setPurgePhone('');
+    if (error) { showToast(error.message.includes('passcode') ? '🔒 Wrong passcode' : `❌ ${error.message}`); return; }
+    setPurgeResult(data); setPurgeScan(null); setPurgePasscode(''); setPurgePhone('');
     showToast('🧹 Purged.');
     loadExperiments();
   };
@@ -3303,7 +3456,7 @@ export default function AdminPanel() {
           );
 
           // Build a phone+event → payu payment index
-          const successPayments = payuPayments.filter(p => p.status === 'success');
+          const normalizePhone10 = (phone: any) => String(phone ?? '').replace(/\D/g, '').slice(-10);
           const titleBySlug: Record<string, string> = {};
           trips.forEach(t => { if (t.slug && t.title) titleBySlug[t.slug] = t.title; });
           // Per-event date list (sorted), so the Call tab can offer a date dropdown
@@ -3319,10 +3472,20 @@ export default function AdminPanel() {
           });
           const paymentsFor = (phone: string, eventSlug: string) => {
             const title = titleBySlug[eventSlug] ?? '';
-            const matches = successPayments.filter(p =>
-              p.phone === phone && (!title || p.event_title === title || !p.event_title)
+            const phone10 = normalizePhone10(phone);
+            const matches = payuPayments.filter(p =>
+              normalizePhone10(p.phone) === phone10
+              && (
+                p.event_slug === eventSlug
+                || (!p.event_slug && (!title || p.event_title === title || !p.event_title))
+              )
             );
             return { all: matches };
+          };
+          const hasFailedPayment = (a: any): boolean => {
+            const pays = paymentsFor(a.phone, a.event_slug).all;
+            return pays.some((p: any) => p.status === 'failure')
+              && !pays.some((p: any) => p.status === 'success');
           };
 
           // Apply filters
@@ -3339,6 +3502,7 @@ export default function AdminPanel() {
             // "in progress", or "cart abandoned" once the bill was opened and
             // never completed (the cart-abandonment cron sets the flag).
             if (openEventSlugs.has(a.event_slug) && a.status === 'pending') {
+              if (hasFailedPayment(a)) return 'payment_failed';
               return a.cart_abandoned ? 'cart_abandoned' : 'in_progress';
             }
             if (a.status !== 'invited') return a.status;
@@ -3403,6 +3567,21 @@ export default function AdminPanel() {
           };
           const doubtHasApplied = (submission: any): boolean => {
             const st = doubtAppStatus(submission);
+            const id = String(submission.event_id ?? '').trim();
+            const raw = (submission.event_title || submission.event_slug || '').trim();
+            const trip = trips.find(t =>
+              (id && (t.id === id || t.slug === id || t.invite_slug === id))
+              || t.title === raw || t.slug === raw || t.invite_slug === raw
+            );
+            if (trip?.booking_url === 'payu-hosted') {
+              // Open details have their own delivery marker. Application state
+              // alone is insufficient: a person may already be pending because
+              // they started checkout, while their newly asked doubt still
+              // needs the Send Details action. Paid users need no further send.
+              return !!submission.open_details_sent_at
+                || st === 'advance_paid'
+                || st === 'fully_paid';
+            }
             return st !== null && st !== 'pending';
           };
 
@@ -3426,6 +3605,7 @@ export default function AdminPanel() {
             if (status === 'advance_paid') return '#84cc16';
             if (status === 'invited')        return '#2196f3';
             if (status === 'cart_abandoned') return '#b45309';
+            if (status === 'payment_failed') return '#dc2626';
             if (status === 're_target')      return '#7c3aed';
             if (status === 'waitlist')       return '#a855f7';
             if (status === 'in_progress')    return '#0891b2';
@@ -3479,7 +3659,8 @@ export default function AdminPanel() {
           };
 
           const resendDetailsButton = (a: any) => {
-            if (displayStatus(a) !== 're_target' || !String(a.email ?? '').trim() || a.resend_details_email_sent_at) return null;
+            const bothDetailsChannelsSent = !!a.resend_details_email_sent_at && !!a.resend_details_whatsapp_sent_at;
+            if (displayStatus(a) !== 're_target' || !String(a.email ?? '').trim() || bothDetailsChannelsSent) return null;
             const busy = resendingDetailsId === a.id;
             const hasUserStatus = !!String(callNotesEdits[a.id] ?? a.call_notes ?? '').trim();
             return (
@@ -3613,6 +3794,7 @@ export default function AdminPanel() {
             in_progress:  filteredApps.filter(a => displayStatus(a) === 'in_progress').length,
             invited:        filteredApps.filter(a => displayStatus(a) === 'invited').length,
             cart_abandoned: filteredApps.filter(a => displayStatus(a) === 'cart_abandoned').length,
+            payment_failed: filteredApps.filter(a => displayStatus(a) === 'payment_failed').length,
             re_target:      filteredApps.filter(a => displayStatus(a) === 're_target').length,
             waitlist:       filteredApps.filter(a => a.status === 'waitlist').length,
             advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
@@ -3827,6 +4009,7 @@ export default function AdminPanel() {
                   <option value="in_progress">In Progress</option>
                   <option value="invited">Invited</option>
                   <option value="cart_abandoned">Cart Abandoned</option>
+                  <option value="payment_failed">Payment Failed</option>
                   <option value="re_target">Re-Target</option>
                   <option value="waitlist">Waitlist</option>
                   <option value="advance_paid">Advance Paid</option>
@@ -3931,6 +4114,13 @@ export default function AdminPanel() {
                     const contactHref = phoneDigits ? `https://wa.me/91${phoneDigits.slice(-10)}?text=${encodeURIComponent(contactMessage)}` : '';
                     const isLast = index === filteredDoubtSubmissions.length - 1;
                     const applied = doubtHasApplied(submission);
+                    const submissionId = String(submission.event_id ?? '').trim();
+                    const submissionRaw = (submission.event_title || submission.event_slug || '').trim();
+                    const submissionTrip = trips.find(t =>
+                      (submissionId && (t.id === submissionId || t.slug === submissionId || t.invite_slug === submissionId))
+                      || t.title === submissionRaw || t.slug === submissionRaw || t.invite_slug === submissionRaw
+                    );
+                    const isOpenEventDoubt = submissionTrip?.booking_url === 'payu-hosted';
 
                     return (
                       <div
@@ -3972,7 +4162,7 @@ export default function AdminPanel() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                             {applied && (
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 999, padding: '3px 9px' }}>
-                                ✓ Invited
+                                {isOpenEventDoubt ? '✓ Details Sent' : '✓ Invited'}
                               </span>
                             )}
                             {phoneDigits && (
@@ -4000,14 +4190,17 @@ export default function AdminPanel() {
                             {adminRole && phoneDigits && !applied && (
                               <button
                                 onClick={() => {
-                                  if (window.confirm(`Approve ${submitterName} and send the invite for ${eventName}?\n\nThis creates an application (status: invited) and sends the WhatsApp invite.`)) {
+                                  const actionCopy = isOpenEventDoubt
+                                    ? `Send ${eventName} details to ${submitterName}?\n\nThis keeps them as an open-event lead (In Progress) and sends the booking details.`
+                                    : `Approve ${submitterName} and send the invite for ${eventName}?\n\nThis creates an application (status: invited) and sends the WhatsApp invite.`;
+                                  if (window.confirm(actionCopy)) {
                                     approveDoubtSubmission(submission);
                                   }
                                 }}
                                 disabled={approvingDoubtId === submission.id}
                                 style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: approvingDoubtId === submission.id ? 'not-allowed' : 'pointer', opacity: approvingDoubtId === submission.id ? 0.6 : 1 }}
                               >
-                                {approvingDoubtId === submission.id ? 'Sending…' : '✓ Approve'}
+                                {approvingDoubtId === submission.id ? 'Sending…' : (isOpenEventDoubt ? 'Send Details' : '✓ Approve')}
                               </button>
                             )}
                           </div>
@@ -4265,6 +4458,7 @@ export default function AdminPanel() {
                   {counts.in_progress  > 0 && <span style={{ color: statusColor('in_progress')  }}>in progress: <b>{counts.in_progress}</b></span>}
                   {counts.invited        > 0 && <span style={{ color: statusColor('invited')        }}>invited: <b>{counts.invited}</b></span>}
                   {counts.cart_abandoned > 0 && <span style={{ color: statusColor('cart_abandoned') }}>cart abandoned: <b>{counts.cart_abandoned}</b></span>}
+                  {counts.payment_failed > 0 && <span style={{ color: statusColor('payment_failed') }}>payment failed: <b>{counts.payment_failed}</b></span>}
                   {counts.re_target      > 0 && <span style={{ color: statusColor('re_target')      }}>re-target: <b>{counts.re_target}</b></span>}
                   {counts.waitlist       > 0 && <span style={{ color: statusColor('waitlist')       }}>waitlist: <b>{counts.waitlist}</b></span>}
                   {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
@@ -6163,23 +6357,23 @@ export default function AdminPanel() {
               <div style={{ ...s.card, border: '1.5px solid #f3d1d1' }}>
                 <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🧹 Test-data purger</div>
                 <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
-                  Removes every trace of a phone number — bookings, payments, invites, doubts, commission rows — and corrects the daily metrics for the affected days. Scan first; nothing is deleted until you confirm.
+                  Removes every trace of one or more phone numbers — bookings, payments, invites, doubts, commission rows — and corrects the daily metrics for the affected days. Scan first; deleting needs the passcode.
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <input
-                    style={{ ...s.input, width: 220 }}
-                    placeholder="10-digit phone number"
-                    value={purgePhone}
-                    inputMode="numeric"
-                    onChange={e => setPurgePhone(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !purgeBusy) scanPurgePhone(); }}
-                  />
-                  <button style={s.btn('#111')} onClick={scanPurgePhone} disabled={purgeBusy || purgePhone.replace(/\D/g, '').length < 10}>
-                    {purgeBusy && !purgeScan ? 'Scanning…' : 'Scan'}
+                <textarea
+                  style={{ ...s.textarea, minHeight: 60 }}
+                  placeholder="Phone numbers — one per line, or separated by commas / spaces"
+                  value={purgePhone}
+                  onChange={e => setPurgePhone(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                  <button style={s.btn('#111')} onClick={scanPurgePhone} disabled={purgeBusy || parsePurgePhones(purgePhone).length === 0}>
+                    {purgeBusy && !purgeScan ? 'Scanning…' : `Scan${parsePurgePhones(purgePhone).length > 1 ? ` ${parsePurgePhones(purgePhone).length} numbers` : ''}`}
                   </button>
                 </div>
 
                 {purgeScan && (() => {
+                  const phones: string[] = purgeScan.phones ?? [];
+                  const invalid: string[] = purgeScan.invalid ?? [];
                   const apps: any[] = purgeScan.applications ?? [];
                   const pays: any[] = purgeScan.payments ?? [];
                   const mComs: any[] = purgeScan.marketer_commissions ?? [];
@@ -6195,61 +6389,79 @@ export default function AdminPanel() {
                     doubt_conversations: 'doubt chats', bill_opens: 'bill opens',
                     push_subscriptions: 'push subscriptions', push_debug_logs: 'push debug logs',
                   };
-                  return total === 0 ? (
-                    <div style={{ marginTop: 14, fontSize: 13, color: '#888' }}>Nothing found for {purgeScan.phone} — the number is already clean.</div>
-                  ) : (
+                  const passcodeOk = /^\d{4}$/.test(purgePasscode);
+                  const tag = (ph: string) => phones.length > 1 ? <span style={{ color: '#aaa' }}> · {ph}</span> : null;
+                  return (
                     <div style={{ marginTop: 14 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Found {total} row{total > 1 ? 's' : ''} for {purgeScan.phone}:</div>
-                      {apps.map((a, i) => (
-                        <div key={`a${i}`} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
-                          📋 Application — {a.event} · {a.name} · <b>{a.status}</b> · {a.created}
+                      {invalid.length > 0 && (
+                        <div style={{ fontSize: 12, color: '#a08050', marginBottom: 8 }}>
+                          Skipped {invalid.length} entr{invalid.length > 1 ? 'ies' : 'y'} that {invalid.length > 1 ? 'were' : 'was'} not a 10-digit number: {invalid.join(', ')}
                         </div>
-                      ))}
-                      {pays.map((p, i) => {
-                        const ok = String(p.status).toLowerCase() === 'success';
-                        return (
-                          <div key={`p${i}`} style={{ fontSize: 12.5, color: ok ? '#b91c1c' : '#555', padding: '3px 0', fontWeight: ok ? 600 : 400 }}>
-                            💳 Payment — {p.event} · ₹{Number(p.amount).toLocaleString('en-IN')} · {p.status} · {p.created}
+                      )}
+                      {total === 0 ? (
+                        <div style={{ fontSize: 13, color: '#888' }}>Nothing found for {phones.join(', ')} — already clean.</div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                            Found {total} row{total > 1 ? 's' : ''} across {phones.length} number{phones.length > 1 ? 's' : ''} ({phones.join(', ')}):
                           </div>
-                        );
-                      })}
-                      {mComs.map((c, i) => (
-                        <div key={`m${i}`} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
-                          🧑‍💼 Marketer commission — {c.marketer ?? 'unknown'} · ₹{Number(c.amount).toLocaleString('en-IN')} · {c.accrued}
-                        </div>
-                      ))}
-                      {cComs.map((c, i) => (
-                        <div key={`c${i}`} style={{ fontSize: 12.5, color: c.paid_out ? '#b91c1c' : '#555', padding: '3px 0', fontWeight: c.paid_out ? 600 : 400 }}>
-                          🎨 Creator commission — {c.creator ?? 'unknown'} · ₹{Number(c.amount).toLocaleString('en-IN')} · {c.accrued} · {c.paid_out ? 'ALREADY PAID OUT' : 'pending'}
-                        </div>
-                      ))}
-                      {Object.entries(others).filter(([, n]) => n > 0).map(([k, n]) => (
-                        <div key={k} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
-                          🗂 {n} × {otherLabels[k] ?? k}
-                        </div>
-                      ))}
-                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', margin: '12px 0', fontSize: 12, color: '#991b1b', lineHeight: 1.55 }}>
-                        {successPays.length > 0 && <div><b>⚠ {successPays.length} successful payment{successPays.length > 1 ? 's' : ''}</b> — deleting removes your record of real money; it does NOT refund anything, and PayU's own dashboard will still show the transaction.</div>}
-                        {paidOutComs.length > 0 && <div><b>⚠ {paidOutComs.length} creator commission{paidOutComs.length > 1 ? 's' : ''} already paid out</b> — deleting corrects future stats but can't undo the transfer you made.</div>}
-                        <div>Deletion is permanent. This does not touch anonymous click-tracking (no phone attached) or WhatsApp/emails already sent.</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <input
-                          style={{ ...s.input, width: 220 }}
-                          placeholder={`Retype ${purgeScan.phone} to confirm`}
-                          value={purgeConfirm}
-                          inputMode="numeric"
-                          onChange={e => setPurgeConfirm(e.target.value)}
-                        />
-                        <button
-                          style={{ ...s.btn('#dc2626'), opacity: purgeConfirm.replace(/\D/g, '').slice(-10) === purgeScan.phone ? 1 : 0.4 }}
-                          onClick={runPurgePhone}
-                          disabled={purgeBusy || purgeConfirm.replace(/\D/g, '').slice(-10) !== purgeScan.phone}
-                        >
-                          {purgeBusy ? 'Deleting…' : `Delete all ${total} rows`}
-                        </button>
-                        <button style={s.outlineBtn} onClick={() => { setPurgeScan(null); setPurgeConfirm(''); }}>Cancel</button>
-                      </div>
+                          {apps.map((a, i) => (
+                            <div key={`a${i}`} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
+                              📋 Application — {a.event} · {a.name} · <b>{a.status}</b> · {a.created}{tag(a.phone)}
+                            </div>
+                          ))}
+                          {pays.map((p, i) => {
+                            const ok = String(p.status).toLowerCase() === 'success';
+                            return (
+                              <div key={`p${i}`} style={{ fontSize: 12.5, color: ok ? '#b91c1c' : '#555', padding: '3px 0', fontWeight: ok ? 600 : 400 }}>
+                                💳 Payment — {p.event} · ₹{Number(p.amount).toLocaleString('en-IN')} · {p.status} · {p.created}{tag(p.phone)}
+                              </div>
+                            );
+                          })}
+                          {mComs.map((c, i) => (
+                            <div key={`m${i}`} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
+                              🧑‍💼 Marketer commission — {c.marketer ?? 'unknown'} · ₹{Number(c.amount).toLocaleString('en-IN')} · {c.accrued}{tag(c.phone)}
+                            </div>
+                          ))}
+                          {cComs.map((c, i) => (
+                            <div key={`c${i}`} style={{ fontSize: 12.5, color: c.paid_out ? '#b91c1c' : '#555', padding: '3px 0', fontWeight: c.paid_out ? 600 : 400 }}>
+                              🎨 Creator commission — {c.creator ?? 'unknown'} · ₹{Number(c.amount).toLocaleString('en-IN')} · {c.accrued} · {c.paid_out ? 'ALREADY PAID OUT' : 'pending'}{tag(c.phone)}
+                            </div>
+                          ))}
+                          {Object.entries(others).filter(([, n]) => n > 0).map(([k, n]) => (
+                            <div key={k} style={{ fontSize: 12.5, color: '#555', padding: '3px 0' }}>
+                              🗂 {n} × {otherLabels[k] ?? k}
+                            </div>
+                          ))}
+                          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', margin: '12px 0', fontSize: 12, color: '#991b1b', lineHeight: 1.55 }}>
+                            {successPays.length > 0 && <div><b>⚠ {successPays.length} successful payment{successPays.length > 1 ? 's' : ''}</b> — deleting removes your record of real money; it does NOT refund anything, and PayU's own dashboard will still show the transaction.</div>}
+                            {paidOutComs.length > 0 && <div><b>⚠ {paidOutComs.length} creator commission{paidOutComs.length > 1 ? 's' : ''} already paid out</b> — deleting corrects future stats but can't undo the transfer you made.</div>}
+                            <div>Deletion is permanent. This does not touch anonymous click-tracking (no phone attached) or WhatsApp/emails already sent.</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <input
+                              style={{ ...s.input, width: 150, letterSpacing: 4, textAlign: 'center' }}
+                              placeholder="Passcode"
+                              value={purgePasscode}
+                              inputMode="numeric"
+                              maxLength={4}
+                              type="password"
+                              autoComplete="off"
+                              onChange={e => setPurgePasscode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                              onKeyDown={e => { if (e.key === 'Enter' && passcodeOk && !purgeBusy) runPurgePhone(); }}
+                            />
+                            <button
+                              style={{ ...s.btn('#dc2626'), opacity: passcodeOk ? 1 : 0.4 }}
+                              onClick={runPurgePhone}
+                              disabled={purgeBusy || !passcodeOk}
+                            >
+                              {purgeBusy ? 'Deleting…' : `Delete all ${total} rows`}
+                            </button>
+                            <button style={s.outlineBtn} onClick={() => { setPurgeScan(null); setPurgePasscode(''); }}>Cancel</button>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#bbb', marginTop: 6 }}>The passcode gates deletion so a shared admin login can't wipe data — enter it to confirm.</div>
+                        </>
+                      )}
                     </div>
                   );
                 })()}
@@ -6257,8 +6469,8 @@ export default function AdminPanel() {
                 {purgeResult && (
                   <div style={{ marginTop: 14, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#166534', lineHeight: 1.6 }}>
                     <b>Purged.</b>{' '}
-                    {Object.entries(purgeResult as Record<string, number>)
-                      .filter(([k, n]) => k !== 'resnapshotted_days' && n > 0)
+                    {Object.entries(purgeResult as Record<string, any>)
+                      .filter(([k, n]) => k !== 'resnapshotted_days' && k !== 'phones' && typeof n === 'number' && n > 0)
                       .map(([k, n]) => `${n} × ${k.replace(/_/g, ' ')}`)
                       .join(' · ') || 'No rows matched.'}
                     {Number(purgeResult.resnapshotted_days) > 0 && ` — daily metrics recalculated for ${purgeResult.resnapshotted_days} day${Number(purgeResult.resnapshotted_days) > 1 ? 's' : ''}`}.

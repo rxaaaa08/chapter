@@ -30,6 +30,19 @@ function json(status: number, payload: any, cors: Record<string, string>) {
   });
 }
 
+function buildAiSensyUrlButtons(phone: string, name: string, count = 1) {
+  const params = new URLSearchParams();
+  params.set('phone', phone);
+  params.set('name', name || 'Guest');
+  const value = `?${params.toString()}`;
+  return Array.from({ length: count }, (_, index) => ({
+    type: 'button',
+    sub_type: 'URL',
+    index,
+    parameters: [{ type: 'text', text: value }],
+  }));
+}
+
 Deno.serve(async (req) => {
   const cors = corsFor(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -64,12 +77,18 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!adminRow) return json(403, { error: 'not an admin' }, cors);
 
-    // H1: Rate limit per admin email — 30 invite sends per hour. Even
+    const body = await req.json().catch(() => ({}));
+    const deliveryKind = String(body.deliveryKind ?? '');
+    const isOpenEventDetails = deliveryKind === 'open_event_details';
+    const isInviteDetailsResend = deliveryKind === 'resend_invite_details';
+    const isDetailsDelivery = isOpenEventDetails || isInviteDetailsResend;
+
+    // H1: Rate limit per admin email — 30 sends per hour. Even
     // a compromised admin JWT can't burn through the AiSensy WhatsApp
     // template quota or spam invitees.
     {
       const { data: ok } = await supabase.rpc('check_rate_limit', {
-        p_kind: 'send-aisensy-invite:admin',
+        p_kind: isDetailsDelivery ? 'send-details:admin' : 'send-aisensy-invite:admin',
         p_key: callerEmail,
         p_window_seconds: 3600,
         p_max_requests: 30,
@@ -78,7 +97,6 @@ Deno.serve(async (req) => {
     }
 
     // 2. Validate inputs from client
-    const body = await req.json().catch(() => ({}));
     const phone     = String(body.phone     ?? '').replace(/\D/g, '').slice(-10);
     const userName  = String(body.userName  ?? '').trim();
     const eventName = String(body.eventName ?? '').trim();
@@ -90,19 +108,55 @@ Deno.serve(async (req) => {
     if (phone.length !== 10)   return json(400, { error: 'invalid phone' }, cors);
     if (!eventName)            return json(400, { error: 'missing eventName' }, cors);
 
+    // The alternate details delivery is deliberately restricted to real open
+    // events. This server-side check prevents a modified admin client from
+    // bypassing the invite-only approval lifecycle.
+    if (isOpenEventDetails) {
+      if (!eventSlug) return json(400, { error: 'missing eventSlug' }, cors);
+      const { data: openEvent } = await supabase
+        .from('events')
+        .select('slug')
+        .eq('slug', eventSlug)
+        .eq('booking_url', 'payu-hosted')
+        .maybeSingle();
+      if (!openEvent) return json(400, { error: 'not an open event' }, cors);
+    }
+
+    if (isInviteDetailsResend) {
+      if (!eventSlug) return json(400, { error: 'missing eventSlug' }, cors);
+      const { data: inviteEvent } = await supabase
+        .from('events')
+        .select('slug, booking_url')
+        .eq('slug', eventSlug)
+        .maybeSingle();
+      if (!inviteEvent || inviteEvent.booking_url === 'payu-hosted') {
+        return json(400, { error: 'not an invite-only event' }, cors);
+      }
+    }
+
     // 3. Forward to AiSensy
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         apiKey:        AISENSY_API_KEY,
-        campaignName:  'invitation_with_contact',
+        campaignName:  isDetailsDelivery ? 'send_details_dpl' : 'invitation_with_contact',
         destination:   '91' + phone,
         userName,
-        source:        'send-aisensy-invite',
-        templateParams: [eventName, eventDate],
-        tags:           ['chapter-invite'],
-        attributes:     { name: userName, event_name: eventName, event_date: eventDate, admin: callerEmail },
+        source:        isOpenEventDetails ? 'send-open-event-details' : isInviteDetailsResend ? 'resend-invite-details' : 'send-aisensy-invite',
+        // send_details_dpl: {{1}} user name, {{2}} event name.
+        templateParams: isDetailsDelivery ? [userName || 'Guest', eventName] : [eventName, eventDate],
+        ...(isDetailsDelivery ? {
+          media: {},
+          // The approved campaign has two dynamic URL buttons. Both use the
+          // same /invite?phone=&name= replacement as the open cart deeplink.
+          buttons: buildAiSensyUrlButtons(phone, userName, 2),
+          carouselCards: [],
+          location: {},
+          paramsFallbackValue: { FirstName: userName || 'Guest' },
+        } : {}),
+        tags:           [isOpenEventDetails ? 'chapter-open-details' : isInviteDetailsResend ? 'chapter-resend-details' : 'chapter-invite'],
+        attributes:     { name: userName, event_name: eventName, event_date: eventDate, admin: callerEmail, flow: isOpenEventDetails ? 'open' : isInviteDetailsResend ? 'invite-resend' : 'invite' },
       }),
     });
     const aiBody = await aiRes.text().catch(() => '');
@@ -125,7 +179,7 @@ Deno.serve(async (req) => {
     // stays the single source of truth for the email design + variant selection
     // — we just call it, forwarding the admin's token, then stamp
     // email_invite_sent on the row.
-    try {
+    if (!isDetailsDelivery) try {
       const slug = eventSlug
         || String((await supabase.rpc('resolve_event_slug', { p_title: eventName })).data ?? '').toLowerCase();
       if (slug) {
