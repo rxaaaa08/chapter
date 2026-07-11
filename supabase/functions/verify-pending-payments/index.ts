@@ -77,12 +77,12 @@ async function releaseSendFlag(supabase: any, appId: string, col: string): Promi
   await supabase.from('applications').update({ [col]: false }).eq('id', appId);
 }
 
-const AISENSY_CAMPAIGN_ADVANCE = 'advance_paid+balance';
-const AISENSY_CAMPAIGN_BALANCE = 'fullpaid';
-const AISENSY_CAMPAIGN_FAILED  = 'payment_failed';
+const AISENSY_CAMPAIGN_ADVANCE = 'advance_success_dpl';
+const AISENSY_CAMPAIGN_BALANCE = 'fullpaid_dpl';
+const AISENSY_CAMPAIGN_FAILED  = 'payment_failure_dpl';
 // Single-payment ('full') events: paid-in-full confirmation. Must exist in the
 // AiSensy dashboard. Params: {{1}} = amount (₹…), {{2}} = details date.
-const AISENSY_CAMPAIGN_FULL    = 'paid_full';
+const AISENSY_CAMPAIGN_FULL    = 'single_payment_sucess_dpl';
 
 // Resolve booking-timeline steps for an applicant: prefer the per-date steps for
 // the date they chose (multi-date events can have different deadlines per date),
@@ -95,6 +95,200 @@ function pickBookingSteps(ev: any, selectedDate?: string | null): any[] {
     if (perDate.length > 0) return perDate;
   }
   return eventLevel;
+}
+
+// The event-level timeline owns the step labels; per-date timelines often only
+// override dates and intentionally leave label/value blank. Find the meeting
+// step's index on the event-level timeline, then use that same position from
+// the selected date's timeline when it supplies a date.
+function pickMeetingSpotStep(ev: any, selectedDate?: string | null): any {
+  const eventLevel = Array.isArray(ev?.booking_steps) ? ev.booking_steps : [];
+  const index = eventLevel.findIndex((s: any) =>
+    /meeting\s*(spot|point)|you'?ll receive/i.test(`${s?.label ?? ''} ${s?.value ?? ''}`)
+  );
+  if (index < 0) return null;
+  if (selectedDate && Array.isArray(ev?.event_dates)) {
+    const row = ev.event_dates.find((d: any) => String(d?.start_date ?? '') === String(selectedDate));
+    const perDate = Array.isArray(row?.booking_steps) ? row.booking_steps : [];
+    if (perDate[index]?.date) return perDate[index];
+  }
+  return eventLevel[index] ?? null;
+}
+
+// Resolve the event-level balance row first, then take its date from the same
+// position in the selected-date timeline (whose labels can be intentionally blank).
+function pickBalanceDueStep(ev: any, selectedDate?: string | null): any {
+  const eventLevel = Array.isArray(ev?.booking_steps) ? ev.booking_steps : [];
+  const index = eventLevel.findIndex((s: any) =>
+    /\{balance\}|\b(?:remaining\s+)?balance\b/i.test(`${s?.label ?? ''} ${s?.value ?? ''}`)
+  );
+  if (index < 0) return null;
+  if (selectedDate && Array.isArray(ev?.event_dates)) {
+    const row = ev.event_dates.find((d: any) => String(d?.start_date ?? '') === String(selectedDate));
+    const perDate = Array.isArray(row?.booking_steps) ? row.booking_steps : [];
+    if (perDate[index]?.date) return perDate[index];
+  }
+  return eventLevel[index] ?? null;
+}
+
+function formatRupeesTwoDecimals(value: number | string): string {
+  const amount = Number(value);
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  return `₹${safeAmount.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function capitalizeFirstChar(value: string): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return 'User';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function buildInviteButtonParam(phone: string, name: string): string {
+  const params = new URLSearchParams();
+  params.set('phone', phone);
+  params.set('name', name);
+  return `?${params.toString()}`;
+}
+
+function buildAiSensyUrlButton(value: string, count = 1) {
+  return Array.from({ length: count }, (_, index) => ({
+    type: 'button',
+    sub_type: 'URL',
+    index,
+    parameters: [
+      {
+        type: 'text',
+        text: value,
+      },
+    ],
+  }));
+}
+
+function buildInviteContactUrl(baseUrl: string, phone: string, name: string): string {
+  const params = new URLSearchParams();
+  params.set('phone', phone);
+  const trimmedName = name.trim();
+  if (trimmedName) params.set('name', trimmedName);
+  return `${baseUrl}/invite?${params.toString()}`;
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function paymentFailureEmailHtml(args: {
+  userName: string; amount: string; contactUrl: string; senderName: string;
+}): string {
+  const name = esc(args.userName || 'there');
+  const amount = esc(args.amount);
+  const url = args.contactUrl;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap" rel="stylesheet"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;color-scheme:light;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden;">
+        <tr><td style="background:#000000;padding:20px 32px;">
+          <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:#ffffff;">chapter &#2949;</span>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#111827;">Payment Failed :(</p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#4b5563;">Hi ${name}, your payment of <strong style="color:#111827;">${amount}</strong> has failed.</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">Please <strong style="color:#111827;">Retry Payment</strong>.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 12px;">
+            <tr><td style="border-radius:14px;background:#000000;">
+              <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:14px;">Retry Payment &#8594;</a>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 12px;font-size:15px;line-height:22px;color:#4b5563;">If anything feels unclear - press Contact Us</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr><td style="border-radius:14px;background:#f3f4f6;">
+              <a href="${url}" target="_blank" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:800;color:#374151;text-decoration:none;border-radius:14px;">Contact Us &#8594;</a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:13px;line-height:20px;color:#9ca3af;">If the button doesn't work, open this link:<br><a href="${url}" target="_blank" style="color:#2563eb;word-break:break-all;">${url}</a></p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;border-top:1px solid #f3f4f6;">
+          <p style="margin:0 0 10px;font-size:12px;line-height:18px;color:#9ca3af;">Sent by ${esc(args.senderName)}. You received this because a payment attempt for a chapter &#2949; experience did not complete.</p>
+          <p style="margin:0;font-size:12px;line-height:18px;color:#9ca3af;">Do not reply to this email. To contact us, press the <strong style="color:#6b7280;">Contact Us</strong> button.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+async function sendPaymentFailureEmail(args: {
+  email: string; userName: string; amount: string; contactUrl: string; source: string;
+}): Promise<boolean> {
+  const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
+  if (!BREVO_API_KEY) {
+    console.warn(`[${args.source} payment_failed_email] BREVO_API_KEY not set, skipping email`);
+    return false;
+  }
+  const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
+  const senderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'chapter அ';
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'accept': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: args.email, name: args.userName || undefined }],
+        subject: `Payment failed for ${args.amount}`,
+        htmlContent: paymentFailureEmailHtml({ userName: args.userName, amount: args.amount, contactUrl: args.contactUrl, senderName }),
+        tags: ['chapter-payment-failed-email'],
+      }),
+    });
+    const ok = res.status >= 200 && res.status < 300;
+    const body = await res.text().catch(() => '');
+    console.log(`[${args.source} payment_failed_email] brevo response:`, { to_tail: args.email.slice(-8), status: res.status, ok, body: body.slice(0, 120) });
+    return ok;
+  } catch (err) {
+    console.error(`[${args.source} payment_failed_email] brevo failed:`, err);
+    return false;
+  }
+}
+
+async function maybeSendPaymentFailureEmail(supabase: any, app: any, args: {
+  phone: string; userName: string; amount: string; source: string;
+}): Promise<void> {
+  const email = String(app?.email ?? '').trim();
+  if (!email || app?.payment_failed_email_sent) return;
+
+  const { data: claimed, error: claimError } = await supabase
+    .from('applications')
+    .update({ payment_failed_email_sent: true, payment_failed_email_sent_at: new Date().toISOString() })
+    .eq('id', app.id)
+    .eq('payment_failed_email_sent', false)
+    .select('id')
+    .maybeSingle();
+  if (claimError) {
+    console.error(`[${args.source} payment_failed_email] could not claim send flag:`, claimError);
+    return;
+  }
+  if (!claimed) return;
+
+  const baseUrl = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
+  const emailed = await sendPaymentFailureEmail({
+    email,
+    userName: args.userName,
+    amount: args.amount,
+    contactUrl: buildInviteContactUrl(baseUrl, args.phone, args.userName),
+    source: args.source,
+  });
+  if (!emailed) {
+    const { error: releaseError } = await supabase
+      .from('applications')
+      .update({ payment_failed_email_sent: false, payment_failed_email_sent_at: null })
+      .eq('id', app.id);
+    if (releaseError) console.error(`[${args.source} payment_failed_email] could not release send flag:`, releaseError);
+  }
 }
 
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
@@ -114,10 +308,13 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events').select('booking_steps, event_dates(start_date, booking_steps)').eq('slug', args.eventSlug).maybeSingle();
-    // Balance step is always index 2 in the canonical 5-step invite-only
-    // booking timeline. Matches the receipt warm-note's positional lookup.
-    const balStep = pickBookingSteps(ev, app.selected_date)[2] ?? null;
+    // Use the same event-level-index lookup as the balance-paid WhatsApp
+    // message, rather than assuming the balance row is always third.
+    const balStep = pickBalanceDueStep(ev, app.selected_date);
     const dueFinal = formatDueDate(balStep?.date ?? '');
+    const displayName = capitalizeFirstChar(app.name || 'there');
+    const buttonParam = buildInviteButtonParam(args.phone, displayName);
+    const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
       method: 'POST',
@@ -126,12 +323,12 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
         apiKey: AISENSY_API_KEY,
         campaignName: AISENSY_CAMPAIGN_ADVANCE,
         destination: '91' + args.phone,
-        userName: app.name || 'chapter A 3063',
-        templateParams: [`₹${Number(args.amount).toLocaleString('en-IN')}`, dueFinal, args.txnid],
+        userName: displayName || 'chapter A 3063',
+        templateParams: [formattedAmount, dueFinal, args.txnid],
         source: 'payu-reconcile',
-        media: {}, buttons: [], carouselCards: [], location: {},
+        media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
         attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: app.name || 'user' },
+        paramsFallbackValue: { FirstName: displayName },
       }),
     });
     if (!aiRes.ok) {
@@ -161,8 +358,11 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events').select('booking_steps, event_dates(start_date, booking_steps)').eq('slug', args.eventSlug).maybeSingle();
-    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
+    const detailsStep = pickMeetingSpotStep(ev, app.selected_date);
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
+    const displayName = capitalizeFirstChar(app.name || 'there');
+    const buttonParam = buildInviteButtonParam(args.phone, displayName);
+    const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
       method: 'POST',
@@ -171,12 +371,12 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
         apiKey: AISENSY_API_KEY,
         campaignName: AISENSY_CAMPAIGN_BALANCE,
         destination: '91' + args.phone,
-        userName: app.name || 'chapter A 3063',
-        templateParams: [`₹${Number(args.amount).toLocaleString('en-IN')}`, detailsDate],
+        userName: displayName || 'chapter A 3063',
+        templateParams: [formattedAmount, detailsDate],
         source: 'payu-reconcile',
-        media: {}, buttons: [], carouselCards: [], location: {},
+        media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
         attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: app.name || 'user' },
+        paramsFallbackValue: { FirstName: displayName },
       }),
     });
     if (!aiRes.ok) {
@@ -206,8 +406,11 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
   try {
     const { data: ev } = await supabase
       .from('events').select('booking_steps, event_dates(start_date, booking_steps)').eq('slug', args.eventSlug).maybeSingle();
-    const detailsStep = pickBookingSteps(ev, app.selected_date)[3];
+    const detailsStep = pickMeetingSpotStep(ev, app.selected_date);
     const detailsDate = formatShortDateOrdinal(detailsStep?.date ?? '');
+    const displayName = capitalizeFirstChar(app.name || 'there');
+    const buttonParam = buildInviteButtonParam(args.phone, displayName);
+    const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
       method: 'POST',
@@ -216,12 +419,12 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
         apiKey: AISENSY_API_KEY,
         campaignName: AISENSY_CAMPAIGN_FULL,
         destination: '91' + args.phone,
-        userName: app.name || 'chapter A 3063',
-        templateParams: [`₹${Number(args.amount).toLocaleString('en-IN')}`, detailsDate],
+        userName: displayName || 'chapter A 3063',
+        templateParams: [formattedAmount, detailsDate],
         source: 'payu-reconcile',
-        media: {}, buttons: [], carouselCards: [], location: {},
+        media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
         attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: app.name || 'user' },
+        paramsFallbackValue: { FirstName: displayName },
       }),
     });
     if (!aiRes.ok) {
@@ -238,43 +441,67 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
   const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-  if (!AISENSY_API_KEY) { console.warn('[reconcile payment_failed] AISENSY_API_KEY not set'); return; }
-  const { data: app } = await supabase
+  // Keep the WhatsApp lookup independent of the email-only migration. If that
+  // migration has not reached production yet, failure WhatsApps must still send.
+  const { data: app, error: appError } = await supabase
     .from('applications')
-    .select('id, name, aisensy_payment_failed_sent')
+    .select('id, name, email, aisensy_payment_failed_sent')
     .eq('phone', args.phone)
     .eq('event_slug', args.eventSlug)
     .maybeSingle();
-  if (!app || app.aisensy_payment_failed_sent) return;
-  if (!(await claimSendFlag(supabase, app.id, 'aisensy_payment_failed_sent'))) return;
+  if (appError) {
+    console.error('[reconcile payment_failed] application lookup failed:', appError);
+    return;
+  }
+  if (!app) return;
+
+  const displayName = capitalizeFirstChar(app.name || 'there');
+  const formattedAmount = formatRupeesTwoDecimals(args.amount);
+  let claimedWhatsApp = false;
 
   try {
-    const amountNum = Number(args.amount);
-    const formattedAmount = amountNum % 1 === 0
-      ? `₹${amountNum.toLocaleString('en-IN')}`
-      : `₹${amountNum.toFixed(2)}`;
-    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: AISENSY_API_KEY,
-        campaignName: AISENSY_CAMPAIGN_FAILED,
-        destination: '91' + args.phone,
-        userName: app.name || 'chapter A 3063',
-        templateParams: [app.name || 'there', formattedAmount],
-        source: 'payu-reconcile',
-        media: {}, buttons: [], carouselCards: [], location: {},
-        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: app.name || 'user' },
-      }),
-    });
-    if (!aiRes.ok) {
-      console.error('[reconcile payment_failed] non-ok, releasing claim:', aiRes.status, await aiRes.text());
-      await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
+    if (AISENSY_API_KEY && !app.aisensy_payment_failed_sent && await claimSendFlag(supabase, app.id, 'aisensy_payment_failed_sent')) {
+      claimedWhatsApp = true;
+      const buttonParam = buildInviteButtonParam(args.phone, displayName);
+      const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: AISENSY_API_KEY,
+          campaignName: AISENSY_CAMPAIGN_FAILED,
+          destination: '91' + args.phone,
+          userName: displayName || 'chapter A 3063',
+          templateParams: [displayName, formattedAmount],
+          source: 'payu-reconcile',
+          media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
+          attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
+          paramsFallbackValue: { FirstName: displayName },
+        }),
+      });
+      if (!aiRes.ok) {
+        console.error('[reconcile payment_failed] non-ok, releasing claim:', aiRes.status, await aiRes.text());
+        await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
+      }
+    } else if (!AISENSY_API_KEY) {
+      console.warn('[reconcile payment_failed] AISENSY_API_KEY not set, skipping WhatsApp');
     }
+
   } catch (err) {
     console.error('[reconcile payment_failed] fire failed, releasing claim:', err);
-    await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
+    if (claimedWhatsApp) {
+      await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
+    }
+  }
+
+  try {
+    await maybeSendPaymentFailureEmail(supabase, app, {
+      phone: args.phone,
+      userName: displayName,
+      amount: formattedAmount,
+      source: 'payu-reconcile',
+    });
+  } catch (err) {
+    console.error('[payu-reconcile payment_failed_email] fire failed:', err);
   }
 }
 
