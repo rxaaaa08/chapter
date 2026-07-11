@@ -35,6 +35,7 @@ import '@xyflow/react/dist/style.css';
 import { supabase } from './supabase';
 import { JOURNEY_MAP_SEEDS, type JourneyKind } from './journeyMapSeeds';
 import ProductRoadmap from './ProductRoadmap';
+import TodoCard from './TodoCard';
 
 type JourneyNodeData = { label: string; note?: string; kind: JourneyKind; verified?: boolean };
 type JourneyNode = Node<JourneyNodeData, 'journey'>;
@@ -568,9 +569,9 @@ function JourneyMapInner({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: 
         )}
       </div>
 
-      {/* The roadmap is intentionally a separate section below the canvas.
-          Keeping it outside React Flow means it cannot alter map state,
-          controls, dimensions, save behaviour, or gesture handling. */}
+      {/* These are intentionally separate sections below the canvas, so they
+          cannot alter map state, controls, dimensions or gesture handling. */}
+      {(showRoadmap || demo) && <TodoCard demo={demo} />}
       {(showRoadmap || demo) && <ProductRoadmap demo={demo} />}
     </div>
   );
