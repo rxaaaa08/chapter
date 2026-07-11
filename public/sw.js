@@ -30,6 +30,16 @@ self.addEventListener('push', e => {
   );
 });
 
+// FCM (Android/Chrome) occasionally rotates or invalidates push subscriptions;
+// Apple's don't. Re-subscribe immediately with the same key so the endpoint
+// stays live. The new endpoint can't be saved to the DB from here (no auth in
+// the SW) — the admin panel re-saves it the next time it's opened.
+self.addEventListener('pushsubscriptionchange', e => {
+  const key = e.oldSubscription && e.oldSubscription.options && e.oldSubscription.options.applicationServerKey;
+  if (!key) return;
+  e.waitUntil(self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+});
+
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const targetUrl = (e.notification.data && e.notification.data.url) || '/';

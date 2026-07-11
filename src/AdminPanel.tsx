@@ -310,12 +310,14 @@ export default function AdminPanel() {
   const VAPID_PUBLIC_KEY = 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU';
   const [notifStatus, setNotifStatus] = useState<'idle' | 'requesting' | 'subscribed' | 'error'>('idle');
   const [notifLabel, setNotifLabel] = useState('');
-  const [notifDevices, setNotifDevices] = useState<{ id: string; label: string; created_at: string }[]>([]);
+  const [notifDevices, setNotifDevices] = useState<{ id: string; label: string; created_at: string; endpoint: string }[]>([]);
   const [notifDevicesLoading, setNotifDevicesLoading] = useState(false);
+  // This browser's live push endpoint — used to tag "this device" in the list
+  const [thisDeviceEndpoint, setThisDeviceEndpoint] = useState<string | null>(null);
 
   const loadNotifDevices = React.useCallback(async () => {
     setNotifDevicesLoading(true);
-    const { data } = await supabase.from('admin_push_subscriptions').select('id, label, created_at').order('created_at', { ascending: false });
+    const { data } = await supabase.from('admin_push_subscriptions').select('id, label, created_at, endpoint').order('created_at', { ascending: false });
     setNotifDevices(data ?? []);
     setNotifDevicesLoading(false);
   }, []);
@@ -342,12 +344,18 @@ export default function AdminPanel() {
       });
       const subJson = sub.toJSON() as any;
       const label = notifLabel.trim() || (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? 'iOS Device' : navigator.userAgent.includes('Android') ? 'Android Device' : 'Desktop');
-      await supabase.from('admin_push_subscriptions').upsert({
+      const { error: saveError } = await supabase.from('admin_push_subscriptions').upsert({
         label,
         endpoint: sub.endpoint,
         p256dh: subJson.keys.p256dh,
         auth: subJson.keys.auth,
       }, { onConflict: 'endpoint' });
+      if (saveError) {
+        setNotifStatus('error');
+        showToast('Could not save this device to the server: ' + saveError.message);
+        return;
+      }
+      setThisDeviceEndpoint(sub.endpoint);
       setNotifStatus('subscribed');
       showToast('✅ Notifications enabled for this device!');
       loadNotifDevices();
@@ -361,6 +369,41 @@ export default function AdminPanel() {
     await supabase.from('admin_push_subscriptions').delete().eq('id', id);
     setNotifDevices(prev => prev.filter(d => d.id !== id));
   };
+
+  // Self-heal push registration on every login. FCM (Android/Chrome) endpoints
+  // rotate or get invalidated, at which point the sender sees a 410 and deletes
+  // the DB row — without this re-check the device silently stops receiving
+  // forever. Apple endpoints are stable, so this mostly guards Android/desktop.
+  useEffect(() => {
+    if (!adminRole) return;
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+    if (Notification.permission !== 'granted') return;
+    (async () => {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) return;
+        setThisDeviceEndpoint(sub.endpoint);
+        const { data: row, error } = await supabase
+          .from('admin_push_subscriptions')
+          .select('id')
+          .eq('endpoint', sub.endpoint)
+          .maybeSingle();
+        if (error) return; // can't tell — leave things alone
+        if (row) { setNotifStatus('subscribed'); return; }
+        const subJson = sub.toJSON() as any;
+        if (!subJson?.keys?.p256dh || !subJson?.keys?.auth) return;
+        const label = navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? 'iOS Device' : navigator.userAgent.includes('Android') ? 'Android Device' : 'Desktop';
+        const { error: saveError } = await supabase.from('admin_push_subscriptions').upsert({
+          label,
+          endpoint: sub.endpoint,
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth,
+        }, { onConflict: 'endpoint' });
+        if (!saveError) setNotifStatus('subscribed');
+      } catch { /* push is non-critical */ }
+    })();
+  }, [adminRole]);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -6252,10 +6295,18 @@ export default function AdminPanel() {
                 {notifDevices.length === 0 && !notifDevicesLoading && (
                   <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>No devices subscribed yet.</p>
                 )}
+                {thisDeviceEndpoint && !notifDevices.some(d => d.endpoint === thisDeviceEndpoint) && !notifDevicesLoading && notifDevices.length > 0 && (
+                  <p style={{ fontSize: 12.5, color: '#b45309', marginBottom: 8 }}>
+                    ⚠️ This device is not currently subscribed — tap "Enable on This Device" above.
+                  </p>
+                )}
                 {notifDevices.map(d => (
                   <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: '#f5f5f5', marginBottom: 6 }}>
                     <div>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{d.label}</span>
+                      {d.endpoint === thisDeviceEndpoint && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', background: '#dcfce7', borderRadius: 99, padding: '2px 8px', marginLeft: 8 }}>This device</span>
+                      )}
                       <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
                         {new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </span>
