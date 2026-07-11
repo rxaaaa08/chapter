@@ -69,6 +69,16 @@ Deno.serve(async (req) => {
   let flagged = 0;
 
   for (const row of rows) {
+    // Open events have no invite approval lifecycle and can never be Re-Target.
+    // Keep this server-side guard even if a stale admin client accidentally
+    // writes status='invited' again.
+    const { data: event } = await supabase
+      .from('events')
+      .select('booking_url')
+      .eq('slug', row.event_slug)
+      .maybeSingle();
+    if (event?.booking_url === 'payu-hosted') continue;
+
     // Skip anyone who has a bill_opens row — they entered the flow, so
     // they're either cart_abandoned (handled by the other job) or
     // mid-payment. Either way, not a re-target candidate.

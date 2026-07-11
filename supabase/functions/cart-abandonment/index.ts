@@ -5,9 +5,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // Fired every 30 min by pg_cron (job 'cart-abandonment-check'). For each
 // bill_opens row past its flow's window (open events 1h, invite events 2h) that
 // hasn't been messaged AND is still unpaid, flags the application
-// cart_abandoned and sends a re-engagement WhatsApp: invite events get
-// `cart_abandonment`, open events (booking_url='payu-hosted') get
-// `cart_abandon_open` (different copy + the date they'd miss). Applicants with
+// cart_abandoned and sends a re-engagement WhatsApp: both invite and open events
+// get `car_abandon_deeplink2` with a dynamic /invite deeplink CTA. Applicants with
 // an email on file also get a Brevo cart-abandon email (/invite?phone=&name= deep
 // link). Skips only terminal states (paid application, successful
 // nudged via payment_failed) — pending payu_payments rows (clicked Pay, bailed
@@ -24,11 +23,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 //                      keep working regardless.
 // verify_jwt is false because pg_cron (pg_net) calls this without a JWT.
 
-const AISENSY_CAMPAIGN_CART = 'cart_abandonment';
-// Open events (booking_url='payu-hosted') get their own re-engagement template
-// with different copy + a 3rd param (the date they'd miss). Meta-approved as
-// `cart_abandon_open`. Params: {{1}} name, {{2}} event name, {{3}} event date.
-const AISENSY_CAMPAIGN_CART_OPEN = 'cart_abandon_open';
+const AISENSY_CAMPAIGN_CART = 'car_abandon_deeplink2';
+// Open events reuse the same deeplink template. Keeping a separate constant
+// makes the open branch explicit without changing trigger behavior.
+const AISENSY_CAMPAIGN_CART_OPEN = AISENSY_CAMPAIGN_CART;
 
 // Format the date the applicant chose as "Monday, March 5th" — matches the
 // invite invitation template's date param so both WhatsApp templates read the
@@ -43,6 +41,35 @@ function formatEventDate(iso: string): string {
   const s = ['th', 'st', 'nd', 'rd'], v = day % 100;
   const suffix = (s[(v - 20) % 10] || s[v] || s[0]);
   return `${dayName}, ${month} ${day}${suffix}`;
+}
+
+function capitalizeFirstChar(value: string): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return 'User';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function buildInviteButtonParam(phone: string, name: string): string {
+  const params = new URLSearchParams();
+  params.set('phone', phone);
+  params.set('name', name);
+  return `?${params.toString()}`;
+}
+
+function buildAiSensyUrlButton(value: string) {
+  return [
+    {
+      type: 'button',
+      sub_type: 'URL',
+      index: 0,
+      parameters: [
+        {
+          type: 'text',
+          text: value,
+        },
+      ],
+    },
+  ];
 }
 
 // ── Cart-abandonment EMAIL (Brevo) — invite + open events ─────────────────────
@@ -76,10 +103,10 @@ function cartAbandonEmailHtml(args: {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden;">
-        <tr><td style="background:#EDE6D6;padding:20px 32px;">
+        <tr><td style="background:#000000;padding:20px 32px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:middle;text-align:left;">
-              <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:#000000;">chapter &#2949;</span>
+              <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-weight:900;font-size:18px;letter-spacing:-0.025em;color:#ffffff;">chapter &#2949;</span>
             </td>
           </tr></table>
         </td></tr>
@@ -87,7 +114,7 @@ function cartAbandonEmailHtml(args: {
           <p style="margin:0 0 8px;font-size:22px;font-weight:800;color:#111827;">We're here to help you&hellip;</p>
           <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#4b5563;">Hey ${name}, we're trying to give you the best <strong style="color:#111827;">${event}</strong> experience.</p>
           <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#4b5563;">You were only 1 step away from joining us&hellip;</p>
-          <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">If you need any help, feel free to Contact Us.</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:22px;color:#4b5563;">If something felt unclear or if you'd like talk to us - press Contact Us.</p>
           <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
             <tr><td style="border-radius:14px;background:#000000;">
               <a href="${url}" target="_blank" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:14px;">Contact Us &#8594;</a>
@@ -287,29 +314,40 @@ Deno.serve(async (req) => {
     //   invite → status 'invited' (post-approval)
     //   open   → status 'pending' (open bookings stay 'pending' until paid)
     // Done regardless of WhatsApp delivery — it reflects behaviour, not send.
-    await supabase
+    const { data: markedApps, error: markErr } = await supabase
       .from('applications')
       .update({ cart_abandoned: true })
       .eq('phone', row.phone)
       .eq('event_slug', row.event_slug)
-      .in('status', ['invited', 'pending']);
+      .in('status', ['invited', 'pending'])
+      .select('id');
+    if (markErr || !markedApps?.length) {
+      console.error('[cart-abandonment] could not mark application cart_abandoned; leaving bill_open unhandled', {
+        phone: row.phone,
+        event_slug: row.event_slug,
+        error: markErr?.message ?? 'no matching unpaid application',
+      });
+      continue;
+    }
 
     const displayName = app?.name || row.name || 'there';
     const selectedDate = (app?.selected_date as string | null) ?? null;
     const applicantEmail = String(app?.email ?? '').trim();
+    const aiSensyName = capitalizeFirstChar(displayName);
+    const eventDateIso = selectedDate
+      || (evRow as any)?.event_dates?.[0]?.start_date
+      || '';
+    const eventDate = formatEventDate(eventDateIso);
 
-    // ── OPEN events: cart_abandon_open template ──────────────────────────────
+    // ── OPEN events: car_abandon_deeplink2 template ──────────────────────────
     // Open events get the cart_abandoned flag above (admin visibility +
     // Recovered tracking) AND their own re-engagement WhatsApp — different copy
     // from invite, plus a 3rd param for the date they'd miss. Only mark the
     // bill_open handled on a successful send, so a transient AiSensy failure
     // retries on the next cron run (matches the invite path's at-least-once).
     if (isOpenEvent) {
-      const eventDateIso = selectedDate
-        || (evRow as any)?.event_dates?.[0]?.start_date
-        || '';
-      const eventDate = formatEventDate(eventDateIso);
       try {
+        const buttonParam = buildInviteButtonParam(row.phone, aiSensyName);
         const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -317,21 +355,21 @@ Deno.serve(async (req) => {
             apiKey: AISENSY_API_KEY,
             campaignName: AISENSY_CAMPAIGN_CART_OPEN,
             destination: '91' + row.phone,
-            userName: displayName || 'chapter A 3063',
+            userName: aiSensyName || 'chapter A 3063',
             templateParams: [
-              displayName,                 // {{1}} user name
+              aiSensyName,                 // {{1}} user name
               row.event_title || 'trip',   // {{2}} event name
               eventDate,                   // {{3}} event date they chose
             ],
             source: 'cart-abandonment',
             media: {},
-            buttons: [],
+            buttons: buildAiSensyUrlButton(buttonParam),
             carouselCards: [],
             location: {},
             attributes: {
               event_slug: row.event_slug,
             },
-            paramsFallbackValue: { FirstName: displayName },
+            paramsFallbackValue: { FirstName: aiSensyName },
           }),
         });
 
@@ -364,10 +402,11 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // ── INVITE events: cart_abandonment template ─────────────────────────────
-    // Fire AiSensy cart_abandonment campaign FIRST — WhatsApp is the primary
+    // ── INVITE events: car_abandon_deeplink2 template ────────────────────────
+    // Fire AiSensy car_abandon_deeplink2 campaign FIRST — WhatsApp is the primary
     // channel and must not wait on Brevo latency; the email follows below.
     try {
+      const buttonParam = buildInviteButtonParam(row.phone, aiSensyName);
       const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -375,20 +414,21 @@ Deno.serve(async (req) => {
           apiKey: AISENSY_API_KEY,
           campaignName: AISENSY_CAMPAIGN_CART,
           destination: '91' + row.phone,
-          userName: displayName || 'chapter A 3063',
+          userName: aiSensyName || 'chapter A 3063',
           templateParams: [
-            displayName,
-            row.event_title || 'trip',
+            aiSensyName,               // {{1}} user name
+            row.event_title || 'trip', // {{2}} event name
+            eventDate,                 // {{3}} event date they chose
           ],
           source: 'cart-abandonment',
           media: {},
-          buttons: [],
+          buttons: buildAiSensyUrlButton(buttonParam),
           carouselCards: [],
           location: {},
           attributes: {
             event_slug: row.event_slug,
           },
-          paramsFallbackValue: { FirstName: displayName },
+          paramsFallbackValue: { FirstName: aiSensyName },
         }),
       });
 
