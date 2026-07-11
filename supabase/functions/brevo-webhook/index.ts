@@ -78,6 +78,14 @@ function emailKind(event: any): 'invite' | 'cart_abandon' | 'resend_invite' | nu
   return null;
 }
 
+function resendApplicationId(event: any): string | null {
+  for (const tag of eventTags(event)) {
+    const match = tag.match(/^application-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
+    if (match) return match[1].toLowerCase();
+  }
+  return null;
+}
+
 function isOpenedEvent(event: any): boolean {
   const kind = String(event?.event ?? event?.eventType ?? event?.type ?? '').toLowerCase();
   return kind === 'unique_proxy_open' || kind === 'unique_opened' || kind === 'unique_open';
@@ -135,6 +143,9 @@ Deno.serve(async (req) => {
     const kind = emailKind(event);
     if ((!openedEvent && !unsubscribedEvent && !clickEvent) || !kind) continue;
     if (clickEvent && kind !== 'resend_invite') continue;
+    // For resend-details mail, the product definition of "opened" is an
+    // explicit CTA/link click. Ignore tracking-pixel opens entirely.
+    if (openedEvent && kind === 'resend_invite') continue;
 
     const email = String(event?.email ?? event?.recipient ?? '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
@@ -152,22 +163,37 @@ Deno.serve(async (req) => {
       ? 'cart_abandon_email_opened_at'
       : 'email_opened_at';
 
-    let query = supabase
-      .from('applications')
-      .select('id')
-      .ilike('email', email)
-      .eq('status', 'invited')
-      .is(trackedColumn, null)
-      .order('email_invite_sent_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const exactApplicationId = kind === 'resend_invite' && clickEvent
+      ? resendApplicationId(event)
+      : null;
 
-    if (kind === 'resend_invite' && clickEvent) {
-      query = query.eq('re_target', true).not('resend_details_email_sent_at', 'is', null);
-    } else if (kind === 'cart_abandon' && openedEvent) {
-      query = query.eq('cart_abandoned', true);
+    let query = supabase.from('applications').select('id');
+    if (exactApplicationId) {
+      // New resend emails carry the exact application ID. Do not require the
+      // lead to still be Re-Target: the click trail must survive later status
+      // changes such as Cart Abandoned or Paid.
+      query = query
+        .eq('id', exactApplicationId)
+        .ilike('email', email)
+        .not('resend_details_email_sent_at', 'is', null)
+        .is(trackedColumn, null);
     } else {
-      query = query.eq('email_invite_sent', true);
+      // Backward-compatible lookup for emails sent before exact tags existed.
+      query = query
+        .ilike('email', email)
+        .eq('status', 'invited')
+        .is(trackedColumn, null)
+        .order('email_invite_sent_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (kind === 'resend_invite' && clickEvent) {
+        query = query.eq('re_target', true).not('resend_details_email_sent_at', 'is', null);
+      } else if (kind === 'cart_abandon' && openedEvent) {
+        query = query.eq('cart_abandoned', true);
+      } else {
+        query = query.eq('email_invite_sent', true);
+      }
     }
 
     const { data: appRow, error: selectErr } = await query.maybeSingle();

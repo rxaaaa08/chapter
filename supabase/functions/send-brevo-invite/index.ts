@@ -269,12 +269,47 @@ Deno.serve(async (req) => {
     const eventName  = String(body.eventName ?? '').trim();
     const eventDate  = String(body.eventDate ?? '').trim();
     const eventSlug  = String(body.eventSlug ?? '').trim().toLowerCase();
+    let applicationId = String(body.applicationId ?? '').trim().toLowerCase();
     const emailMode  = String(body.mode ?? '').trim().toLowerCase();
     const isResend   = emailMode === 'resend' || emailMode === 'resend_invite';
     const isOpenDetails = emailMode === 'open_event_details';
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'invalid email' }, cors);
     if (!eventName)                                return json(400, { error: 'missing eventName' }, cors);
+
+    let resendApplication: any = null;
+    if (isResend) {
+      const validApplicationId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(applicationId);
+      let appQuery = supabase
+        .from('applications')
+        .select('id, email, event_slug, status, re_target, cart_abandoned')
+        .ilike('email', email)
+        .eq('status', 'invited')
+        .eq('re_target', true)
+        .eq('cart_abandoned', false);
+
+      if (validApplicationId) {
+        appQuery = appQuery.eq('id', applicationId);
+      } else {
+        // Rolling-deploy compatibility for an older admin bundle that has not
+        // started sending applicationId/eventSlug yet. Resolve the event title
+        // server-side, then still tag the email with the exact application ID.
+        const { data: resolvedSlug } = await supabase.rpc('resolve_event_slug', { p_title: eventName });
+        const fallbackSlug = String(eventSlug || resolvedSlug || '').trim().toLowerCase();
+        if (!fallbackSlug) return json(400, { error: 'could not identify application event' }, cors);
+        appQuery = appQuery.eq('event_slug', fallbackSlug);
+      }
+
+      const { data: appRow, error: appError } = await appQuery.maybeSingle();
+      if (appError) return json(500, { error: 'application lookup failed' }, cors);
+      const sameEmail = String(appRow?.email ?? '').trim().toLowerCase() === email.toLowerCase();
+      const sameEvent = !eventSlug || String(appRow?.event_slug ?? '').trim().toLowerCase() === eventSlug;
+      if (!appRow || !sameEmail || !sameEvent || appRow.status !== 'invited' || !appRow.re_target || appRow.cart_abandoned) {
+        return json(409, { error: 'application is no longer eligible for resend details' }, cors);
+      }
+      resendApplication = appRow;
+      applicationId = String(appRow.id).toLowerCase();
+    }
 
     if (isOpenDetails) {
       if (!eventSlug) return json(400, { error: 'missing eventSlug' }, cors);
@@ -319,10 +354,31 @@ Deno.serve(async (req) => {
         htmlContent: isOpenDetails
           ? openEventDetailsEmailHtml({ userName, eventName, eventDate, detailsUrl: inviteUrl, senderName, brandName, brandColor, bannerColor, buttonColor, buttonTextColor })
           : inviteEmailHtml({ userName, eventName, eventDate, inviteUrl, senderName, brandName, experienceName, brandColor, bannerColor, buttonColor, buttonTextColor }),
-        tags: [isOpenDetails ? 'open-event-details-email' : isResend ? 'resend invite' : isGalcode ? 'galcode-invite-email' : 'chapter-invite-email'],
+        tags: isResend
+          ? ['resend-invite', `application-${applicationId}`]
+          : [isOpenDetails ? 'open-event-details-email' : isGalcode ? 'galcode-invite-email' : 'chapter-invite-email'],
       }),
     });
     const brevoBody = await brevoRes.text().catch(() => '');
+
+    let trackingSaved = !isResend;
+    let sentAt: string | null = null;
+    let trackingError = '';
+    if (brevoRes.ok && isResend && resendApplication?.id) {
+      sentAt = new Date().toISOString();
+      const { error: trackingSaveError } = await supabase
+        .from('applications')
+        .update({ resend_details_email_sent_at: sentAt })
+        .eq('id', resendApplication.id);
+      trackingSaved = !trackingSaveError;
+      if (trackingSaveError) {
+        trackingError = trackingSaveError.message;
+        console.error('[send-brevo-invite] resend tracking save failed:', {
+          application_id: resendApplication.id,
+          error: trackingSaveError.message,
+        });
+      }
+    }
 
     // Log without the full recipient address — keep correlation, don't retain PII.
     console.log('[send-brevo-invite]', {
@@ -335,6 +391,8 @@ Deno.serve(async (req) => {
     return json(200, {
       ok: brevoRes.ok,
       status: brevoRes.status,
+      ...(isResend && brevoRes.ok ? { trackingSaved, sentAt: trackingSaved ? sentAt : null } : {}),
+      ...(isResend && brevoRes.ok && !trackingSaved ? { error: `email sent, but tracking was not saved: ${trackingError}` } : {}),
       ...(brevoRes.ok ? {} : { error: brevoBody.slice(0, 300) || `brevo http ${brevoRes.status}` }),
     }, cors);
   } catch (err) {

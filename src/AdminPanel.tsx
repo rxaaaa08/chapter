@@ -1175,30 +1175,45 @@ export default function AdminPanel() {
       };
 
       const sendEmail = async () => {
-        if (!needsEmail) return { ok: true, skipped: true, error: '' };
+        if (!needsEmail) return {
+          ok: true,
+          trackingSaved: true,
+          sentAt: String(app.resend_details_email_sent_at ?? ''),
+          skipped: true,
+          error: '',
+        };
         try {
           const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-brevo-invite`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminAccessToken}` },
             body: JSON.stringify({
+              applicationId: app.id,
               email,
               phone: phone10,
               userName: app.name ?? '',
               eventName,
               eventDate,
+              eventSlug: appSlugLower,
               mode: 'resend',
             }),
           });
           const json = await res.json().catch(() => ({}));
-          return { ok: res.ok && json.ok, skipped: false, error: String(json.error ?? `HTTP ${res.status}`).slice(0, 120) };
-        } catch { return { ok: false, skipped: false, error: 'network error' }; }
+          const ok = res.ok && json.ok;
+          const trackingSaved = ok && json.trackingSaved === true;
+          return {
+            ok,
+            trackingSaved,
+            sentAt: trackingSaved ? String(json.sentAt ?? '') : '',
+            skipped: false,
+            error: String(json.error ?? (ok && !trackingSaved ? 'email sent, but tracking was not saved' : `HTTP ${res.status}`)).slice(0, 120),
+          };
+        } catch { return { ok: false, trackingSaved: false, sentAt: '', skipped: false, error: 'network error' }; }
       };
 
       const [whatsappResult, emailResult] = await Promise.all([sendWhatsApp(), sendEmail()]);
       const sentAt = new Date().toISOString();
       const deliveryPatch: Record<string, string> = {};
       if (needsWhatsApp && whatsappResult.ok) deliveryPatch.resend_details_whatsapp_sent_at = sentAt;
-      if (needsEmail && emailResult.ok) deliveryPatch.resend_details_email_sent_at = sentAt;
 
       if (Object.keys(deliveryPatch).length > 0) {
         const { data, error: patchError } = await supabase
@@ -1207,8 +1222,20 @@ export default function AdminPanel() {
           .eq('id', id)
           .select('*')
           .maybeSingle();
-        if (patchError) showToast(`⚠️ Sent, but delivery tracking failed — ${patchError.message}`);
-        setApplications(prev => prev.map(a => a.id === id ? { ...a, ...deliveryPatch, ...(data ?? {}) } : a));
+        if (patchError) {
+          showToast(`⚠️ Sent, but delivery tracking failed — ${patchError.message}`);
+        } else {
+          setApplications(prev => prev.map(a => a.id === id ? { ...a, ...(data ?? deliveryPatch) } : a));
+        }
+      }
+
+      // The email Edge Function saves this timestamp with the service role only
+      // after Brevo accepts the message. Mirror that confirmed server value into
+      // local state; never paint a temporary tick for an unsaved database write.
+      if (needsEmail && emailResult.trackingSaved && emailResult.sentAt) {
+        setApplications(prev => prev.map(a => a.id === id
+          ? { ...a, resend_details_email_sent_at: emailResult.sentAt }
+          : a));
       }
 
       logAdminAction('resend_invite_details', 'applications', id, {
@@ -1218,12 +1245,12 @@ export default function AdminPanel() {
         email_sent: needsEmail ? emailResult.ok : 'already_sent',
       });
 
-      if (whatsappResult.ok && emailResult.ok) {
+      if (whatsappResult.ok && emailResult.ok && emailResult.trackingSaved) {
         showToast('✅ Details resent on WhatsApp & email');
       } else {
         const failures = [
           !whatsappResult.ok ? `WhatsApp: ${whatsappResult.error}` : '',
-          !emailResult.ok ? `email: ${emailResult.error}` : '',
+          !emailResult.ok || !emailResult.trackingSaved ? `email: ${emailResult.error}` : '',
         ].filter(Boolean).join(' · ');
         showToast(`⚠️ Partially sent — ${failures}`);
       }
