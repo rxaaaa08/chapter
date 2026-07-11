@@ -15,6 +15,8 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 - `src/AdminPanel.tsx` (~6.6k lines): admin + marketer dashboards — People tab, event/timeline editors, marketer cards.
 - `src/PaymentOverlay.tsx`: shared PayU bill page (`NativePaymentOverlay`) used by both flows.
 - `src/supabase.ts`: fetchers/mappers. **`Event.id` = `events.slug`.**
+- `src/JourneyMap.tsx` + `src/journeyMapSeeds.ts`: admin "Map" tab — React Flow user-journey maps backed by `journey_maps` (is_admin RLS). Seeds file = "Reset map" baseline; when a flow changes, refresh the matching seed nodes. Dev preview without login: `npm run dev` + `/admin?mapdev`.
+- `src/ProductRoadmap.tsx`: feature/testing tracker below the Map tab (strict-admin only — ops can't see it). Tables `roadmap_features/_tasks/_test_runs`; every push to `main` auto-creates a "Need Testing" card via the `feature_releases` trigger `sync_release_to_roadmap()` (release log → roadmap; dedup by release_id + exact title).
 - `supabase/functions/`: `create-payu-order` (server-trusted pricing), `payu-callback` (flips application status, fires WhatsApp, redirects), `payu-webhook`, `cart-abandonment` (30-min cron), `get-user-context`, `retarget-check`.
 
 ## Domain facts
