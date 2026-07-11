@@ -742,7 +742,7 @@ export function NativePaymentOverlay({
               <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-100">
                 <div>
                   <p className="text-[14px] text-gray-800">Transaction Processing Fees</p>
-                  <p className="text-[12px] text-gray-400 mt-0.5">Charged by PayU at 2% of advance</p>
+                  <p className="text-[12px] text-gray-400 mt-0.5">Charged by PayU at 2% of {paymentType === 'full' ? 'entry ticket' : paymentType === 'balance' ? 'balance' : 'advance'}</p>
                 </div>
                 <span className="text-[14px] font-medium text-gray-900">{fmtFee(basePFF)}</span>
               </div>
