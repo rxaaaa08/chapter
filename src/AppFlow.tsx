@@ -796,9 +796,20 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [openBookingCheckError, setOpenBookingCheckError] = useState('');
   const [openOtpSession, setOpenOtpSession] = useState('');
   const [openOtpDigits, setOpenOtpDigits] = useState<string[]>(() => Array(6).fill(''));
+  const [openOtpDelivery, setOpenOtpDelivery] = useState<'whatsapp' | 'email'>('whatsapp');
+  const [openOtpEmailWaitSeconds, setOpenOtpEmailWaitSeconds] = useState(0);
+  const [openOtpAttemptsExhausted, setOpenOtpAttemptsExhausted] = useState(false);
   const [sendingOpenOtp, setSendingOpenOtp] = useState(false);
   const [verifyingOpenOtp, setVerifyingOpenOtp] = useState(false);
   const openOtpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
+  useEffect(() => {
+    if (openOtpEmailWaitSeconds <= 0) return;
+    const timer = window.setTimeout(() => {
+      setOpenOtpEmailWaitSeconds(seconds => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [openOtpEmailWaitSeconds]);
 
   // Auto-fill name + check for existing booking when Google user is set
   useEffect(() => {
@@ -1702,6 +1713,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const resetOpenOtp = () => {
     setOpenOtpSession('');
     setOpenOtpDigits(Array(6).fill(''));
+    setOpenOtpDelivery('whatsapp');
+    setOpenOtpEmailWaitSeconds(0);
+    setOpenOtpAttemptsExhausted(false);
   };
 
   const checkOpenBookingEligibility = async (): Promise<boolean> => {
@@ -1741,7 +1755,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     }
   };
 
-  const requestOpenEventOtp = async () => {
+  const requestOpenEventOtp = async (delivery: 'whatsapp' | 'email' = 'whatsapp') => {
     if (!selectedEvent || !isPayUFlow) return;
     if (!(await checkOpenBookingEligibility())) return;
 
@@ -1757,19 +1771,24 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           phone: detailsForm.phone,
           email: detailsForm.email.trim(),
           event_slug: selectedEvent.id,
+          delivery,
+          ...(delivery === 'email' ? { previous_verification_token: openOtpSession } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.verification_token) {
-        setOpenBookingCheckError(data?.error || 'We could not send your WhatsApp code. Please try again.');
+        setOpenBookingCheckError(data?.error || `We could not send your ${delivery === 'email' ? 'verification email' : 'WhatsApp code'}. Please try again.`);
         return;
       }
       setOpenOtpSession(data.verification_token);
       setOpenOtpDigits(Array(6).fill(''));
+      setOpenOtpDelivery(delivery);
+      setOpenOtpAttemptsExhausted(false);
+      if (delivery === 'whatsapp') setOpenOtpEmailWaitSeconds(30);
       window.setTimeout(() => openOtpInputsRef.current[0]?.focus(), 0);
     } catch (err) {
       console.error('open event OTP request failed:', err);
-      setOpenBookingCheckError('We could not send your WhatsApp code. Please try again.');
+      setOpenBookingCheckError(`We could not send your ${delivery === 'email' ? 'verification email' : 'WhatsApp code'}. Please try again.`);
     } finally {
       setSendingOpenOtp(false);
     }
@@ -1779,7 +1798,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     if (!selectedEvent || !openOtpSession) return;
     const code = openOtpDigits.join('');
     if (!/^\d{6}$/.test(code)) {
-      setOpenBookingCheckError('Enter the six-digit code we sent on WhatsApp.');
+      setOpenBookingCheckError(`Enter the six-digit code we sent on ${openOtpDelivery === 'email' ? 'email' : 'WhatsApp'}.`);
       return;
     }
 
@@ -1800,6 +1819,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.verified) {
+        if (data?.attempts_exhausted === true) {
+          setOpenOtpAttemptsExhausted(true);
+          setOpenBookingCheckError('');
+          return;
+        }
         setOpenBookingCheckError(data?.error || 'We could not verify that code. Please try again.');
         return;
       }
@@ -1815,7 +1839,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const handleProceedToPhonePe = async (verifiedOtpSession = openOtpSession) => {
     if (!selectedEvent) return;
 
-    // The bill is gated by a WhatsApp OTP for open events. create-payu-order
+    // The bill is gated by an OTP for open events. create-payu-order
     // verifies this session again when the bill actually requests PayU fields.
     if (isPayUFlow) {
       if (!verifiedOtpSession) {
@@ -2905,10 +2929,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                   <input
                                     type="email"
                                     value={detailsForm.email}
-                                    onChange={e => {
-                                      resetOpenOtp();
-                                      setDetailsForm({ ...detailsForm, email: e.target.value });
-                                    }}
+                                    onChange={e => setDetailsForm({ ...detailsForm, email: e.target.value })}
                                     placeholder="Booking updates are sent here"
                                     className="w-full bg-transparent text-[17px] text-gray-900 placeholder:text-gray-300 focus:outline-none"
                                     inputMode="email"
@@ -2918,9 +2939,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                 </div>
 
                                 {openOtpSession && (
-                                  <div className="rounded-2xl border border-[#FFD700]/70 bg-[#FFFDF2] px-4 pt-3 pb-4">
-                                    <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">WhatsApp verification</p>
-                                    <p className="mt-1 text-[13px] leading-relaxed text-gray-600">Enter the six-digit code sent to {detailsForm.phone}.</p>
+                                  <div className="rounded-2xl border border-gray-200 bg-white px-4 pt-3 pb-4">
+                                    <p className="text-[13px] text-gray-500 leading-snug">Enter 6-digit code sent to {openOtpDelivery === 'email' ? detailsForm.email.trim() : detailsForm.phone}</p>
                                     <div className="mt-3 flex justify-between gap-2">
                                       {openOtpDigits.map((digit, index) => (
                                         <input
@@ -2931,7 +2951,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                           inputMode="numeric"
                                           autoComplete={index === 0 ? 'one-time-code' : 'off'}
                                           maxLength={1}
-                                          disabled={verifyingOpenOtp}
+                                          disabled={verifyingOpenOtp || openOtpAttemptsExhausted}
                                           onChange={e => {
                                             const nextDigit = e.target.value.replace(/\D/g, '').slice(-1);
                                             setOpenOtpDigits(previous => previous.map((value, itemIndex) => itemIndex === index ? nextDigit : value));
@@ -2947,19 +2967,67 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                             setOpenOtpDigits(Array.from({ length: 6 }, (_, itemIndex) => pasted[itemIndex] ?? ''));
                                             openOtpInputsRef.current[Math.min(pasted.length, 5)]?.focus();
                                           }}
-                                          className="h-11 min-w-0 flex-1 rounded-xl border border-[#E4DFAF] bg-white text-center text-[19px] font-black text-gray-900 outline-none transition-colors focus:border-[#D3AD00] focus:ring-2 focus:ring-[#FFD700]/30 disabled:opacity-60"
+                                          className="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 bg-[#F2F2F7] text-center text-[19px] font-black text-gray-900 outline-none transition-colors focus:border-gray-500 focus:ring-2 focus:ring-gray-300/50 disabled:opacity-60"
                                           aria-label={`OTP digit ${index + 1}`}
                                         />
                                       ))}
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={requestOpenEventOtp}
-                                      disabled={sendingOpenOtp || verifyingOpenOtp}
-                                      className="mt-3 text-[12px] font-bold text-gray-600 underline underline-offset-2 disabled:opacity-40"
-                                    >
-                                      {sendingOpenOtp ? 'Sending a new code…' : 'Resend OTP'}
-                                    </button>
+                                    <div className="mt-3 flex min-h-5 items-center text-[12px]">
+                                      {openOtpAttemptsExhausted ? (
+                                        <span className="text-[13px] text-gray-500 leading-snug">
+                                          Need help?{' '}
+                                          <a
+                                            href={`https://wa.me/919940111564?text=${encodeURIComponent(`I'm trying to book a slot for ${selectedEvent?.title ?? 'this event'}, I need help with OTP`)}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-gray-900 underline font-medium"
+                                          >
+                                            Contact Us
+                                          </a>
+                                        </span>
+                                      ) : openOtpDelivery === 'whatsapp' ? (
+                                        <div className="flex w-full items-end justify-between gap-3">
+                                          <div className="flex items-center gap-1">
+                                            {!sendingOpenOtp && (
+                                              <button
+                                                type="button"
+                                                onClick={() => requestOpenEventOtp('email')}
+                                                disabled={verifyingOpenOtp || openOtpEmailWaitSeconds > 0 || !isEmailValid}
+                                                className={`whitespace-nowrap underline disabled:cursor-not-allowed disabled:no-underline disabled:text-gray-400 ${
+                                                  openOtpEmailWaitSeconds > 0
+                                                    ? 'text-[12px] font-medium text-gray-400'
+                                                    : 'text-[13px] font-medium text-gray-900'
+                                                }`}
+                                              >
+                                                {openOtpEmailWaitSeconds > 0
+                                                  ? `Get OTP on Email (${openOtpEmailWaitSeconds} seconds)`
+                                                  : 'Get OTP on Email'}
+                                              </button>
+                                            )}
+                                          </div>
+                                          {openBookingCheckError && (
+                                            <span className="text-right text-[11px] font-normal leading-snug text-red-500">{openBookingCheckError}</span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="flex w-full items-end justify-between gap-3">
+                                          <span className="text-[13px] text-gray-500 leading-snug">
+                                            Need help?{' '}
+                                            <a
+                                              href={`https://wa.me/919940111564?text=${encodeURIComponent(`I'm trying to book a slot for ${selectedEvent?.title ?? 'this event'}, I need help with OTP`)}`}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-gray-900 underline font-medium"
+                                            >
+                                              Contact Us
+                                            </a>
+                                          </span>
+                                          {openBookingCheckError && (
+                                            <span className="text-right text-[11px] font-normal leading-snug text-red-500">{openBookingCheckError}</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                               </>
@@ -2992,22 +3060,32 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
                       {(!existingBooking || forceNewBooking) && (
                       <div className="px-6 pt-6 pb-6">
-                        {openBookingCheckError && (
+                        {openBookingCheckError && !openOtpSession && (
                           <p className="mb-3 text-center text-[13px] leading-relaxed text-red-500">{openBookingCheckError}</p>
                         )}
                         <button
                           type="button"
-                          disabled={!isDetailsFormValid || checkingOpenBooking || sendingOpenOtp || verifyingOpenOtp}
-                          onClick={isPayUFlow ? (openOtpSession ? verifyOpenEventOtpAndProceed : requestOpenEventOtp) : handleProceedToPhonePe}
-                          className={`w-full py-[17px] rounded-2xl text-[17px] font-black flex items-center justify-center gap-2.5 transition-all relative overflow-hidden ${
-                            isDetailsFormValid && !checkingOpenBooking && !sendingOpenOtp && !verifyingOpenOtp ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
+                          disabled={!isDetailsFormValid || checkingOpenBooking || sendingOpenOtp || verifyingOpenOtp || openOtpAttemptsExhausted}
+                          onClick={isPayUFlow ? (openOtpSession ? verifyOpenEventOtpAndProceed : () => requestOpenEventOtp('whatsapp')) : handleProceedToPhonePe}
+                          className={`w-full min-h-[58px] py-[17px] rounded-2xl text-[17px] font-black flex items-center justify-center gap-2.5 transition-all relative overflow-hidden ${
+                            isDetailsFormValid && !checkingOpenBooking && !sendingOpenOtp && !verifyingOpenOtp && !openOtpAttemptsExhausted ? 'bg-[#FFD700] text-black active:scale-95' : 'bg-[#F2F2F7] text-gray-400 cursor-not-allowed'
                           }`}
                         >
                           {isDetailsFormValid && !checkingOpenBooking && !sendingOpenOtp && !verifyingOpenOtp && (
                             <motion.div className="absolute inset-0 -skew-x-12 pointer-events-none" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.9, delay: 10, repeat: Infinity, repeatDelay: 8, ease: 'easeInOut' }} />
                           )}
-                          <span>{checkingOpenBooking ? 'Checking your booking...' : sendingOpenOtp ? 'Sending OTP...' : verifyingOpenOtp ? 'Verifying OTP...' : isPayUFlow ? (openOtpSession ? 'Continue to Payment' : 'Get OTP') : 'Continue to Payment'}</span>
-                          <ArrowRight size={18} strokeWidth={2.5} />
+                          {checkingOpenBooking || sendingOpenOtp || verifyingOpenOtp ? (
+                            <span className="flex items-center gap-1.5" role="status" aria-label="Loading">
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+                            </span>
+                          ) : (
+                            <>
+                              <span>{isPayUFlow ? (openOtpSession ? 'Continue to Payment' : 'Get OTP') : 'Continue to Payment'}</span>
+                              <ArrowRight size={18} strokeWidth={2.5} />
+                            </>
+                          )}
                         </button>
                       </div>
                       )}

@@ -270,16 +270,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Open-event ticket purchases must prove control of the entered WhatsApp
-    // number before a bill (or a PayU order) can be opened. The browser passes
-    // an opaque token only after open-event-otp has verified the six-digit code;
+    // Open-event ticket purchases must prove control of the entered contact details
+    // before a bill (or a PayU order) can be opened. The browser passes an opaque
+    // token only after open-event-otp has verified the six-digit OTP;
     // the DB row binds that token to this exact event, phone and email.
     // Balance payments remain available to an already-verified booking without
     // making the customer repeat OTP verification.
     if (event.booking_url === 'payu-hosted' && paymentType !== 'balance') {
       const verificationToken = String(body.otp_session ?? '');
       if (!/^[a-f0-9]{64}$/.test(verificationToken)) {
-        return err(403, 'WhatsApp verification required before payment', cors);
+        return err(403, 'OTP verification required before payment', cors);
       }
       const { data: otpSession, error: otpSessionError } = await supabase
         .from('open_event_otp_sessions')
@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
         otpSession.phone !== phone ||
         sessionEmail !== email.toLowerCase()
       ) {
-        return err(403, 'WhatsApp verification required before payment', cors);
+        return err(403, 'OTP verification required before payment', cors);
       }
     }
     // Strip the pipe char before productinfo enters the |-delimited PayU hash
