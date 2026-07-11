@@ -243,6 +243,10 @@ Deno.serve(async (req) => {
     if (event.payment_mode === 'full') paymentType = 'full';
 
     const canonicalSlug = event.slug as string;
+    // Populated below when this phone+email previously submitted a doubt for
+    // this exact open event. A matching doubt is an intentional alternate path
+    // into /invite: it replaces OTP, even if Sales has not pressed Send Details.
+    let matchingDoubt: any = null;
 
     // One open-event spot per WhatsApp number. Enforce this in the payment
     // function so a stale bill page or direct request cannot create a second
@@ -270,33 +274,83 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Open-event ticket purchases must prove control of the entered contact details
-    // before a bill (or a PayU order) can be opened. The browser passes an opaque
-    // token only after open-event-otp has verified the six-digit OTP;
-    // the DB row binds that token to this exact event, phone and email.
-    // Balance payments remain available to an already-verified booking without
-    // making the customer repeat OTP verification.
+    // Normal open-event ticket purchases prove control of the entered contact
+    // details with OTP. Two deliberate return paths may skip it: a prior PayU
+    // order, or a matching event+phone+email doubt. Balance payments also remain
+    // available without repeating verification.
     if (event.booking_url === 'payu-hosted' && paymentType !== 'balance') {
-      const verificationToken = String(body.otp_session ?? '');
-      if (!/^[a-f0-9]{64}$/.test(verificationToken)) {
-        return err(403, 'OTP verification required before payment', cors);
+      // Recovery exemption: a customer whose earlier attempt FAILED is sent a
+      // WhatsApp + email deeplink into the invite-style bill, which carries no
+      // OTP session. They already proved control of this number on the ORIGINAL
+      // attempt — create-payu-order writes a payu_payments row only AFTER the
+      // OTP gate below, and that table is service-role-only (anon cannot forge
+      // one). So a prior payu_payments row for this exact event + phone is
+      // unforgeable proof of a completed verification; skip re-OTP for it.
+      //   NB: an existing `applications` row is deliberately NOT accepted here —
+      //   anon can self-INSERT a status='pending' row for any phone
+      //   (applications_anon_insert policy), which would reopen the OTP bypass.
+      const [
+        { data: priorOrder, error: priorOrderError },
+        { data: doubtRows, error: doubtRowsError },
+      ] = await Promise.all([
+        supabase
+          .from('payu_payments')
+          .select('txnid')
+          .eq('event_slug', canonicalSlug)
+          .eq('phone', phone)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('doubt_submissions')
+          .select('id, name, phone, email, gender, why_join, event_id, event_title, city, selected_date, meeting_spot, submitted_at')
+          .eq('phone', phone)
+          .order('submitted_at', { ascending: false })
+          .limit(50),
+      ]);
+      if (priorOrderError) {
+        console.error('[create-payu-order] prior order lookup failed', priorOrderError);
+        return err(500, 'could not verify booking status', cors);
       }
-      const { data: otpSession, error: otpSessionError } = await supabase
-        .from('open_event_otp_sessions')
-        .select('event_slug, phone, email, expires_at, verified_at')
-        .eq('verification_token', verificationToken)
-        .maybeSingle();
-      const sessionEmail = String((otpSession as any)?.email ?? '').trim().toLowerCase();
-      if (
-        otpSessionError ||
-        !otpSession ||
-        !otpSession.verified_at ||
-        new Date(otpSession.expires_at).getTime() <= Date.now() ||
-        otpSession.event_slug !== canonicalSlug ||
-        otpSession.phone !== phone ||
-        sessionEmail !== email.toLowerCase()
-      ) {
-        return err(403, 'OTP verification required before payment', cors);
+      if (doubtRowsError) {
+        console.error('[create-payu-order] doubt eligibility lookup failed', doubtRowsError);
+        return err(500, 'could not verify booking status', cors);
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedTitle = String(event.title ?? '').trim().toLowerCase();
+      matchingDoubt = (doubtRows ?? []).find((row: any) => {
+        const doubtEmail = String(row.email ?? '').trim().toLowerCase();
+        const doubtEventId = String(row.event_id ?? '').trim().toLowerCase();
+        const doubtEventTitle = String(row.event_title ?? '').trim().toLowerCase();
+        return doubtEmail === normalizedEmail
+          && (doubtEventId === canonicalSlug.toLowerCase() || doubtEventTitle === normalizedTitle);
+      }) ?? null;
+
+      if (!priorOrder && !matchingDoubt) {
+        // Normal open-event booking: no prior verified order and no matching
+        // doubt, so require the existing fresh OTP session. A doubt-only buyer
+        // is deliberately allowed through without waiting for Sales to act.
+        const verificationToken = String(body.otp_session ?? '');
+        if (!/^[a-f0-9]{64}$/.test(verificationToken)) {
+          return err(403, 'OTP verification required before payment', cors);
+        }
+        const { data: otpSession, error: otpSessionError } = await supabase
+          .from('open_event_otp_sessions')
+          .select('event_slug, phone, email, expires_at, verified_at')
+          .eq('verification_token', verificationToken)
+          .maybeSingle();
+        const sessionEmail = String((otpSession as any)?.email ?? '').trim().toLowerCase();
+        if (
+          otpSessionError ||
+          !otpSession ||
+          !otpSession.verified_at ||
+          new Date(otpSession.expires_at).getTime() <= Date.now() ||
+          otpSession.event_slug !== canonicalSlug ||
+          otpSession.phone !== phone ||
+          sessionEmail !== email.toLowerCase()
+        ) {
+          return err(403, 'OTP verification required before payment', cors);
+        }
       }
     }
     // Strip the pipe char before productinfo enters the |-delimited PayU hash
@@ -425,6 +479,33 @@ Deno.serve(async (req) => {
     const baseAmount = amountNum;
     const feeResult  = applyMethodFee(baseAmount, preferredMethod);
     amountNum = feeResult.total;
+
+    // A doubt-only buyer may not have an applications row yet because the old
+    // flow created one only when Sales pressed Send Details. Preserve the
+    // doubt's date/city/contact choices now so PayU callbacks, group links and
+    // admin status all have the same canonical lead to update. This write is
+    // service-role-only and never overwrites an existing application.
+    if (matchingDoubt) {
+      const { error: doubtAppError } = await supabase
+        .from('applications')
+        .upsert({
+          event_slug: canonicalSlug,
+          name: String(matchingDoubt.name ?? name).trim() || name,
+          phone,
+          email: String(matchingDoubt.email ?? customerEmail).trim() || null,
+          gender: String(matchingDoubt.gender ?? ''),
+          why_join: String(matchingDoubt.why_join ?? ''),
+          status: 'pending',
+          selected_date: matchingDoubt.selected_date ?? null,
+          selected_city: matchingDoubt.city ?? trustedCity ?? null,
+          pickup_label: matchingDoubt.meeting_spot ?? null,
+        }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
+      if (doubtAppError) {
+        // Do not strand a willing payer because lead tracking failed. The PayU
+        // callback has its own repair-upsert; log this so ops can investigate.
+        console.error('[create-payu-order] could not create doubt application', doubtAppError);
+      }
+    }
 
     // ── 5. Build PayU fields with server-computed values only ──
     const PAYU_MERCHANT_KEY  = Deno.env.get('PAYU_MERCHANT_KEY');

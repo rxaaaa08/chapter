@@ -272,8 +272,9 @@ export function NativePaymentOverlay({
   lockEmail?: boolean;
   eventSlug?: string;
   selectedCity?: string;
-  // Required by create-payu-order only for a new open-event ticket. Invite
-  // flows and an existing split-payment balance intentionally leave it blank.
+  // Required by create-payu-order for a normal new open-event ticket. Invite
+  // flows, doubt-qualified buyers, recovery attempts, and an existing split-
+  // payment balance intentionally leave it blank.
   otpSession?: string;
   paymentType?: 'advance' | 'balance' | 'full';
   skipEntrance?: boolean;
@@ -415,7 +416,9 @@ export function NativePaymentOverlay({
         msg = "This number isn't on the invite list for this plan. Check the number or contact us.";
       } else if (raw.includes('already paid for this open event')) {
         msg = 'This number already has a confirmed spot for this event. Use a different number for another ticket.';
-      } else if (raw.includes('whatsapp verification required')) {
+      } else if (raw.includes('verification required')) {
+        // Covers both the current server string ('OTP verification required
+        // before payment') and any older 'whatsapp verification required' copy.
         msg = 'Please return to the booking form and verify your WhatsApp number before paying.';
       } else if (raw.includes('no application found for balance')) {
         msg = "We couldn't find your booking for the balance payment. Contact us if this looks wrong.";

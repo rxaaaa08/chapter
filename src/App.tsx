@@ -1730,6 +1730,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     phone: string,
     matchHint?: { title?: string; inviteSpots?: number | null }
   ): Promise<{ isFullyPaid: boolean; isBalancePayment: boolean; inviteSpots: number | null } | null> => {
+    // Never look up status with an empty/short phone: get-user-context 400s on it
+    // and the status would silently fall back to 'invited' (unpaid), showing a paid
+    // user a Pay CTA that then dies at the server's "already paid" 409. Bail so the
+    // caller shows a retry/error instead of a wrong screen.
+    const lookupPhone = String(phone ?? '').replace(/\D/g, '').slice(-10);
+    if (lookupPhone.length !== 10) return null;
     const { data: eventRow } = await supabase
       .from('events')
       .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
@@ -1756,7 +1762,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const paidStatuses = new Set(['advance_paid', 'fully_paid']);
     let appRow: any = null;
     let inviteRow: any = null;
+    let doubtRow: any = null;
     let legacyStatus: string | null = null;
+    // Distinguish "looked up, no paid row" (legitimately still invited) from
+    // "lookup failed" (we don't know their status). Only the former may proceed
+    // as 'invited'; the latter must not render a Pay CTA off a guess.
+    let lookupOk = false;
     try {
       const ctxRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`, {
         method: 'POST',
@@ -1765,15 +1776,21 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
           'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone: lookupPhone }),
       });
       if (ctxRes.ok) {
+        lookupOk = true;
         const ctx = await ctxRes.json();
         const apps: any[] = Array.isArray(ctx.applications) ? ctx.applications : [];
         const subs: any[] = Array.isArray(ctx.invite_submissions) ? ctx.invite_submissions : [];
         const invs: any[] = Array.isArray(ctx.invites) ? ctx.invites : [];
+        const doubts: any[] = Array.isArray(ctx.doubts) ? ctx.doubts : [];
         appRow = apps.find(a => slugSet.has(a.event_slug)) ?? null;
         inviteRow = invs.find(i => slugSet.has(i.event_slug)) ?? null;
+        doubtRow = doubts.find(d =>
+          slugSet.has(String(d.event_id ?? '').trim())
+          || String(d.event_title ?? '').trim().toLowerCase() === String(event.title ?? '').trim().toLowerCase()
+        ) ?? null;
         legacyStatus = subs.find(s => slugSet.has(s.invite_slug) && paidStatuses.has(String(s.status)))?.status ?? null;
       } else {
         console.error('[prepareNativeInviteFlow] get-user-context non-ok', ctxRes.status);
@@ -1781,7 +1798,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     } catch (err) {
       console.error('[prepareNativeInviteFlow] get-user-context failed', err);
     }
-    const appStatus = (appRow?.status as string | undefined) ?? legacyStatus ?? 'invited';
+    // A failed status lookup must NOT be silently treated as "not paid". Bail so
+    // the caller shows a retry/error rather than a wrong (Pay) screen that would
+    // then hit the server's "already paid" 409 for an already-paid user.
+    if (!lookupOk) return null;
+    // Normalize before comparing so a legacy 'full_paid' reads as fully paid here
+    // exactly as it does on the plan-picker card (which uses normalizeInviteStatus).
+    const appStatus = normalizeInviteStatus((appRow?.status as string | undefined) ?? legacyStatus ?? (doubtRow ? 'pending' : 'invited'));
     const isFullyPaid      = appStatus === 'fully_paid';
     const isBalancePayment = appStatus === 'advance_paid';
     // Single-payment event: one charge for the full price (no advance/balance).
@@ -1793,7 +1816,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // the user already submitted their application). Without this, the
     // map is only ever populated by verifyPhone, leaving the email field
     // blank + editable on reload despite the email already being on file.
-    const storedEmail = String((appRow as any)?.email ?? '').trim();
+    const storedEmail = String((appRow as any)?.email ?? (doubtRow as any)?.email ?? '').trim();
     if (storedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(storedEmail) && storedEmail !== 'booking@chaptera.in') {
       setAppEmailBySlug(prev => prev[realSlug] === storedEmail ? prev : { ...prev, [realSlug]: storedEmail });
     }
@@ -1802,7 +1825,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // 1. Prefer stored selected_city from their application
     // 2. Fall back to city stored in invited_numbers (set by admin when inviting per-city)
     // 3. Last resort: first non-Other city on the event (single home-city events)
-    const storedCity: string | null = (appRow as any)?.selected_city ?? null;
+    const storedCity: string | null = (appRow as any)?.selected_city ?? (doubtRow as any)?.city ?? null;
     const inviteCity: string | null = (inviteRow as any)?.city ?? null;
     const cityNames: string[] = Array.isArray(event.cities) ? event.cities : [];
     const resolvedCity: string | null =
@@ -1830,7 +1853,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // firstDate drives the visible date label, the per-date sold-out check,
     // and the WhatsApp group URL — keeping all three on the same date is what
     // stops users invited to July 19 from seeing "July 5 sold out" instead.
-    const selectedDate: string | null = (appRow as any)?.selected_date ?? null;
+    const selectedDate: string | null = (appRow as any)?.selected_date ?? (doubtRow as any)?.selected_date ?? null;
     const matchedDateRow = selectedDate
       ? dates.find((d: any) => String(d.start_date ?? '') === selectedDate)
       : null;
@@ -1983,9 +2006,24 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     });
   };
 
-  const selectInviteMatch = async (match: SharedInviteMatch, openDirectly = false) => {
+  const selectInviteMatch = async (match: SharedInviteMatch, openDirectly = false, phoneOverride?: string) => {
     if (!isMatchActionable(match)) return;
-    const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '');
+    // Resolve the phone from an explicit override when provided, falling back to
+    // form state. The deeplink path (findInviteMatches → here) calls setForm and
+    // this in the SAME render tick, so form.phone is still stale (empty) here —
+    // reading it would look up status with a blank phone, get a 400, and wrongly
+    // treat a paid user as 'invited' (Pay Now + bill "already paid" 409). Callers
+    // that already hold the resolved number must pass it in. Normalize fully so it
+    // matches findInviteMatches (strip +91/leading 0/non-digits, keep last 10).
+    const tenDigit = (phoneOverride ?? form.phone)
+      .replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
+    if (tenDigit.length !== 10) {
+      setError('not_found');
+      setHasFailedOnce(true);
+      setLoading(false);
+      endDeeplinkResolving();
+      return;
+    }
     const chooseFromRevealedPoster = isChoosingInvitePlan || openDirectly;
     const shouldRestorePickerOnChatBack = isChoosingInvitePlan && !openDirectly;
     setLoading(true);
@@ -2044,6 +2082,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // function which uses service_role + filters by the caller-supplied phone.
     let inviteRows: { event_slug: string }[] = [];
     let appRows: { event_slug: string; status: string; email?: string }[] = [];
+    let doubtRows: Array<{ event_id?: string; event_title?: string; email?: string; city?: string; selected_date?: string }> = [];
     try {
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`,
@@ -2061,6 +2100,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       const json = await res.json();
       inviteRows = json.invites      ?? [];
       appRows    = json.applications ?? [];
+      doubtRows  = json.doubts       ?? [];
     } catch (err) {
       setError('Could not check invites right now. Please try again.');
       setLoading(false);
@@ -2077,6 +2117,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       const e = String(row.email ?? '').trim();
       if (slug && e && isValidEmail(e)) emailMap[slug] = e;
     });
+    (doubtRows ?? []).forEach((row: any) => {
+      const slug = String(row.event_id ?? '').trim();
+      const e = String(row.email ?? '').trim();
+      if (slug && e && isValidEmail(e) && !emailMap[slug]) emailMap[slug] = e;
+    });
     setAppEmailBySlug(emailMap);
     const candidates = new Map<string, string>();
     (inviteRows ?? []).forEach((row: any) => {
@@ -2085,6 +2130,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     });
     appStatusBySlug.forEach((status, eventSlug) => {
       candidates.set(eventSlug, status);
+    });
+    // Asking an open-event doubt is itself enough to continue in /invite. The
+    // payment function independently verifies the same event+phone+email match;
+    // this client-side candidate only controls which plan card is displayed.
+    (doubtRows ?? []).forEach((row: any) => {
+      const eventSlug = String(row.event_id ?? '').trim();
+      if (eventSlug && !candidates.has(eventSlug)) candidates.set(eventSlug, 'pending');
     });
 
     // For each matched invite_slug/event_slug, fetch the event details in parallel.
@@ -2194,7 +2246,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }
 
     if (found.length === 1 && isMatchActionable(found[0])) {
-      await selectInviteMatch(found[0], true);
+      // Pass the locally-resolved phone: on the deeplink path form.phone is still
+      // stale in this tick, so selectInviteMatch must not fall back to reading it.
+      await selectInviteMatch(found[0], true, tenDigit);
       return;
     }
 

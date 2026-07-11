@@ -4,6 +4,8 @@
 //   - invites: { event_slug, city }[] — rows in invited_numbers for this phone
 //   - applications: { event_slug, status, email, pickup_point_id, selected_city,
 //                     selected_date }[] — rows in applications for this phone
+//   - doubts: { event_id, event_title, email, city, selected_date, meeting_spot }[]
+//              — open-event doubt rows that make the phone eligible in /invite
 //   - invite_submissions: { invite_slug, status }[] — legacy payment-status source
 //   - payment: { ... } | null       — if txnid was passed AND the stored phone
 //                                     on payu_payments matches the request phone
@@ -94,11 +96,14 @@ Deno.serve(async (req) => {
       return json(429, { error: 'rate limit exceeded' }, cors);
     }
 
-    // All three queries run in parallel — independent.
+    // All four queries run in parallel — independent. Doubts are returned so an
+    // open-event customer can continue through /invite even when Sales has not
+    // yet pressed "Send Details" (and therefore no applications row exists).
     const [
       { data: invites },
       { data: applications },
       { data: inviteSubmissions },
+      { data: doubts },
     ] = await Promise.all([
       supabase
         .from('invited_numbers')
@@ -111,6 +116,11 @@ Deno.serve(async (req) => {
       supabase
         .from('invite_payment_submissions')
         .select('invite_slug, status')
+        .eq('phone', phone)
+        .order('submitted_at', { ascending: false }),
+      supabase
+        .from('doubt_submissions')
+        .select('event_id, event_title, email, city, selected_date, meeting_spot, submitted_at')
         .eq('phone', phone)
         .order('submitted_at', { ascending: false }),
     ]);
@@ -133,6 +143,7 @@ Deno.serve(async (req) => {
       invites:            invites           ?? [],
       applications:       applications      ?? [],
       invite_submissions: inviteSubmissions ?? [],
+      doubts:             doubts            ?? [],
       payment,
     }, cors);
   } catch (err) {
