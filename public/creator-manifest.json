@@ -1,0 +1,35 @@
+{
+  "name": "chapter அ creators",
+  "short_name": "creators",
+  "description": "Creator dashboard for chapter அ — your link, clicks, bookings and earnings.",
+  "id": "/creator",
+  "start_url": "/creator",
+  "scope": "/creator",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["travel", "lifestyle", "social"],
+  "icons": [
+    {
+      "src": "/icon-creator-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-creator-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-creator-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

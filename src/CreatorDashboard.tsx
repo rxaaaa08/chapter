@@ -63,6 +63,33 @@ export default function CreatorDashboard() {
   const [signingOut, setSigningOut] = useState(false);
   const [authError, setAuthError] = useState('');
 
+  // ── Install-app nudge ──
+  // Android/Chrome fires beforeinstallprompt (captured in index.html before
+  // React mounts) → one-tap install button. iOS has no install API, so show
+  // the Share → Add to Home Screen steps. Hidden inside the installed app.
+  const isStandalone = typeof window !== 'undefined'
+    && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+  const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const [installPrompt, setInstallPrompt] = useState<any>(
+    () => typeof window !== 'undefined' ? (window as any).__deferredInstallPrompt ?? null : null
+  );
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const onPrompt = (e: any) => { e.preventDefault(); (window as any).__deferredInstallPrompt = e; setInstallPrompt(e); };
+    const onInstalled = () => setInstalled(true);
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', onPrompt); window.removeEventListener('appinstalled', onInstalled); };
+  }, []);
+  const installApp = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    try { await installPrompt.userChoice; } catch { /* user dismissed */ }
+    setInstallPrompt(null);
+    (window as any).__deferredInstallPrompt = null;
+  };
+  const showInstallCard = !isStandalone && !installed && (installPrompt || isIOS);
+
   const month = istMonth();
 
   useEffect(() => {
@@ -251,6 +278,26 @@ export default function CreatorDashboard() {
           </div>
           <div style={{ fontSize: 12, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>You earn when someone books a chapter அ experience through it.</div>
         </div>
+
+        {/* Install-app nudge (hidden once installed / inside the app) */}
+        {showInstallCard && (
+          <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, padding: 16, display: 'flex', alignItems: 'center', gap: 14 }}>
+            <img src="/icon-creator-192.png" alt="" width={44} height={44} style={{ borderRadius: 11, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 750, fontSize: 14 }}>Get the creators app</div>
+              <div style={{ fontSize: 12, color: MUTED, marginTop: 2, lineHeight: 1.45 }}>
+                {installPrompt
+                  ? 'Check your stats anytime from your home screen.'
+                  : <>Tap <b style={{ color: INK }}>Share</b> then <b style={{ color: INK }}>Add to Home Screen</b>.</>}
+              </div>
+            </div>
+            {installPrompt && (
+              <button onClick={installApp} style={{ flexShrink: 0, padding: '8px 16px', borderRadius: 10, border: 'none', background: INK, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                Install
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Funnel — with range picker */}
         <div>

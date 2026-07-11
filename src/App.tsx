@@ -5352,13 +5352,16 @@ export default function App() {
 
   const [routePath, setRoutePath] = useState(() => {
     if (typeof window === 'undefined') return '/';
-    // The PWA is admin-only. Whenever it's launched in standalone mode, force
-    // the route to /admin. This handles iOS Safari (which uses the install-time
-    // URL instead of the manifest's start_url) and any case where the launch
-    // URL got stored as something other than /admin.
+    // Two installed PWAs share this SPA: the creators app (creator-manifest.json)
+    // launches at /creator and stays there; every other standalone launch is
+    // the admin app and gets forced to /admin. The /admin force handles iOS
+    // Safari (which uses the install-time URL instead of the manifest's
+    // start_url) and any case where the launch URL got stored as something
+    // other than /admin.
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || (window.navigator as any).standalone === true;
-    if (isStandalone && window.location.pathname !== '/admin') {
+    if (isStandalone && !window.location.pathname.startsWith('/creator')
+        && window.location.pathname !== '/admin') {
       window.history.replaceState({}, '', '/admin');
       return '/admin';
     }

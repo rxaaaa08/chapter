@@ -11,6 +11,18 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="chapter அ admin" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script>
+      // Two installable apps share this single-page site: the admin PWA
+      // (default, /manifest.json → starts at /admin) and the creators PWA.
+      // Manifest + iOS icon/title are read from the page the user is on when
+      // they install, so on /creator swap them before anyone can hit
+      // "Install app" / "Add to Home Screen".
+      if (location.pathname.indexOf('/creator') === 0) {
+        document.querySelector('link[rel="manifest"]').href = '/creator-manifest.json';
+        document.querySelector('link[rel="apple-touch-icon"]').href = '/apple-touch-icon-creator.png';
+        document.querySelector('meta[name="apple-mobile-web-app-title"]').content = 'creators';
+      }
+    </script>
     <!-- Open Graph / social share preview (IG, WhatsApp, FB, LinkedIn). -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://chaptera.in/" />
