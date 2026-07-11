@@ -2,6 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, parseHeroImages, fetchEventCounts, fetchEventDateCounts } from './supabase';
 
+// Journey Map tab (React Flow) — lazy so the map library only downloads when
+// the tab is opened, never in the customer-facing bundle.
+const JourneyMap = React.lazy(() => import('./JourneyMap'));
+
 // ─── IMAGE INPUT ──────────────────────────────────────────────────────────────
 // We use Cloudinary for image hosting and paste the resulting URL here. The
 // earlier file-upload-to-Supabase-Storage button was removed in the security
@@ -250,15 +254,15 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'settings'>(
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'settings'>(
     () => {
       const stored = localStorage.getItem('adminTab');
       // 'affiliates' is no longer its own tab — Creators now live inside Performance.
       if (stored === 'affiliates') return 'marketers';
-      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'settings') ?? 'people';
+      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'settings') ?? 'people';
     }
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -2193,6 +2197,17 @@ export default function AdminPanel() {
     );
   }
 
+  // Dev-only: preview the Map tab without logging in (npm run dev + ?mapdev in
+  // the URL). import.meta.env.DEV is false in production builds, so this whole
+  // branch is stripped from the deployed site.
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('mapdev')) {
+    return (
+      <div style={{ maxWidth: 1280, margin: '32px auto', padding: '0 20px' }}>
+        <React.Suspense fallback={null}><JourneyMap demo /></React.Suspense>
+      </div>
+    );
+  }
+
   if (!adminRole) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f0', fontFamily: 'sans-serif' }}>
@@ -2270,12 +2285,20 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
+        <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Map</button>
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
 
-      <div style={{ maxWidth: tab === 'people' ? 1280 : 920, margin: '32px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: (tab === 'people' || tab === 'map') ? 1280 : 920, margin: '32px auto', padding: '0 20px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
+
+        {/* ── MAP TAB (user-journey maps) ──────────────────────────────────── */}
+        {!loading && tab === 'map' && (
+          <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading map…</div>}>
+            <JourneyMap showRoadmap={adminRole === 'admin'} />
+          </React.Suspense>
+        )}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
         {!loading && tab === 'trips' && (

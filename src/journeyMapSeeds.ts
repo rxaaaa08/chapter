@@ -1,0 +1,268 @@
+// Generated user-journey maps for the admin Map tab.
+//
+// These are the "Reset to generated" baselines: what actually happens at every
+// step of each flow, traced from the real code (AppFlow.tsx, App.tsx,
+// PaymentOverlay.tsx and the supabase/functions/* edge functions). They seed
+// the journey_maps table the first time the tab is opened and back the
+// per-map "Reset" button afterwards — edits made in the UI live only in the
+// DB row, so resetting restores this file's version.
+//
+// When a flow changes in code, update the matching nodes here (ask Claude to
+// "refresh the journey map seeds") so Reset stays truthful.
+
+export type JourneyKind = 'screen' | 'action' | 'system' | 'whatsapp' | 'email' | 'status' | 'issue';
+
+export type JourneySeedNode = {
+  id: string;
+  type: 'journey';
+  position: { x: number; y: number };
+  data: { label: string; note?: string; kind: JourneyKind; verified?: boolean };
+};
+
+export type JourneySeedEdge = {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  // Lateral branches route out of a side handle so arrows don't loop
+  // awkwardly: 'right' = source's right → target's left, 'left' = source's
+  // left → target's right. Handle ids are defined in JourneyMap.tsx.
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
+export type JourneyMapSeed = {
+  name: string;
+  sort_order: number;
+  nodes: JourneySeedNode[];
+  edges: JourneySeedEdge[];
+};
+
+function n(
+  id: string, x: number, y: number, kind: JourneyKind, label: string, note?: string,
+): JourneySeedNode {
+  return { id, type: 'journey', position: { x, y }, data: { label, note, kind, verified: false } };
+}
+
+function e(source: string, target: string, label?: string, side?: 'right' | 'left'): JourneySeedEdge {
+  return {
+    id: `${source}->${target}`,
+    source,
+    target,
+    label,
+    ...(side === 'right' ? { sourceHandle: 'r', targetHandle: 'l' } : {}),
+    ...(side === 'left' ? { sourceHandle: 'ls', targetHandle: 'rt' } : {}),
+  };
+}
+
+// ── Map 1: Open event — booking, OTP & payment ───────────────────────────────
+
+const openEventMap: JourneyMapSeed = {
+  name: 'Open event — booking & OTP',
+  sort_order: 1,
+  nodes: [
+    n('open-page', 420, 0, 'screen', 'Event page on /plans',
+      'User lands via link or ad. Calendar shows per-date spots left.'),
+    n('book-form', 420, 140, 'action', 'Fills booking form',
+      'Name, phone, email, chosen date, city + pickup point. Phone is stored as its last 10 digits.'),
+    n('dup-check', 420, 280, 'system', 'Duplicate check',
+      'Has this phone already paid for this event? Pending and abandoned users are allowed to return.'),
+    n('dup-blocked', 60, 280, 'screen', '“You’re already booked!”',
+      'Another paid ticket is blocked when the existing application is advance_paid or fully_paid.'),
+    n('otp-wa', 420, 420, 'whatsapp', 'OTP sent on WhatsApp',
+      'open-event-otp function. 6-digit code, expires in 8 min. Limits: 3 per phone / 10 min, 5 per network / min.'),
+    n('otp-email', 760, 420, 'email', 'Email code fallback',
+      'Offered 30 s after the WhatsApp send, via Brevo. Creates a new OTP/session with the same expiry and attempt limits.'),
+    n('otp-enter', 420, 560, 'action', 'Enters the 6-digit code'),
+    n('otp-wrong', 60, 560, 'issue', 'Wrong code',
+      '5 wrong tries locks the code — user must request a fresh one.'),
+    n('pending-app', 420, 700, 'status', 'Open application: pending / “In Progress”',
+      'After OTP verification, the booking creates or updates an applications row before opening the bill.'),
+    n('bill', 420, 840, 'screen', 'Bill page opens',
+      'A bill_opens row is logged — this starts the 1-hour abandonment clock.'),
+    n('abandon', 60, 980, 'system', 'No payment for 1 hour',
+      'cart-abandonment cron (runs every 30 min) flags the booking cart_abandoned. Skips anyone who already paid.'),
+    n('abandon-wa', 60, 1140, 'whatsapp', 'Cart-abandon WhatsApp',
+      'car_abandon_deeplink2 template with name, event, chosen date + an /invite deeplink button.'),
+    n('abandon-email', -280, 1140, 'email', 'Optional cart-abandon email',
+      'Sent once if an email is on file. It is not required for the user to return or recover.'),
+    n('recovered', 60, 1690, 'status', 'Pays later → “Recovered”',
+      'recovered_at is set when someone pays after abandoning. Badge only — not a status.'),
+    n('pay-click', 420, 980, 'action', 'Taps Pay',
+      'create-payu-order recomputes the price on the server, so the browser can’t tamper with it.'),
+    n('payu', 420, 1120, 'screen', 'PayU hosted checkout'),
+    n('pay-success', 420, 1260, 'status', 'Payment success'),
+    n('pay-fail', 760, 1260, 'status', 'Payment failed / cancelled'),
+    n('pay-pending', 1060, 1260, 'status', 'Payment stuck “pending”',
+      'Usually UPI: user approved late or PayU’s answer never arrived.'),
+    n('callback', 420, 1400, 'system', 'payu-callback + payu-webhook',
+      'Either or both may arrive, in any order. Whichever wins the claim flag sends the successful-payment WhatsApp exactly once.'),
+    n('status-paid', 420, 1540, 'status', 'Status: advance_paid / fully_paid',
+      'Single-payment events (payment_mode = full) jump straight to fully_paid.'),
+    n('confirm-wa', 420, 1690, 'whatsapp', 'Confirmation WhatsApp',
+      'advance_success_dpl / fullpaid_dpl / single_payment_sucess_dpl, by payment type.'),
+    n('receipt', 760, 1540, 'screen', 'Success screen + receipt',
+      'Browser is redirected to /plans?payment_status=success.'),
+    n('fail-wa', 760, 1400, 'whatsapp', 'Payment-failed nudge',
+      'payment_failure_dpl — sent once per application, not on every retry.'),
+    n('retry', 1060, 1400, 'screen', 'Failed screen with retry bill',
+      'Redirected to payment_status=failed; user can reopen the bill and try again.'),
+    n('verify-cron', 1060, 1540, 'system', 'verify-pending-payments cron',
+      'Every 15 min asks PayU directly about rows stuck pending 15 min–24 h, then resolves them exactly like the webhook would.'),
+    n('ask-doubt', 1160, 0, 'action', 'Asks a doubt about the open event',
+      'The question is stored in doubt_submissions and appears in the admin Doubts tab.'),
+    n('send-details', 1160, 140, 'action', 'Admin presses “Send Details”',
+      'This follows the open-event path — it does not approve an invite-only lead or set re_target.'),
+    n('doubt-lead', 1160, 280, 'status', 'Open-event lead: pending / “In Progress”',
+      'Creates or repairs the open-event application as pending and retains the doubt’s marketer assignment.'),
+    n('details-wa', 1040, 420, 'whatsapp', 'Details WhatsApp: send_details_dpl',
+      'Sends the user name and event name with the open-event reserve/contact deeplink buttons.'),
+    n('details-email', 1360, 420, 'email', 'Open-event details email',
+      'Sent alongside WhatsApp when an email address is available.'),
+  ],
+  edges: [
+    e('open-page', 'book-form'),
+    e('book-form', 'dup-check'),
+    e('dup-check', 'dup-blocked', 'already paid', 'left'),
+    e('dup-check', 'otp-wa', 'eligible to continue'),
+    e('otp-wa', 'otp-email', 'no code after 30 s?', 'right'),
+    e('otp-wa', 'otp-enter'),
+    e('otp-email', 'otp-enter'),
+    e('otp-enter', 'otp-wrong', 'wrong (max 5)', 'left'),
+    e('otp-enter', 'pending-app', 'verified ✓'),
+    e('pending-app', 'bill'),
+    e('bill', 'abandon', 'closes / waits', 'left'),
+    e('abandon', 'abandon-wa'),
+    e('abandon', 'abandon-email', 'if email exists', 'left'),
+    e('abandon-wa', 'pay-click', 'returns to pay'),
+    e('abandon-email', 'pay-click', 'optional return', 'right'),
+    e('bill', 'pay-click'),
+    e('pay-click', 'payu'),
+    e('payu', 'pay-success', 'success'),
+    e('payu', 'pay-fail', 'failed', 'right'),
+    e('payu', 'pay-pending', 'no answer', 'right'),
+    e('pay-success', 'callback'),
+    e('callback', 'status-paid'),
+    e('callback', 'receipt', 'redirects browser', 'right'),
+    e('status-paid', 'confirm-wa'),
+    e('status-paid', 'recovered', 'if previously abandoned', 'left'),
+    e('pay-fail', 'fail-wa'),
+    e('pay-fail', 'retry', 'redirects', 'right'),
+    e('pay-pending', 'verify-cron'),
+    e('verify-cron', 'status-paid', 'if money moved', 'left'),
+    e('verify-cron', 'fail-wa', 'if it failed', 'left'),
+    e('open-page', 'ask-doubt', 'needs help', 'right'),
+    e('ask-doubt', 'send-details'),
+    e('send-details', 'doubt-lead'),
+    e('send-details', 'details-wa', 'send WhatsApp'),
+    e('send-details', 'details-email', 'if email exists', 'right'),
+    e('details-wa', 'book-form', 'returns to /plans', 'left'),
+    e('details-email', 'book-form', 'reserve CTA', 'left'),
+  ],
+};
+
+// ── Map 2: Invite event — application to fully paid ──────────────────────────
+
+const inviteEventMap: JourneyMapSeed = {
+  name: 'Invite event — application to fully paid',
+  sort_order: 2,
+  nodes: [
+    n('apply', 420, 0, 'screen', 'Application form on homepage',
+      'Creates an applications row with status “pending”.'),
+    n('assign', 780, 0, 'system', 'Marketer auto-assigned',
+      'Round-robin at application time (by design — happens at pending, not on approval).'),
+    n('review', 420, 140, 'action', 'Admin reviews in People tab'),
+    n('waitlist', 60, 140, 'status', 'Status: waitlist'),
+    n('rejected', 60, 280, 'status', 'Status: rejected'),
+    n('invited', 420, 280, 'status', 'Status: invited'),
+    n('invite-wa', 280, 430, 'whatsapp', 'WhatsApp invite (AiSensy)',
+      'Deeplinks straight into /invite with phone + name prefilled.'),
+    n('invite-email', 600, 430, 'email', 'Email invite (Brevo)',
+      'Sent alongside WhatsApp from info@chaptera.in.'),
+    n('no-open', 60, 580, 'system', 'Ignored for 24 hours',
+      'retarget-check cron (every 30 min): invited ≥ 24 h ago and never opened the bill → re_target flag, so marketers can call.'),
+    n('invite-page', 420, 580, 'screen', '/invite — verify phone',
+      'Poster/phone verification; the deeplink from WhatsApp/email skips it.'),
+    n('bill2', 420, 720, 'screen', 'Bill page (advance)',
+      'bill_opens row logged — invite events get a 2-hour abandonment clock.'),
+    n('abandon2', 60, 860, 'system', 'Unpaid after 2 h → cart_abandoned',
+      'Same cron as open events: WhatsApp + email re-engagement, once.'),
+    n('recovered2', 60, 1010, 'status', 'Pays later → “Recovered”'),
+    n('adv-paid', 420, 860, 'status', 'Status: advance_paid'),
+    n('full-mode', 780, 860, 'system', 'Single-payment events',
+      'payment_mode = “full”: one payment jumps straight to fully_paid with the paid-in-full WhatsApp.'),
+    n('adv-wa', 420, 1000, 'whatsapp', 'Advance-paid WhatsApp',
+      'advance_success_dpl — amount + meeting spot from the chosen date’s timeline (step 4).'),
+    n('timeline', 420, 1150, 'screen', 'Timeline on /invite',
+      'Per-date booking_steps drive it; step 3 = balance due, step 4 = meeting spot. Always the selected date’s steps.'),
+    n('balance', 420, 1300, 'action', 'Pays the balance',
+      'Due date comes from the selected date’s timeline.'),
+    n('fully2', 420, 1440, 'status', 'Status: fully_paid'),
+    n('bal-wa', 420, 1580, 'whatsapp', 'Full-paid WhatsApp (fullpaid_dpl)'),
+    n('commission', 780, 1440, 'system', 'Marketer commission accrues',
+      'Commission counts only at fully_paid. Open events: ₹0 unless assigned via a doubt.'),
+  ],
+  edges: [
+    e('apply', 'assign', 'on insert', 'right'),
+    e('apply', 'review'),
+    e('review', 'waitlist', 'waitlist', 'left'),
+    e('review', 'invited', 'approve'),
+    e('waitlist', 'rejected'),
+    e('invited', 'invite-wa'),
+    e('invited', 'invite-email'),
+    e('invite-wa', 'no-open', 'never opens bill', 'left'),
+    e('invite-wa', 'invite-page'),
+    e('invite-email', 'invite-page'),
+    e('invite-page', 'bill2'),
+    e('bill2', 'abandon2', 'unpaid 2 h', 'left'),
+    e('abandon2', 'recovered2', 'returns & pays'),
+    e('bill2', 'adv-paid', 'pays advance'),
+    e('bill2', 'full-mode', 'full events', 'right'),
+    e('full-mode', 'fully2'),
+    e('adv-paid', 'adv-wa'),
+    e('adv-wa', 'timeline'),
+    e('timeline', 'balance', 'balance step unlocks'),
+    e('balance', 'fully2'),
+    e('fully2', 'bal-wa'),
+    e('fully2', 'commission', '', 'right'),
+  ],
+};
+
+// ── Map 3: Behind the scenes — crons & payment plumbing ──────────────────────
+
+const backendMap: JourneyMapSeed = {
+  name: 'Behind the scenes — crons & payments',
+  sort_order: 3,
+  nodes: [
+    n('ladder', -60, 300, 'status', 'The status ladder',
+      'pending → invited → advance_paid → fully_paid (+ waitlist / rejected). cart_abandoned, re_target and “Recovered” are display flags, never statuses.'),
+    n('order', 420, 0, 'system', 'create-payu-order',
+      'Recomputes the price on the server and writes a payu_payments row as “pending”.'),
+    n('payu3', 420, 150, 'screen', 'PayU checkout'),
+    n('cb', 260, 300, 'system', 'payu-callback',
+      'The browser redirect after paying — flips the status and sends the user back to the site.'),
+    n('wh', 580, 300, 'system', 'payu-webhook',
+      'PayU’s server calls ours directly. Either can land first; a claim-flag makes sure exactly one WhatsApp is sent.'),
+    n('flip', 420, 460, 'status', 'Application status flips',
+      'advance → advance_paid · balance or full payment → fully_paid.'),
+    n('msg', 420, 610, 'whatsapp', 'Confirmation WhatsApp',
+      'One message only, no matter which path won the race.'),
+    n('cron1', 940, 0, 'system', '⏱ verify-pending-payments · every 15 min',
+      'Pulls the truth from PayU for payments stuck “pending” 15 min–24 h and resolves them exactly like the webhook — nothing gets silently lost.'),
+    n('cron2', 940, 190, 'system', '⏱ cart-abandonment · every 30 min',
+      'Bill opened, still unpaid past the window (open 1 h, invite 2 h) → cart_abandoned flag + WhatsApp (+ email if on file). Paid or already-nudged cases are skipped forever.'),
+    n('cron3', 940, 400, 'system', '⏱ retarget-check · every 30 min',
+      'Invite events only: invited ≥ 24 h ago and never opened the bill → re_target flag. Mutually exclusive with cart_abandoned by design.'),
+  ],
+  edges: [
+    e('order', 'payu3'),
+    e('payu3', 'cb', 'browser redirect'),
+    e('payu3', 'wh', 'server-to-server'),
+    e('cb', 'flip'),
+    e('wh', 'flip'),
+    e('flip', 'msg', 'exactly once'),
+    e('cron1', 'flip', 'resolves stuck payments', 'left'),
+  ],
+};
+
+export const JOURNEY_MAP_SEEDS: JourneyMapSeed[] = [openEventMap, inviteEventMap, backendMap];
