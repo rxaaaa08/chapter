@@ -184,6 +184,13 @@ function buildNotification(type: string, record: any): { title: string; body: st
         tag:   'new-booking-doubt',
       };
     }
+    case 'manager_brief':
+      return {
+        title: String(record.title ?? '🗞️ Daily brief'),
+        body:  String(record.body ?? ''),
+        url:   adminUrl,
+        tag:   'manager-brief',
+      };
     default:
       return null;
   }

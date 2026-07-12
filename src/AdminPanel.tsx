@@ -5,6 +5,7 @@ import { supabase, parseHeroImages, fetchEventCounts, fetchEventDateCounts } fro
 // Journey Map tab (React Flow) — lazy so the map library only downloads when
 // the tab is opened, never in the customer-facing bundle.
 const JourneyMap = React.lazy(() => import('./JourneyMap'));
+const ManagerPanel = React.lazy(() => import('./ManagerPanel'));
 
 // ─── IMAGE INPUT ──────────────────────────────────────────────────────────────
 // We use Cloudinary for image hosting and paste the resulting URL here. The
@@ -256,15 +257,15 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'settings'>(
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings'>(
     () => {
       const stored = localStorage.getItem('adminTab');
       // 'affiliates' is no longer its own tab — Creators now live inside Performance.
       if (stored === 'affiliates') return 'marketers';
-      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'settings') ?? 'people';
+      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') ?? 'people';
     }
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -2465,6 +2466,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Manager</button>}
         <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Map</button>
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
@@ -2477,6 +2479,13 @@ export default function AdminPanel() {
         {!loading && tab === 'map' && (
           <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading map…</div>}>
             <JourneyMap showRoadmap={adminRole === 'admin'} />
+          </React.Suspense>
+        )}
+
+        {/* ── MANAGER TAB (read-only ops manager) ─────────────────────────── */}
+        {!loading && tab === 'manager' && adminRole === 'admin' && (
+          <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading manager…</div>}>
+            <ManagerPanel />
           </React.Suspense>
         )}
 
