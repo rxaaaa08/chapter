@@ -16,8 +16,8 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 - `src/PaymentOverlay.tsx`: shared PayU bill page (`NativePaymentOverlay`) used by both flows.
 - `src/supabase.ts`: fetchers/mappers. **`Event.id` = `events.slug`.**
 - `src/JourneyMap.tsx` + `src/journeyMapSeeds.ts`: admin "Map" tab — React Flow user-journey maps backed by `journey_maps` (is_admin RLS). Seeds file = "Reset map" baseline; when a flow changes, refresh the matching seed nodes. Dev preview without login: `npm run dev` + `/admin?mapdev`.
-- `src/ProductRoadmap.tsx`: feature/testing tracker below the Map tab (strict-admin only — ops can't see it). Tables `roadmap_features/_tasks/_test_runs`; every push to `main` auto-creates a "Need Testing" card via the `feature_releases` trigger `sync_release_to_roadmap()` (release log → roadmap; dedup by release_id + exact title).
-- `supabase/functions/`: `create-payu-order` (server-trusted pricing), `payu-callback` (flips application status, fires WhatsApp, redirects), `payu-webhook`, `cart-abandonment` (30-min cron), `get-user-context`, `retarget-check`.
+- `src/ProductRoadmap.tsx` + `src/TodoCard.tsx`: feature tracker + standalone to-do list below the Map tab (strict-admin only — ops can't see it). Roadmap = `roadmap_features` with 3 statuses only (`building` = In Progress, `live_test` = Need Testing, `complete`); the older `roadmap_tasks`/`roadmap_test_runs` tables still exist in the DB but are no longer read by the UI. Loose to-dos live in `product_todos` (strict-admin RLS, rendered by `TodoCard`). Every push to `main` still auto-creates a "Need Testing" card via the `feature_releases` trigger `sync_release_to_roadmap()` (release log → roadmap; dedup by release_id + exact title; no checklist task is created anymore).
+- `supabase/functions/`: `create-payu-order` (server-trusted pricing + open-event payment gate), `payu-callback` (flips application status, fires WhatsApp, redirects), `payu-webhook`, `cart-abandonment` (30-min cron), `get-user-context` (phone → invites/applications/**doubts**/receipt, RLS bypass), `open-event-otp` (WhatsApp + email OTP for open-event bookings), `retarget-check`.
 
 ## Domain facts
 - `events.booking_url`: `native-application` = invite-only · `payu-hosted` = open event · community events use `booking_flow='whatsapp'`. `booking_flow` is NOT NULL, CHECK (`payment`|`whatsapp`).
@@ -27,6 +27,7 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 - Per-date timelines: `event_dates.booking_steps` (JSONB, canonical 5 steps; index 2 = balance step, index 3 = meeting-spot step). Always prefer the applicant's `selected_date` steps over event-level fallback.
 - RLS: anon cannot SELECT `applications`/`invited_numbers`/`invite_payment_submissions` — use `get-user-context` or the `event_booking_counts(_by_date)` RPCs.
 - Marketers: `event_marketers` maps events→marketers; round-robin assignment trigger on application INSERT; commission accrues on `fully_paid`. Copied events inherit marketer mappings.
+- Open-event payment gate (`create-payu-order`): a NEW open-event ticket requires a verified `open_event_otp_sessions` token, EXCEPT two deliberate skips — a prior `payu_payments` row for this event+phone (failed-attempt **recovery** deeplink) or a matching `doubt_submissions` row (event + phone + email). An existing `applications` row is intentionally NOT accepted as proof (anon can self-INSERT a `pending` row). Balance payments never re-OTP. OTP rate limits are per-channel: WhatsApp 2/10min keyed by phone, email 2/10min keyed by email (email fallback also needs a valid prior WhatsApp session).
 
 ## Verification
 - After every code edit: `npx tsc --noEmit` must pass.
