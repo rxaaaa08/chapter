@@ -1722,6 +1722,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     return () => { cancelled = true; window.clearTimeout(timeout); };
   }, []);
 
+  // Short-lived get-user-context cache. findInviteMatches and
+  // prepareNativeInviteFlow both need the same phone's context and run
+  // back-to-back on the verify path (each call costs 1–2s of edge-function
+  // latency), so the first response is kept for a few seconds and reused.
+  // The TTL is deliberately tiny: payment status must never be read stale,
+  // and any flow that returns minutes later (e.g. after PayU) refetches.
+  const USER_CONTEXT_CACHE_TTL_MS = 15_000;
+  const userContextCacheRef = useRef<{ phone: string; at: number; ctx: any } | null>(null);
+
   // Builds & stores nativeEventData for any invite event regardless of booking_url.
   // ALL invite payment flows route through PayU (NativeBookingTimeline → NativePaymentOverlay).
   // Returns { isFullyPaid, inviteSpots } or null if the event can't be found.
@@ -1768,35 +1777,47 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // "lookup failed" (we don't know their status). Only the former may proceed
     // as 'invited'; the latter must not render a Pay CTA off a guess.
     let lookupOk = false;
-    try {
-      const ctxRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`, {
-        method: 'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ phone: lookupPhone }),
-      });
-      if (ctxRes.ok) {
-        lookupOk = true;
-        const ctx = await ctxRes.json();
-        const apps: any[] = Array.isArray(ctx.applications) ? ctx.applications : [];
-        const subs: any[] = Array.isArray(ctx.invite_submissions) ? ctx.invite_submissions : [];
-        const invs: any[] = Array.isArray(ctx.invites) ? ctx.invites : [];
-        const doubts: any[] = Array.isArray(ctx.doubts) ? ctx.doubts : [];
-        appRow = apps.find(a => slugSet.has(a.event_slug)) ?? null;
-        inviteRow = invs.find(i => slugSet.has(i.event_slug)) ?? null;
-        doubtRow = doubts.find(d =>
-          slugSet.has(String(d.event_id ?? '').trim())
-          || String(d.event_title ?? '').trim().toLowerCase() === String(event.title ?? '').trim().toLowerCase()
-        ) ?? null;
-        legacyStatus = subs.find(s => slugSet.has(s.invite_slug) && paidStatuses.has(String(s.status)))?.status ?? null;
-      } else {
-        console.error('[prepareNativeInviteFlow] get-user-context non-ok', ctxRes.status);
+    let ctx: any = null;
+    const cached = userContextCacheRef.current;
+    if (cached && cached.phone === lookupPhone && Date.now() - cached.at < USER_CONTEXT_CACHE_TTL_MS) {
+      // findInviteMatches fetched this phone's context moments ago — reuse it
+      // instead of paying a second 1–2s edge-function round-trip.
+      ctx = cached.ctx;
+      lookupOk = true;
+    } else {
+      try {
+        const ctxRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-context`, {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ phone: lookupPhone }),
+        });
+        if (ctxRes.ok) {
+          lookupOk = true;
+          ctx = await ctxRes.json();
+          userContextCacheRef.current = { phone: lookupPhone, at: Date.now(), ctx };
+        } else {
+          console.error('[prepareNativeInviteFlow] get-user-context non-ok', ctxRes.status);
+        }
+      } catch (err) {
+        console.error('[prepareNativeInviteFlow] get-user-context failed', err);
       }
-    } catch (err) {
-      console.error('[prepareNativeInviteFlow] get-user-context failed', err);
+    }
+    if (ctx) {
+      const apps: any[] = Array.isArray(ctx.applications) ? ctx.applications : [];
+      const subs: any[] = Array.isArray(ctx.invite_submissions) ? ctx.invite_submissions : [];
+      const invs: any[] = Array.isArray(ctx.invites) ? ctx.invites : [];
+      const doubts: any[] = Array.isArray(ctx.doubts) ? ctx.doubts : [];
+      appRow = apps.find(a => slugSet.has(a.event_slug)) ?? null;
+      inviteRow = invs.find(i => slugSet.has(i.event_slug)) ?? null;
+      doubtRow = doubts.find(d =>
+        slugSet.has(String(d.event_id ?? '').trim())
+        || String(d.event_title ?? '').trim().toLowerCase() === String(event.title ?? '').trim().toLowerCase()
+      ) ?? null;
+      legacyStatus = subs.find(s => slugSet.has(s.invite_slug) && paidStatuses.has(String(s.status)))?.status ?? null;
     }
     // A failed status lookup must NOT be silently treated as "not paid". Bail so
     // the caller shows a retry/error rather than a wrong (Pay) screen that would
@@ -2098,6 +2119,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      // Seed the short-lived cache: prepareNativeInviteFlow runs right after
+      // this on the single-match path and would otherwise refetch the same
+      // phone's context immediately.
+      userContextCacheRef.current = { phone: tenDigit, at: Date.now(), ctx: json };
       inviteRows = json.invites      ?? [];
       appRows    = json.applications ?? [];
       doubtRows  = json.doubts       ?? [];
