@@ -4791,6 +4791,30 @@ export default function AdminPanel() {
           const solvedDoubtsAll = Object.values(doubtsSolvedByEvent).reduce((s, n) => s + n, 0);
           const doubtSolvedPctAll = totalDoubtsAll > 0 ? Math.round((solvedDoubtsAll / totalDoubtsAll) * 100) : null;
 
+          // Per-(event, city) pricing-stage counts, powering the city split in the
+          // Pricing Conversion Rate card below. Additive to `funnel` (which stays
+          // pooled by event); this only carries the four pricing/CTA stages, split
+          // by the city the user had selected. Shape: pricingByCity[event][city][stage].
+          const pricingByCity: Record<string, Record<string, Record<string, number>>> = {};
+          ((summary?.pricing_by_city ?? []) as Array<{ event_id: string; city: string; stage: string; sessions: number }>).forEach((row) => {
+            if (!row.event_id || !row.city) return;
+            ((pricingByCity[row.event_id] ??= {})[row.city] ??= {})[row.stage] = row.sessions || 0;
+          });
+          // Representative full ticket price for a city, mirroring the /plans price
+          // screen: prefer city_details[city].price_full; for the "Other" catch-all
+          // fall back to the first pickup point's otherPrice; finally the event's
+          // base price. Returns null when nothing sensible is configured (no chip).
+          const cityPriceFull = (trip: Trip | undefined, city: string): number | null => {
+            if (!trip) return null;
+            const cd = (trip.city_details as any)?.[city];
+            if (cd && typeof cd.price_full === 'number' && cd.price_full > 0) return cd.price_full;
+            if (city === 'Other') {
+              const op = (trip.pickup_points ?? []).map(p => p.otherPrice).find(v => typeof v === 'number' && v > 0);
+              if (op) return op;
+            }
+            return typeof trip.price_full === 'number' && trip.price_full > 0 ? trip.price_full : null;
+          };
+
           // ── Open-event funnel (get_analytics_summary.open_funnel) ────────────
           // Open events have no approval step, so their funnel is DB-derived
           // (not analytics-event-derived): details submitted (an applications
@@ -5468,7 +5492,7 @@ export default function AdminPanel() {
                   {/* Drop-off */}
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Pricing Conversion Rate</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>
-                    Of users who reached the pricing screen, how many tapped a CTA — split by <strong>Book Now</strong> (ready to pay) vs <strong>Contact Us</strong> (needs more info).
+                    Of users who reached the pricing screen, how many tapped a CTA — split by <strong>Book Now</strong> (ready to pay) vs <strong>Contact Us</strong> (needs more info). Events listed in more than one city break down <strong>per city</strong> (with each city's price), so you can tell whether a city is priced right.
                   </div>
                   <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                     {visibleDropoffEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No data yet</div>}
@@ -5480,10 +5504,33 @@ export default function AdminPanel() {
                       const pct = reached > 0 ? Math.round((totalCta / reached) * 100) : 0;
                       const bookPct = reached > 0 ? Math.round((booked / reached) * 100) : 0;
                       const contactPct = reached > 0 ? Math.round((contacted / reached) * 100) : 0;
+                      // City split: only for events listed in >1 city (or with data
+                      // in >1 city). Each row is that city's own reached→CTA rate at
+                      // that city's own price — the whole point being to compare
+                      // conversion across the different prices. Single-city events
+                      // render just the pooled bar above, unchanged.
+                      const trip = tripById.get(eventId);
+                      const cityData = pricingByCity[eventId] || {};
+                      const cityList = Array.from(new Set([
+                        ...((trip?.cities ?? []).filter((c): c is string => typeof c === 'string' && c.trim().length > 0)),
+                        ...Object.keys(cityData),
+                      ]));
+                      const isMultiCity = cityList.length > 1;
+                      const cityRows = isMultiCity
+                        ? cityList.map(city => {
+                            const cReached  = cityData[city]?.['reached_pricing']    || 0;
+                            const cBooked   = (cityData[city]?.['book_cta_clicked']  || 0) + (cityData[city]?.['pricing_cta_clicked'] || 0);
+                            const cContact  = cityData[city]?.['contact_cta_clicked'] || 0;
+                            const cTotalCta = cBooked + cContact;
+                            const cPct = cReached > 0 ? Math.round((cTotalCta / cReached) * 100) : null;
+                            const price = cityPriceFull(trip, city);
+                            return { city, cReached, cBooked, cContact, cTotalCta, cPct, price };
+                          }).sort((a, b) => b.cReached - a.cReached)
+                        : [];
                       return (
                         <div key={eventId} style={{ marginBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, paddingBottom: idx < visibleDropoffEvents.length - 1 ? 14 : 0, borderBottom: idx < visibleDropoffEvents.length - 1 ? '1px solid #f0f0ea' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}{isMultiCity && <span style={{ fontSize: 11, fontWeight: 600, color: '#bbb', marginLeft: 6 }}>· all cities</span>}</span>
                             <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 50 ? '#4ade80' : pct >= 25 ? '#fcd34d' : '#fca5a5' }}>
                               {pct}%
                             </span>
@@ -5499,6 +5546,31 @@ export default function AdminPanel() {
                             )}
                             <span style={{ marginLeft: 'auto', color: '#ccc' }}>{reached} saw the price</span>
                           </div>
+                          {isMultiCity && (
+                            <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: '2px solid #f0f0ea', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {cityRows.map(r => (
+                                <div key={r.city}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
+                                      {r.city}
+                                      {r.price != null && <span style={{ fontWeight: 600, color: '#999' }}> (₹{r.price.toLocaleString('en-IN')})</span>}
+                                    </span>
+                                    <span style={{ fontSize: 15, fontWeight: 800, color: r.cPct == null ? '#ccc' : r.cPct >= 50 ? '#4ade80' : r.cPct >= 25 ? '#fcd34d' : '#fca5a5' }}>
+                                      {r.cPct == null ? '—%' : `${r.cPct}%`}
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 5, background: '#f5f5f0', borderRadius: 99, overflow: 'hidden', marginBottom: 4 }}>
+                                    <div style={{ width: r.cPct == null ? '0%' : `${Math.min(100, r.cPct)}%`, height: '100%', background: r.cPct == null ? '#e5e5e5' : r.cPct >= 50 ? '#bbf7d0' : r.cPct >= 25 ? '#fde68a' : '#fecaca', borderRadius: 99, transition: 'width 0.4s' }} />
+                                  </div>
+                                  <div style={{ fontSize: 10.5, color: '#bbb' }}>
+                                    {r.cReached > 0
+                                      ? <>{r.cBooked} tapped Book Now · {r.cContact} Contact Us · {r.cReached} saw the price</>
+                                      : 'no views yet'}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
