@@ -1,0 +1,193 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Is Chaptera's Business Model Sustainable?",
+    "description": "A candid assessment of Chaptera's event, creator, marketer, and community economics.",
+    "generatedAt": "2026-07-13T12:00:00+05:30",
+    "charts": [
+      {
+        "id": "occupancy_sensitivity",
+        "title": "Illustrative event contribution margin by occupancy",
+        "subtitle": "Normalized scenario only: ticket price index 100; fulfilment 45, acquisition/commissions 10, payment/refund leakage 4 per attendee; fixed event cost 10% of sold-out revenue.",
+        "type": "bar",
+        "dataset": "occupancy_scenario",
+        "sourceId": "scenario_model",
+        "encodings": {
+          "x": { "field": "occupancy_pct", "type": "nominal", "label": "Occupancy" },
+          "y": { "field": "contribution_margin_pct", "type": "quantitative", "label": "Contribution margin", "format": "number" }
+        },
+        "xAxisTitle": "Seats sold as % of capacity",
+        "yAxisTitle": "Contribution margin (%)",
+        "valueFormat": "number",
+        "layout": "full"
+      }
+    ],
+    "sources": [
+      {
+        "id": "chaptera_design",
+        "label": "Chaptera affiliate and multi-marketer implementation notes",
+        "path": "source-notes.md",
+        "query": {
+          "engine": "postgresql",
+          "description": "Current configured creator and marketer commission mechanics documented in the workspace.",
+          "language": "sql",
+          "sql": "SELECT 'creator affiliate' AS channel, '8% of configured full price' AS default_compensation UNION ALL SELECT 'assigned marketer', 'INR 50 per fully paid ticket';",
+          "tables_used": ["public.events", "public.affiliates", "public.affiliate_sales", "public.call_marketers", "public.marketer_sales"],
+          "executed_at": "2026-07-13T12:00:00+05:30"
+        }
+      },
+      {
+        "id": "scenario_model",
+        "label": "Illustrative normalized event economics model",
+        "path": "source-notes.md",
+        "query": {
+          "engine": "postgresql",
+          "description": "Sensitivity example showing how occupancy changes contribution margin under transparent normalized assumptions; these are not Chaptera actuals.",
+          "language": "sql",
+          "sql": "WITH assumptions AS (SELECT 100.0 price, 45.0 fulfilment, 10.0 acquisition, 4.0 leakage, 1000.0 fixed_cost, 100.0 capacity), occupancy AS (SELECT * FROM (VALUES (50.0),(60.0),(70.0),(80.0),(90.0),(100.0)) v(occupancy_pct)) SELECT occupancy_pct, ROUND((((occupancy_pct * (price-fulfilment-acquisition-leakage)) - fixed_cost) / (occupancy_pct * price) * 100)::numeric, 1) AS contribution_margin_pct FROM occupancy CROSS JOIN assumptions ORDER BY occupancy_pct;",
+          "executed_at": "2026-07-13T12:00:00+05:30"
+        }
+      },
+      {
+        "id": "bcg_creator",
+        "label": "BCG — From Content to Commerce: Mapping India's Creator Economy",
+        "url": "https://www.bcg.com/publications/2025/india-from-content-to-commerce-mapping-indias-creator-economy"
+      },
+      {
+        "id": "timeleft_model",
+        "label": "Timeleft — subscription plans and recurring social formats",
+        "url": "https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Is Chaptera's Business Model Sustainable?"
+      },
+      {
+        "id": "verdict",
+        "type": "markdown",
+        "body": "## Verdict: potentially yes, but the model is still being proven\n\n**Chaptera can become a sustainable, lean business.** Its strongest form is an asset-light operating system for trusted social experiences: creators generate demand, commission marketers close high-consideration leads, the website converts self-serve demand, and a small core team controls quality and logistics.\n\nBut it is not sustainable merely because events sell. It becomes sustainable when a normal event remains profitable after every direct and acquisition cost, customers return without being reacquired from scratch, and founder effort per event falls as volume grows. Today the creator rollout improves the shape of the model; it does not yet prove those three conditions."
+      },
+      {
+        "id": "why_it_can_work",
+        "type": "markdown",
+        "sourceId": "chaptera_design",
+        "body": "## The underlying design is better than a traditional event company\n\n- **Most growth labour is variable-cost.** Creators earn only when attributed customers pay; marketers earn per conversion. Chaptera does not need a large fixed content or sales payroll before demand exists.\n- **The founder already owns the transaction layer.** Discovery, application, payment, attribution, commissions, status, and performance live in one system instead of disconnected forms and spreadsheets.\n- **Invite-only selling and open-event checkout can coexist.** Human marketers are used where trust and questions matter; simpler demand can buy directly.\n- **WhatsApp membership is a pragmatic trust layer.** It is cheap, familiar, and tied to the guest's real operating identity.\n- **The system can learn across events.** Over time, Chaptera can know which format, city, price, creator, marketer, pickup, and lead source produces profitable repeat customers. That data and trust—not the event listings themselves—can become the moat."
+      },
+      {
+        "id": "creator_channel",
+        "type": "markdown",
+        "sourceId": "bcg_creator",
+        "body": "## The creator rollout is strategically sound, with one trap\n\nIndia's creator economy is large enough to support creator-led distribution, and brands are increasing creator investment. The same BCG research flags ROI measurement and engagement quality as unresolved problems. That matches the right Chaptera strategy: **start with creators as a measured variable-cost channel, then deepen measurement only after real sales arrive.**\n\nThe trap is mistaking attributed sales for incremental sales. A creator can receive credit for a customer who would have bought directly. Judge each creator by incremental contribution profit, customer quality, refunds, and repeat purchases—not clicks, applications, or even ticket count alone."
+      },
+      {
+        "id": "fragility",
+        "type": "markdown",
+        "body": "## The real danger is the repeated-launch treadmill\n\nTrips and one-off meetups can create an exhausting loop: invent a concept, create content, recruit creators, answer doubts, fill seats, coordinate vendors, run the event, then begin again at zero. Revenue may grow while founder capacity becomes the ceiling.\n\nThis model is fragile when break-even requires an almost-full event, one cancellation destroys the month's profit, every buyer must be reacquired, or customers trust only the founder rather than the Chaptera brand. Low occupancy, complimentary tickets, refunds, creator commission, marketer commission, gateway charges, transport changes, and last-minute vendor costs can quietly erase an apparently healthy gross margin."
+      },
+      {
+        "id": "scenario_intro",
+        "type": "markdown",
+        "body": "## Occupancy determines whether the economics are resilient\n\nThe example below is deliberately normalized and is **not Chaptera financial data**. It shows why a business can look excellent at full capacity but become mediocre at ordinary occupancy. Replace these assumptions with each event's actual numbers."
+      },
+      {
+        "id": "scenario_chart",
+        "type": "chart",
+        "chartId": "occupancy_sensitivity",
+        "layout": "full"
+      },
+      {
+        "id": "conditions",
+        "type": "markdown",
+        "body": "## Five conditions would convince me the model is sustainable\n\n1. **Normal events produce contribution profit.** Revenue minus fulfilment, vendors, commissions, payment fees, refunds, complimentary seats, and event-specific labour stays positive—not only on sold-out dates.\n2. **Break-even arrives early enough.** A trip or meetup should normally cover committed cost well before the final sales rush, leaving room for weak demand or cancellations.\n3. **Repeat, referral, and direct demand keep rising.** If every seat always requires a new creator reel or marketer conversation, acquisition becomes a permanent tax.\n4. **Founder hours fall per event.** Repeating an established format should become easier each time. If revenue doubles and founder coordination doubles, the company has not gained operating leverage.\n5. **Quality survives delegation.** Guests should receive a consistently safe, social, and well-run experience whether or not the founders personally host it."
+      },
+      {
+        "id": "scorecard",
+        "type": "markdown",
+        "body": "## Your sustainability scorecard should fit on one screen\n\nFor every event date, track: gross collected revenue; net revenue after refunds; direct fulfilment and vendor cost; creator commission; marketer commission; gateway/payment leakage; contribution profit and margin; capacity and paid occupancy; break-even seats; date break-even was reached; founder hours; no-show/refund rate; and paid seats split into new creator, marketer, referral, repeat, and direct/organic customers.\n\nAcross customer cohorts, track 90-day and 180-day repeat rate, contribution LTV, acquisition cost by channel, creator concentration, and the share of bookings that no longer require manual selling. These metrics answer sustainability more reliably than total ticket sales."
+      },
+      {
+        "id": "guardrails",
+        "type": "markdown",
+        "body": "## Practical starting guardrails—not universal laws\n\nI would become comfortable when established formats usually show roughly **25–30% event contribution margin before core founder salaries and tax**, break-even below roughly **60–70% occupancy**, and a steadily rising direct/repeat/referral share. I would worry if break-even sits above 80–85%, if creator-attributed buyers refund or fail to return more often, or if a single creator supplies a large share of sales.\n\nThose percentages are operating guardrails for investigation, not facts about what Chaptera must achieve. Trips and small meetups have different cost structures; the correct target is the level that reliably covers monthly core overhead and still leaves a buffer for a failed date."
+      },
+      {
+        "id": "model_evolution",
+        "type": "markdown",
+        "sourceId": "timeleft_model",
+        "body": "## The strongest long-term version has three layers\n\n**Layer 1 — Ticket margin:** keep proving profitable formats, cities, and capacities. This is the present engine.\n\n**Layer 2 — Owned community and repeat formats:** create recognizable recurring products—monthly dinners, city walks, game nights, day trips, or themed circles—so customers know what to return for. Timeleft demonstrates that frequent, standardized local social formats can support subscriptions, but Chaptera should not rush membership until city density and repeat behaviour are visible.\n\n**Layer 3 — Distributed supply:** trusted creators or community captains eventually host Chaptera-standard experiences using Chaptera's booking, curation, playbooks, safety rules, and settlement system. This is the ambitious version that removes the founders as the production bottleneck."
+      },
+      {
+        "id": "next_90_days",
+        "type": "markdown",
+        "body": "## What I would do over the next 90 days\n\n1. **Do not overbuild creator analytics yet.** Let the first cohort produce enough clicks, applications, payments, refunds, and attendance to expose the real questions.\n2. **Add an event-level contribution statement.** Make one row per event date the financial source of truth, including founder hours and every commission.\n3. **Tag customer origin and repeat status.** Separate first purchase from repeat purchase and creator-attributed from truly incremental demand.\n4. **Choose two repeatable formats.** Run them often enough to learn whether acquisition cost, planning time, and conversion improve with repetition.\n5. **Review creators by profit and customer quality.** Keep creators who bring paid guests who attend, enjoy the experience, and return; stop rewarding reach that does not become durable value.\n6. **Run a monthly resilience review.** Ask whether one weak event, one creator disappearing, or one founder taking a week off would break operations. Whatever fails that test is the next system to build."
+      },
+      {
+        "id": "bottom_line",
+        "type": "markdown",
+        "body": "## Bottom line\n\n**I would keep pursuing this business.** Chaptera has a believable path to becoming a strong regional experiences brand because the operating model can keep content and sales variable-cost while the product owns conversion, attribution, payment, and learning.\n\nThe winning company is not merely an event organizer with affiliate links. It is a trusted demand-and-operations network that repeatedly turns online audiences into well-run offline communities. Prove contribution margin, repeat behaviour, and declining founder hours; if all three improve together, the model is sustainable."
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "body": "## Caveats\n\nNo live Chaptera unit-economics or customer-cohort dataset was analysed. The assessment uses the documented operating design, founder context, and external category examples. The scenario chart and suggested thresholds are illustrative. Recalculate the conclusion from actual event-date contribution, customer repeat, refund, capacity, and founder-time data after the creator cohort has matured."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-13T12:00:00+05:30",
+    "status": "ready",
+    "datasets": {
+      "occupancy_scenario": [
+        { "occupancy_pct": "50%", "contribution_margin_pct": 21.0, "ticket_price_index": 100, "fulfilment_per_attendee": 45, "acquisition_per_attendee": 10, "leakage_per_attendee": 4, "fixed_cost_index": 1000 },
+        { "occupancy_pct": "60%", "contribution_margin_pct": 24.3, "ticket_price_index": 100, "fulfilment_per_attendee": 45, "acquisition_per_attendee": 10, "leakage_per_attendee": 4, "fixed_cost_index": 1000 },
+        { "occupancy_pct": "70%", "contribution_margin_pct": 26.7, "ticket_price_index": 100, "fulfilment_per_attendee": 45, "acquisition_per_attendee": 10, "leakage_per_attendee": 4, "fixed_cost_index": 1000 },
+        { "occupancy_pct": "80%", "contribution_margin_pct": 28.5, "ticket_price_index": 100, "fulfilment_per_attendee": 45, "acquisition_per_attendee": 10, "leakage_per_attendee": 4, "fixed_cost_index": 1000 },
+        { "occupancy_pct": "90%", "contribution_margin_pct": 29.9, "ticket_price_index": 100, "fulfilment_per_attendee": 45, "acquisition_per_attendee": 10, "leakage_per_attendee": 4, "fixed_cost_index": 1000 },
+        { "occupancy_pct": "100%", "contribution_margin_pct": 31.0, "ticket_price_index": 100, "fulfilment_per_attendee": 45, "acquisition_per_attendee": 10, "leakage_per_attendee": 4, "fixed_cost_index": 1000 }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "chaptera_design",
+      "label": "Chaptera affiliate and multi-marketer implementation notes",
+      "path": "source-notes.md",
+      "query": {
+        "engine": "postgresql",
+        "description": "Current configured creator and marketer commission mechanics documented in the workspace.",
+        "language": "sql",
+        "sql": "SELECT 'creator affiliate' AS channel, '8% of configured full price' AS default_compensation UNION ALL SELECT 'assigned marketer', 'INR 50 per fully paid ticket';",
+        "tables_used": ["public.events", "public.affiliates", "public.affiliate_sales", "public.call_marketers", "public.marketer_sales"],
+        "executed_at": "2026-07-13T12:00:00+05:30"
+      }
+    },
+    {
+      "id": "scenario_model",
+      "label": "Illustrative normalized event economics model",
+      "path": "source-notes.md",
+      "query": {
+        "engine": "postgresql",
+        "description": "Sensitivity example showing how occupancy changes contribution margin under transparent normalized assumptions; these are not Chaptera actuals.",
+        "language": "sql",
+        "sql": "WITH assumptions AS (SELECT 100.0 price, 45.0 fulfilment, 10.0 acquisition, 4.0 leakage, 1000.0 fixed_cost, 100.0 capacity), occupancy AS (SELECT * FROM (VALUES (50.0),(60.0),(70.0),(80.0),(90.0),(100.0)) v(occupancy_pct)) SELECT occupancy_pct, ROUND((((occupancy_pct * (price-fulfilment-acquisition-leakage)) - fixed_cost) / (occupancy_pct * price) * 100)::numeric, 1) AS contribution_margin_pct FROM occupancy CROSS JOIN assumptions ORDER BY occupancy_pct;",
+        "executed_at": "2026-07-13T12:00:00+05:30"
+      }
+    },
+    {
+      "id": "bcg_creator",
+      "label": "BCG — From Content to Commerce: Mapping India's Creator Economy",
+      "url": "https://www.bcg.com/publications/2025/india-from-content-to-commerce-mapping-indias-creator-economy"
+    },
+    {
+      "id": "timeleft_model",
+      "label": "Timeleft — subscription plans and recurring social formats",
+      "url": "https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available"
+    }
+  ]
+}

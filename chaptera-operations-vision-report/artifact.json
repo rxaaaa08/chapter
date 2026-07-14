@@ -1,0 +1,163 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "The Next Chaptera Operations Stack",
+    "description": "A ranked product and systems vision for smoother Chaptera operations.",
+    "generatedAt": "2026-07-12T12:00:00+05:30",
+    "charts": [
+      {
+        "id": "priority_ranking",
+        "title": "Prioritization score by concept",
+        "subtitle": "Judgment score from 0 to 10 based on operational leverage, stack fit, risk reduction, data advantage, and feasibility.",
+        "type": "bar",
+        "dataset": "priorities",
+        "sourceId": "workspace_review",
+        "encodings": {
+          "x": { "field": "concept", "type": "nominal", "label": "Concept" },
+          "y": { "field": "score", "type": "quantitative", "label": "Priority score", "format": "number" }
+        },
+        "xAxisTitle": "Concept",
+        "yAxisTitle": "Priority score (0–10)",
+        "valueFormat": "number",
+        "layout": "full"
+      }
+    ],
+    "sources": [
+      {
+        "id": "workspace_review",
+        "label": "Chaptera repository and proposal review",
+        "path": "source-notes.md",
+        "query": {
+          "engine": "postgresql",
+          "description": "Qualitative review of the current Chaptera implementation, proposal library, and operating constraints.",
+          "language": "sql",
+          "sql": "SELECT * FROM (VALUES ('Operations Case System', 9.6, 'Now', 'Ownership and closure'), ('Payment reconciliation ledger', 9.2, 'Now', 'Revenue integrity'), ('Event-day command center', 8.8, 'Next', 'Safety and coordination'), ('Marketer workload optimizer', 8.6, 'Next', 'Human productivity'), ('Demand and capacity brain', 8.3, 'After clean history', 'Earlier decisions'), ('Synthetic Customer Swarm', 8.0, 'Next', 'Release confidence'), ('Pickup route optimizer', 7.6, 'Later', 'Transport efficiency'), ('Event compiler', 7.5, 'Later', 'Launch consistency'), ('Read-only voice copilot', 7.2, 'Later', 'Founder access'), ('Crowd chemistry engine', 6.9, 'Moonshot', 'Experience differentiation')) AS priorities(concept, score, horizon, primary_leverage) ORDER BY score DESC",
+          "executed_at": "2026-07-12T12:00:00+05:30"
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# The Next Chaptera Operations Stack"
+      },
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## Executive Summary\n\n- **Build an Operations Case System next.** Chaptera already detects many problems; the missing layer is ownership and closure. Every stuck payment, unpaid balance, stale doubt, missing group entry, or under-filling date should become a live case with an assignee, deadline, evidence, recommended action, and audit trail.\n\n- **Make payment truth boring and automatic.** Add a transaction and settlement ledger that continuously reconciles PayU orders, callbacks, webhooks, application status, fees, commissions, credits, and refunds. Humans should work only the mismatch queue.\n\n- **Turn event day into a controlled operating surface.** A QR/offline check-in and pickup manifest can replace scattered Sheets and WhatsApp memory with one live view of who boarded where, who is missing, and what changed.\n\n- **Treat prediction and AI as copilots, not authorities.** Demand forecasts, no-show risk, crowd matching, and AI summaries can be powerful, but money, pricing, status changes, and outbound sends should remain deterministic or require a human tap."
+      },
+      {
+        "id": "foundation",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## You already have the bones of an event operating system\n\nThe codebase now includes daily snapshots, release tracking, an Experiments view, a rule-driven Manager, multi-marketer assignment, creator attribution and commissions, payment recovery jobs, admin push, product roadmaps, and journey maps. That is a unusually strong foundation for a small operations team.\n\nThe next leap is not another reporting tab. It is to connect signals to accountable work, preserve a canonical history of business events, and make every exceptional situation recoverable."
+      },
+      {
+        "id": "priority_intro",
+        "type": "markdown",
+        "body": "## What deserves priority\n\nThe chart ranks concepts by expected operational leverage and compatibility with the current stack. These are transparent product judgments, not measured ROI. The top three are useful immediately; the lower-ranked ideas become more valuable after the event ledger and case data exist."
+      },
+      {
+        "id": "priority_chart",
+        "type": "chart",
+        "chartId": "priority_ranking",
+        "layout": "full"
+      },
+      {
+        "id": "case_system",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## 1. The Operations Case System closes the gap after detection\n\n**This is the best next build.** The Manager is a briefing layer: it says what deserves attention. The case system becomes the execution layer: it remembers who owns the issue, when it is due, what has already been attempted, whether the customer responded, and whether the underlying condition cleared.\n\nCreate a canonical `business_events` stream and an `ops_cases` table. Deterministic listeners convert important events into cases: payment pending too long, balance due, invite untouched, doubt stale, date below fill plan, paid guest not marked in group, refund unresolved, or message delivery failed. Each case has a state machine such as `new → owned → waiting → resolved`, an SLA, an assignee, and linked evidence.\n\nThe UI should be an inbox, not a dashboard: **Do now**, **Waiting on customer**, **Waiting on Chaptera**, **At risk**, and **Closed today**. Recommended actions can be generated, but sending a message or changing money/status stays a human-approved button. This removes founder memory as an operating dependency and creates the data needed to improve every workflow later."
+      },
+      {
+        "id": "reconciliation",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## 2. A revenue ledger makes payment operations self-auditing\n\nBuild an append-only financial ledger around each booking: expected ticket value, price lock, discount, gateway fee, advance, balance, refund, creator commission, marketer commission, and settlement. Then continuously compare four truths: the PayU transaction, callback/webhook evidence, the application state, and the expected ledger state.\n\nMost rows should reconcile automatically. Only mismatches become cases: money captured but status not advanced, duplicate callback, balance computed from the wrong lock, refund promised but not completed, commission larger than net revenue, or settlement missing. Add a one-click evidence bundle for support and accounting.\n\nThis is more valuable than a prettier P&L because it prevents invisible leakage and shortens the hardest incidents from hours of database archaeology to one exception card. It also becomes the safe foundation for promo credits, referrals, dynamic pricing, and refunds."
+      },
+      {
+        "id": "event_day",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## 3. An event-day command center moves operations out of memory\n\nGive each event date a live manifest that works as a mobile PWA and degrades offline. Staff scan a QR or search a guest, then mark `arrived`, `boarded`, `no-show`, `late`, or `moved pickup`. The screen groups people by pickup point and vehicle, highlights missing guests, and shows emergency contact and medical notes only to authorized event staff.\n\nAdd incident mode: meeting-point change, vehicle delay, weather change, or guest issue creates one operational incident. Staff see the same source of truth; pre-approved WhatsApp updates can be sent to exactly the affected cohort after a human confirms.\n\nLater, attendance and pickup data feeds no-show prediction, transport sizing, and better pickup design. This is one of the few features that improves customer experience, safety, and cost at the same time."
+      },
+      {
+        "id": "workload",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## 4. A marketer workload optimizer should choose the next best human action\n\nRound-robin assignment is fair at intake, but not necessarily efficient after intake. Add a priority score based on time sensitivity, lead warmth, payment stage, expected value, last contact, response state, marketer capacity, and language/city fit. The system produces a live work queue; it does not autonomously contact customers.\n\nEvery one-tap nudge records template, channel, timing, owner, and outcome. Over time, the queue learns which action is most likely to close a case without over-contacting people. Marketers get fewer cold lists and more contextual tasks; the founder gets measurable workload, SLA, and recovery performance instead of raw lead counts."
+      },
+      {
+        "id": "forecasting",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## 5. A demand and capacity brain can plan before a date becomes urgent\n\nFor every date, forecast a range—not a fake precise number—for final paid seats, booking velocity, cancellation/no-show risk, likely transport requirement, and probability of hitting break-even. Inputs can include days to event, weekday, city, category, price, creator traffic, funnel velocity, prior comparable events, and current payment mix.\n\nThe output should recommend decisions with confidence and a deadline: add a vehicle, consolidate pickup points, open a second date, push a creator brief, pause spend, activate a waitlist, or do nothing. The founder approves the action.\n\nStart with transparent rules and comparable-event baselines. Move to statistical models only after enough completed dates exist. The useful product is not the forecast itself; it is earlier, calmer decisions."
+      },
+      {
+        "id": "crazy_ideas",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## The crazy ideas worth keeping on the wall\n\n### Event Digital Twin\nBefore launching a date, simulate capacity, pickup mix, price ladder, cancellations, message timing, marketer load, and transport cost under optimistic/base/pessimistic demand. Use it to answer: ‘What breaks if 70% of bookings arrive in the last four days?’\n\n### Synthetic Customer Swarm\nRun browser personas against preview builds: open-event buyer, invitee, failed-payment returner, in-app-browser visitor, balance payer, doubt-qualified buyer, and creator-attributed buyer. They traverse flows, take screenshots, assert prices and statuses, and block release cards when a critical journey breaks. This is an automated operations rehearsal, not only QA.\n\n### Pickup Route Optimizer\nUse historical pickup demand, vehicle capacity, travel time, guest lateness, and cost to recommend pickup clusters, departure times, and vehicle assignment. The first version can optimize a fixed set of allowed stops; no need to solve arbitrary routing.\n\n### Crowd Chemistry Engine\nWith explicit consent, use interests, age band, language, first-timer status, friend groups, and prior attendance to create balanced activity circles, table rotations, or vehicle mixes. Optimize for inclusion and avoid sensitive inference. This can become Chaptera’s defensible product moat, but it needs careful fairness rules.\n\n### Event Compiler\nTurn a structured event brief into a draft event record, timeline, FAQs, message templates, poster copy, staff checklist, experiment plan, and journey-map update. Everything lands as a reviewable draft; one approval publishes the internally consistent bundle.\n\n### Read-only Voice Copilot\nAsk from the admin PWA: ‘What can hurt Saturday?’, ‘Who is still unpaid?’, or ‘Why is Pondy behind plan?’ The copilot reads limited operational views, cites the records behind its answer, and can prepare actions—but cannot execute them."
+      },
+      {
+        "id": "architecture",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## The architecture should have one deterministic spine\n\nUse Postgres as the canonical event and state store; database triggers and Edge Functions append business events; pg_cron and queues evaluate delayed conditions; an outbox guarantees idempotent WhatsApp, email, and push attempts; Realtime updates the operations inbox; the existing PWA supports field use.\n\nThe critical boundary is simple: **AI may interpret, summarize, classify, simulate, and draft. Deterministic code or an authorized human must move money, change booking state, set prices, issue credits/refunds, or send outbound customer messages.** Dedicated read-only views should exclude unnecessary PII, and every approved action should carry an idempotency key and audit record."
+      },
+      {
+        "id": "roadmap",
+        "type": "markdown",
+        "sourceId": "workspace_review",
+        "body": "## Recommended build sequence\n\n1. **Instrument the spine:** canonical business-event log, idempotent action outbox, case states, SLA clock, and audit links.\n2. **Ship the Operations Inbox:** begin with stuck payment, balance due, stale doubt, paid-not-in-group, and message-delivery-failure cases.\n3. **Add payment reconciliation:** ledger expectations, mismatch detection, settlement/refund evidence, and case generation.\n4. **Add marketer execution:** priority queue, one-tap approved actions, outcome logging, and workload limits.\n5. **Pilot event-day control:** QR check-in, pickup manifests, offline mode, and incident cohorts on one event.\n6. **Earn predictive features:** demand ranges, no-show risk, waitlist auto-offers, and transport recommendations after enough clean history.\n7. **Run one moonshot pilot:** Synthetic Customer Swarm is the safest first bet; Crowd Chemistry is the most differentiated long-term bet."
+      },
+      {
+        "id": "questions",
+        "type": "markdown",
+        "body": "## Questions that would sharpen the order\n\n- Which recurring workflow consumes the most founder or marketer minutes each week?\n- How often do payment, message-delivery, group-entry, and balance-due exceptions occur?\n- Who works on event day, and what information currently lives only in WhatsApp or Sheets?\n- How many completed event dates have clean capacity, booking, attendance, pickup, and cost data?\n- Which actions may operations staff approve, versus founder-only approval?"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "body": "## Caveats and assumptions\n\nThis is a strategy recommendation based on the repository and proposal set, not a production-data ROI study. Priority scores are directional and should be updated after a one-week time-and-exception audit. Predictive systems should not launch until their labels are trustworthy, and sensitive matching or safety data needs explicit consent, minimal retention, strict role access, and a documented override path."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-12T12:00:00+05:30",
+    "status": "ready",
+    "datasets": {
+      "priorities": [
+        { "concept": "Operations Case System", "score": 9.6, "horizon": "Now", "primary_leverage": "Ownership and closure" },
+        { "concept": "Payment reconciliation ledger", "score": 9.2, "horizon": "Now", "primary_leverage": "Revenue integrity" },
+        { "concept": "Event-day command center", "score": 8.8, "horizon": "Next", "primary_leverage": "Safety and coordination" },
+        { "concept": "Marketer workload optimizer", "score": 8.6, "horizon": "Next", "primary_leverage": "Human productivity" },
+        { "concept": "Demand and capacity brain", "score": 8.3, "horizon": "After clean history", "primary_leverage": "Earlier decisions" },
+        { "concept": "Synthetic Customer Swarm", "score": 8.0, "horizon": "Next", "primary_leverage": "Release confidence" },
+        { "concept": "Pickup route optimizer", "score": 7.6, "horizon": "Later", "primary_leverage": "Transport efficiency" },
+        { "concept": "Event compiler", "score": 7.5, "horizon": "Later", "primary_leverage": "Launch consistency" },
+        { "concept": "Read-only voice copilot", "score": 7.2, "horizon": "Later", "primary_leverage": "Founder access" },
+        { "concept": "Crowd chemistry engine", "score": 6.9, "horizon": "Moonshot", "primary_leverage": "Experience differentiation" }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "workspace_review",
+      "label": "Chaptera repository and proposal review",
+      "path": "source-notes.md",
+      "query": {
+        "engine": "postgresql",
+        "description": "Qualitative review of the current Chaptera implementation, proposal library, and operating constraints.",
+        "language": "sql",
+        "sql": "SELECT * FROM (VALUES ('Operations Case System', 9.6, 'Now', 'Ownership and closure'), ('Payment reconciliation ledger', 9.2, 'Now', 'Revenue integrity'), ('Event-day command center', 8.8, 'Next', 'Safety and coordination'), ('Marketer workload optimizer', 8.6, 'Next', 'Human productivity'), ('Demand and capacity brain', 8.3, 'After clean history', 'Earlier decisions'), ('Synthetic Customer Swarm', 8.0, 'Next', 'Release confidence'), ('Pickup route optimizer', 7.6, 'Later', 'Transport efficiency'), ('Event compiler', 7.5, 'Later', 'Launch consistency'), ('Read-only voice copilot', 7.2, 'Later', 'Founder access'), ('Crowd chemistry engine', 6.9, 'Moonshot', 'Experience differentiation')) AS priorities(concept, score, horizon, primary_leverage) ORDER BY score DESC",
+        "executed_at": "2026-07-12T12:00:00+05:30"
+      }
+    }
+  ]
+}
