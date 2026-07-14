@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <rect width="1080" height="1350" fill="#101010"/>
+  <text x="72" y="76" font-family="Arial, sans-serif" font-size="25" font-weight="800" fill="#FFFFFF" letter-spacing="1.4">chapter அ</text>
+  <text x="1008" y="76" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#FFFFFF" text-anchor="end">07 / 07</text>
+  
+    <circle cx="884" cy="248" r="144" fill="#FFD700"/>
+    <path d="M828 248 h118 M905 207 l41 41 -41 41" fill="none" stroke="#101010" stroke-width="10"/>
+    <text x="72" y="422" font-family="Georgia, serif" font-size="91" font-weight="900" fill="#FFFFFF" text-anchor="start" font-style="normal" letter-spacing="-3"><tspan x="72" dy="0">LET’S MAKE</tspan><tspan x="72" dy="98">PLANS PEOPLE</tspan><tspan x="72" dy="98">WANT TO JOIN.</tspan></text>
+    <text x="72" y="788" font-family="Arial, sans-serif" font-size="31" font-weight="600" fill="#CACACA" text-anchor="start" font-style="normal" letter-spacing="0"><tspan x="72" dy="0">Apply to become a chapter அ creator.</tspan><tspan x="72" dy="47">Bring your voice. We’ll bring the experiences.</tspan></text>
+    <rect x="72" y="940" width="936" height="150" rx="75" fill="#FFD700"/>
+    <text x="540" y="1034" font-family="Arial" font-size="35" font-weight="900" fill="#101010" text-anchor="middle" letter-spacing="1">APPLY AT CHAPTERA.IN/CREATOR</text>
+    <text x="72" y="1160" font-family="Arial" font-size="23" font-weight="700" fill="#8C8C8C">Content creators • Chennai • Now hiring</text>
+  
+  <line x1="72" y1="1258" x2="1008" y2="1258" stroke="#343434" stroke-width="2"/>
+  <text x="72" y="1300" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#D8D8D8">chaptera.in/creator</text>
+  <text x="1008" y="1300" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#D8D8D8" text-anchor="end">swipe →</text>
+  </svg>

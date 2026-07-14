@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <rect width="1080" height="1350" fill="#101010"/>
+  <text x="72" y="76" font-family="Arial, sans-serif" font-size="25" font-weight="800" fill="#FFFFFF" letter-spacing="1.4">chapter அ</text>
+  <text x="1008" y="76" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#FFFFFF" text-anchor="end">03 / 07</text>
+  
+    <text x="72" y="248" font-family="Georgia, serif" font-size="88" font-weight="900" fill="#FFFFFF" text-anchor="start" font-style="normal" letter-spacing="-2"><tspan x="72" dy="0">HOW</tspan><tspan x="72" dy="94">ATTRIBUTION</tspan><tspan x="72" dy="94">WORKS</tspan></text>
+    <circle cx="126" cy="620" r="54" fill="#262626" stroke="#FFD700" stroke-width="3"/>
+        <text x="126" y="630" font-family="Arial, sans-serif" font-size="27" font-weight="900" fill="#FFD700" text-anchor="middle">01</text>
+        <text x="214" y="615" font-family="Arial, sans-serif" font-size="31" font-weight="900" fill="#FFFFFF" letter-spacing="1">SHARE YOUR LINK</text>
+        <text x="214" y="659" font-family="Arial, sans-serif" font-size="24" font-weight="500" fill="#BFBFBF">Use it wherever your community finds you.</text><circle cx="126" cy="802" r="54" fill="#262626" stroke="#FFD700" stroke-width="3"/>
+        <text x="126" y="812" font-family="Arial, sans-serif" font-size="27" font-weight="900" fill="#FFD700" text-anchor="middle">02</text>
+        <text x="214" y="797" font-family="Arial, sans-serif" font-size="31" font-weight="900" fill="#FFFFFF" letter-spacing="1">THEY EXPLORE &amp; BOOK</text>
+        <text x="214" y="841" font-family="Arial, sans-serif" font-size="24" font-weight="500" fill="#BFBFBF">The visit is tracked within that session.</text><circle cx="126" cy="984" r="54" fill="#FFD700" stroke="#FFD700" stroke-width="3"/>
+        <text x="126" y="994" font-family="Arial, sans-serif" font-size="27" font-weight="900" fill="#101010" text-anchor="middle">03</text>
+        <text x="214" y="979" font-family="Arial, sans-serif" font-size="31" font-weight="900" fill="#FFFFFF" letter-spacing="1">THE ACTIVE LINK WINS</text>
+        <text x="214" y="1023" font-family="Arial, sans-serif" font-size="24" font-weight="500" fill="#BFBFBF">The creator link at booking gets the credit.</text>
+    <rect x="72" y="1142" width="520" height="58" rx="29" fill="#FFD700"/>
+    <text x="332" y="1180" font-family="Arial, sans-serif" font-size="24" font-weight="900" fill="#101010" text-anchor="middle">SESSION-BASED • LAST-CLICK</text>
+  
+  <line x1="72" y1="1258" x2="1008" y2="1258" stroke="#343434" stroke-width="2"/>
+  <text x="72" y="1300" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#D8D8D8">clear credit, without stale attribution</text>
+  <text x="1008" y="1300" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#D8D8D8" text-anchor="end">swipe →</text>
+  </svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <rect width="1080" height="1350" fill="#F7F3EA"/>
+  <text x="72" y="76" font-family="Arial, sans-serif" font-size="25" font-weight="800" fill="#101010" letter-spacing="1.4">chapter அ</text>
+  <text x="1008" y="76" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#101010" text-anchor="end">02 / 07</text>
+  
+    <rect x="72" y="178" width="936" height="164" rx="34" fill="#101010"/>
+    <circle cx="145" cy="260" r="34" fill="#FFD700"/>
+    <path d="M130 260 h30 M145 245 v30" stroke="#101010" stroke-width="5"/>
+    <text x="205" y="276" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#FFFFFF">chaptera.in/@yourhandle</text>
+    <text x="72" y="500" font-family="Georgia, serif" font-size="82" font-weight="900" fill="#101010" text-anchor="start" font-style="normal" letter-spacing="-2"><tspan x="72" dy="0">YOUR CONTENT</tspan><tspan x="72" dy="92">DESERVES A LINK</tspan><tspan x="72" dy="92">THAT WORKS.</tspan></text>
+    <rect x="72" y="828" width="9" height="224" fill="#FFD700"/>
+    <text x="112" y="876" font-family="Arial, sans-serif" font-size="34" font-weight="650" fill="#101010" text-anchor="start" font-style="normal" letter-spacing="0"><tspan x="112" dy="0">Every approved creator gets a personal link.</tspan><tspan x="112" dy="54">Share it in your bio, stories, reels or DMs.</tspan></text>
+    <circle cx="917" cy="1070" r="92" fill="#FFD700"/>
+    <path d="M870 1070 h94 M930 1038 l34 32 -34 32" fill="none" stroke="#101010" stroke-width="8"/>
+  
+  <line x1="72" y1="1258" x2="1008" y2="1258" stroke="#D8D1C3" stroke-width="2"/>
+  <text x="72" y="1300" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#66625B">one creator • one trackable link</text>
+  <text x="1008" y="1300" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#66625B" text-anchor="end">swipe →</text>
+  </svg>
