@@ -502,18 +502,20 @@ export default function AdminPanel() {
   const [expMetric, setExpMetric] = useState('form_completion');
   const [expGranularity, setExpGranularity] = useState<'daily' | 'weekly'>('weekly');
   const [expCompareReleaseId, setExpCompareReleaseId] = useState<number | null>(null);
-  const [expCompareWindow, setExpCompareWindow] = useState(14);
+  const [expCompareWindow, setExpCompareWindow] = useState(7);
   // null = form closed; id null = adding a new release, id set = editing.
   const [expRelForm, setExpRelForm] = useState<{ id: number | null; released_at: string; title: string; area: string; description: string; expected_effect: string } | null>(null);
   const [expRelSaving, setExpRelSaving] = useState(false);
+  const [expSelectedReleaseIds, setExpSelectedReleaseIds] = useState<Set<number>>(new Set());
   // '' = all events pooled site-wide; otherwise an events.id — scopes both the
   // trend chart and the Before/After card to that one event.
   const [expEventId, setExpEventId] = useState<string>('');
   // Which releases draw markers on the trend chart. null = all of them; a Set
   // = only those ids (funnelSelected-style, so the chart stays readable as the
-  // log grows). The Before/After picker is unaffected — every release stays
-  // selectable there.
-  const [expChartReleases, setExpChartReleases] = useState<Set<number> | null>(null);
+  // log grows). Start with an empty Set so the chart stays clean until the
+  // admin explicitly chooses releases. The Before/After picker is unaffected —
+  // every release stays selectable there.
+  const [expChartReleases, setExpChartReleases] = useState<Set<number> | null>(new Set());
   // ── Test-data purger (scan many numbers → passcode → delete) ──
   // purgePhone holds the raw multi-line/comma-separated input; parsePurgePhones
   // splits it. The delete is gated by a 4-digit passcode verified server-side.
@@ -2025,7 +2027,29 @@ export default function AdminPanel() {
     if (!confirm(`Remove "${title}" from the release log?`)) return;
     const { error } = await supabase.from('feature_releases').delete().eq('id', id);
     if (error) { showToast(`❌ ${error.message}`); return; }
+    setExpSelectedReleaseIds(current => { const next = new Set(current); next.delete(id); return next; });
     showToast('Release removed.');
+    loadExperiments();
+  };
+
+  const toggleExpReleaseSelection = (id: number) => {
+    setExpSelectedReleaseIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const deleteSelectedExpReleases = async () => {
+    const ids = Array.from(expSelectedReleaseIds);
+    if (ids.length === 0) return;
+    if (!confirm(`Remove ${ids.length} selected release${ids.length === 1 ? '' : 's'} from the release log?`)) return;
+    const { error } = await supabase.from('feature_releases').delete().in('id', ids);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    setExpSelectedReleaseIds(new Set());
+    setExpCompareReleaseId(current => current != null && ids.includes(current) ? null : current);
+    setExpChartReleases(current => current == null ? null : new Set([...current].filter(id => !ids.includes(id))));
+    showToast(`${ids.length} release${ids.length === 1 ? '' : 's'} removed.`);
     loadExperiments();
   };
 
@@ -6190,7 +6214,7 @@ export default function AdminPanel() {
           });
 
           // ── Before/After math ──
-          const cmpRelease = expReleases.find(r => r.id === expCompareReleaseId) ?? expReleases[0];
+          const cmpRelease = expReleases.find(r => r.id === expCompareReleaseId) ?? null;
           const rangeSum = (metric: string, from: string, to: string) =>
             allDays.filter(d => d >= from && d < to).reduce((s, d) => s + (byMetric[metric]?.[d] ?? 0), 0);
           const normCdf = (z: number) => {
@@ -6359,7 +6383,8 @@ export default function AdminPanel() {
               <div style={s.card}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
                   <div style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 140 }}>Before / after a release</div>
-                  <select value={cmpRelease?.id ?? ''} onChange={e => setExpCompareReleaseId(Number(e.target.value))} style={{ ...s.input, width: 'auto', maxWidth: 340, fontSize: 13, padding: '7px 10px' }}>
+                  <select value={cmpRelease?.id ?? ''} onChange={e => setExpCompareReleaseId(e.target.value ? Number(e.target.value) : null)} style={{ ...s.input, width: 'auto', maxWidth: 340, fontSize: 13, padding: '7px 10px' }}>
+                    <option value="">Choose a release…</option>
                     {expReleases.map(r => <option key={r.id} value={r.id}>{fmtDay(r.released_at)} — {r.title}</option>)}
                   </select>
                   <select value={expCompareWindow} onChange={e => setExpCompareWindow(Number(e.target.value))} style={{ ...s.input, width: 'auto', fontSize: 13, padding: '7px 10px' }}>
@@ -6401,6 +6426,7 @@ export default function AdminPanel() {
               <div style={s.card}>
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>Release log</div>
+                  {expSelectedReleaseIds.size > 0 && <button style={{ ...s.outlineBtn, color: '#dc2626', borderColor: '#f3d1d1', fontSize: 12, padding: '6px 12px', marginRight: 8 }} onClick={deleteSelectedExpReleases}>Delete selected ({expSelectedReleaseIds.size})</button>}
                   {!expRelForm && <button style={{ ...s.btn('#111'), fontSize: 12, padding: '6px 16px' }} onClick={() => setExpRelForm(emptyRelForm)}>+ Log a release</button>}
                 </div>
 
@@ -6438,6 +6464,9 @@ export default function AdminPanel() {
                 {expReleases.length === 0 && !expLoading && <div style={{ color: '#aaa', fontSize: 13 }}>Nothing logged yet.</div>}
                 {expReleases.map(r => (
                   <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 0', borderTop: '1px solid #f2f2ed' }}>
+                    <label title="Select this release for bulk actions" style={{ paddingTop: 5, cursor: 'pointer', flexShrink: 0 }}>
+                      <input type="checkbox" aria-label={`Select ${r.title} for bulk actions`} checked={expSelectedReleaseIds.has(r.id)} onChange={() => toggleExpReleaseSelection(r.id)} style={{ cursor: 'pointer' }} />
+                    </label>
                     <div style={{ fontSize: 12, color: '#999', fontWeight: 600, width: 64, flexShrink: 0, paddingTop: 2 }}>{fmtDay(r.released_at)}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
