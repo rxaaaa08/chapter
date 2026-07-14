@@ -1,7 +1,8 @@
 // Manager tab — read-only operations manager. A pg_cron job evaluates
 // `manager_rules` daily at 6pm IST, raises/updates `manager_alerts`, and logs
-// one row per day to `manager_briefings`. This panel only reads those tables
-// and lets the admin acknowledge/snooze/dismiss alerts and tune the rules —
+// one row per day to `manager_briefings` for the daily push record. This panel
+// reads the active alerts and rules, and lets the admin acknowledge/snooze/
+// dismiss alerts and tune the rules —
 // it never messages customers or changes anything on its own.
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabase';
@@ -42,18 +43,6 @@ type ManagerAlert = {
   briefing_day: string | null;
 };
 
-type ManagerBriefing = {
-  id: string;
-  day: string;
-  urgent_count: number;
-  warning_count: number;
-  win_count: number;
-  info_count: number;
-  alert_ids: string[];
-  push_sent: boolean;
-  created_at: string;
-};
-
 function normalizeRule(row: Record<string, unknown>): ManagerRule {
   return {
     id: String(row.id),
@@ -90,30 +79,8 @@ function normalizeAlert(row: Record<string, unknown>): ManagerAlert {
   };
 }
 
-function normalizeBriefing(row: Record<string, unknown>): ManagerBriefing {
-  return {
-    id: String(row.id),
-    day: String(row.day),
-    urgent_count: Number(row.urgent_count) || 0,
-    warning_count: Number(row.warning_count) || 0,
-    win_count: Number(row.win_count) || 0,
-    info_count: Number(row.info_count) || 0,
-    alert_ids: Array.isArray(row.alert_ids) ? row.alert_ids.map(String) : [],
-    push_sent: Boolean(row.push_sent),
-    created_at: String(row.created_at),
-  };
-}
-
 function niceDate(value: string) {
   return new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
-}
-
-function niceDayLabel(value: string) {
-  // `day` is a plain DATE (YYYY-MM-DD) — read it as local IST calendar date,
-  // not as a UTC instant, so it doesn't roll back a day.
-  const [y, m, d] = value.split('-').map(Number);
-  const date = new Date(y, (m || 1) - 1, d || 1);
-  return date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function humanizeKey(key: string) {
@@ -192,7 +159,7 @@ function AlertCard({ alert, onAcknowledge, onSnooze, onDismiss }: {
   );
 }
 
-function TodaysBrief() {
+function TodaysBrief({ refreshKey = 0 }: { refreshKey?: number }) {
   const [alerts, setAlerts] = useState<ManagerAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -201,20 +168,25 @@ function TodaysBrief() {
   const load = async () => {
     setLoading(true);
     setError('');
-    const { data, error: loadError } = await supabase
-      .from('manager_alerts')
-      .select('id, rule_id, rule_type, fingerprint, severity, title, body, data, status, snoozed_until, first_raised_at, last_seen_at, resolved_at, briefing_day')
-      .in('status', ['open', 'acknowledged', 'snoozed'])
-      .order('last_seen_at', { ascending: false });
+    const [{ data: alertData, error: alertError }, { data: ruleData, error: ruleError }] = await Promise.all([
+      supabase
+        .from('manager_alerts')
+        .select('id, rule_id, rule_type, fingerprint, severity, title, body, data, status, snoozed_until, first_raised_at, last_seen_at, resolved_at, briefing_day')
+        .in('status', ['open', 'acknowledged', 'snoozed'])
+        .order('last_seen_at', { ascending: false }),
+      supabase.from('manager_rules').select('id, enabled'),
+    ]);
+    const loadError = alertError || ruleError;
     if (loadError) {
-      setError(loadError.message.includes('manager_alerts') ? 'The manager database migration has not been applied yet.' : loadError.message);
+      setError(loadError.message.includes('manager_alerts') || loadError.message.includes('manager_rules') ? 'The manager database migration has not been applied yet.' : loadError.message);
     } else {
-      setAlerts((data ?? []).map(normalizeAlert));
+      const enabledRuleIds = new Set((ruleData ?? []).filter(rule => Boolean(rule.enabled)).map(rule => String(rule.id)));
+      setAlerts((alertData ?? []).filter(alert => alert.rule_id && enabledRuleIds.has(String(alert.rule_id))).map(normalizeAlert));
     }
     setLoading(false);
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [refreshKey]);
 
   const applyUpdate = async (alert: ManagerAlert, patch: Partial<ManagerAlert>, removeFromList: boolean) => {
     const previous = alerts;
@@ -277,105 +249,6 @@ function TodaysBrief() {
                   >
                     Show {hiddenCount} more
                   </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function briefingSummary(b: ManagerBriefing) {
-  const parts: string[] = [];
-  if (b.urgent_count > 0) parts.push(`${b.urgent_count} urgent`);
-  if (b.warning_count > 0) parts.push(`${b.warning_count} watch`);
-  if (b.win_count > 0) parts.push(`${b.win_count} win${b.win_count === 1 ? '' : 's'}`);
-  if (b.info_count > 0) parts.push(`${b.info_count} info`);
-  return parts.length === 0 ? 'all clear' : parts.join(' · ');
-}
-
-function History() {
-  const [briefings, setBriefings] = useState<ManagerBriefing[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [openDay, setOpenDay] = useState<string | null>(null);
-  const [dayAlerts, setDayAlerts] = useState<Record<string, ManagerAlert[]>>({});
-  const [dayLoading, setDayLoading] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError('');
-      const { data, error: loadError } = await supabase
-        .from('manager_briefings')
-        .select('id, day, urgent_count, warning_count, win_count, info_count, alert_ids, push_sent, created_at')
-        .order('day', { ascending: false })
-        .limit(30);
-      if (loadError) {
-        setError(loadError.message.includes('manager_briefings') ? 'The manager database migration has not been applied yet.' : loadError.message);
-      } else {
-        setBriefings((data ?? []).map(normalizeBriefing));
-      }
-      setLoading(false);
-    })();
-  }, []);
-
-  const toggleDay = async (briefing: ManagerBriefing) => {
-    if (openDay === briefing.id) { setOpenDay(null); return; }
-    setOpenDay(briefing.id);
-    if (dayAlerts[briefing.id] || briefing.alert_ids.length === 0) return;
-    setDayLoading(briefing.id);
-    const { data, error: loadError } = await supabase
-      .from('manager_alerts')
-      .select('id, rule_id, rule_type, fingerprint, severity, title, body, data, status, snoozed_until, first_raised_at, last_seen_at, resolved_at, briefing_day')
-      .in('id', briefing.alert_ids);
-    if (!loadError) setDayAlerts(current => ({ ...current, [briefing.id]: (data ?? []).map(normalizeAlert) }));
-    setDayLoading(null);
-  };
-
-  return (
-    <div>
-      {error && <div style={{ padding: '9px 12px', borderRadius: 9, background: '#fef2f2', border: '1.5px solid #fca5a5', color: '#b91c1c', fontSize: 12, marginBottom: 12 }}>{error}</div>}
-      {loading ? (
-        <div style={{ padding: 30, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>Loading history…</div>
-      ) : briefings.length === 0 ? (
-        <div style={{ padding: '26px 14px', textAlign: 'center', color: '#9ca3af', fontSize: 12.5, border: '1.5px dashed #d1d5db', borderRadius: 12 }}>No briefings yet.</div>
-      ) : (
-        <div style={{ display: 'grid', gap: 7 }}>
-          {briefings.map(briefing => {
-            const isOpen = openDay === briefing.id;
-            return (
-              <div key={briefing.id} style={CARD}>
-                <button
-                  onClick={() => void toggleDay(briefing)}
-                  style={{ width: '100%', textAlign: 'left', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0, display: 'flex', alignItems: 'center', gap: 8 }}
-                >
-                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#111827' }}>{niceDayLabel(briefing.day)}</span>
-                  <span style={{ fontSize: 12, color: '#6b7280' }}>— {briefingSummary(briefing)}</span>
-                  {briefing.push_sent && <span title="Push notification sent" style={{ fontSize: 12 }}>📲</span>}
-                  <span style={{ flex: 1 }} />
-                  <span style={{ color: '#9ca3af', fontSize: 11 }}>{isOpen ? '▲' : '▼'}</span>
-                </button>
-                {isOpen && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f3f5', display: 'grid', gap: 8 }}>
-                    {dayLoading === briefing.id ? (
-                      <div style={{ color: '#9ca3af', fontSize: 12 }}>Loading alerts…</div>
-                    ) : briefing.alert_ids.length === 0 ? (
-                      <div style={{ color: '#9ca3af', fontSize: 12 }}>No alerts logged for this day.</div>
-                    ) : (
-                      (dayAlerts[briefing.id] ?? []).map(alert => (
-                        <div key={alert.id} style={{ padding: '8px 0', borderTop: '1px solid #f8fafc' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 800, color: '#111827', flex: 1 }}>{alert.title}</span>
-                            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99, background: SEVERITY_META[alert.status === 'snoozed' ? 'info' : alert.severity].soft, color: '#6b7280' }}>{alert.status}</span>
-                          </div>
-                          {alert.body && <div style={{ marginTop: 3, fontSize: 12, color: '#4b5563', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{alert.body}</div>}
-                        </div>
-                      ))
-                    )}
-                  </div>
                 )}
               </div>
             );
@@ -526,7 +399,7 @@ function RuleCard({ rule, onSaved }: { rule: ManagerRule; onSaved: (updated: Man
   );
 }
 
-function Rulebook() {
+function Rulebook({ onRuleSaved }: { onRuleSaved?: () => void }) {
   const [rules, setRules] = useState<ManagerRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -548,7 +421,10 @@ function Rulebook() {
     })();
   }, []);
 
-  const onSaved = (updated: ManagerRule) => setRules(current => current.map(r => r.id === updated.id ? updated : r));
+  const onSaved = (updated: ManagerRule) => {
+    setRules(current => current.map(r => r.id === updated.id ? updated : r));
+    onRuleSaved?.();
+  };
 
   return (
     <div>
@@ -572,6 +448,8 @@ function Rulebook() {
 }
 
 export default function ManagerPanel() {
+  const [rulesVersion, setRulesVersion] = useState(0);
+
   return (
     <div>
       <div style={{ fontSize: 24, lineHeight: 1.15, fontWeight: 850, color: '#111827', marginBottom: 4 }}>Manager</div>
@@ -581,17 +459,12 @@ export default function ManagerPanel() {
 
       <section>
         <div style={{ fontSize: 16, fontWeight: 850, color: '#111827', marginBottom: 12 }}>Today's brief</div>
-        <TodaysBrief />
-      </section>
-
-      <section style={{ marginTop: 34, paddingTop: 28, borderTop: '2px solid #e5e7eb' }}>
-        <div style={{ fontSize: 16, fontWeight: 850, color: '#111827', marginBottom: 12 }}>History</div>
-        <History />
+        <TodaysBrief refreshKey={rulesVersion} />
       </section>
 
       <section style={{ marginTop: 34, paddingTop: 28, borderTop: '2px solid #e5e7eb' }}>
         <div style={{ fontSize: 16, fontWeight: 850, color: '#111827', marginBottom: 12 }}>Rulebook</div>
-        <Rulebook />
+        <Rulebook onRuleSaved={() => setRulesVersion(current => current + 1)} />
       </section>
     </div>
   );
