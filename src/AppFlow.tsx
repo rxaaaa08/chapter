@@ -4060,12 +4060,24 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const [showMeetingPointSwitchBorder, setShowMeetingPointSwitchBorder] = useState(false);
   const nearestEventMonth = () => {
     const today = new Date(); today.setHours(0,0,0,0);
+    // Mirror the calendar's own sold-out rule: a date is sold out if its DB
+    // status says so, OR (for capacity-limited events) every spot is reserved.
+    const capEligible = event.bookingUrl === 'native-application' || event.bookingUrl === 'payu-hosted';
+    const nativeCapacity = (event as any).totalCapacity as number | null;
+    const cap = capEligible && typeof nativeCapacity === 'number' && nativeCapacity > 0 ? nativeCapacity : null;
+    const isSoldOut = (d: any) => {
+      if (d.status === 'sold_out') return true;
+      if (cap) return cap - (dateCounts?.[d.date]?.reserved ?? 0) <= 0;
+      return false;
+    };
     const upcoming = (event.dates ?? [])
-      .map(d => new Date(d.date + 'T00:00:00'))
-      .filter(d => d >= today)
-      .sort((a, b) => a.getTime() - b.getTime());
-    const target = upcoming[0] ?? new Date();
-    return new Date(target.getFullYear(), target.getMonth(), 1);
+      .filter(d => d.date && new Date(d.date + 'T00:00:00') >= today)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    // Open on the earliest date that's still bookable (available or filling
+    // fast); if every upcoming date is sold out, fall back to the earliest one.
+    const target = upcoming.find(d => !isSoldOut(d)) ?? upcoming[0];
+    const targetDate = target ? new Date(target.date + 'T00:00:00') : new Date();
+    return new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
   };
   const [currentMonth, setCurrentMonth] = useState(nearestEventMonth);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -4164,10 +4176,14 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     return () => clearInterval(timer);
   }, [headerImages.length, headerCarouselPaused]);
 
-  // Reset calendar to nearest upcoming month whenever the event changes
+  // Reset calendar to the earliest bookable month whenever the event changes or
+  // per-date counts arrive (they load async, and can flip the earliest date from
+  // available to sold-out). Skip while the calendar is open so we never yank the
+  // user out of a month they're actively browsing.
   useEffect(() => {
+    if (showCalendar) return;
     setCurrentMonth(nearestEventMonth());
-  }, [event.id]);
+  }, [event.id, dateCounts]);
 
   useEffect(() => {
     setSelectedDate(null);
