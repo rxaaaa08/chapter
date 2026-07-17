@@ -857,7 +857,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     email?: string;
     selectedCity?: string;
   } | null>(null);
-  const [balanceCountdown, setBalanceCountdown] = useState('');
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' });
@@ -1246,25 +1245,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     return () => window.removeEventListener('popstate', onPopState);
   }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails]);
 
-
-  // Balance due countdown timer
-  useEffect(() => {
-    if (paymentView !== 'success' || !paymentContext?.balanceDueRaw) return;
-    const update = () => {
-      const now = new Date();
-      const due = new Date(`${paymentContext.balanceDueRaw}T23:59:59`);
-      const diff = due.getTime() - now.getTime();
-      if (diff <= 0) { setBalanceCountdown('Due now'); return; }
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      setBalanceCountdown(`${days}d ${hours}h ${minutes}m ${seconds}s`);
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [paymentView, paymentContext?.balanceDueRaw]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -3863,8 +3843,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const [activeVideo, setActiveVideo] = useState<{ embedUrl: string; caption: string } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
-  const [timeLeft, setTimeLeft] = useState(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
-  const initialTimeLeft = useRef<number>(2 * 24 * 3600 + 14 * 3600 + 32 * 60 + 10);
   const headerTouchStartXRef = useRef<number | null>(null);
   const lastHandledOpenPlanSwitcherSignalRef = useRef(openPlanSwitcherSignal ?? 0);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -3952,7 +3930,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     setSelectedDate(null);
     setSelectedMeetingPoint('');
     setShowMeetingPointSwitchBorder(false);
-    setTimeLeft(initialTimeLeft.current);
   }, [event.id, selectedCity]);
 
   useEffect(() => {
@@ -3988,14 +3965,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   useEffect(() => {
     return () => onPlanSwitcherVisibilityChange?.(false);
   }, [onPlanSwitcherVisibilityChange]);
-
-  useEffect(() => {
-    if (!showCalendar || !selectedDate) return;
-    const timer = setInterval(() => {
-      setTimeLeft(prev => prev > 0 ? prev - 1 : 0);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [showCalendar, selectedDate]);
 
   // Full staggered animation only on initial calendar open
   useEffect(() => {
