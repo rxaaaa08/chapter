@@ -447,7 +447,6 @@ export default function AdminPanel() {
   const [savingMarketer, setSavingMarketer] = useState(false);
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
-  const [affiliatesLoading, setAffiliatesLoading] = useState(false);
   const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean }>>([]);
   // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
   const [affiliateStats, setAffiliateStats] = useState<Record<string, AffiliateStat>>({});
@@ -511,7 +510,6 @@ export default function AdminPanel() {
   const [resendingDetailsId, setResendingDetailsId] = useState<string | null>(null);
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
   const [callNotesEdits, setCallNotesEdits] = useState<Record<string, string>>({});
-  const [savingCallId, setSavingCallId] = useState<string | null>(null);
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtCityFilter, setQnaDoubtCityFilter] = useState<'all' | string>('all');
   const [qnaDoubtPlanFilter, setQnaDoubtPlanFilter] = useState<'all' | string>('all');
@@ -878,14 +876,12 @@ export default function AdminPanel() {
   // Pull roster + build per-creator rollups from clicks, attributed applications
   // and the sales ledger (admin has full RLS on all three).
   const loadAffiliatesData = async () => {
-    setAffiliatesLoading(true);
     const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }] = await Promise.all([
       supabase.from('affiliates').select('id, handle, name, email, active').order('created_at'),
       supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
     ]);
-    setAffiliatesLoading(false);
     setAffiliates((affRows ?? []) as any);
     const stats: Record<string, AffiliateStat> = {};
     const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 });
@@ -1637,7 +1633,6 @@ export default function AdminPanel() {
   };
 
   const saveCallInfo = async (id: string) => {
-    setSavingCallId(id);
     const { error } = await supabase
       .from('applications')
       .update({ call_status: callStatusEdits[id] ?? 'not_called', call_notes: callNotesEdits[id] ?? '' })
@@ -1648,7 +1643,6 @@ export default function AdminPanel() {
       setApplications(prev => prev.map(a => a.id === id ? { ...a, call_status: callStatusEdits[id], call_notes: callNotesEdits[id] } : a));
       showToast('✅ Saved');
     }
-    setSavingCallId(null);
   };
 
   const updateUserStatus = async (id: string, value: string) => {
