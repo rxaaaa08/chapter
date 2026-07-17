@@ -750,8 +750,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [showTransition, setShowTransition] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
-  const [bookingGender, setBookingGender] = useState('');
-  const [bookingTransport, setBookingTransport] = useState('');
   const [bookingDate, setBookingDate] = useState('');
   const [showChat, setShowChat] = useState(true);
   const [journeyCardData, setJourneyCardData] = useState<{ event: Event; city: string; startDate: string; meetingPoint?: string } | null>(null);
@@ -1320,45 +1318,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   const formatCityLabel = (city: string) => (city === 'Other' ? 'Other City' : city);
 
-  const handleCitySelect = (city: string, label?: string) => {
-    setStep('PROCESSING');
-    const cityLabel = label ?? formatCityLabel(city);
-    addUserMessage(cityLabel);
-    setSelectedCity(city);
-    trackEvent('city_selected', { city: cityLabel });
 
-    simulateBotTyping(() => {
-      const cityEvents = events.filter(e => e.cities.includes(city));
-      if (cityEvents.length > 0) {
-        const msgKey = city === 'Other' ? 'other_select_event' : 'select_event';
-        addBotMessage(fillMsg(msgs, msgKey, { city: cityLabel }, `Here's what we have coming up in ${cityLabel}. What sounds good to you?`));
-        setStep('SELECT_EVENT');
-      } else {
-        addBotMessage(fillMsg(msgs, 'no_events', { city: cityLabel }, `Oops, looks like we don't have anything scheduled in ${cityLabel} right now. Check back later!`));
-        setStep('NO_EVENTS');
-      }
-    });
-  };
-
-  const handleCategorySelect = (category: string) => {
-    setStep('PROCESSING');
-    addUserMessage(category);
-    setSelectedCategory(category);
-    trackEvent('category_selected', { city: formatCityLabel(selectedCity), category });
-    
-    simulateBotTyping(() => {
-      const cityLabel = formatCityLabel(selectedCity);
-      const filteredEvents = events.filter(e => e.cities.includes(selectedCity) && e.category === category);
-      if (filteredEvents.length > 0) {
-        const selectPlanKey = selectedCity === 'Other' ? 'other_select_event' : 'select_event';
-        addBotMessage(fillMsg(msgs, selectPlanKey, { city: cityLabel, category }, `Here are the upcoming ${category} in ${cityLabel}. Which one are you interested in?`));
-        setStep('SELECT_EVENT');
-      } else {
-        addBotMessage(fillMsg(msgs, 'no_events', { city: cityLabel, category }, `Oops, looks like we don't have any ${category} scheduled in ${cityLabel} right now. Check back later!`));
-        setStep('NO_EVENTS');
-      }
-    }, 1000);
-  };
 
   const handleEventSelect = (event: Event) => {
     // Community events short-circuit the whole flow: no user message, no
@@ -1551,27 +1511,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setStep('DONE');
   };
 
-  const handleGenderSelect = (gender: string) => {
-    setStep('PROCESSING');
-    setBookingGender(gender);
-    addUserMessage(gender);
-    
-    simulateBotTyping(() => {
-      addBotMessage(fillMsgForSelectedEvent('ask_transport', {}, "Got it. And do you need transport from Chennai, or will you arrange your own transport?"));
-      setStep('ASK_TRANSPORT');
-    });
-  };
 
-  const handleTransportSelect = (transport: string) => {
-    setStep('PROCESSING');
-    setBookingTransport(transport);
-    addUserMessage(transport);
-    
-    simulateBotTyping(() => {
-      setStep('DONE');
-      setShowWaitlistForm(false);
-    });
-  };
 
   const doubtSubmittingRef = React.useRef(false);
 
@@ -1973,51 +1913,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const girlsOnlyBtnClass = "px-5 py-3 bg-[#FF4FB8] text-white rounded-2xl text-sm font-bold hover:bg-[#e93ea3] transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px]";
 
     switch (step) {
-      case 'ASK_CITY': {
-        // "Other" is no longer offered — every plan now lists its actual
-        // cities and the customer must pick one of them. Any legacy
-        // selectedCity === 'Other' branches in this file are dead.
-        const baseCities: string[] = Array.from(new Set(events.flatMap(e => e.cities as string[]).filter(Boolean)));
-        const middleCities = baseCities
-          .filter(c => {
-            const lc = c.toLowerCase();
-            return lc !== 'chennai' && lc !== 'other';
-          })
-          .sort((a, b) => a.localeCompare(b));
-        const availableCities = ['Chennai', ...middleCities];
-        const cityOptions = availableCities.map((city) => ({
-          value: city,
-          label: city,
-        }));
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {cityOptions.map((city, i) => (
-              <button key={city.value} onClick={() => handleCitySelect(city.value, city.label)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div
-                  className="absolute inset-0 -skew-x-12"
-                  style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }}
-                  animate={{ x: ['-100%', '300%'] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
-                />
-                <span>{city.label}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      }
-      case 'ASK_CATEGORY': {
-        const availableCategories: string[] = Array.from(new Set(events.filter(e => e.cities.includes(selectedCity)).map(e => e.category)));
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {availableCategories.map((cat, i) => (
-              <button key={cat} onClick={() => handleCategorySelect(cat)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span>{cat}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      }
       case 'ASK_DOUBTS':
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
@@ -2033,28 +1928,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }}
                 />
                 <span>{label}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      case 'ASK_GENDER':
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {['Male', 'Female'].map((g, i) => (
-              <button key={g} onClick={() => handleGenderSelect(g)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span>{g}</span> <Send size={16} />
-              </button>
-            ))}
-          </motion.div>
-        );
-      case 'ASK_TRANSPORT':
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2 w-full">
-            {['With Transport', 'Without Transport'].map((t, i) => (
-              <button key={t} onClick={() => handleTransportSelect(t)} className={`${btnClass} relative overflow-hidden`}>
-                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: i * 1.2, ease: 'easeInOut' }} />
-                <span>{t}</span> <Send size={16} />
               </button>
             ))}
           </motion.div>
