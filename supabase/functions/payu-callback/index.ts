@@ -83,19 +83,6 @@ const AISENSY_CAMPAIGN_BALANCE = 'fullpaid_dpl';
 // details date (located by label, NOT a fixed index — see pickMeetingSpotStep).
 const AISENSY_CAMPAIGN_FULL    = 'single_payment_sucess_dpl';
 
-// Resolve booking-timeline steps for an applicant: prefer the per-date steps for
-// the date they chose (multi-date events can have different deadlines per date),
-// falling back to the event-level steps.
-function pickBookingSteps(ev: any, selectedDate?: string | null): any[] {
-  const eventLevel = Array.isArray(ev?.booking_steps) ? ev.booking_steps : [];
-  if (selectedDate && Array.isArray(ev?.event_dates)) {
-    const row = ev.event_dates.find((d: any) => String(d?.start_date ?? '') === String(selectedDate));
-    const perDate = Array.isArray(row?.booking_steps) ? row.booking_steps : [];
-    if (perDate.length > 0) return perDate;
-  }
-  return eventLevel;
-}
-
 // The event-level timeline owns the step labels; per-date timelines often only
 // override dates and intentionally leave label/value blank. Find the meeting
 // step's index on the event-level timeline, then use that same position from
