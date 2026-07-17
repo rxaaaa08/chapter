@@ -31,6 +31,14 @@ function normalizeEmail(value: unknown): string | null {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
+// Event/invite slugs are strictly lowercase alphanumerics + hyphens. Enforcing
+// that here keeps the value safe to interpolate into the PostgREST `.or()`
+// filter in resolveOpenEvent (no comma/paren/dot to smuggle extra conditions).
+function normalizeSlug(value: unknown): string | null {
+  const slug = String(value ?? '').trim();
+  return /^[a-z0-9-]{1,120}$/.test(slug) ? slug : null;
+}
+
 function clientIp(req: Request): string {
   const forwarded = req.headers.get('x-forwarded-for')
     ?? req.headers.get('cf-connecting-ip')
@@ -159,7 +167,7 @@ Deno.serve(async (req) => {
     const name = String(body.name ?? '').trim().replace(/[|<>]/g, '').slice(0, 80);
     const phone = normalizePhone(body.phone);
     const email = normalizeEmail(body.email);
-    const requestedSlug = String(body.event_slug ?? '').trim();
+    const requestedSlug = normalizeSlug(body.event_slug);
     const delivery = String(body.delivery ?? 'whatsapp');
     if (!name || !phone || !email || !requestedSlug) return reply(400, { error: 'invalid booking details' }, cors);
     if (delivery !== 'whatsapp' && delivery !== 'email') return reply(400, { error: 'invalid OTP delivery method' }, cors);
@@ -302,52 +310,54 @@ Deno.serve(async (req) => {
   const code = String(body.code ?? '').replace(/\D/g, '');
   const phone = normalizePhone(body.phone);
   const email = normalizeEmail(body.email);
-  const requestedSlug = String(body.event_slug ?? '').trim();
+  const requestedSlug = normalizeSlug(body.event_slug);
   if (!/^[a-f0-9]{64}$/.test(verificationToken) || !/^\d{6}$/.test(code) || !phone || !email || !requestedSlug) {
     return reply(400, { error: 'Enter the six-digit code we sent to WhatsApp or email.' }, cors);
   }
 
-  const { data: session, error: sessionError } = await supabase
-    .from('open_event_otp_sessions')
-    .select('id, event_slug, phone, email, code_hash, expires_at, attempts, verified_at')
-    .eq('verification_token', verificationToken)
-    .maybeSingle();
-  if (sessionError || !session) return reply(400, { error: 'This code has expired. Re-enter your WhatsApp number to get a new code.' }, cors);
-  if (session.event_slug !== requestedSlug || session.phone !== phone || session.email !== email) {
-    return reply(400, { error: 'Your details changed. Re-enter your WhatsApp number to get a new code.' }, cors);
-  }
-  if (new Date(session.expires_at).getTime() <= Date.now()) {
-    return reply(400, { error: 'This code has expired. Re-enter your WhatsApp number to get a new code.' }, cors);
-  }
-  if (session.verified_at) return reply(200, { verified: true, verification_token: verificationToken }, cors);
-  if (session.attempts >= MAX_ATTEMPTS) {
+  // Second layer of defence: cap verify calls per session token even before we
+  // touch the DB, so a flood of guesses is shed cheaply. The real cap is the
+  // row-locked RPC below (which no burst can outrun); this just limits load.
+  // Keyed by token, so getting a fresh code (new token) always starts clean.
+  if (!(await checkRateLimit(supabase, 'open-event-otp:verify', verificationToken, 600, MAX_ATTEMPTS + 3))) {
     return reply(429, { error: 'OTP_ATTEMPTS_EXHAUSTED', attempts_exhausted: true }, cors);
   }
 
+  // Atomic verify: attempt-count check, code comparison and increment all happen
+  // inside one row-locked transaction, so concurrent guesses can never exceed
+  // MAX_ATTEMPTS real comparisons against a session.
   const expectedHash = await sha256(`${verificationToken}:${code}`);
-  if (expectedHash !== session.code_hash) {
-    await supabase
-      .from('open_event_otp_sessions')
-      .update({ attempts: session.attempts + 1, updated_at: new Date().toISOString() })
-      .eq('id', session.id)
-      .eq('attempts', session.attempts)
-      .is('verified_at', null);
-    const remaining = Math.max(0, MAX_ATTEMPTS - session.attempts - 1);
-    if (remaining === 0) {
-      return reply(429, { error: 'OTP_ATTEMPTS_EXHAUSTED', attempts_exhausted: true }, cors);
-    }
-    return reply(400, { error: `OTP is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.` }, cors);
-  }
-
-  const { error: verifyError } = await supabase
-    .from('open_event_otp_sessions')
-    .update({ verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('id', session.id)
-    .is('verified_at', null);
+  const { data: verifyRows, error: verifyError } = await supabase.rpc('verify_open_event_otp', {
+    p_token: verificationToken,
+    p_expected_hash: expectedHash,
+    p_event_slug: requestedSlug,
+    p_phone: phone,
+    p_email: email,
+    p_max_attempts: MAX_ATTEMPTS,
+  });
   if (verifyError) {
-    console.error('[open-event-otp] could not mark session verified', verifyError);
+    console.error('[open-event-otp] verify RPC failed', verifyError);
     return reply(500, { error: 'Could not confirm your code. Please try again.' }, cors);
   }
+  const result = Array.isArray(verifyRows) ? verifyRows[0] : verifyRows;
+  const status = String(result?.status ?? '');
+  const remaining = Number(result?.remaining ?? 0);
 
-  return reply(200, { verified: true, verification_token: verificationToken }, cors);
+  switch (status) {
+    case 'verified':
+    case 'already_verified':
+      return reply(200, { verified: true, verification_token: verificationToken }, cors);
+    case 'exhausted':
+      return reply(429, { error: 'OTP_ATTEMPTS_EXHAUSTED', attempts_exhausted: true }, cors);
+    case 'wrong':
+      return reply(400, { error: `OTP is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.` }, cors);
+    case 'mismatch':
+      return reply(400, { error: 'Your details changed. Re-enter your WhatsApp number to get a new code.' }, cors);
+    case 'expired':
+    case 'not_found':
+      return reply(400, { error: 'This code has expired. Re-enter your WhatsApp number to get a new code.' }, cors);
+    default:
+      console.error('[open-event-otp] unexpected verify status', status);
+      return reply(500, { error: 'Could not confirm your code. Please try again.' }, cors);
+  }
 });
