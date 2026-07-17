@@ -111,26 +111,6 @@ type Trip = {
 };
 type AffiliateStat = { clicks: number; apps: number; tickets: number; earned: number; unpaid: number };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
-type DoubtSubmission = {
-  id?: string;
-  name?: string;
-  phone?: string;
-  doubt?: string;
-  message?: string;
-  event_title?: string;
-  event?: string;
-  event_name?: string;
-  event_category?: string;
-  category?: string;
-  city?: string;
-  selected_date?: string;
-  reporting_date?: string;
-  reporting_time?: string;
-  date?: string;
-  submitted_at?: string;
-  created_at?: string;
-  open_details_sent_at?: string;
-};
 type PayuPayment = {
   id?: string;
   txnid?: string;
@@ -203,14 +183,6 @@ function serializeHeroImages(images: string[]): string {
   if (cleaned.length === 0) return '';
   if (cleaned.length === 1) return cleaned[0];
   return JSON.stringify(cleaned);
-}
-
-function Badge({ status }: { status: TripDate['status'] }) {
-  return (
-    <span style={{ background: statusColor[status] + '20', color: statusColor[status], padding: '2px 8px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>
-      {statusLabel[status]}
-    </span>
-  );
 }
 
 // ─── AUDIT LOG HELPER (H10) ─────────────────────────────────────────────────
@@ -298,12 +270,10 @@ export default function AdminPanel() {
 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
-  const [doubtSubmissions, setDoubtSubmissions] = useState<DoubtSubmission[]>([]);
   const [planDoubts, setPlanDoubts] = useState<any[]>([]);
   const [doubtsLoadError, setDoubtsLoadError] = useState('');
   const [payuPayments, setPayuPayments] = useState<PayuPayment[]>([]);
   const [globalMessageDrafts, setGlobalMessageDrafts] = useState<Record<string, string>>({});
-  const [generalAnnouncementsText, setGeneralAnnouncementsText] = useState('');
   const [globalAnnouncementsFields, setGlobalAnnouncementsFields] = useState<[string, string, string]>(['', '', '']);
   const [doubtCtaLabel, setDoubtCtaLabel] = useState('');
   const [savingGeneralAnnouncements, setSavingGeneralAnnouncements] = useState(false);
@@ -551,7 +521,6 @@ export default function AdminPanel() {
   const [qnaOriginalById, setQnaOriginalById] = useState<Record<string, Trip>>({});
   const [otherEditingId, setOtherEditingId] = useState<string | null>(null);
   const [planActionById, setPlanActionById] = useState<Record<string, string>>({});
-  const [otherActionById, setOtherActionById] = useState<Record<string, string>>({});
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -720,7 +689,6 @@ export default function AdminPanel() {
         const generalAnnouncementsMsg = allMsgs.find(m => m.step_key === 'general_announcements');
         if (generalAnnouncementsMsg) {
           const text = generalAnnouncementsMsg.bot_message || '';
-          setGeneralAnnouncementsText(text);
           const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
           setGlobalAnnouncementsFields([lines[0] ?? '', lines[1] ?? '', lines[2] ?? '']);
         }
@@ -2262,7 +2230,6 @@ export default function AdminPanel() {
     if (existing?.id) {
       const { error } = await supabase.from('chat_messages').update({ bot_message: joinedAnnouncements }).eq('id', existing.id);
       if (error) { setSavingGeneralAnnouncements(false); showToast('❌ Save failed — check your connection'); return; }
-      setGeneralAnnouncementsText(joinedAnnouncements);
       setMsgs(prev => prev.map(m => m.id === existing.id ? { ...m, bot_message: joinedAnnouncements } : m));
     } else {
       const maxSortOrder = msgs.length > 0
@@ -2280,7 +2247,6 @@ export default function AdminPanel() {
         .select('*')
         .single();
       if (error) { setSavingGeneralAnnouncements(false); showToast('❌ Save failed — check your connection'); return; }
-      setGeneralAnnouncementsText(joinedAnnouncements);
       if (data) setMsgs(prev => [...prev, data as ChatMsg]);
     }
     setSavingGeneralAnnouncements(false);
@@ -8335,49 +8301,6 @@ function CollapsibleSection({ title, badge, badgeColor, defaultOpen = false, chi
           {children}
         </div>
       )}
-    </div>
-  );
-}
-
-function StringListEditor({
-  title,
-  values,
-  placeholder,
-  s,
-  onAdd,
-  onChange,
-  onRemove,
-}: {
-  title: string;
-  values: string[];
-  placeholder: string;
-  s: any;
-  onAdd: () => void;
-  onChange: (index: number, value: string) => void;
-  onRemove: (index: number) => void;
-}) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <label style={{ ...s.label, marginBottom: 0 }}>{title}</label>
-        <button type="button" style={{ ...s.outlineBtn, padding: '4px 12px', fontSize: 12 }} onClick={onAdd}>
-          + Add Item
-        </button>
-      </div>
-      {values.length === 0 && <div style={{ color: '#aaa', fontSize: 13 }}>No items yet.</div>}
-      {values.map((item, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-          <input
-            style={s.input}
-            placeholder={placeholder}
-            value={item}
-            onChange={e => onChange(i, e.target.value)}
-          />
-          <button type="button" onClick={() => onRemove(i)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>
-            ×
-          </button>
-        </div>
-      ))}
     </div>
   );
 }
