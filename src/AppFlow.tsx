@@ -863,19 +863,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
   const [doubtFormData, setDoubtFormData] = useState({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' });
-  const [doubtSheetView, setDoubtSheetView] = useState<'form' | 'chat'>('form');
   // Once a doubt is submitted this session, hide the "ask a doubt" CTA in the
   // FAQ step so it isn't offered again (FAQs + "ready to book" stay visible).
   const [doubtSubmittedThisSession, setDoubtSubmittedThisSession] = useState(false);
-  // Deprecated — see App.tsx for the rationale.
-  const [liveConversationId, setLiveConversationId] = useState<string | null>(
-    () => null
-  );
-  const [liveMessages, setLiveMessages] = useState<any[]>([]);
-  const [liveChatInput, setLiveChatInput] = useState('');
-  const [liveChatSending, setLiveChatSending] = useState(false);
-  const [liveConvResolved, setLiveConvResolved] = useState(false);
-  const liveChatEndRef = useRef<HTMLDivElement>(null);
   const [clickedFaqs, setClickedFaqs] = useState<string[]>([]);
   const isPostDetailsChatLayer =
     !!journeyCardData &&
@@ -1583,46 +1573,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     });
   };
 
-  // ── Live chat: load messages + Realtime ────────────────────────────────────
-  useEffect(() => {
-    if (!liveConversationId) return;
-    supabase.from('doubt_messages').select('*')
-      .eq('conversation_id', liveConversationId)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => { if (data) setLiveMessages(data); });
-    supabase.from('doubt_conversations').select('status')
-      .eq('id', liveConversationId).single()
-      .then(({ data }) => { if (data) setLiveConvResolved(data.status === 'resolved'); });
-    const sub = supabase.channel(`flow-chat-${liveConversationId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'doubt_messages',
-        filter: `conversation_id=eq.${liveConversationId}`,
-      }, (payload) => { setLiveMessages(prev => [...prev, payload.new]); })
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'doubt_conversations',
-        filter: `id=eq.${liveConversationId}`,
-      }, (payload) => { setLiveConvResolved((payload.new as any).status === 'resolved'); })
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
-  }, [liveConversationId]);
-
-  useEffect(() => {
-    liveChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [liveMessages]);
-
-  const sendLiveChatMessage = async () => {
-    if (!liveConversationId || !liveChatInput.trim()) return;
-    setLiveChatSending(true);
-    const body = liveChatInput.trim();
-    setLiveChatInput('');
-    await supabase.from('doubt_messages').insert({
-      conversation_id: liveConversationId,
-      sender: 'user',
-      body,
-    });
-    setLiveChatSending(false);
-  };
-
   const doubtSubmittingRef = React.useRef(false);
 
   const handleDoubtSubmit = async (e: React.FormEvent) => {
@@ -1637,7 +1587,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const message = doubtFormData.message;
     const whyJoin = doubtFormData.whyJoin;
     setShowDoubtPopup(false);
-    setDoubtSheetView('form');
     setDoubtSubmittedThisSession(true);
     setDoubtFormData({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' });
 
@@ -2126,7 +2075,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               </button>
             ))}
             {!doubtSubmittedThisSession && (
-            <button onClick={() => { setShowDoubtPopup(true); setDoubtSheetView(liveConversationId ? 'chat' : 'form'); }} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
+            <button onClick={() => { setShowDoubtPopup(true); }} className="text-right px-5 py-3 bg-gray-200 text-black rounded-2xl text-sm font-medium hover:bg-gray-300 transition-all shadow-sm active:scale-[0.98] flex items-center gap-3 justify-end w-fit max-w-full relative overflow-hidden">
               <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
               <span className="truncate whitespace-normal text-left">{doubtCtaLabel}</span> <MessageCircle size={16} className="flex-shrink-0" />
             </button>
@@ -3616,60 +3565,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <X size={14} />
                 </button>
 
-                {/* ── CHAT VIEW: returning user with existing conversation ── */}
-                {doubtSheetView === 'chat' && liveConversationId && (
-                  <>
-                    <div className="relative px-6 pt-4 pb-3 border-b border-gray-100">
-                      <p className="text-[20px] font-black text-gray-900 tracking-tight leading-tight">Your Chat 💬</p>
-                      <p className="text-[13px] text-gray-400 mt-0.5">We'll reply here as soon as possible</p>
-                    </div>
-                    <div className="flex flex-col gap-2.5 p-4 overflow-y-auto flex-1" style={{ maxHeight: 320 }}>
-                      {liveMessages.map(msg => {
-                        const isUser = msg.sender === 'user';
-                        return (
-                          <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-[14px] leading-snug ${isUser ? 'bg-[#FFD700] text-black rounded-br-sm' : 'bg-[#F2F2F7] text-gray-900 rounded-bl-sm'}`}>
-                              <div className="whitespace-pre-wrap break-words">{msg.body}</div>
-                              <div className={`text-[10px] mt-1 ${isUser ? 'text-black/40 text-right' : 'text-gray-400'}`}>
-                                {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                                {!isUser && <span className="ml-1 font-semibold">· chapter அ</span>}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {liveMessages.length === 0 && (
-                        <p className="text-[13px] text-gray-400 text-center py-4">Your message was sent! We'll reply here shortly.</p>
-                      )}
-                      <div ref={liveChatEndRef} />
-                    </div>
-                    {!liveConvResolved ? (
-                      <div className="px-4 pb-5 pt-2 flex gap-2.5 items-end border-t border-gray-100">
-                        <input
-                          type="text"
-                          value={liveChatInput}
-                          onChange={e => setLiveChatInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') sendLiveChatMessage(); }}
-                          placeholder="Type a follow-up…"
-                          className="flex-1 bg-[#F2F2F7] rounded-2xl px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
-                        />
-                        <button
-                          onClick={sendLiveChatMessage}
-                          disabled={!liveChatInput.trim() || liveChatSending}
-                          className="w-11 h-11 bg-black rounded-2xl flex items-center justify-center shrink-0 disabled:opacity-30 active:scale-95 transition-all"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="px-6 pb-5 pt-3 text-center text-[13px] text-gray-400">This conversation has been resolved.</div>
-                    )}
-                  </>
-                )}
-
-
                 {/* ── FORM VIEW: default ── */}
-                {doubtSheetView === 'form' && (
                 <>
                 <div className="relative px-6 pt-4 pb-4">
                   <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
@@ -3758,7 +3654,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <div className="px-6 pt-4 pb-5">
                     <button
                       type="submit"
-                      disabled={liveChatSending || !doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doubtFormData.email.trim()) || !doubtFormData.message.trim() || (!isPayUFlow && !doubtFormData.whyJoin.trim())}
+                      disabled={!doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doubtFormData.email.trim()) || !doubtFormData.message.trim() || (!isPayUFlow && !doubtFormData.whyJoin.trim())}
                       className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden disabled:opacity-50"
                     >
                       <motion.div
@@ -3767,12 +3663,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         animate={{ x: ['-100%', '300%'] }}
                         transition={{ delay: 10, duration: 0.8, repeat: Infinity, repeatDelay: 7.0, ease: 'easeInOut' }}
                       />
-                      <span className="relative z-10">{liveChatSending ? 'Sending…' : 'Send Message'}</span>
+                      <span className="relative z-10">Send Message</span>
                     </button>
                   </div>
                 </form>
                 </>
-                )}
               </motion.div>
             </>
           )}

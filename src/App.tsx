@@ -1435,19 +1435,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [doubtText, setDoubtText] = useState('');
   const [doubtSubmitError, setDoubtSubmitError] = useState('');
   const [submittingDoubt, setSubmittingDoubt] = useState(false);
-  // liveConversationId path is deprecated (consumer live chat retired —
-  // 0 rows ever in doubt_conversations/doubt_messages in prod; RLS denies
-  // anon INSERTs anyway). State retained for JSX compatibility but no
-  // longer rehydrates from localStorage so stale IDs don't leak across
-  // sessions on shared devices.
-  const [liveConversationId, setLiveConversationId] = useState<string | null>(
-    () => null
-  );
-  const [liveMessages, setLiveMessages] = useState<any[]>([]);
-  const [liveChatInput, setLiveChatInput] = useState('');
-  const [liveChatSending, setLiveChatSending] = useState(false);
-  const [liveConvResolved, setLiveConvResolved] = useState(false);
-  const liveChatEndRef = useRef<HTMLDivElement>(null);
   const [askedFaqs, setAskedFaqs] = useState<number[]>([]);
   const [inviteAnnouncementIndex, setInviteAnnouncementIndex] = useState(0);
   const [showPlanDetailsSheet, setShowPlanDetailsSheet] = useState(false);
@@ -2273,90 +2260,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }).catch(() => setIsTimelineRestoreLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ── Live chat: load messages + Realtime subscription ───────────────────────
-  useEffect(() => {
-    if (!liveConversationId) return;
-    // Load existing messages
-    supabase.from('doubt_messages').select('*')
-      .eq('conversation_id', liveConversationId)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => { if (data) setLiveMessages(data); });
-    // Check if resolved
-    supabase.from('doubt_conversations').select('status')
-      .eq('id', liveConversationId).single()
-      .then(({ data }) => { if (data) setLiveConvResolved(data.status === 'resolved'); });
-    // Subscribe to new messages
-    const sub = supabase.channel(`live-chat-${liveConversationId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'doubt_messages',
-        filter: `conversation_id=eq.${liveConversationId}`,
-      }, (payload) => {
-        setLiveMessages(prev => [...prev, payload.new]);
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'doubt_conversations',
-        filter: `id=eq.${liveConversationId}`,
-      }, (payload) => {
-        setLiveConvResolved((payload.new as any).status === 'resolved');
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
-  }, [liveConversationId]);
-
-  // Scroll live chat to bottom
-  useEffect(() => {
-    liveChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [liveMessages]);
-
-  const startLiveChat = async (firstMessage: string) => {
-    if (!firstMessage.trim()) return;
-    setLiveChatSending(true);
-    const tenDigit = form.phone.replace(/^\+91/, '').replace(/^0/, '').replace(/\D/g, '').slice(-10);
-    // Create conversation
-    const { data: convData, error: convErr } = await supabase
-      .from('doubt_conversations')
-      .insert({
-        phone: tenDigit,
-        name: form.name.trim() || null,
-        event_slug: nativeEventData?.eventSlug ?? verifiedSlug ?? null,
-        status: 'open',
-      })
-      .select()
-      .single();
-    if (convErr || !convData) { setLiveChatSending(false); return; }
-    const convId = convData.id;
-    // Insert first message
-    await supabase.from('doubt_messages').insert({
-      conversation_id: convId,
-      sender: 'user',
-      body: firstMessage.trim(),
-    });
-    // Deprecated: no longer persisting conversation IDs in localStorage.
-    // RLS on doubt_conversations.INSERT denies anon writes, so the upstream
-    // .insert above always returns no row (convId is null) — this is a no-op
-    // in practice and the code is kept only until the JSX path is removed.
-    // localStorage.setItem('liveConversationId', convId);
-    localStorage.setItem('liveConvName', form.name.trim() || '');
-    localStorage.setItem('liveConvEventSlug', nativeEventData?.eventSlug ?? verifiedSlug ?? '');
-    localStorage.setItem('liveConvEventTitle', nativeEventData?.title ?? '');
-    setLiveConversationId(convId);
-    setDoubtText('');
-    setLiveChatSending(false);
-  };
-
-  const sendLiveChatMessage = async () => {
-    if (!liveConversationId || !liveChatInput.trim()) return;
-    setLiveChatSending(true);
-    const body = liveChatInput.trim();
-    setLiveChatInput('');
-    await supabase.from('doubt_messages').insert({
-      conversation_id: liveConversationId,
-      sender: 'user',
-      body,
-    });
-    setLiveChatSending(false);
-  };
 
   const submitDoubt = async () => {
     const msg = doubtText.trim();
@@ -4937,142 +4840,6 @@ function TermsScreen() {
 }
 
 
-// ─── LIVE CHAT SCREEN ─────────────────────────────────────────────────────────
-function LiveChatScreen({ onBack }: { onBack: () => void }) {
-  const convId       = localStorage.getItem('liveConversationId') ?? '';
-  const convName     = localStorage.getItem('liveConvName') ?? '';
-  const convTitle    = localStorage.getItem('liveConvEventTitle') ?? '';
-  const [messages, setMessages]       = useState<any[]>([]);
-  const [input, setInput]             = useState('');
-  const [sending, setSending]         = useState(false);
-  const [resolved, setResolved]       = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!convId) return;
-    supabase.from('doubt_messages').select('*')
-      .eq('conversation_id', convId).order('created_at', { ascending: true })
-      .then(({ data }) => { if (data) setMessages(data); });
-    supabase.from('doubt_conversations').select('status')
-      .eq('id', convId).single()
-      .then(({ data }) => { if (data) setResolved(data.status === 'resolved'); });
-    const sub = supabase.channel(`live-screen-${convId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'doubt_messages',
-        filter: `conversation_id=eq.${convId}`,
-      }, payload => setMessages(prev => [...prev, payload.new]))
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'doubt_conversations',
-        filter: `id=eq.${convId}`,
-      }, payload => setResolved((payload.new as any).status === 'resolved'))
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
-  }, [convId]);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  const send = async () => {
-    if (!input.trim() || sending) return;
-    setSending(true);
-    const body = input.trim();
-    setInput('');
-    await supabase.from('doubt_messages').insert({ conversation_id: convId, sender: 'user', body });
-    setSending(false);
-  };
-
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-  const handleBack = () => {
-    ['liveConversationId', 'liveConvName', 'liveConvEventSlug', 'liveConvEventTitle'].forEach(k => localStorage.removeItem(k));
-    onBack();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#ECE5DD] font-sans" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Header */}
-      <div className="bg-[#075E54] text-white px-4 pt-10 pb-3 flex items-center gap-3 shrink-0">
-        <button onClick={handleBack} className="p-1 -ml-1 opacity-80 active:opacity-60">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-        </button>
-        <div className="w-9 h-9 rounded-full bg-[#128C7E] flex items-center justify-center shrink-0">
-          <span className="text-white text-sm font-black">அ</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-[15px] leading-tight">chapter அ</div>
-          <div className="text-[12px] opacity-70 truncate">{convTitle || 'Live Chat'}</div>
-        </div>
-        {resolved && (
-          <span className="text-[11px] bg-white/20 rounded-full px-2.5 py-0.5 font-semibold">Resolved</span>
-        )}
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-2">
-        {/* Context chip */}
-        <div className="flex justify-center mb-1">
-          <span className="bg-[#FFF3CD] text-[#856404] text-[11px] font-semibold px-3 py-1 rounded-full shadow-sm">
-            {convName ? `Hi ${convName.split(' ')[0]}! We'll reply here.` : "We'll reply here directly."}
-          </span>
-        </div>
-
-        {messages.map(msg => {
-          const isUser = msg.sender === 'user';
-          return (
-            <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[78%] px-3.5 py-2 rounded-2xl shadow-sm text-[14px] leading-snug relative ${
-                isUser ? 'bg-[#DCF8C6] text-gray-900 rounded-br-sm' : 'bg-white text-gray-900 rounded-bl-sm'
-              }`}>
-                {!isUser && <div className="text-[11px] font-bold text-[#075E54] mb-0.5">chapter அ</div>}
-                <div className="whitespace-pre-wrap break-words">{msg.body}</div>
-                <div className="text-[10px] text-gray-400 mt-1 text-right">{formatTime(msg.created_at)}</div>
-              </div>
-            </div>
-          );
-        })}
-
-        {messages.length === 0 && (
-          <div className="flex justify-center mt-8">
-            <div className="bg-white rounded-2xl px-5 py-4 shadow-sm text-center max-w-[260px]">
-              <div className="text-2xl mb-1">💬</div>
-              <p className="text-[13px] text-gray-600 font-medium">Your message is sent!</p>
-              <p className="text-[12px] text-gray-400 mt-0.5">We'll reply here shortly.</p>
-            </div>
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      {/* Input */}
-      {!resolved ? (
-        <div className="bg-[#F0F0F0] px-3 py-2.5 flex items-end gap-2.5 shrink-0 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="Type a message…"
-            rows={1}
-            style={{ resize: 'none', maxHeight: 120, overflowY: 'auto' }}
-            className="flex-1 bg-white rounded-2xl px-4 py-2.5 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none leading-snug"
-          />
-          <button
-            onClick={send}
-            disabled={!input.trim() || sending}
-            className="w-10 h-10 bg-[#075E54] rounded-full flex items-center justify-center shrink-0 disabled:opacity-40 active:scale-95 transition-all"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
-        </div>
-      ) : (
-        <div className="bg-white px-4 py-4 text-center text-[13px] text-gray-500 shrink-0">
-          This conversation has been marked as resolved.
-          <button onClick={handleBack} className="block mx-auto mt-2 text-[#075E54] font-semibold text-[13px]">← Back to app</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
 function InAppBrowserNudge() {
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
@@ -5196,14 +4963,6 @@ function InAppBrowserNudge() {
 
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
 export default function App() {
-  // ── Live chat intercept: if user has an open conversation, show it immediately
-  const [showLiveChat, setShowLiveChat] = useState(
-    () => typeof window !== 'undefined' && !!localStorage.getItem('liveConversationId')
-  );
-  if (showLiveChat) {
-    return <LiveChatScreen onBack={() => setShowLiveChat(false)} />;
-  }
-
   const [routePath, setRoutePath] = useState(() => {
     if (typeof window === 'undefined') return '/';
     // Two installed PWAs share this SPA: the creators app (creator-manifest.json)
