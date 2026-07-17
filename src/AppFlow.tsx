@@ -4,7 +4,7 @@ import { getAffiliateRef } from './affiliate';
 import { TermsContent } from './TermsContent';
 import { NativePaymentOverlay } from './PaymentOverlay';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Star, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, Home, Timer, ShieldCheck, Plus, Minus, Train, Car, Heart, ArrowRight } from 'lucide-react';
+import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, ShieldCheck, Plus, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 
 // Types
@@ -404,11 +404,6 @@ const GENERAL_ANNOUNCEMENTS = [
 ];
 
 
-
-// Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
-// call prod edge functions. supabase.ts already throws if the env var is
-// missing, so by the time we reach here it is guaranteed to be set.
-const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 
 

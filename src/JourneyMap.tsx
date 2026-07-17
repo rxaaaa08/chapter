@@ -10,7 +10,7 @@
 // Loaded lazily from AdminPanel so React Flow never ships in the
 // customer-facing bundle.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
