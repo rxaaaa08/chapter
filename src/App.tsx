@@ -2295,59 +2295,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }, 760);
   };
 
-  const openSharedInviteBooking = async () => {
-    if (!verifiedSlug) return;
-
-    // Check if sold out at the moment user taps "Tap to Continue". Capacity
-    // (pendingInviteSpots) is per-date, so reserved must be counted against
-    // THIS user's date (nativeEventData.firstDate is the resolved per-user
-    // date). Falls back to slug-wide if the date couldn't be resolved.
-    if (pendingInviteSpots !== null) {
-      const userDate = nativeEventData?.firstDate ?? '';
-      let reserved = 0;
-      if (userDate) {
-        const map = await fetchEventDateCounts(verifiedSlug);
-        reserved = map[userDate]?.reserved ?? 0;
-      } else {
-        ({ reserved } = await fetchEventCounts(verifiedSlug));
-      }
-      if (reserved >= pendingInviteSpots) {
-        setError('sold_out');
-        setHasFailedOnce(true);
-        return;
-      }
-    }
-
-    // Ensure nativeEventData is set (handles multi-match flow where it wasn't set in findInviteMatches)
-    if (!nativeEventData) {
-      const tenDigit = form.phone.replace(/\D/g, '').slice(-10);
-      const ready = await prepareNativeInviteFlow(verifiedSlug, tenDigit);
-      if (!ready) {
-        setError('not_found');
-        return;
-      }
-      if (ready.isFullyPaid) {
-        if (typeof window !== 'undefined') {
-          window.history.pushState({ chapteraInviteStep: 'confirmation' }, '', window.location.href);
-        }
-        setShowNativeConfirmation(true);
-        return;
-      }
-      if (ready.isBalancePayment) {
-        if (typeof window !== 'undefined') {
-          window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
-        }
-        setShowNativeTimeline(true);
-        return;
-      }
-    }
-
-    if (typeof window !== 'undefined') {
-      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
-    }
-    setShowNativeTimeline(true);
-  };
-
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
       if (event.state?.chapteraLayer) return;
