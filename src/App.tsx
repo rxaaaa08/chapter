@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
-import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download, Ticket } from 'lucide-react';
+import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download } from 'lucide-react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
@@ -16,25 +16,6 @@ import { TermsContent } from './TermsContent';
 // missing, so by the time we reach here it is guaranteed to be set.
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-// Types
-type Message = {
-  id: string;
-  sender: 'bot' | 'user';
-  text?: string;
-};
-
-interface TripDate {
-  date: string;
-  status: 'available' | 'selling_out' | 'sold_out';
-  label?: string;
-}
-
-type FAQ = {
-  question: string;
-  answer: string;
-};
-
-type QuickInfoIcon = 'pin' | 'bus' | 'users' | 'home' | 'clock' | 'ticket' | 'map' | 'heart';
 
 function MobileShell({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
   return (
@@ -46,203 +27,6 @@ function MobileShell({ children, scroll = false }: { children: React.ReactNode; 
   );
 }
 
-interface Event {
-  quickInfo?: { icon: QuickInfoIcon; label: string; value: string }[];
-  id: string;
-  cities: string[];
-  category: string;
-  isActivity?: boolean;
-  title: string;
-  timing: string;
-  price: string;
-  advanceAmount: number;
-  description: string;
-  heroImage: string;
-  startLocation: string;
-  pickupPoints?: { city: string; location: string; time: string }[];
-  transport: string;
-  groupSize: string;
-  accommodationType: string;
-  included: string[];
-  notIncluded: string[];
-  transportPlan?: {
-    type: 'train' | 'bus' | 'tempo' | 'jeep' | 'flight';
-    from: string;
-    to: string;
-    time: string;
-    dateOffset: number;
-    cities?: string[];
-  }[];
-  itinerary: { 
-    day: string; 
-    title: string; 
-    description: string;
-    schedule?: { time: string; activity: string }[];
-  }[];
-  accommodation: {
-    name: string;
-    images: string[];
-    features: string[];
-    policy: string;
-  };
-  optionalActivities?: string[];
-  videos: { thumbnail: string; caption: string }[];
-  reviews: { name: string; rating: number; text: string; images: string[] }[];
-  dates: TripDate[];
-  faqs: FAQ[];
-  bookingUrl: string;
-  announcements?: string[];
-  inviteOnly?: boolean;
-  waitlistUrl?: string;
-}
-
-// Mock Data
-const EVENTS: Event[] = [
-  {
-    id: 'e3',
-    cities: ['Chennai'],
-    category: 'Trips',
-    title: 'Sri Lanka Retreat',
-    timing: '4 Nights 5 Days',
-    price: '₹24,999',
-    advanceAmount: 5000,
-    description: 'A slow, sun-soaked island escape across Colombo, Kandy, and the south coast. Waterfalls, tea country train rides, and a villa by the beach to reset.',
-    heroImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1600&auto=format&fit=crop',
-    startLocation: 'Chennai Airport (MAA)',
-    quickInfo: [
-      { icon: 'pin', label: 'Meeting Spot', value: 'Chennai Airport (MAA)' },
-      { icon: 'bus', label: 'Transport', value: 'Flights + Coach' },
-      { icon: 'users', label: 'Group Size', value: '16-18 travellers' },
-      { icon: 'heart', label: "You'll Meet", value: 'Beach lovers & culture seekers' },
-    ],
-    transportPlan: [
-      { type: 'flight', from: 'Chennai', to: 'Colombo', time: '7:00 AM', dateOffset: 0 },
-      { type: 'train', from: 'Colombo', to: 'Kandy', time: '2:00 PM', dateOffset: 1 },
-      { type: 'tempo', from: 'Kandy', to: 'South Coast Villa', time: '8:00 AM', dateOffset: 2 },
-      { type: 'flight', from: 'Colombo', to: 'Chennai', time: '6:00 PM', dateOffset: 4 }
-    ],
-    transport: 'Flights + Private Coach',
-    groupSize: 'Max 18 travellers',
-    accommodationType: 'Boutique villa & hillside resort',
-    included: [
-      'Round-trip flights from Chennai',
-      'All on-ground transport in Sri Lanka',
-      '4 nights stay (double occupancy)',
-      'Daily breakfast + 2 curated dinners',
-      'Train ride through tea country',
-      'Local experience hosts & trip manager'
-    ],
-    notIncluded: [
-      'Lunches and personal shopping',
-      'Visa fees (approx ₹1,500)',
-      'Travel insurance',
-      'Any extras outside the itinerary'
-    ],
-    optionalActivities: [
-      'Galle old town sunset walk',
-      'Surf lesson in Weligama',
-      'Sigiriya sunrise hike'
-    ],
-    itinerary: [
-      {
-        day: 'Day 1',
-        title: 'Fly In & Colombo Night',
-        description: 'Morning flight from Chennai, drop bags at the hotel, explore cafes and a sunset by Galle Face Green.',
-        schedule: [
-          { time: '7:00 AM', activity: 'Flight Chennai → Colombo' },
-          { time: '5:00 PM', activity: 'Sunset at Galle Face Green' }
-        ]
-      },
-      {
-        day: 'Day 2',
-        title: 'Tea Country Rails',
-        description: 'Scenic train ride to Kandy, temple visit, and evening cultural show.',
-        schedule: [
-          { time: '2:00 PM', activity: 'Train to Kandy' },
-          { time: '7:00 PM', activity: 'Cultural show & dinner' }
-        ]
-      },
-      {
-        day: 'Day 3',
-        title: 'Waterfalls & Drive South',
-        description: 'Road-trip through waterfalls and spice gardens en route to the south coast villa.',
-        schedule: [
-          { time: '9:00 AM', activity: 'Stop at Ramboda Falls' },
-          { time: '4:00 PM', activity: 'Check-in at beach villa' }
-        ]
-      },
-      {
-        day: 'Day 4',
-        title: 'Beach Day & Surf',
-        description: 'Slow morning by the pool, optional surf lesson, golden-hour dinner by the sea.',
-        schedule: [
-          { time: '11:00 AM', activity: 'Beach + pool time' },
-          { time: '5:30 PM', activity: 'Sunset dinner spread' }
-        ]
-      },
-      {
-        day: 'Day 5',
-        title: 'Fly Back',
-        description: 'Head back to Colombo after breakfast and fly to Chennai in the evening.',
-        schedule: [
-          { time: '12:00 PM', activity: 'Colombo cafe crawl' },
-          { time: '6:00 PM', activity: 'Flight to Chennai' }
-        ]
-      }
-    ],
-    accommodation: {
-      name: 'Kandy Hillside Resort · South Coast Villa',
-      images: [
-        'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=1200&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1501117716987-c8e1ecb210af?q=80&w=1200&auto=format&fit=crop'
-      ],
-      features: [
-        'Infinity pool overlooking tea gardens',
-        'Private beach access at the villa',
-        'Daily housekeeping and local breakfast'
-      ],
-      policy: "Rooms are same gender sharing — so that everyone's comfortable"
-    },
-    videos: [
-      {
-        thumbnail: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=400&auto=format&fit=crop',
-        caption: 'Tropical evenings on the south coast'
-      },
-      {
-        thumbnail: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?q=80&w=400&auto=format&fit=crop',
-        caption: 'Train through tea country vibes'
-      }
-    ],
-    reviews: [
-      {
-        name: 'Aishwarya N',
-        rating: 5,
-        text: 'The slow-paced itinerary was perfect. Loved the villa and the curated meals.',
-        images: ['https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=200&auto=format&fit=crop']
-      }
-    ],
-    dates: [
-      { date: '2026-04-12', status: 'selling_out', label: 'Waitlist moving' },
-      { date: '2026-04-26', status: 'available', label: 'Summer batch' }
-    ],
-    faqs: [
-      { question: 'Is visa included?', answer: 'Visa fee is not included. We will guide you through the easy online process.' },
-      { question: 'Can I join solo?', answer: 'Absolutely, most travellers join solo. We pair roomies thoughtfully.' }
-    ],
-    bookingUrl: '/phonepe-mock',
-    announcements: [
-      "🇱🇰 Sri Lanka Retreat waitlist now open",
-      "🍃 Slow mornings, tea country trains, and a beach villa",
-      "✈️ Flights included from Chennai"
-    ]
-  },
-];
-
-const GENERAL_ANNOUNCEMENTS = [
-  "Chennai-based social club with 4000+ members",
-  "🇱🇰 Sri Lanka Retreat waitlist now open",
-  "✈️ Flights included from Chennai"
-];
 
 // ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────
 function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; onViewExperiences: () => void }) {
@@ -3202,15 +2986,6 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             const chatHeaderProfileClass = nativeEventData?.girlsOnly
               ? 'w-full h-full object-contain scale-[1.4]'
               : 'w-full h-full object-contain scale-[1.02] translate-y-[2px]';
-
-            const ReplyContainer = ({ children, delay = 0.15 }: { children: React.ReactNode; delay?: number }) => (
-              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className="pt-1">
-                <div className="bg-white rounded-2xl border border-gray-200 p-3">
-                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider px-1 mb-2">Choose your reply</p>
-                  <div className="flex flex-col items-end gap-2">{children}</div>
-                </div>
-              </motion.div>
-            );
 
             return (
               <div
