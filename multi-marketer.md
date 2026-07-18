@@ -39,11 +39,23 @@ login email exactly (store lowercase).
 
 - **`is_admin()`** — `true` if the JWT email is in `admin_users` (ANY role,
   incl. ops). Pre-existing; used broadly.
-- **`is_admin_only()`** — `is_admin() AND current_marketer_id() IS NULL`. True
-  only for admins who are **not** marketers. Used to keep marketers from seeing
-  everyone's leads via the broad `is_admin()`.
+- **`is_admin_only()`** — `is_admin() AND current_marketer_id() IS NULL AND
+  current_manager_id() IS NULL` (third branch added 2026-07-18 by the manager
+  role Phase 1 migration). True only for admins who are **neither** marketer
+  **nor** manager. Used to keep both side-car roles from seeing everyone's
+  leads via the broad `is_admin()`.
 - **`current_marketer_id()`** — JWT-email → `call_marketers.id` (active only),
   else `NULL`. The basis of all marketer-scoped RLS.
+- **`current_manager_id()`** — same pattern for the **manager** role
+  (`managers` side-car, event-scoped via `event_managers`). See
+  `manager-role-proposal.md` and
+  `supabase/migrations/20260718_manager_role_phase1.sql`.
+
+> ⚠️ **Offboarding gotcha (applies to marketers AND managers):** the
+> `current_*_id()` helpers are active-only, so deactivating the side-car row
+> while leaving the `admin_users` ops login in place turns that person into a
+> **plain ops user — who passes `is_admin_only()` and sees ALL leads**.
+> Off-boarding must always delete the `admin_users` row too.
 
 ---
 
