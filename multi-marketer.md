@@ -193,9 +193,18 @@ application form themselves (choosing pickup point, date, etc.).
 | Table | Admin | Marketer (ops) |
 |-------|-------|----------------|
 | `applications` | full, but admin policies now use **`is_admin_only()`** | SELECT/UPDATE only where `assigned_marketer_id = current_marketer_id()` |
-| `call_marketers` | full (`is_admin()`) | SELECT own row |
-| `event_marketers` | full (`is_admin()`) | SELECT own membership |
-| `marketer_sales` | full (`is_admin()`) | SELECT own sales (powers commission banner) |
+| `call_marketers` | SELECT `is_admin()`; **writes `is_admin_strict()`** | SELECT own row |
+| `event_marketers` | SELECT `is_admin()`; **writes `is_admin_strict()`** | SELECT own membership |
+| `marketer_sales` | SELECT `is_admin()`; **writes `is_admin_strict()`** | SELECT own sales (powers commission banner) |
+
+> Writes tightened 2026-07-18
+> (`supabase/migrations/20260718_marketer_tables_write_strict.sql`): the old
+> ALL-policies used `is_admin()`, which is true for ANY ops login — so any
+> marketer could e.g. raise their own `commission_amount` via the REST API.
+> Only `role='admin'` can write these tables now. Safe because the marketer
+> board is a SECURITY DEFINER RPC and all assignment/accrual triggers are
+> SECURITY DEFINER (verified: a marketer flipping a lead to `fully_paid`
+> still accrues the `marketer_sales` row).
 | `doubt_submissions` | SELECT now uses **`is_admin_only()`** | SELECT only where `assigned_marketer_id = current_marketer_id()` |
 | `admin_push_subscriptions` | INSERT/UPDATE/SELECT `is_admin()`; **DELETE `is_admin_only()`** | can subscribe own device, **cannot delete** any device |
 
