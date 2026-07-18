@@ -8,8 +8,9 @@
 > Still open by choice: items 21-22 (un-exports), 28 (itineraryRef),
 > 31 (send-push-notification webhook branch), 32 (applyMethodFee.rate),
 > 33 (tsx devDep), 34 (PaymentOverlay setters) and the untracked local
-> clutter. The sold-out re-check question from item 24 is tracked as its
-> own follow-up task. Before pushing: glance at AiSensy/Brevo dashboard
+> clutter. The sold-out re-check from item 24 was ported into the live
+> Pay handlers on 2026-07-18 (commit aba3430); the remaining gap is that
+> create-payu-order still has no server-side capacity check. Before pushing: glance at AiSensy/Brevo dashboard
 > templates for hot-links to payment-qr.png / join-poster images.
 
 Read-only audit. **Nothing was removed or changed.** Six parallel analysis passes covered: cross-file imports/exports, npm dependencies, App.tsx, AppFlow.tsx, AdminPanel.tsx + admin sub-files, all 13 Supabase edge functions, migrations/cron wiring, and every static asset. Every finding below was verified with reference-count greps; the headline items were independently re-verified by the orchestrator.
