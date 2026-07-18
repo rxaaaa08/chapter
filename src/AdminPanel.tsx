@@ -485,6 +485,9 @@ export default function AdminPanel() {
   const [newManagerEmail, setNewManagerEmail] = useState('');
   const [newManagerCommissionInput, setNewManagerCommissionInput] = useState('35');
   const [savingManagerRow, setSavingManagerRow] = useState(false);
+  // Phase 6 scorecard: per-manager outcome + activity metrics from
+  // get_manager_scorecards() (strict-admin RPC), keyed by manager id.
+  const [managerScorecards, setManagerScorecards] = useState<{ benchmark: number; byId: Record<string, any> } | null>(null);
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
   const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean }>>([]);
@@ -965,11 +968,17 @@ export default function AdminPanel() {
 
   // ── Managers card (Performance tab, admin) — mirrors the Creators card ──
   const loadManagersCard = async () => {
-    const [{ data: mgrRows }, { data: salesRows }, { data: emRows }] = await Promise.all([
+    const [{ data: mgrRows }, { data: salesRows }, { data: emRows }, { data: scoreData }] = await Promise.all([
       supabase.from('managers').select('id, name, email, commission_amount, active').order('created_at'),
       supabase.from('manager_sales').select('manager_id, amount, paid_out_at'),
       supabase.from('event_managers').select('event_slug, manager_id'),
+      supabase.rpc('get_manager_scorecards'),
     ]);
+    if (scoreData) {
+      const byId: Record<string, any> = {};
+      ((scoreData as any).managers ?? []).forEach((m: any) => { byId[m.manager_id] = m; });
+      setManagerScorecards({ benchmark: Number((scoreData as any).benchmark_conversion_pct) || 0, byId });
+    }
     setAdminManagers((mgrRows ?? []) as any);
     const stats: Record<string, { tickets: number; earned: number; unpaid: number }> = {};
     (salesRows ?? []).forEach((r: any) => {
@@ -6601,6 +6610,30 @@ export default function AdminPanel() {
                               );
                             })}
                           </div>
+                          {/* Scorecard strip — outcome + activity metrics; chips
+                              hide when there's no data behind them yet. */}
+                          {(() => {
+                            const sc = managerScorecards?.byId[m.id];
+                            if (!sc || assigned.length === 0) return null;
+                            const bench = managerScorecards!.benchmark;
+                            const chip = (label: string, tone?: 'good' | 'bad') => (
+                              <span key={label} style={{ fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '2px 8px', background: tone === 'good' ? '#f0fdf4' : tone === 'bad' ? '#fef2f2' : '#f5f5f5', color: tone === 'good' ? '#15803d' : tone === 'bad' ? '#b91c1c' : '#666', border: '1px solid ' + (tone === 'good' ? '#bbf7d0' : tone === 'bad' ? '#fecaca' : '#e5e5e5') }}>
+                                {label}
+                              </span>
+                            );
+                            const chips: React.ReactNode[] = [];
+                            if (sc.fill_pct != null) chips.push(chip(`Fill ${sc.fill_pct}%`, Number(sc.fill_pct) >= 50 ? 'good' : undefined));
+                            if (sc.conversion_pct != null) chips.push(chip(`Conv ${sc.conversion_pct}% (avg ${bench}%)`, Number(sc.conversion_pct) >= bench ? 'good' : 'bad'));
+                            if (Number(sc.stale) > 0) chips.push(chip(`${sc.stale} stale`, 'bad'));
+                            if (sc.pending_age_h != null) chips.push(chip(`Pending age ${Math.round(Number(sc.pending_age_h))}h`));
+                            if (sc.recovery_pct != null) chips.push(chip(`Recovery ${sc.recovery_pct}%`));
+                            if (sc.doubt_closure_pct != null) chips.push(chip(`Doubts closed ${sc.doubt_closure_pct}%`));
+                            chips.push(chip(`Revenue ₹${Math.round(Number(sc.revenue)).toLocaleString('en-IN')}`));
+                            chips.push(chip(`${sc.actions_7d} actions/7d`, Number(sc.actions_7d) === 0 ? 'bad' : undefined));
+                            if (Number(sc.hires) > 0) chips.push(chip(`${sc.hires} hire${Number(sc.hires) === 1 ? '' : 's'}`));
+                            if (sc.last_active) chips.push(chip(`Seen ${new Date(sc.last_active).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`));
+                            return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>{chips}</div>;
+                          })()}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>₹{Number(m.commission_amount)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{st.tickets}</td>
