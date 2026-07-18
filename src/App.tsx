@@ -2286,6 +2286,41 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     });
   };
 
+  // Re-check spots-left at the moment the guest taps a Pay chip, so a date
+  // that filled up while they idled on this page can't be paid for. Capacity
+  // (inviteSpots) is per-date, so reserved is counted against THIS user's
+  // date (firstDate); falls back to slug-wide only when the date can't be
+  // resolved. Balance payments are never gated — those guests already hold
+  // a reserved spot. On a failed count fetch we proceed rather than block a
+  // payment on a flaky network check.
+  const openInvitePaymentTimeline = async () => {
+    const spots = nativeEventData?.inviteSpots ?? null;
+    const alreadyPaid = !!(nativeEventData?.isFullyPaid || nativeEventData?.isBalancePayment);
+    if (!alreadyPaid && spots != null && verifiedSlug) {
+      try {
+        const userDate = nativeEventData?.firstDate ?? '';
+        let reserved = 0;
+        if (userDate) {
+          const map = await fetchEventDateCounts(verifiedSlug);
+          reserved = map[userDate]?.reserved ?? 0;
+        } else {
+          ({ reserved } = await fetchEventCounts(verifiedSlug));
+        }
+        // Sync the render-time isSoldOut gate + spot counters with reality:
+        // when full, this hides the Pay chip and surfaces Join Waitlist.
+        setInviteReservedCount(reserved);
+        if (reserved >= spots) {
+          simulateInviteTyping(() => {
+            addInviteBotMsg("Oh no — the last spot just got reserved 😔\n\nSpots go to whoever settles the payment first. Join the waitlist & we'll contact you if someone cancels their spot!");
+          });
+          return;
+        }
+      } catch { /* proceed — see note above */ }
+    }
+    window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
+    setShowNativeTimeline(true);
+  };
+
   const wipeToLifestyle = () => {
     setWipingToLifestyle(true);
     setWipePhase('wiping');
@@ -2971,7 +3006,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               <button
                                 className="px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
                                 style={{ backgroundColor: '#22C55E' }}
-                                onClick={() => { window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href); setShowNativeTimeline(true); }}
+                                onClick={() => { void openInvitePaymentTimeline(); }}
                               >
                                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
                                 <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
@@ -3099,7 +3134,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               <button
                                 className="px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
                                 style={{ backgroundColor: '#22C55E' }}
-                                onClick={() => { window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href); setShowNativeTimeline(true); }}
+                                onClick={() => { void openInvitePaymentTimeline(); }}
                               >
                                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }} />
                                 <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
@@ -3152,10 +3187,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   whatsappGroupUrl={nativeEventData?.whatsappGroupUrl}
                   onPayAdvance={() => {
                     setShowPlanDetailsSheet(false);
-                    window.setTimeout(() => {
-                      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
-                      setShowNativeTimeline(true);
-                    }, 300);
+                    window.setTimeout(() => { void openInvitePaymentTimeline(); }, 300);
                   }}
                 />
 
