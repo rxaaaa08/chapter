@@ -461,6 +461,15 @@ export default function AdminPanel() {
   // event — powers the team chips. slug → marketer_id[].
   const [managerRoster, setManagerRoster] = useState<Array<{ id: string; name: string; email: string; active: boolean }>>([]);
   const [managerEventMarketers, setManagerEventMarketers] = useState<Record<string, string[]>>({});
+  // Managed events + their per-date booking counts — the manager's own copy
+  // of the spots-card data (kept separate from the marketer states so a
+  // dual-role person's two hats don't overwrite each other).
+  const [managerAssignedSlugs, setManagerAssignedSlugs] = useState<string[]>([]);
+  const [managerEventDateCounts, setManagerEventDateCounts] = useState<Record<string, Record<string, { registered: number; reserved: number }>>>({});
+  // Dual-role scope switch (someone in BOTH side-cars): 'mine' = their own
+  // marketer leads across all events, 'team' = every lead on managed events
+  // + the manager cockpit. Defaults to 'mine' — the daily calling routine.
+  const [peopleScope, setPeopleScope] = useState<'mine' | 'team'>('mine');
   // Inline hire form: which event's form is open + its fields.
   const [hiringEventSlug, setHiringEventSlug] = useState<string | null>(null);
   const [newHireEmail, setNewHireEmail] = useState('');
@@ -656,26 +665,19 @@ export default function AdminPanel() {
       // is a marketer. Drives the commission banner + scopes the People tab
       // to "my leads" via the RLS policy (no client-side filter needed).
       if (role === 'ops') {
-        // Manager side-car first (managers self-select their own row). If the
-        // email is in BOTH side-cars, the manager view wins — they still earn
-        // marketer commission on their own leads via the DB trigger.
-        const { data: mgr } = await supabase
-          .from('managers')
-          .select('id, name, email, commission_amount')
-          .eq('email', userEmail)
-          .eq('active', true)
-          .maybeSingle();
+        // Both side-cars load together: an email can be a marketer, a manager,
+        // or BOTH (dual role — e.g. a promoted marketer who keeps selling).
+        // Dual-role users get a My Leads / Team Leads scope switch; each hat
+        // keeps earning its own commission via the DB triggers.
+        const [{ data: mgr }, { data: mk }] = await Promise.all([
+          supabase.from('managers')
+            .select('id, name, email, commission_amount')
+            .eq('email', userEmail).eq('active', true).maybeSingle(),
+          supabase.from('call_marketers')
+            .select('id, name, email, commission_amount')
+            .eq('email', userEmail).eq('active', true).maybeSingle(),
+        ]);
         setCurrentManager(mgr ?? null);
-        if (mgr) {
-          setCurrentMarketer(null);
-          setMyCommissionStats(null);
-        } else {
-        const { data: mk } = await supabase
-          .from('call_marketers')
-          .select('id, name, email, commission_amount')
-          .eq('email', userEmail)
-          .eq('active', true)
-          .maybeSingle();
         setCurrentMarketer(mk ?? null);
         if (mk?.id) {
           // Sum sales this calendar month — drives the banner copy.
@@ -687,7 +689,8 @@ export default function AdminPanel() {
             .gte('accrued_at', monthStart.toISOString());
           const total = (sales ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
           setMyCommissionStats({ total, ticketCount: (sales ?? []).length });
-        }
+        } else {
+          setMyCommissionStats(null);
         }
       } else {
         setCurrentMarketer(null);
@@ -870,7 +873,7 @@ export default function AdminPanel() {
       supabase.rpc('get_manager_summary'),
     ]);
     const slugs = Array.from(new Set((emRows ?? []).map((r: any) => r.event_slug).filter(Boolean)));
-    setMarketerAssignedSlugs(slugs);
+    setManagerAssignedSlugs(slugs);
     setManagerRoster((rosterRows ?? []) as any);
     const map: Record<string, string[]> = {};
     (evmkRows ?? []).forEach((r: any) => { (map[r.event_slug] ??= []).push(r.marketer_id); });
@@ -880,13 +883,13 @@ export default function AdminPanel() {
   };
 
   useEffect(() => {
-    if (!currentManager) { setManagerSummary(null); setManagerRoster([]); setManagerEventMarketers({}); return; }
+    if (!currentManager) { setManagerSummary(null); setManagerRoster([]); setManagerEventMarketers({}); setManagerAssignedSlugs([]); setManagerEventDateCounts({}); return; }
     let cancelled = false;
     (async () => {
       const slugs = await loadManagerTeam(currentManager.id);
       if (cancelled || slugs.length === 0) return;
       const entries = await Promise.all(slugs.map(async (slug) => [slug, await fetchEventDateCounts(slug)] as const));
-      if (!cancelled) setMarketerEventDateCounts(Object.fromEntries(entries));
+      if (!cancelled) setManagerEventDateCounts(Object.fromEntries(entries));
     })().catch(() => { /* dashboard degrades gracefully if a fetch fails */ });
     return () => { cancelled = true; };
   }, [currentManager]);
@@ -1727,12 +1730,15 @@ export default function AdminPanel() {
         selected_date: submission.selected_date ?? null,
         selected_city: submission.city ?? null,
         pickup_label:  submission.meeting_spot ?? null,
-        // Attribution: when a marketer (ops) approves, the application MUST be
-        // assigned to them — both for correct credit and because the marketer
-        // RLS insert policy only allows self-assigned rows. Admins (no
-        // currentMarketer) fall back to whoever owns the doubt, else the BEFORE
-        // INSERT trigger infers it.
-        assigned_marketer_id: currentMarketer?.id ?? submission.assigned_marketer_id ?? null,
+        // Attribution: the doubt's existing owner keeps the lead (and the
+        // commission). For a pure marketer that's always themselves (RLS only
+        // shows them their own doubts), so behaviour is unchanged — but a
+        // dual-role manager approving a TEAMMATE's doubt must not steal it.
+        // Unowned doubts go to the approver if they're a marketer, else the
+        // BEFORE INSERT trigger infers. Managers insert via the
+        // applications_manager_insert policy (own events, any attribution);
+        // marketers via their self-assigned-only policy.
+        assigned_marketer_id: submission.assigned_marketer_id ?? currentMarketer?.id ?? null,
       })
       .select('id')
       .maybeSingle();
@@ -3818,7 +3824,22 @@ export default function AdminPanel() {
             if (a.re_target) return 're_target';
             return a.status;
           };
+          // Effective lead scope. Dual-role (marketer AND manager) users get a
+          // My Leads / Team Leads switch; pure managers are always 'team',
+          // everyone else 'mine' (their RLS already scopes the data).
+          const isDualRole = !!currentManager && !!currentMarketer;
+          const effScope: 'mine' | 'team' = currentManager ? (isDualRole ? peopleScope : 'team') : 'mine';
+          // 'mine' = leads assigned to them as a marketer (any event);
+          // 'team' = every lead on their managed events. Only dual-role users
+          // need the client-side split — RLS hands them the union of both.
+          const scopeMatch = (a: any): boolean => {
+            if (!isDualRole) return true;
+            return effScope === 'mine'
+              ? a.assigned_marketer_id === currentMarketer!.id
+              : managerAssignedSlugs.includes(a.event_slug);
+          };
           const filteredApps = applications.filter(a => {
+            if (!scopeMatch(a)) return false;
             const pays = paymentsFor(a.phone, a.event_slug);
             const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
             const dateMatch   = applicationsDateFilter   === 'all' || a.selected_date === applicationsDateFilter;
@@ -3904,7 +3925,22 @@ export default function AdminPanel() {
               || (applicationsMarketerFilter === 'unassigned'
                     ? !submission.assigned_marketer_id
                     : submission.assigned_marketer_id === applicationsMarketerFilter);
-            return planMatch && cityMatch && marketerMatch;
+            // Dual-role scope: 'mine' = doubts assigned to them as marketer;
+            // 'team' = doubts resolving to a managed event (same trip lookup
+            // as doubtAppStatus — event_title/event_id, not a slug column).
+            const scopeOk = !isDualRole ? true
+              : effScope === 'mine'
+                ? submission.assigned_marketer_id === currentMarketer!.id
+                : (() => {
+                    const id = String(submission.event_id ?? '').trim();
+                    const raw = (submission.event_title || submission.event_slug || '').trim();
+                    const trip = trips.find(t =>
+                      (id && (t.id === id || t.slug === id || t.invite_slug === id))
+                      || t.title === raw || t.slug === raw || t.invite_slug === raw
+                    );
+                    return !!trip?.slug && managerAssignedSlugs.includes(trip.slug);
+                  })();
+            return planMatch && cityMatch && marketerMatch && scopeOk;
           // Open doubts (not yet applied) surface above handled ones.
           }).sort((a, b) => Number(doubtHasApplied(a)) - Number(doubtHasApplied(b)));
 
@@ -4121,11 +4157,13 @@ export default function AdminPanel() {
 
           return (
             <div>
-              {/* Commission banner — only when the logged-in user is a marketer.
-                  Counts this calendar month's sales (status moved to fully_paid). */}
-              {currentMarketer && myCommissionStats && (() => {
-                const fullyPaid   = applications.filter(a => a.status === 'fully_paid').length;
-                const advanceOnly = applications.filter(a => a.status === 'advance_paid').length;
+              {/* Commission banner — marketer hat only (dual-role users see it
+                  in My Leads scope). Counts THEIR assigned leads, which for a
+                  pure marketer is everything RLS hands them anyway. */}
+              {currentMarketer && myCommissionStats && effScope === 'mine' && (() => {
+                const myApps = currentManager ? applications.filter(a => a.assigned_marketer_id === currentMarketer.id) : applications;
+                const fullyPaid   = myApps.filter(a => a.status === 'fully_paid').length;
+                const advanceOnly = myApps.filter(a => a.status === 'advance_paid').length;
                 const paidAdvance = fullyPaid + advanceOnly;
                 const inr = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
                 // minWidth:0 lets the three tiles shrink to share one row on
@@ -4180,13 +4218,17 @@ export default function AdminPanel() {
 
               {/* Manager dashboard — commission banner, stale-lead alert, team
                   performance (from get_manager_summary) and per-event team
-                  management with autonomous hiring. Manager view only. */}
-              {currentManager && (() => {
-                const fullyPaid   = applications.filter(a => a.status === 'fully_paid').length;
-                const advanceOnly = applications.filter(a => a.status === 'advance_paid').length;
+                  management with autonomous hiring. Team scope only (which is
+                  the only scope a pure manager has). Counts cover managed
+                  events — a dual-role user's own leads on OTHER events belong
+                  to their marketer hat, not this cockpit. */}
+              {currentManager && effScope === 'team' && (() => {
+                const teamApps = applications.filter(a => managerAssignedSlugs.includes(a.event_slug));
+                const fullyPaid   = teamApps.filter(a => a.status === 'fully_paid').length;
+                const advanceOnly = teamApps.filter(a => a.status === 'advance_paid').length;
                 const inr = (n: number) => '₹' + Math.round(Number(n || 0)).toLocaleString('en-IN');
                 const staleTotal = (managerSummary?.marketers ?? []).reduce((sum, m) => sum + m.stale_leads, 0) + (managerSummary?.unassigned_stale ?? 0);
-                const managedTrips = trips.filter(t => marketerAssignedSlugs.includes(t.slug ?? ''));
+                const managedTrips = trips.filter(t => managerAssignedSlugs.includes(t.slug ?? ''));
                 const activeRoster = managerRoster.filter(mk => mk.active);
                 const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
                   <div style={{ flex: 1, minWidth: 0, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '10px 12px' }}>
@@ -4359,12 +4401,16 @@ export default function AdminPanel() {
 
               {/* Assigned events + per-date spots left — marketer & manager views.
                   Reserved totals come from the SECURITY DEFINER RPC, so they
-                  reflect ALL bookings, not just this marketer's leads. */}
+                  reflect ALL bookings, not just this marketer's leads. The
+                  event list follows the scope: marketer-assigned events in
+                  My Leads, managed events in Team Leads. */}
               {(currentMarketer || currentManager) && (() => {
+                const scopeSlugs = effScope === 'team' ? managerAssignedSlugs : marketerAssignedSlugs;
+                const scopeCounts = effScope === 'team' ? managerEventDateCounts : marketerEventDateCounts;
                 const today = new Date().toISOString().slice(0, 10);
                 const assigned = trips.filter(t =>
                   t.is_active &&
-                  marketerAssignedSlugs.includes(t.slug ?? '') &&
+                  scopeSlugs.includes(t.slug ?? '') &&
                   (t.event_dates ?? []).some(d => d.start_date && d.start_date >= today)
                 );
                 if (assigned.length === 0) return null;
@@ -4374,7 +4420,7 @@ export default function AdminPanel() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {assigned.map(t => {
                         const capacity = (t.total_capacity ?? t.invite_spots) ?? null;
-                        const dateCounts = marketerEventDateCounts[t.slug ?? ''] ?? {};
+                        const dateCounts = scopeCounts[t.slug ?? ''] ?? {};
                         const dates = (t.event_dates ?? [])
                           .filter(d => d.start_date && d.start_date >= today)
                           .slice()
@@ -4418,7 +4464,7 @@ export default function AdminPanel() {
 
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 700, fontSize: 22 }}>{currentMarketer ? 'My Leads' : currentManager ? 'Event Leads' : 'People'}</div>
+                <div style={{ fontWeight: 700, fontSize: 22 }}>{effScope === 'team' ? 'Event Leads' : currentMarketer ? 'My Leads' : 'People'}</div>
                 <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
                   {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
                   {peopleMode === 'doubts' && (() => {
@@ -4452,6 +4498,27 @@ export default function AdminPanel() {
                   {applicationsLoading ? 'Refreshing…' : 'Refresh'}
                 </button>
               </div>
+
+              {/* Dual-role scope switch — worker hat vs manager hat. Every mode
+                  chip below respects whichever scope is active. */}
+              {isDualRole && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: 5, background: '#eef2ff', borderRadius: 99, width: 'fit-content' }}>
+                  {(['mine', 'team'] as const).map(sc => (
+                    <button
+                      key={sc}
+                      onClick={() => setPeopleScope(sc)}
+                      style={{
+                        padding: '7px 16px', borderRadius: 99, border: 'none', cursor: 'pointer',
+                        fontWeight: 700, fontSize: 13,
+                        background: peopleScope === sc ? '#4338ca' : 'transparent',
+                        color: peopleScope === sc ? '#fff' : '#6366f1',
+                      }}
+                    >
+                      {sc === 'mine' ? '🙋 My Leads' : '🧑‍💼 Team Leads'}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Mode switcher */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: 5, background: '#f3f3f3', borderRadius: 99, width: 'fit-content' }}>
@@ -4503,10 +4570,10 @@ export default function AdminPanel() {
                   <option value="fully_paid">Fully Paid</option>
                   <option value="has_doubt">Raised Doubt</option>
                 </select>
-                {/* Marketer filter — admins + managers (a manager sees every
-                    marketer's leads on their events; plain marketers only ever
-                    see their own, so the filter would be pointless). */}
-                {(adminRole === 'admin' || !!currentManager) && (
+                {/* Marketer filter — admins + managers in Team scope (a manager
+                    sees every marketer's leads on their events; in My Leads
+                    scope or for plain marketers it would be pointless). */}
+                {(adminRole === 'admin' || (!!currentManager && effScope === 'team')) && (
                   <select
                     value={applicationsMarketerFilter}
                     onChange={e => setApplicationsMarketerFilter(e.target.value)}
@@ -4550,8 +4617,8 @@ export default function AdminPanel() {
                   <option value="all">All Plans</option>
                   {qnaDoubtPlans.map(plan => <option key={plan} value={plan}>{plan}</option>)}
                 </select>
-                {/* Marketer filter — admins + managers, mirrors the Call tab. */}
-                {(adminRole === 'admin' || !!currentManager) && (
+                {/* Marketer filter — admins + managers in Team scope, mirrors the Call tab. */}
+                {(adminRole === 'admin' || (!!currentManager && effScope === 'team')) && (
                   <select
                     value={applicationsMarketerFilter}
                     onChange={e => setApplicationsMarketerFilter(e.target.value)}
