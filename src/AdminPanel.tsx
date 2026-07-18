@@ -466,6 +466,25 @@ export default function AdminPanel() {
   const [newHireEmail, setNewHireEmail] = useState('');
   const [newHireName, setNewHireName] = useState('');
   const [savingHire, setSavingHire] = useState(false);
+  // Dates & group chats (manager phase 4): per-date edit buffers keyed by
+  // event_dates.id, + the add-date form. Writes go through the SECURITY
+  // DEFINER RPCs (additive dates only; url/status edits only).
+  const [dateEdits, setDateEdits] = useState<Record<string, { url: string; status: string }>>({});
+  const [addingDateSlug, setAddingDateSlug] = useState<string | null>(null);
+  const [newDateValue, setNewDateValue] = useState('');
+  const [newDateLabel, setNewDateLabel] = useState('');
+  const [newDateUrl, setNewDateUrl] = useState('');
+  const [savingDate, setSavingDate] = useState(false);
+  // Managers card (Performance tab, admin): roster + ledger rollups +
+  // per-manager event assignment. Mirrors the Creators card.
+  const [adminManagers, setAdminManagers] = useState<Array<{ id: string; name: string; email: string; commission_amount: number; active: boolean }>>([]);
+  const [adminManagerStats, setAdminManagerStats] = useState<Record<string, { tickets: number; earned: number; unpaid: number }>>({});
+  const [adminManagerEvents, setAdminManagerEvents] = useState<Record<string, string[]>>({});
+  const [addingManagerRow, setAddingManagerRow] = useState(false);
+  const [newManagerName, setNewManagerName] = useState('');
+  const [newManagerEmail, setNewManagerEmail] = useState('');
+  const [newManagerCommissionInput, setNewManagerCommissionInput] = useState('35');
+  const [savingManagerRow, setSavingManagerRow] = useState(false);
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
   const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean }>>([]);
@@ -907,6 +926,138 @@ export default function AdminPanel() {
     setHiringEventSlug(null); setNewHireEmail(''); setNewHireName('');
     if (currentManager) await loadManagerTeam(currentManager.id);
     loadApplications(); // their leads may have been redistributed
+  };
+
+  // Re-pull the full events tree (dates included) after a manager date change.
+  const reloadTripsData = async () => {
+    const { data } = await supabase.from('events').select('*, event_dates(*), event_media(*), event_reviews(*), faqs(*)').order('created_at', { ascending: true });
+    if (data) setTrips((data as Trip[]).map(normalizeCityDetails));
+  };
+
+  // Manager phase 4: save a date's group link / availability. Only these two
+  // fields — the RPC enforces it server-side (no renames, no deletes).
+  const managerSaveDate = async (dateId: string, url: string, status: string) => {
+    setSavingDate(true);
+    const { error } = await supabase.rpc('manager_update_event_date', { p_date_id: dateId, p_whatsapp_group_url: url, p_status: status });
+    setSavingDate(false);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast('Date updated');
+    setDateEdits(prev => { const next = { ...prev }; delete next[dateId]; return next; });
+    reloadTripsData();
+  };
+
+  // Manager phase 4: add a brand-new date. The RPC seeds the booking timeline
+  // by shifting the latest sibling date's steps, so bookings on the new date
+  // get a correct payment rhythm from day one.
+  const managerAddDate = async (eventSlug: string) => {
+    if (!newDateValue) { showToast('Pick a date first'); return; }
+    setSavingDate(true);
+    const { error } = await supabase.rpc('manager_add_event_date', {
+      p_event_slug: eventSlug, p_start_date: newDateValue,
+      p_label: newDateLabel.trim() || null, p_whatsapp_group_url: newDateUrl.trim() || null,
+    });
+    setSavingDate(false);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast('Date added — booking timeline seeded automatically');
+    setAddingDateSlug(null); setNewDateValue(''); setNewDateLabel(''); setNewDateUrl('');
+    reloadTripsData();
+  };
+
+  // ── Managers card (Performance tab, admin) — mirrors the Creators card ──
+  const loadManagersCard = async () => {
+    const [{ data: mgrRows }, { data: salesRows }, { data: emRows }] = await Promise.all([
+      supabase.from('managers').select('id, name, email, commission_amount, active').order('created_at'),
+      supabase.from('manager_sales').select('manager_id, amount, paid_out_at'),
+      supabase.from('event_managers').select('event_slug, manager_id'),
+    ]);
+    setAdminManagers((mgrRows ?? []) as any);
+    const stats: Record<string, { tickets: number; earned: number; unpaid: number }> = {};
+    (salesRows ?? []).forEach((r: any) => {
+      const cur = (stats[r.manager_id] ??= { tickets: 0, earned: 0, unpaid: 0 });
+      cur.tickets += 1;
+      cur.earned += Number(r.amount);
+      if (!r.paid_out_at) cur.unpaid += Number(r.amount);
+    });
+    setAdminManagerStats(stats);
+    const evMap: Record<string, string[]> = {};
+    (emRows ?? []).forEach((r: any) => { (evMap[r.manager_id] ??= []).push(r.event_slug); });
+    setAdminManagerEvents(evMap);
+  };
+
+  const saveNewManager = async () => {
+    const email = newManagerEmail.trim().toLowerCase();
+    const name = newManagerName.trim();
+    const commission = Number(newManagerCommissionInput) || 35;
+    if (!email || !name) { showToast('Email and name required'); return; }
+    setSavingManagerRow(true);
+    const { error } = await supabase.from('managers').insert({ email, name, commission_amount: commission });
+    if (error) { setSavingManagerRow(false); showToast(`Failed: ${error.message}`); return; }
+    // Login gate — same pattern as marketers: add an 'ops' row, never touch
+    // an existing one (23505 = already present, e.g. an admin email).
+    const { error: accessErr } = await supabase.from('admin_users').insert({ email, role: 'ops' });
+    setSavingManagerRow(false);
+    if (accessErr && accessErr.code !== '23505') {
+      showToast(`Added, but login not granted: ${accessErr.message}`);
+    } else {
+      showToast('Manager added — assign them events below');
+    }
+    setAddingManagerRow(false);
+    setNewManagerName(''); setNewManagerEmail(''); setNewManagerCommissionInput('35');
+    logAdminAction('manager_create', 'managers', null, { email, name, commission });
+    loadManagersCard();
+  };
+
+  const toggleManagerActive = async (m: { id: string; active: boolean; name: string; email: string }) => {
+    const activating = !m.active;
+    const { error } = await supabase.from('managers').update({ active: activating }).eq('id', m.id);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    // Deactivating MUST also revoke the ops login: an ops user in neither
+    // side-car reverts to the see-all-leads plain-ops view (verified trap —
+    // see multi-marketer.md). Only ever touch a role='ops' row so a manager
+    // who is also an admin never loses admin access.
+    if (m.email) {
+      if (activating) {
+        await supabase.from('admin_users').insert({ email: m.email.toLowerCase(), role: 'ops' }); // 23505 harmless
+      } else {
+        await supabase.from('admin_users').delete().eq('email', m.email.toLowerCase()).eq('role', 'ops');
+      }
+    }
+    showToast(`${m.name} ${activating ? 'reactivated' : 'deactivated'}`);
+    logAdminAction(m.active ? 'manager_deactivate' : 'manager_reactivate', 'managers', m.id, {});
+    loadManagersCard();
+  };
+
+  const markManagerPaid = async (m: { id: string; name: string }, unpaid: number) => {
+    if (unpaid <= 0) return;
+    if (!window.confirm(`Mark ₹${Math.round(unpaid).toLocaleString('en-IN')} as paid out to ${m.name}? This can't be undone.`)) return;
+    const { error } = await supabase
+      .from('manager_sales')
+      .update({ paid_out_at: new Date().toISOString() })
+      .eq('manager_id', m.id)
+      .is('paid_out_at', null);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(`Marked paid for ${m.name}`);
+    logAdminAction('manager_payout', 'manager_sales', m.id, { amount: unpaid });
+    loadManagersCard();
+  };
+
+  // Replace a manager's event assignments with the chosen set (admin-only —
+  // managers cannot assign themselves). Unlike marketer changes this moves
+  // no leads; it only changes scope + who future commission accrues to.
+  const setManagerEvents = async (managerId: string, nextSlugs: string[]) => {
+    const current = adminManagerEvents[managerId] ?? [];
+    const toAdd = nextSlugs.filter(sl => !current.includes(sl));
+    const toRemove = current.filter(sl => !nextSlugs.includes(sl));
+    if (toRemove.length > 0) {
+      const { error } = await supabase.from('event_managers').delete().eq('manager_id', managerId).in('event_slug', toRemove);
+      if (error) { showToast(`Failed: ${error.message}`); return; }
+    }
+    if (toAdd.length > 0) {
+      const { error } = await supabase.from('event_managers').insert(toAdd.map(event_slug => ({ event_slug, manager_id: managerId })));
+      if (error) { showToast(`Failed: ${error.message}`); return; }
+    }
+    setAdminManagerEvents(prev => ({ ...prev, [managerId]: nextSlugs }));
+    logAdminAction('event_managers_set', 'event_managers', null, { manager_id: managerId, event_slugs: nextSlugs });
   };
 
   // Save (or create) a marketer. Admin-only flow from the Marketers tab.
@@ -2557,7 +2708,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); }}>Performance</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); loadManagersCard(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Briefing</button>}
@@ -4107,6 +4258,70 @@ export default function AdminPanel() {
                         </div>
                         <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
                           Changing this list auto-redistributes the event's unconverted leads. Hiring creates their login and assigns them here — the founders get a notification.
+                        </div>
+
+                        {/* Dates & group chats — add new dates (timeline auto-
+                            seeded server-side) and edit group links/availability.
+                            No renames or deletes: those need a founder. */}
+                        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #ededed' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                            Dates & group chats
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {(t.event_dates ?? []).filter(d => d.id && d.start_date).slice().sort((a, b) => a.start_date.localeCompare(b.start_date)).map(d => {
+                              const edit = dateEdits[d.id!] ?? { url: d.whatsapp_group_url ?? '', status: d.status };
+                              const dirty = edit.url !== (d.whatsapp_group_url ?? '') || edit.status !== d.status;
+                              const setEdit = (patch: Partial<{ url: string; status: string }>) =>
+                                setDateEdits(prev => ({ ...prev, [d.id!]: { ...edit, ...patch } }));
+                              return (
+                                <div key={d.id} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 600, fontSize: 13, color: '#111', width: 64 }}>
+                                    {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </span>
+                                  <select value={edit.status} onChange={e => setEdit({ status: e.target.value })}
+                                    style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, background: '#fff' }}>
+                                    <option value="available">Available</option>
+                                    <option value="selling_out">Selling out</option>
+                                    <option value="sold_out">Sold out</option>
+                                  </select>
+                                  <input type="url" placeholder="WhatsApp group link" value={edit.url} onChange={e => setEdit({ url: e.target.value })}
+                                    style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
+                                  {dirty && (
+                                    <button type="button" disabled={savingDate} onClick={() => managerSaveDate(d.id!, edit.url, edit.status)}
+                                      style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
+                                      Save
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {addingDateSlug === slug ? (
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <input type="date" value={newDateValue} onChange={e => setNewDateValue(e.target.value)}
+                                  style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12 }} />
+                                <input type="text" placeholder="Label (optional)" value={newDateLabel} onChange={e => setNewDateLabel(e.target.value)}
+                                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, width: 120 }} />
+                                <input type="url" placeholder="WhatsApp group link (optional)" value={newDateUrl} onChange={e => setNewDateUrl(e.target.value)}
+                                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
+                                <button type="button" disabled={savingDate} onClick={() => managerAddDate(slug)}
+                                  style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
+                                  {savingDate ? 'Adding…' : 'Add'}
+                                </button>
+                                <button type="button" onClick={() => { setAddingDateSlug(null); setNewDateValue(''); setNewDateLabel(''); setNewDateUrl(''); }}
+                                  style={{ padding: '6px 8px', borderRadius: 8, border: 'none', background: 'none', color: '#888', fontSize: 12, cursor: 'pointer' }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setAddingDateSlug(slug)}
+                                style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 99, border: '1.5px dashed #bbb', background: '#fff', color: '#888', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                                + Add date
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+                            New dates copy this event's booking timeline automatically, shifted to the new date. To rename or remove a date, ask a founder — that moves people's bookings.
+                          </div>
                         </div>
                       </div>
                     );
@@ -6041,7 +6256,9 @@ export default function AdminPanel() {
                             const price = num(ev.price_per_ticket);
                             const cost = costEdits[ev.event_id] !== undefined ? Number(costEdits[ev.event_id]) || 0 : num(ev.cost_per_ticket);
                             const commission = ev.commission_per_ticket != null ? num(ev.commission_per_ticket) : 50;
-                            const perTicket = price - cost - commission;
+                            // Manager ₹/ticket — 0 unless the event has an active manager assigned.
+                            const managerCommission = num(ev.manager_commission_per_ticket);
+                            const perTicket = price - cost - commission - managerCommission;
                             const margin = price > 0 ? Math.round((perTicket / price) * 100) : null;
                             const dirty = costEdits[ev.event_id] !== undefined && Number(costEdits[ev.event_id]) !== num(ev.cost_per_ticket);
                             return (
@@ -6302,6 +6519,106 @@ export default function AdminPanel() {
 
             <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
               Sign-ups = people who gave their details / started a booking via their link — for invite events they submitted the application form, for open events they reached checkout; neither has paid yet (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* ── MANAGERS CARD (inside Performance, admin only) ───────────────── */}
+        {tab === 'marketers' && adminRole === 'admin' && (() => {
+          const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const totalUnpaid = Object.keys(adminManagerStats).reduce((sum, k) => sum + adminManagerStats[k].unpaid, 0);
+          const assignableTrips = trips.filter(t => t.slug && t.is_active);
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Managers</div>
+              <span style={{ fontSize: 13, color: '#888' }}>{adminManagers.length} {adminManagers.length === 1 ? 'manager' : 'managers'}</span>
+              <div style={{ flex: 1 }} />
+              <button style={s.btn()} onClick={() => setAddingManagerRow(true)}>+ Add Manager</button>
+            </div>
+
+            <div style={{ background: '#fef3c7', border: '1.5px solid #fde68a', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#92400e', lineHeight: 1.55 }}>
+              <b>How this works:</b> a manager runs their assigned events end-to-end — they see every lead, manage the marketers, hire new ones (you get a notification), and keep dates + group chats current. They earn their ₹/ticket on <b>every</b> fully-paid ticket of their events, whoever sold it, netted from your monthly profit. They log in with the Google email you set here and land on their dashboard.
+            </div>
+
+            {addingManagerRow && (
+              <div style={{ background: '#fff', border: '1.5px solid #e0e0e0', borderRadius: 12, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 110px auto auto', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={s.label}>Name</label>
+                  <input style={s.input} placeholder="Full name" value={newManagerName} onChange={e => setNewManagerName(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>Google email (their login)</label>
+                  <input style={s.input} placeholder="manager@gmail.com" value={newManagerEmail} onChange={e => setNewManagerEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>₹ / ticket</label>
+                  <input style={s.input} type="number" min={0} value={newManagerCommissionInput} onChange={e => setNewManagerCommissionInput(e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} />
+                </div>
+                <button style={s.btn()} disabled={savingManagerRow} onClick={saveNewManager}>{savingManagerRow ? 'Saving…' : 'Save'}</button>
+                <button style={s.outlineBtn} onClick={() => { setAddingManagerRow(false); setNewManagerName(''); setNewManagerEmail(''); setNewManagerCommissionInput('35'); }}>Cancel</button>
+              </div>
+            )}
+
+            {totalUnpaid > 0 && (
+              <div style={{ fontSize: 13, color: '#888' }}>Outstanding to pay out across all managers: <b style={{ color: '#dc2626' }}>{inr(totalUnpaid)}</b></div>
+            )}
+
+            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
+                <thead>
+                  <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <th style={{ textAlign: 'left', padding: '8px 16px' }}>Manager & events</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>₹/ticket</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Paid tickets</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Earned</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid</th>
+                    <th style={{ textAlign: 'right', padding: '8px 16px' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminManagers.length === 0 && <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No managers yet. Add your first one above.</td></tr>}
+                  {adminManagers.map((m) => {
+                    const st = adminManagerStats[m.id] ?? { tickets: 0, earned: 0, unpaid: 0 };
+                    const assigned = adminManagerEvents[m.id] ?? [];
+                    return (
+                      <tr key={m.id} style={{ borderTop: '1px solid #f5f5f0', opacity: m.active ? 1 : 0.5 }}>
+                        <td style={{ padding: '10px 16px' }}>
+                          <div style={{ fontWeight: 700, color: '#111' }}>{m.name}{!m.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>deactivated</span>}</div>
+                          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.email}</div>
+                          {/* Event assignment chips — the whole point of a manager */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                            {assignableTrips.map(t => {
+                              const slug = t.slug!;
+                              const on = assigned.includes(slug);
+                              return (
+                                <button key={slug} type="button" disabled={!m.active}
+                                  onClick={() => setManagerEvents(m.id, on ? assigned.filter(x => x !== slug) : [...assigned, slug])}
+                                  style={{ padding: '4px 10px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#ddd'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#777', fontWeight: 600, fontSize: 11, cursor: m.active ? 'pointer' : 'not-allowed' }}>
+                                  {on ? '✓ ' : ''}{t.title}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>₹{Number(m.commission_amount)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{st.tickets}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>{inr(st.earned)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: st.unpaid > 0 ? '#dc2626' : '#bbb', fontWeight: st.unpaid > 0 ? 700 : 400 }}>{inr(st.unpaid)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {st.unpaid > 0 && <button style={{ ...s.btn('#111'), padding: '4px 10px', fontSize: 12, marginRight: 6 }} onClick={() => markManagerPaid(m, st.unpaid)}>Mark paid</button>}
+                          <button style={s.outlineBtn} onClick={() => toggleManagerActive(m)}>{m.active ? 'Deactivate' : 'Reactivate'}</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
+              Commission accrues automatically when any ticket on their events flips to fully paid (₹/ticket set per manager; the earliest-assigned manager earns it if an event somehow has two). It's subtracted from the profit numbers above. Deactivating also removes their login — required, or they'd see every lead as a plain ops user. "Mark paid" stamps outstanding earnings as settled — the history is kept.
             </div>
           </div>
           );
