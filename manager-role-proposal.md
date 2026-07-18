@@ -212,8 +212,8 @@ a quota system is corporate machinery you don't need at this size).
 | Phase | What | Risk |
 |---|---|---|
 | **1. Foundations** — ✅ **BUILT 2026-07-18** (`supabase/migrations/20260718_manager_role_phase1.sql`, applied to prod; verified by JWT-simulation for admin/ops/marketer/manager/anon personas, test rows deleted) | `managers` + `event_managers` + `manager_sales` tables, `current_manager_id()`, `is_event_manager()`, `manager_owns_application()`, the `is_admin_only()` fix, manager read scope + lead-update scope | Low — additive, but the `is_admin_only()` change needs careful testing so admins/marketers see exactly what they see today |
-| **2. Manager dashboard** | Scoped panel: event cards, all-leads view, doubts, `get_manager_summary()` RPC for marketer ROI | Medium — biggest UI chunk |
-| **3. Team controls** | Add/remove marketers on own events, `manager_add_marketer()` hiring RPC + admin push | Low — DB triggers already do the hard part |
+| **2. Manager dashboard** — ✅ **BUILT 2026-07-18** (`20260718_manager_role_phase2_summary.sql` applied to prod + AdminPanel.tsx; "Manager" tab renamed "Briefing") | Scoped panel: commission banner, stale-lead alert, team table from `get_manager_summary()`, spots-left card, marketer name-tags + filter, doubts | Medium — biggest UI chunk |
+| **3. Team controls** — ✅ **BUILT 2026-07-18** (`20260718_manager_role_phase3_team.sql` applied to prod; hire push verified delivered to all admin devices) | Add/remove marketers on own events (chips), `manager_add_marketer()` hiring RPC + admin push via notify_admin_push | Low — DB triggers already do the hard part |
 | **4. Dates & group chats** | Additive date creation + group-link editing for managers | Low, small |
 | **5. Money** | Accrual trigger, Managers card in Performance, the 3 profit-math subtractions, payout marking | Medium — touches the live-drifted RPC |
 | **6. Scorecard** | Manager metrics on the card + briefing rule | Low, read-only |

@@ -446,6 +446,27 @@ export default function AdminPanel() {
   const [newMarketerCommission, setNewMarketerCommission] = useState('50');
   const [savingMarketer, setSavingMarketer] = useState(false);
 
+  // ── Manager role state ─────────────────────────────────────────────────
+  // currentManager: managers row matching the logged-in ops user's email —
+  // the side-car that makes an ops login a manager (mirrors currentMarketer;
+  // manager wins if someone is somehow both). Managers see ALL leads of
+  // their events via RLS, oversee that event's marketers, and can hire.
+  const [currentManager, setCurrentManager] = useState<{ id: string; name: string; email: string; commission_amount: number } | null>(null);
+  // Per-marketer rollups for the manager's events, from get_manager_summary().
+  const [managerSummary, setManagerSummary] = useState<{
+    marketers: Array<{ marketer_id: string; name: string; active: boolean; leads: number; advance_paid: number; fully_paid: number; stale_leads: number; revenue: number; commission: number }>;
+    unassigned_stale: number;
+  } | null>(null);
+  // Full roster (managers may read it) + which marketers are on each managed
+  // event — powers the team chips. slug → marketer_id[].
+  const [managerRoster, setManagerRoster] = useState<Array<{ id: string; name: string; email: string; active: boolean }>>([]);
+  const [managerEventMarketers, setManagerEventMarketers] = useState<Record<string, string[]>>({});
+  // Inline hire form: which event's form is open + its fields.
+  const [hiringEventSlug, setHiringEventSlug] = useState<string | null>(null);
+  const [newHireEmail, setNewHireEmail] = useState('');
+  const [newHireName, setNewHireName] = useState('');
+  const [savingHire, setSavingHire] = useState(false);
+
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
   const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean }>>([]);
   // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
@@ -613,6 +634,20 @@ export default function AdminPanel() {
       // is a marketer. Drives the commission banner + scopes the People tab
       // to "my leads" via the RLS policy (no client-side filter needed).
       if (role === 'ops') {
+        // Manager side-car first (managers self-select their own row). If the
+        // email is in BOTH side-cars, the manager view wins — they still earn
+        // marketer commission on their own leads via the DB trigger.
+        const { data: mgr } = await supabase
+          .from('managers')
+          .select('id, name, email, commission_amount')
+          .eq('email', userEmail)
+          .eq('active', true)
+          .maybeSingle();
+        setCurrentManager(mgr ?? null);
+        if (mgr) {
+          setCurrentMarketer(null);
+          setMyCommissionStats(null);
+        } else {
         const { data: mk } = await supabase
           .from('call_marketers')
           .select('id, name, email, commission_amount')
@@ -631,9 +666,11 @@ export default function AdminPanel() {
           const total = (sales ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
           setMyCommissionStats({ total, ticketCount: (sales ?? []).length });
         }
+        }
       } else {
         setCurrentMarketer(null);
         setMyCommissionStats(null);
+        setCurrentManager(null);
       }
       // Mark this device as an admin device so the PWA always opens at /admin
       if (role) localStorage.setItem('chaptera_admin_device', '1');
@@ -798,6 +835,79 @@ export default function AdminPanel() {
     })().catch(() => { /* card degrades gracefully if the fetch fails */ });
     return () => { cancelled = true; };
   }, [currentMarketer]);
+
+  // Manager dashboard data: assigned events (reuses the marketer spots-card
+  // state — a session is either marketer or manager, never both), the full
+  // marketer roster + per-event assignments (team chips), and the per-marketer
+  // performance rollups from the scoped SECURITY DEFINER RPC.
+  const loadManagerTeam = async (managerId: string) => {
+    const [{ data: emRows }, { data: rosterRows }, { data: evmkRows }, { data: summary }] = await Promise.all([
+      supabase.from('event_managers').select('event_slug').eq('manager_id', managerId),
+      supabase.from('call_marketers').select('id, name, email, active').order('created_at'),
+      supabase.from('event_marketers').select('event_slug, marketer_id'),
+      supabase.rpc('get_manager_summary'),
+    ]);
+    const slugs = Array.from(new Set((emRows ?? []).map((r: any) => r.event_slug).filter(Boolean)));
+    setMarketerAssignedSlugs(slugs);
+    setManagerRoster((rosterRows ?? []) as any);
+    const map: Record<string, string[]> = {};
+    (evmkRows ?? []).forEach((r: any) => { (map[r.event_slug] ??= []).push(r.marketer_id); });
+    setManagerEventMarketers(map);
+    if (summary) setManagerSummary(summary as any);
+    return slugs;
+  };
+
+  useEffect(() => {
+    if (!currentManager) { setManagerSummary(null); setManagerRoster([]); setManagerEventMarketers({}); return; }
+    let cancelled = false;
+    (async () => {
+      const slugs = await loadManagerTeam(currentManager.id);
+      if (cancelled || slugs.length === 0) return;
+      const entries = await Promise.all(slugs.map(async (slug) => [slug, await fetchEventDateCounts(slug)] as const));
+      if (!cancelled) setMarketerEventDateCounts(Object.fromEntries(entries));
+    })().catch(() => { /* dashboard degrades gracefully if a fetch fails */ });
+    return () => { cancelled = true; };
+  }, [currentManager]);
+
+  // Replace event_marketers rows for one of the manager's events. Same shape
+  // as the admin setEventMarketers, but tracked in managerEventMarketers and
+  // allowed by the manager INSERT/DELETE RLS (own events only). The DB
+  // trigger redistributes leads on every change.
+  const managerSetEventMarketers = async (eventSlug: string, nextIds: string[]) => {
+    const current = managerEventMarketers[eventSlug] ?? [];
+    const toAdd = nextIds.filter(id => !current.includes(id));
+    const toRemove = current.filter(id => !nextIds.includes(id));
+    if (toRemove.length > 0) {
+      const { error } = await supabase.from('event_marketers').delete().eq('event_slug', eventSlug).in('marketer_id', toRemove);
+      if (error) { showToast(`Failed: ${error.message}`); return; }
+    }
+    if (toAdd.length > 0) {
+      const { error } = await supabase.from('event_marketers').insert(toAdd.map(marketer_id => ({ event_slug: eventSlug, marketer_id })));
+      if (error) { showToast(`Failed: ${error.message}`); return; }
+    }
+    setManagerEventMarketers(prev => ({ ...prev, [eventSlug]: nextIds }));
+    logAdminAction('manager_event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
+    // Refresh rollups — redistribution just moved leads between marketers.
+    const { data: summary } = await supabase.rpc('get_manager_summary');
+    if (summary) setManagerSummary(summary as any);
+  };
+
+  // Autonomous hiring (founder-approved): one atomic RPC creates the marketer
+  // row + ops login + event assignment, audit-logs it, and pushes an admin
+  // notification. The server re-validates the caller manages the event.
+  const hireMarketer = async (eventSlug: string) => {
+    const email = newHireEmail.trim().toLowerCase();
+    const name = newHireName.trim();
+    if (!email || !name) { showToast('Email and name required'); return; }
+    setSavingHire(true);
+    const { error } = await supabase.rpc('manager_add_marketer', { p_email: email, p_name: name, p_event_slug: eventSlug });
+    setSavingHire(false);
+    if (error) { showToast(`Hire failed: ${error.message}`); return; }
+    showToast(`${name} hired — they can log in with ${email} now`);
+    setHiringEventSlug(null); setNewHireEmail(''); setNewHireName('');
+    if (currentManager) await loadManagerTeam(currentManager.id);
+    loadApplications(); // their leads may have been redistributed
+  };
 
   // Save (or create) a marketer. Admin-only flow from the Marketers tab.
   const saveNewMarketer = async () => {
@@ -2450,7 +2560,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Manager</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Briefing</button>}
         <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Map</button>
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
@@ -3890,10 +4000,125 @@ export default function AdminPanel() {
                 );
               })()}
 
-              {/* Assigned events + per-date spots left — marketer view only.
+              {/* Manager dashboard — commission banner, stale-lead alert, team
+                  performance (from get_manager_summary) and per-event team
+                  management with autonomous hiring. Manager view only. */}
+              {currentManager && (() => {
+                const fullyPaid   = applications.filter(a => a.status === 'fully_paid').length;
+                const advanceOnly = applications.filter(a => a.status === 'advance_paid').length;
+                const inr = (n: number) => '₹' + Math.round(Number(n || 0)).toLocaleString('en-IN');
+                const staleTotal = (managerSummary?.marketers ?? []).reduce((sum, m) => sum + m.stale_leads, 0) + (managerSummary?.unassigned_stale ?? 0);
+                const managedTrips = trips.filter(t => marketerAssignedSlugs.includes(t.slug ?? ''));
+                const activeRoster = managerRoster.filter(mk => mk.active);
+                const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
+                  <div style={{ flex: 1, minWidth: 0, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 10, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 3 }}>{value}</div>
+                  </div>
+                );
+                return (
+                <div style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Your numbers across all managed events */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Tile label="Advance paid" value={advanceOnly + fullyPaid} />
+                    <Tile label="Fully paid" value={fullyPaid} />
+                    <Tile label="Est. commission" value={inr(fullyPaid * (currentManager.commission_amount || 0))} accent />
+                  </div>
+                  <div style={{ fontSize: 11, color: '#999', paddingLeft: 2 }}>
+                    You earn ₹{currentManager.commission_amount}/ticket on every fully-paid ticket of your events, whoever sells it.
+                  </div>
+
+                  {/* Stale-lead alert — the manager's daily to-do generator */}
+                  {staleTotal > 0 && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#92400e', fontWeight: 600 }}>
+                      ⏳ {staleTotal} lead{staleTotal === 1 ? '' : 's'} waiting 48h+ without progress
+                      {(managerSummary?.unassigned_stale ?? 0) > 0 && <span style={{ fontWeight: 500 }}> ({managerSummary!.unassigned_stale} unassigned)</span>}
+                    </div>
+                  )}
+
+                  {/* Team performance — per-marketer rollups on YOUR events */}
+                  {managerSummary && managerSummary.marketers.length > 0 && (
+                    <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, overflow: 'hidden', fontSize: 13 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', color: '#999', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+                        <span style={{ flex: 1, minWidth: 0 }}>Your Team</span>
+                        <span style={{ width: 44, textAlign: 'right' }}>Leads</span>
+                        <span style={{ width: 40, textAlign: 'right' }}>Paid</span>
+                        <span style={{ width: 44, textAlign: 'right' }}>Stale</span>
+                        <span style={{ width: 76, textAlign: 'right' }}>Revenue</span>
+                      </div>
+                      {managerSummary.marketers.map(m => (
+                        <div key={m.marketer_id} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderTop: '1px solid #f5f5f0' }}>
+                          <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: m.active ? '#111' : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {m.name}{!m.active && <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6 }}>inactive</span>}
+                          </span>
+                          <span style={{ width: 44, textAlign: 'right', color: '#111' }}>{m.leads}</span>
+                          <span style={{ width: 40, textAlign: 'right', color: '#16a34a', fontWeight: 700 }}>{m.fully_paid}</span>
+                          <span style={{ width: 44, textAlign: 'right', color: m.stale_leads > 0 ? '#d97706' : '#bbb', fontWeight: m.stale_leads > 0 ? 700 : 500 }}>{m.stale_leads}</span>
+                          <span style={{ width: 76, textAlign: 'right', color: '#111', fontWeight: 600 }}>{inr(m.revenue)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Team management — add/remove marketers per event, hire new */}
+                  {managedTrips.map(t => {
+                    const slug = t.slug ?? '';
+                    const selected = managerEventMarketers[slug] ?? [];
+                    return (
+                      <div key={slug} style={{ background: '#fafafa', border: '1.5px solid #eee', borderRadius: 12, padding: 14 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                          Marketers on {t.title}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {activeRoster.map(mk => {
+                            const on = selected.includes(mk.id);
+                            return (
+                              <button
+                                key={mk.id}
+                                type="button"
+                                onClick={() => managerSetEventMarketers(slug, on ? selected.filter(x => x !== mk.id) : [...selected, mk.id])}
+                                style={{ padding: '7px 14px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#d7d7d7'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                              >
+                                {on ? '✓ ' : ''}{mk.name}
+                              </button>
+                            );
+                          })}
+                          {hiringEventSlug === slug ? (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', width: '100%', marginTop: 4 }}>
+                              <input type="text" placeholder="Name" value={newHireName} onChange={e => setNewHireName(e.target.value)}
+                                style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, width: 130 }} />
+                              <input type="email" placeholder="Google email (their login)" value={newHireEmail} onChange={e => setNewHireEmail(e.target.value)}
+                                style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, flex: 1, minWidth: 180 }} />
+                              <button type="button" disabled={savingHire} onClick={() => hireMarketer(slug)}
+                                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingHire ? 'wait' : 'pointer' }}>
+                                {savingHire ? 'Hiring…' : 'Hire'}
+                              </button>
+                              <button type="button" onClick={() => { setHiringEventSlug(null); setNewHireEmail(''); setNewHireName(''); }}
+                                style={{ padding: '7px 10px', borderRadius: 8, border: 'none', background: 'none', color: '#888', fontSize: 13, cursor: 'pointer' }}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setHiringEventSlug(slug)}
+                              style={{ padding: '7px 14px', borderRadius: 99, border: '1.5px dashed #bbb', background: '#fff', color: '#888', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                              + Hire new
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
+                          Changing this list auto-redistributes the event's unconverted leads. Hiring creates their login and assigns them here — the founders get a notification.
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                );
+              })()}
+
+              {/* Assigned events + per-date spots left — marketer & manager views.
                   Reserved totals come from the SECURITY DEFINER RPC, so they
                   reflect ALL bookings, not just this marketer's leads. */}
-              {currentMarketer && (() => {
+              {(currentMarketer || currentManager) && (() => {
                 const today = new Date().toISOString().slice(0, 10);
                 const assigned = trips.filter(t =>
                   t.is_active &&
@@ -3951,7 +4176,7 @@ export default function AdminPanel() {
 
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 700, fontSize: 22 }}>{currentMarketer ? 'My Leads' : 'People'}</div>
+                <div style={{ fontWeight: 700, fontSize: 22 }}>{currentMarketer ? 'My Leads' : currentManager ? 'Event Leads' : 'People'}</div>
                 <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
                   {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
                   {peopleMode === 'doubts' && (() => {
@@ -4036,8 +4261,10 @@ export default function AdminPanel() {
                   <option value="fully_paid">Fully Paid</option>
                   <option value="has_doubt">Raised Doubt</option>
                 </select>
-                {/* Marketer filter — admin-only (ops users only ever see their own leads). */}
-                {adminRole === 'admin' && (
+                {/* Marketer filter — admins + managers (a manager sees every
+                    marketer's leads on their events; plain marketers only ever
+                    see their own, so the filter would be pointless). */}
+                {(adminRole === 'admin' || !!currentManager) && (
                   <select
                     value={applicationsMarketerFilter}
                     onChange={e => setApplicationsMarketerFilter(e.target.value)}
@@ -4081,8 +4308,8 @@ export default function AdminPanel() {
                   <option value="all">All Plans</option>
                   {qnaDoubtPlans.map(plan => <option key={plan} value={plan}>{plan}</option>)}
                 </select>
-                {/* Marketer filter — admin-only, mirrors the Call tab. */}
-                {adminRole === 'admin' && (
+                {/* Marketer filter — admins + managers, mirrors the Call tab. */}
+                {(adminRole === 'admin' || !!currentManager) && (
                   <select
                     value={applicationsMarketerFilter}
                     onChange={e => setApplicationsMarketerFilter(e.target.value)}
@@ -4171,8 +4398,8 @@ export default function AdminPanel() {
                             {(reportingDateText !== '-' || submittedAt !== '-') && (
                               <><span style={{ color: '#ccc' }}>·</span><span>{reportingDateText !== '-' ? reportingDateText : submittedAt}</span></>
                             )}
-                            {/* Admin-only: which marketer owns this doubt. */}
-                            {adminRole === 'admin' && submission.assigned_marketer_id && marketerNameById[submission.assigned_marketer_id] && (
+                            {/* Admins + managers: which marketer owns this doubt. */}
+                            {(adminRole === 'admin' || !!currentManager) && submission.assigned_marketer_id && marketerNameById[submission.assigned_marketer_id] && (
                               <span style={{ fontSize: 11, fontWeight: 600, color: '#555', background: '#f3f3f3', borderRadius: 999, padding: '2px 9px' }}>
                                 👤 {marketerNameById[submission.assigned_marketer_id]}
                               </span>
@@ -4294,7 +4521,7 @@ export default function AdminPanel() {
                             </td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
                               <a href={`tel:${app.phone}`} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>{app.phone || '—'}</a>
-                              {adminRole === 'admin' && app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id] && (
+                              {(adminRole === 'admin' || !!currentManager) && app.assigned_marketer_id && marketerNameById[app.assigned_marketer_id] && (
                                 <div title={marketerNameById[app.assigned_marketer_id]} style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500 }}>
                                   {marketerNameById[app.assigned_marketer_id].slice(0, 3)}
                                 </div>
