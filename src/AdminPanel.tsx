@@ -909,9 +909,11 @@ export default function AdminPanel() {
     }
     setManagerEventMarketers(prev => ({ ...prev, [eventSlug]: nextIds }));
     logAdminAction('manager_event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
-    // Refresh rollups — redistribution just moved leads between marketers.
+    // Refresh rollups AND the lead list — the DB trigger just redistributed
+    // leads between marketers, so the name tags on leads changed too.
     const { data: summary } = await supabase.rpc('get_manager_summary');
     if (summary) setManagerSummary(summary as any);
+    loadApplications();
   };
 
   // Autonomous hiring (founder-approved): one atomic RPC creates the marketer
@@ -999,6 +1001,14 @@ export default function AdminPanel() {
     const commission = Number(newManagerCommissionInput) || 35;
     if (!email || !name) { showToast('Email and name required'); return; }
     setSavingManagerRow(true);
+    // An admin email must never gain a side-car row — it would fail
+    // is_admin_only() and silently break that admin's own panel view.
+    const { data: existingAdmin } = await supabase.from('admin_users').select('role').eq('email', email).maybeSingle();
+    if (existingAdmin?.role === 'admin') {
+      setSavingManagerRow(false);
+      showToast('That email is a founder/admin login — it cannot also be a manager');
+      return;
+    }
     const { error } = await supabase.from('managers').insert({ email, name, commission_amount: commission });
     if (error) { setSavingManagerRow(false); showToast(`Failed: ${error.message}`); return; }
     // Login gate — same pattern as marketers: add an 'ops' row, never touch
@@ -1076,6 +1086,14 @@ export default function AdminPanel() {
     const commission = Number(newMarketerCommission) || 50;
     if (!email || !name) { showToast('Email and name required'); return; }
     setSavingMarketer(true);
+    // Same guard as Add Manager: an admin email with a side-car row fails
+    // is_admin_only() and silently loses the all-leads admin view.
+    const { data: existingAdmin } = await supabase.from('admin_users').select('role').eq('email', email).maybeSingle();
+    if (existingAdmin?.role === 'admin') {
+      setSavingMarketer(false);
+      showToast('That email is a founder/admin login — it cannot also be a marketer');
+      return;
+    }
     const { error } = await supabase.from('call_marketers').insert({ email, name, commission_amount: commission });
     if (error) { setSavingMarketer(false); showToast(`Failed: ${error.message}`); return; }
     // Grant admin-panel login: an 'ops' row in admin_users is the master gate a
