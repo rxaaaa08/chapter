@@ -250,21 +250,71 @@ serve(async (req) => {
     const notif = buildNotification(type, record);
     if (!notif) return new Response(`unknown type: ${type}`, { status: 200 });
 
-    // Fetch all admin subscriptions
-    const { data: subs, error: subsErr } = await supabase
+    // Fetch all subscriptions. email = device owner; NULL = legacy founder
+    // device (subscribed before the column existed) → treated as admin.
+    const { data: allSubs, error: subsErr } = await supabase
       .from('admin_push_subscriptions')
-      .select('endpoint, p256dh, auth');
+      .select('endpoint, p256dh, auth, email');
 
     if (subsErr) {
       console.error('fetch subs error:', subsErr);
       return new Response('db error', { status: 500 });
     }
-    if (!subs || subs.length === 0) {
+    if (!allSubs || allSubs.length === 0) {
       console.log('no admin subscriptions');
       return new Response('no subscriptions', { status: 200 });
     }
 
-    console.log(`broadcasting to ${subs.length} admin device(s)`);
+    // ── Per-role routing ─────────────────────────────────────────────────────
+    // Founders (role=admin / legacy NULL-email devices) receive everything.
+    // Staff receive only their-level activity:
+    //   managers  → events they manage (record.event_slug)
+    //   marketers → leads assigned to them (record.assigned_marketer_id)
+    // Every other type (manager_brief = daily brief / hire alerts / weekly
+    // scorecards, plus unknown types) is founder-only.
+    const STAFF_TYPES = new Set(['new_application', 'advance_paid', 'fully_paid', 'new_booking_doubt', 'new_invite_doubt']);
+    const staffEmails = Array.from(new Set(
+      allSubs.map(s => (s.email ?? '').toLowerCase()).filter(e => e.length > 0),
+    ));
+
+    let adminEmails = new Set<string>();
+    let managerEvents = new Map<string, Set<string>>();  // email → managed slugs
+    let marketerIdByEmail = new Map<string, string>();
+    if (staffEmails.length > 0) {
+      const [{ data: adminRows }, { data: mgrRows }, { data: mkRows }] = await Promise.all([
+        supabase.from('admin_users').select('email, role').in('email', staffEmails),
+        supabase.from('managers').select('id, email, active, event_managers(event_slug)').in('email', staffEmails),
+        supabase.from('call_marketers').select('id, email, active').in('email', staffEmails),
+      ]);
+      adminEmails = new Set((adminRows ?? []).filter((r: any) => r.role === 'admin').map((r: any) => String(r.email).toLowerCase()));
+      (mgrRows ?? []).forEach((m: any) => {
+        if (!m.active) return;
+        managerEvents.set(String(m.email).toLowerCase(),
+          new Set(((m.event_managers ?? []) as any[]).map(em => String(em.event_slug))));
+      });
+      (mkRows ?? []).forEach((m: any) => { if (m.active) marketerIdByEmail.set(String(m.email).toLowerCase(), String(m.id)); });
+    }
+
+    const eventSlug = String(record.event_slug ?? '');
+    const assignedMarketer = String(record.assigned_marketer_id ?? '');
+    const subs = allSubs.filter(s => {
+      const email = (s.email ?? '').toLowerCase();
+      if (!email) return true;                       // legacy founder device
+      if (adminEmails.has(email)) return true;       // founder-owned device
+      if (!STAFF_TYPES.has(type)) return false;      // founder-only content
+      const managed = managerEvents.get(email);
+      if (managed && eventSlug && managed.has(eventSlug)) return true;
+      const mkId = marketerIdByEmail.get(email);
+      if (mkId && assignedMarketer && mkId === assignedMarketer) return true;
+      return false;
+    });
+
+    if (subs.length === 0) {
+      console.log(`no matching devices for type=${type} (of ${allSubs.length} total)`);
+      return new Response('no matching subscriptions', { status: 200 });
+    }
+
+    console.log(`sending type=${type} to ${subs.length}/${allSubs.length} device(s)`);
 
     const results = await Promise.allSettled(subs.map(s => sendWebPush(s, notif)));
 

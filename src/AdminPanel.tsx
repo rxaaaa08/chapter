@@ -321,11 +321,15 @@ export default function AdminPanel() {
       });
       const subJson = sub.toJSON() as any;
       const label = notifLabel.trim() || (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? 'iOS Device' : navigator.userAgent.includes('Android') ? 'Android Device' : 'Desktop');
+      // Stamp the owner so send-admin-push can route: staff devices get
+      // their-level pushes only, admin/legacy (null email) devices get all.
+      const { data: { session: pushSession } } = await supabase.auth.getSession();
       const { error: saveError } = await supabase.from('admin_push_subscriptions').upsert({
         label,
         endpoint: sub.endpoint,
         p256dh: subJson.keys.p256dh,
         auth: subJson.keys.auth,
+        email: pushSession?.user?.email?.toLowerCase() ?? null,
       }, { onConflict: 'endpoint' });
       if (saveError) {
         setNotifStatus('error');
@@ -1076,7 +1080,14 @@ export default function AdminPanel() {
     }
     if (toAdd.length > 0) {
       const { error } = await supabase.from('event_managers').insert(toAdd.map(event_slug => ({ event_slug, manager_id: managerId })));
-      if (error) { showToast(`Failed: ${error.message}`); return; }
+      if (error) {
+        // One manager per event, enforced by the DB (uq_event_managers_event).
+        showToast(error.code === '23505'
+          ? 'That event already has a manager — remove it from them first'
+          : `Failed: ${error.message}`);
+        loadManagersCard(); // resync chips with DB truth
+        return;
+      }
     }
     setAdminManagerEvents(prev => ({ ...prev, [managerId]: nextSlugs }));
     logAdminAction('event_managers_set', 'event_managers', null, { manager_id: managerId, event_slugs: nextSlugs });
