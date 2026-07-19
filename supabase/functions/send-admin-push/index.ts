@@ -250,8 +250,12 @@ serve(async (req) => {
     const notif = buildNotification(type, record);
     if (!notif) return new Response(`unknown type: ${type}`, { status: 200 });
 
-    // Fetch all subscriptions. email = device owner; NULL = legacy founder
-    // device (subscribed before the column existed) → treated as admin.
+    // Fetch all subscriptions. email = device owner. NULL = unknown owner
+    // (pre-column subscription or stale cached app) → gets NOTHING: most
+    // legacy devices turned out to be MARKETER phones, so defaulting NULL to
+    // founder-level would leak all payments + briefs to staff. Known founder
+    // devices were stamped 2026-07-19; unknown owners just re-subscribe from
+    // Settings (the current app stamps their email).
     const { data: allSubs, error: subsErr } = await supabase
       .from('admin_push_subscriptions')
       .select('endpoint, p256dh, auth, email');
@@ -299,7 +303,7 @@ serve(async (req) => {
     const assignedMarketer = String(record.assigned_marketer_id ?? '');
     const subs = allSubs.filter(s => {
       const email = (s.email ?? '').toLowerCase();
-      if (!email) return true;                       // legacy founder device
+      if (!email) return false;                      // unknown owner — no pushes
       if (adminEmails.has(email)) return true;       // founder-owned device
       if (!STAFF_TYPES.has(type)) return false;      // founder-only content
       const managed = managerEvents.get(email);

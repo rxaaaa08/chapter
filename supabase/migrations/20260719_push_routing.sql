@@ -6,9 +6,14 @@
 -- and the Settings tab lets any ops user subscribe.
 --
 -- This migration is the DB half:
---   1. admin_push_subscriptions.email — who owns the device. NULL = legacy
---      rows (the founders' existing devices) which the edge function treats
---      as admin. New subscriptions stamp the login email client-side.
+--   1. admin_push_subscriptions.email — who owns the device. NULL = unknown
+--      owner, which the edge function SKIPS (founder correction 2026-07-19:
+--      4 of the 5 legacy devices were MARKETER phones, so NULL must never
+--      default to founder-level). Identifiable legacy rows were stamped by
+--      label→roster match (Krutesh→founder, Thinukshan, Arun); the two
+--      anonymous ones (Desktop, Android Device) stay NULL and go silent
+--      until their owners re-subscribe from Settings. New subscriptions
+--      stamp the login email client-side.
 --   2. The push trigger payloads gain assigned_marketer_id (and a resolved
 --      event_slug for booking doubts) so the edge function can route.
 -- The routing itself lives in supabase/functions/send-admin-push (same
