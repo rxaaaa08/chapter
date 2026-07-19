@@ -224,6 +224,18 @@ tab to **"Briefing"** — approved, **(c)** managers see lead phone numbers — 
 **(d)** hiring is **fully autonomous with an admin push notification** (no approval
 step).
 
+**Clarity round — CONFIRMED 2026-07-19** (all built & DB-applied): **(e)** all real
+money flows through PayU — paid statuses are now trigger-guarded to the payment
+system + founders only (manual staff flips blocked); **(f)** refunds essentially
+never happen — commission ledgers stay append-only, no cancel flow; **(g)** exactly
+**one manager per event**, enforced by a unique index (handover = remove, then add);
+**(h)** push notifications are role-scoped: founders get everything, managers get
+their events' activity, marketers their own leads' activity — briefs/scorecards
+stay founder-only (requires a one-time `send-admin-push` redeploy). **(i)** Dual-role
+(marketer+manager, e.g. Sri Varthini) is supported on ONE email with a
+My Leads / Team Leads scope switch; both commissions accrue (₹85 on own closes of
+managed events); she stays in the marketer rotation on her own events.
+
 ---
 
 ## 9. Risks & gotchas register
