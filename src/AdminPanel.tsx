@@ -483,6 +483,9 @@ export default function AdminPanel() {
   // event_dates.id, + the add-date form. Writes go through the SECURITY
   // DEFINER RPCs (additive dates only; url/status edits only).
   const [dateEdits, setDateEdits] = useState<Record<string, { url: string; status: string }>>({});
+  // Which managed event is expanded in the manager's Plans tab (greyed admin
+  // editor + live dates section).
+  const [managerOpenSlug, setManagerOpenSlug] = useState<string | null>(null);
   const [addingDateSlug, setAddingDateSlug] = useState<string | null>(null);
   const [newDateValue, setNewDateValue] = useState('');
   const [newDateLabel, setNewDateLabel] = useState('');
@@ -2749,10 +2752,10 @@ export default function AdminPanel() {
           PayU: {payuMode === 'live' ? 'LIVE' : payuMode === 'test' ? 'TEST' : payuMode === 'loading' ? '…' : '?'}
         </div>
         <div style={{ flex: 1 }} />
-        {adminRole === 'admin' && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
+        {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {adminRole === 'admin' && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); loadMarketersData(); loadAffiliatesData(); loadManagersCard(); }}>Performance</button>}
+        {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); if (adminRole === 'admin') { loadMarketersData(); loadAffiliatesData(); loadManagersCard(); } else if (currentManager) { loadManagerTeam(currentManager.id); } }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Briefing</button>}
@@ -2779,7 +2782,128 @@ export default function AdminPanel() {
         )}
 
         {/* ── TRIPS TAB ────────────────────────────────────────────────────── */}
-        {!loading && tab === 'trips' && (
+        {/* ── PLANS TAB, MANAGER VIEW ─────────────────────────────────────────
+            Same admin editor, read-only: the whole form renders greyed and
+            untouchable, with a live Dates & group chats section on top — the
+            only thing a manager edits here (via the guarded RPCs). Only their
+            managed events appear. */}
+        {!loading && tab === 'trips' && adminRole !== 'admin' && currentManager && (() => {
+          const managedTrips = trips.filter(t => managerAssignedSlugs.includes(t.slug ?? ''));
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 22 }}>Your Plans</div>
+            {managedTrips.length === 0 && (
+              <div style={{ color: '#888', fontSize: 14 }}>No events assigned to you yet — ask a founder.</div>
+            )}
+            {managedTrips.map(t => {
+              const slug = t.slug ?? '';
+              const open = managerOpenSlug === slug;
+              const dates = (t.event_dates ?? []).filter(d => d.start_date).slice().sort((a, b) => a.start_date.localeCompare(b.start_date));
+              return (
+                <div key={slug} style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 14, padding: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 700, fontSize: 16, color: '#111' }}>{t.title}</div>
+                    <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '3px 9px', background: t.is_active ? '#f0fdf4' : '#f5f5f5', color: t.is_active ? '#15803d' : '#999', border: '1px solid ' + (t.is_active ? '#bbf7d0' : '#e5e5e5') }}>
+                      {t.is_active ? 'LIVE' : 'HIDDEN'}
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <button type="button" onClick={() => setManagerOpenSlug(open ? null : slug)}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#444' }}>
+                      {open ? 'Close' : 'Open'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: 13, color: '#666', marginTop: 6 }}>
+                    {dates.map(d => (
+                      <span key={d.start_date} style={{ whiteSpace: 'nowrap' }}>
+                        <b style={{ color: '#111' }}>{new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</b>
+                        {' '}{statusLabel[d.status]}{d.whatsapp_group_url ? ' · 💬' : ''}
+                      </span>
+                    ))}
+                  </div>
+
+                  {open && (
+                    <>
+                      {/* Dates & group chats — the manager's editable slice. */}
+                      <div style={{ marginTop: 16, padding: 14, background: '#fafafa', border: '1.5px solid #eee', borderRadius: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                          Dates & group chats — you can edit these
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {dates.filter(d => d.id).map(d => {
+                            const edit = dateEdits[d.id!] ?? { url: d.whatsapp_group_url ?? '', status: d.status };
+                            const dirty = edit.url !== (d.whatsapp_group_url ?? '') || edit.status !== d.status;
+                            const setEdit = (patch: Partial<{ url: string; status: string }>) =>
+                              setDateEdits(prev => ({ ...prev, [d.id!]: { ...edit, ...patch } }));
+                            return (
+                              <div key={d.id} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 600, fontSize: 13, color: '#111', width: 64 }}>
+                                  {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </span>
+                                <select value={edit.status} onChange={e => setEdit({ status: e.target.value })}
+                                  style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, background: '#fff' }}>
+                                  <option value="available">Available</option>
+                                  <option value="selling_out">Selling out</option>
+                                  <option value="sold_out">Sold out</option>
+                                </select>
+                                <input type="url" placeholder="WhatsApp group link" value={edit.url} onChange={e => setEdit({ url: e.target.value })}
+                                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
+                                {dirty && (
+                                  <button type="button" disabled={savingDate} onClick={() => managerSaveDate(d.id!, edit.url, edit.status)}
+                                    style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
+                                    Save
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {addingDateSlug === slug ? (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <input type="date" value={newDateValue} onChange={e => setNewDateValue(e.target.value)}
+                                style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12 }} />
+                              <input type="text" placeholder="Label (optional)" value={newDateLabel} onChange={e => setNewDateLabel(e.target.value)}
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, width: 120 }} />
+                              <input type="url" placeholder="WhatsApp group link (optional)" value={newDateUrl} onChange={e => setNewDateUrl(e.target.value)}
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
+                              <button type="button" disabled={savingDate} onClick={() => managerAddDate(slug)}
+                                style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
+                                {savingDate ? 'Adding…' : 'Add'}
+                              </button>
+                              <button type="button" onClick={() => { setAddingDateSlug(null); setNewDateValue(''); setNewDateLabel(''); setNewDateUrl(''); }}
+                                style={{ padding: '6px 8px', borderRadius: 8, border: 'none', background: 'none', color: '#888', fontSize: 12, cursor: 'pointer' }}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setAddingDateSlug(slug)}
+                              style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 99, border: '1.5px dashed #bbb', background: '#fff', color: '#888', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                              + Add date
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+                          New dates copy this event's booking timeline automatically, shifted to the new date. To rename or remove a date, ask a founder.
+                        </div>
+                      </div>
+
+                      {/* The full event editor, read-only for reference. */}
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                          Event setup — view only (founders edit this)
+                        </div>
+                        <div style={{ opacity: 0.55, pointerEvents: 'none', userSelect: 'none' }} aria-disabled="true">
+                          <TripForm trip={t} onChange={() => {}} onSave={() => {}} onCancel={() => {}} saving={false} s={s} />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          );
+        })()}
+
+        {!loading && tab === 'trips' && adminRole === 'admin' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -4227,186 +4351,17 @@ export default function AdminPanel() {
                 );
               })()}
 
-              {/* Manager dashboard — commission banner, stale-lead alert, team
-                  performance (from get_manager_summary) and per-event team
-                  management with autonomous hiring. Team scope only (which is
-                  the only scope a pure manager has). Counts cover managed
-                  events — a dual-role user's own leads on OTHER events belong
-                  to their marketer hat, not this cockpit. */}
+              {/* Manager stale-lead alert — the one cockpit piece that stays on
+                  People (it's the daily to-do generator). Banner + team table
+                  moved to the manager's Performance tab; dates moved to Plans. */}
               {currentManager && effScope === 'team' && (() => {
-                const teamApps = applications.filter(a => managerAssignedSlugs.includes(a.event_slug));
-                const fullyPaid   = teamApps.filter(a => a.status === 'fully_paid').length;
-                const advanceOnly = teamApps.filter(a => a.status === 'advance_paid').length;
-                const inr = (n: number) => '₹' + Math.round(Number(n || 0)).toLocaleString('en-IN');
                 const staleTotal = (managerSummary?.marketers ?? []).reduce((sum, m) => sum + m.stale_leads, 0) + (managerSummary?.unassigned_stale ?? 0);
-                const managedTrips = trips.filter(t => managerAssignedSlugs.includes(t.slug ?? ''));
-                const activeRoster = managerRoster.filter(mk => mk.active);
-                const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
-                  <div style={{ flex: 1, minWidth: 0, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 10, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 3 }}>{value}</div>
-                  </div>
-                );
+                if (staleTotal === 0) return null;
                 return (
-                <div style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {/* Your numbers across all managed events */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Tile label="Advance paid" value={advanceOnly + fullyPaid} />
-                    <Tile label="Fully paid" value={fullyPaid} />
-                    <Tile label="Est. commission" value={inr(fullyPaid * (currentManager.commission_amount || 0))} accent />
+                  <div style={{ marginBottom: 18, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#92400e', fontWeight: 600 }}>
+                    ⏳ {staleTotal} lead{staleTotal === 1 ? '' : 's'} waiting 48h+ without progress
+                    {(managerSummary?.unassigned_stale ?? 0) > 0 && <span style={{ fontWeight: 500 }}> ({managerSummary!.unassigned_stale} unassigned)</span>}
                   </div>
-                  <div style={{ fontSize: 11, color: '#999', paddingLeft: 2 }}>
-                    You earn ₹{currentManager.commission_amount}/ticket on every fully-paid ticket of your events, whoever sells it.
-                  </div>
-
-                  {/* Stale-lead alert — the manager's daily to-do generator */}
-                  {staleTotal > 0 && (
-                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#92400e', fontWeight: 600 }}>
-                      ⏳ {staleTotal} lead{staleTotal === 1 ? '' : 's'} waiting 48h+ without progress
-                      {(managerSummary?.unassigned_stale ?? 0) > 0 && <span style={{ fontWeight: 500 }}> ({managerSummary!.unassigned_stale} unassigned)</span>}
-                    </div>
-                  )}
-
-                  {/* Team performance — per-marketer rollups on YOUR events */}
-                  {managerSummary && managerSummary.marketers.length > 0 && (
-                    <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, overflow: 'hidden', fontSize: 13 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', color: '#999', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
-                        <span style={{ flex: 1, minWidth: 0 }}>Your Team</span>
-                        <span style={{ width: 44, textAlign: 'right' }}>Leads</span>
-                        <span style={{ width: 40, textAlign: 'right' }}>Paid</span>
-                        <span style={{ width: 44, textAlign: 'right' }}>Stale</span>
-                        <span style={{ width: 76, textAlign: 'right' }}>Revenue</span>
-                      </div>
-                      {managerSummary.marketers.map(m => (
-                        <div key={m.marketer_id} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderTop: '1px solid #f5f5f0' }}>
-                          <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: m.active ? '#111' : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {m.name}{!m.active && <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6 }}>inactive</span>}
-                          </span>
-                          <span style={{ width: 44, textAlign: 'right', color: '#111' }}>{m.leads}</span>
-                          <span style={{ width: 40, textAlign: 'right', color: '#16a34a', fontWeight: 700 }}>{m.fully_paid}</span>
-                          <span style={{ width: 44, textAlign: 'right', color: m.stale_leads > 0 ? '#d97706' : '#bbb', fontWeight: m.stale_leads > 0 ? 700 : 500 }}>{m.stale_leads}</span>
-                          <span style={{ width: 76, textAlign: 'right', color: '#111', fontWeight: 600 }}>{inr(m.revenue)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Team management — add/remove marketers per event, hire new */}
-                  {managedTrips.map(t => {
-                    const slug = t.slug ?? '';
-                    const selected = managerEventMarketers[slug] ?? [];
-                    return (
-                      <div key={slug} style={{ background: '#fafafa', border: '1.5px solid #eee', borderRadius: 12, padding: 14 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                          Marketers on {t.title}
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {activeRoster.map(mk => {
-                            const on = selected.includes(mk.id);
-                            return (
-                              <button
-                                key={mk.id}
-                                type="button"
-                                onClick={() => managerSetEventMarketers(slug, on ? selected.filter(x => x !== mk.id) : [...selected, mk.id])}
-                                style={{ padding: '7px 14px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#d7d7d7'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-                              >
-                                {on ? '✓ ' : ''}{mk.name}
-                              </button>
-                            );
-                          })}
-                          {hiringEventSlug === slug ? (
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', width: '100%', marginTop: 4 }}>
-                              <input type="text" placeholder="Name" value={newHireName} onChange={e => setNewHireName(e.target.value)}
-                                style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, width: 130 }} />
-                              <input type="email" placeholder="Google email (their login)" value={newHireEmail} onChange={e => setNewHireEmail(e.target.value)}
-                                style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, flex: 1, minWidth: 180 }} />
-                              <button type="button" disabled={savingHire} onClick={() => hireMarketer(slug)}
-                                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingHire ? 'wait' : 'pointer' }}>
-                                {savingHire ? 'Hiring…' : 'Hire'}
-                              </button>
-                              <button type="button" onClick={() => { setHiringEventSlug(null); setNewHireEmail(''); setNewHireName(''); }}
-                                style={{ padding: '7px 10px', borderRadius: 8, border: 'none', background: 'none', color: '#888', fontSize: 13, cursor: 'pointer' }}>
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button type="button" onClick={() => setHiringEventSlug(slug)}
-                              style={{ padding: '7px 14px', borderRadius: 99, border: '1.5px dashed #bbb', background: '#fff', color: '#888', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                              + Hire new
-                            </button>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
-                          Changing this list auto-redistributes the event's unconverted leads. Hiring creates their login and assigns them here — the founders get a notification.
-                        </div>
-
-                        {/* Dates & group chats — add new dates (timeline auto-
-                            seeded server-side) and edit group links/availability.
-                            No renames or deletes: those need a founder. */}
-                        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #ededed' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                            Dates & group chats
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {(t.event_dates ?? []).filter(d => d.id && d.start_date).slice().sort((a, b) => a.start_date.localeCompare(b.start_date)).map(d => {
-                              const edit = dateEdits[d.id!] ?? { url: d.whatsapp_group_url ?? '', status: d.status };
-                              const dirty = edit.url !== (d.whatsapp_group_url ?? '') || edit.status !== d.status;
-                              const setEdit = (patch: Partial<{ url: string; status: string }>) =>
-                                setDateEdits(prev => ({ ...prev, [d.id!]: { ...edit, ...patch } }));
-                              return (
-                                <div key={d.id} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <span style={{ fontWeight: 600, fontSize: 13, color: '#111', width: 64 }}>
-                                    {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                  </span>
-                                  <select value={edit.status} onChange={e => setEdit({ status: e.target.value })}
-                                    style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, background: '#fff' }}>
-                                    <option value="available">Available</option>
-                                    <option value="selling_out">Selling out</option>
-                                    <option value="sold_out">Sold out</option>
-                                  </select>
-                                  <input type="url" placeholder="WhatsApp group link" value={edit.url} onChange={e => setEdit({ url: e.target.value })}
-                                    style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
-                                  {dirty && (
-                                    <button type="button" disabled={savingDate} onClick={() => managerSaveDate(d.id!, edit.url, edit.status)}
-                                      style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
-                                      Save
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                            {addingDateSlug === slug ? (
-                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <input type="date" value={newDateValue} onChange={e => setNewDateValue(e.target.value)}
-                                  style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12 }} />
-                                <input type="text" placeholder="Label (optional)" value={newDateLabel} onChange={e => setNewDateLabel(e.target.value)}
-                                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, width: 120 }} />
-                                <input type="url" placeholder="WhatsApp group link (optional)" value={newDateUrl} onChange={e => setNewDateUrl(e.target.value)}
-                                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
-                                <button type="button" disabled={savingDate} onClick={() => managerAddDate(slug)}
-                                  style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
-                                  {savingDate ? 'Adding…' : 'Add'}
-                                </button>
-                                <button type="button" onClick={() => { setAddingDateSlug(null); setNewDateValue(''); setNewDateLabel(''); setNewDateUrl(''); }}
-                                  style={{ padding: '6px 8px', borderRadius: 8, border: 'none', background: 'none', color: '#888', fontSize: 12, cursor: 'pointer' }}>
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button type="button" onClick={() => setAddingDateSlug(slug)}
-                                style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 99, border: '1.5px dashed #bbb', background: '#fff', color: '#888', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                                + Add date
-                              </button>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-                            New dates copy this event's booking timeline automatically, shifted to the new date. To rename or remove a date, ask a founder — that moves people's bookings.
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
                 );
               })()}
 
@@ -5037,7 +4992,7 @@ export default function AdminPanel() {
         })()}
 
         {/* ── PLANS TAB: GLOBAL MESSAGES ───────────────────────────────────── */}
-        {!loading && tab === 'trips' && (
+        {!loading && tab === 'trips' && adminRole === 'admin' && (
           <>
             <CollapsibleSection title="Edit Global Messages" defaultOpen={false}>
             <div style={{ color: '#888', fontSize: 14, marginBottom: 20 }}>
@@ -6267,6 +6222,138 @@ export default function AdminPanel() {
                 </>
               )}
             </div>
+          );
+        })()}
+
+        {/* ── PERFORMANCE TAB, MANAGER VIEW ──────────────────────────────────
+            Founder decision: managers see marketer ROI + team management here
+            and NONE of the money cards (profit/forecast/creators stay
+            founder-only; the RPC behind those returns NULL to non-admins
+            anyway). Data comes from the scoped get_manager_summary. */}
+        {tab === 'marketers' && adminRole !== 'admin' && currentManager && (() => {
+          const inr = (n: number) => '₹' + Math.round(Number(n || 0)).toLocaleString('en-IN');
+          const teamApps = applications.filter(a => managerAssignedSlugs.includes(a.event_slug));
+          const fullyPaid   = teamApps.filter(a => a.status === 'fully_paid').length;
+          const advanceOnly = teamApps.filter(a => a.status === 'advance_paid').length;
+          const managedTrips = trips.filter(t => managerAssignedSlugs.includes(t.slug ?? ''));
+          const activeRoster = managerRoster.filter(mk => mk.active);
+          const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
+            <div style={{ flex: 1, minWidth: 0, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: 10, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 3 }}>{value}</div>
+            </div>
+          );
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
+
+            {/* Your earnings across managed events */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Tile label="Advance paid" value={advanceOnly + fullyPaid} />
+              <Tile label="Fully paid" value={fullyPaid} />
+              <Tile label="Est. commission" value={inr(fullyPaid * (currentManager.commission_amount || 0))} accent />
+            </div>
+            <div style={{ fontSize: 11, color: '#999', marginTop: -10 }}>
+              You earn ₹{currentManager.commission_amount}/ticket on every fully-paid ticket of your events, whoever sells it.
+            </div>
+
+            {/* Marketer ROI — same table style the founders see, scoped to your events */}
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Marketer ROI</div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Your team's leads, conversions and revenue on your events. Stale = pending/invited leads sitting 48h+ without progress.</div>
+              <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
+                  <thead>
+                    <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      <th style={{ textAlign: 'left', padding: '8px 16px' }}>Marketer</th>
+                      <th style={{ textAlign: 'right', padding: '8px 12px' }}>Leads</th>
+                      <th style={{ textAlign: 'right', padding: '8px 12px' }}>Sold</th>
+                      <th style={{ textAlign: 'right', padding: '8px 12px' }}>Conv</th>
+                      <th style={{ textAlign: 'right', padding: '8px 12px' }}>Stale</th>
+                      <th style={{ textAlign: 'right', padding: '8px 12px' }}>Revenue</th>
+                      <th style={{ textAlign: 'right', padding: '8px 16px' }}>Commission</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(managerSummary?.marketers ?? []).length === 0 && (
+                      <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No marketers with leads on your events yet.</td></tr>
+                    )}
+                    {(managerSummary?.marketers ?? []).map(m => {
+                      const conv = m.leads > 0 ? Math.round((m.fully_paid / m.leads) * 100) : null;
+                      return (
+                        <tr key={m.marketer_id} style={{ borderTop: '1px solid #f5f5f0', opacity: m.active ? 1 : 0.5 }}>
+                          <td style={{ padding: '10px 16px', fontWeight: 600, color: '#111' }}>{m.name}{!m.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>inactive</span>}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{m.leads}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: 700 }}>{m.fully_paid}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{conv == null ? '—' : `${conv}%`}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: m.stale_leads > 0 ? '#d97706' : '#bbb', fontWeight: m.stale_leads > 0 ? 700 : 400 }}>{m.stale_leads}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{inr(m.revenue)}</td>
+                          <td style={{ padding: '10px 16px', textAlign: 'right', color: '#555' }}>{inr(m.commission)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Team management — add/remove marketers per event, hire new */}
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Your Team</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {managedTrips.map(t => {
+                  const slug = t.slug ?? '';
+                  const selected = managerEventMarketers[slug] ?? [];
+                  return (
+                    <div key={slug} style={{ background: '#fafafa', border: '1.5px solid #eee', borderRadius: 12, padding: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                        Marketers on {t.title}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {activeRoster.map(mk => {
+                          const on = selected.includes(mk.id);
+                          return (
+                            <button
+                              key={mk.id}
+                              type="button"
+                              onClick={() => managerSetEventMarketers(slug, on ? selected.filter(x => x !== mk.id) : [...selected, mk.id])}
+                              style={{ padding: '7px 14px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#d7d7d7'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                            >
+                              {on ? '✓ ' : ''}{mk.name}
+                            </button>
+                          );
+                        })}
+                        {hiringEventSlug === slug ? (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', width: '100%', marginTop: 4 }}>
+                            <input type="text" placeholder="Name" value={newHireName} onChange={e => setNewHireName(e.target.value)}
+                              style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, width: 130 }} />
+                            <input type="email" placeholder="Google email (their login)" value={newHireEmail} onChange={e => setNewHireEmail(e.target.value)}
+                              style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, flex: 1, minWidth: 180 }} />
+                            <button type="button" disabled={savingHire} onClick={() => hireMarketer(slug)}
+                              style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingHire ? 'wait' : 'pointer' }}>
+                              {savingHire ? 'Hiring…' : 'Hire'}
+                            </button>
+                            <button type="button" onClick={() => { setHiringEventSlug(null); setNewHireEmail(''); setNewHireName(''); }}
+                              style={{ padding: '7px 10px', borderRadius: 8, border: 'none', background: 'none', color: '#888', fontSize: 13, cursor: 'pointer' }}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => setHiringEventSlug(slug)}
+                            style={{ padding: '7px 14px', borderRadius: 99, border: '1.5px dashed #bbb', background: '#fff', color: '#888', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                            + Hire new
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
+                        Changing this list auto-redistributes the event's unconverted leads. Hiring creates their login and assigns them here — the founders get a notification.
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
           );
         })()}
 
