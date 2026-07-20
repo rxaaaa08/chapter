@@ -950,8 +950,9 @@ export default function AdminPanel() {
   };
 
   // Manager phase 4: save a date's group link / availability. Only these two
-  // fields — the RPC enforces it server-side (no renames, no deletes).
-  const managerSaveDate = async (dateId: string, url: string, status: string) => {
+  // fields — the RPC enforces it server-side (no renames, no deletes). Pass
+  // status null for auto-capacity events (the RPC keeps the existing value).
+  const managerSaveDate = async (dateId: string, url: string, status: string | null) => {
     setSavingDate(true);
     const { error } = await supabase.rpc('manager_update_event_date', { p_date_id: dateId, p_whatsapp_group_url: url, p_status: status });
     setSavingDate(false);
@@ -2799,6 +2800,11 @@ export default function AdminPanel() {
               const slug = t.slug ?? '';
               const open = managerOpenSlug === slug;
               const dates = (t.event_dates ?? []).filter(d => d.start_date).slice().sort((a, b) => a.start_date.localeCompare(b.start_date));
+              // Mirrors the admin editor's isCapEligible: invite + open events
+              // derive availability automatically from capacity (sold-out when
+              // full, "filling fast" at the threshold) — no manual status.
+              // Only community/whatsapp events still use the manual dropdown.
+              const capAuto = t.booking_url === 'native-application' || t.booking_url === 'payu-hosted';
               return (
                 <div key={slug} style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 14, padding: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -2816,7 +2822,7 @@ export default function AdminPanel() {
                     {dates.map(d => (
                       <span key={d.start_date} style={{ whiteSpace: 'nowrap' }}>
                         <b style={{ color: '#111' }}>{new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</b>
-                        {' '}{statusLabel[d.status]}{d.whatsapp_group_url ? ' · 💬' : ''}
+                        {!capAuto && <> {statusLabel[d.status]}</>}{d.whatsapp_group_url ? ' · 💬' : ''}
                       </span>
                     ))}
                   </div>
@@ -2831,7 +2837,10 @@ export default function AdminPanel() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {dates.filter(d => d.id).map(d => {
                             const edit = dateEdits[d.id!] ?? { url: d.whatsapp_group_url ?? '', status: d.status };
-                            const dirty = edit.url !== (d.whatsapp_group_url ?? '') || edit.status !== d.status;
+                            // Auto events: only the group link is editable — the
+                            // availability state is computed from real bookings,
+                            // exactly like the admin editor's "Spots auto" chip.
+                            const dirty = edit.url !== (d.whatsapp_group_url ?? '') || (!capAuto && edit.status !== d.status);
                             const setEdit = (patch: Partial<{ url: string; status: string }>) =>
                               setDateEdits(prev => ({ ...prev, [d.id!]: { ...edit, ...patch } }));
                             return (
@@ -2839,16 +2848,22 @@ export default function AdminPanel() {
                                 <span style={{ fontWeight: 600, fontSize: 13, color: '#111', width: 64 }}>
                                   {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                 </span>
-                                <select value={edit.status} onChange={e => setEdit({ status: e.target.value })}
-                                  style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, background: '#fff' }}>
-                                  <option value="available">Available</option>
-                                  <option value="selling_out">Selling out</option>
-                                  <option value="sold_out">Sold out</option>
-                                </select>
+                                {capAuto ? (
+                                  <span style={{ color: '#16a34a', background: '#dcfce7', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '6px 10px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                    Spots auto
+                                  </span>
+                                ) : (
+                                  <select value={edit.status} onChange={e => setEdit({ status: e.target.value })}
+                                    style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, background: '#fff' }}>
+                                    <option value="available">Available</option>
+                                    <option value="selling_out">Selling out</option>
+                                    <option value="sold_out">Sold out</option>
+                                  </select>
+                                )}
                                 <input type="url" placeholder="WhatsApp group link" value={edit.url} onChange={e => setEdit({ url: e.target.value })}
                                   style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 12, flex: 1, minWidth: 160 }} />
                                 {dirty && (
-                                  <button type="button" disabled={savingDate} onClick={() => managerSaveDate(d.id!, edit.url, edit.status)}
+                                  <button type="button" disabled={savingDate} onClick={() => managerSaveDate(d.id!, edit.url, capAuto ? null : edit.status)}
                                     style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#111', color: '#fff', fontWeight: 700, fontSize: 12, cursor: savingDate ? 'wait' : 'pointer' }}>
                                     Save
                                   </button>
