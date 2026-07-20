@@ -72,6 +72,8 @@ type Trip = {
   // Per-event marketer commission (₹ per fully-paid ticket). NULL/undefined =
   // fall back to each marketer's own call_marketers.commission_amount (₹50).
   marketer_commission?: number | null;
+  // Per-event manager commission override; NULL = the manager's own default (₹35).
+  manager_commission?: number | null;
   description: string;
   // Meeting spot shown on the community sheet's Essentials card
   start_location?: string;
@@ -2760,7 +2762,7 @@ export default function AdminPanel() {
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Briefing</button>}
-        <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Map</button>
+        {adminRole === 'admin' && <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Map</button>}
         <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
@@ -2769,7 +2771,7 @@ export default function AdminPanel() {
         {loading && <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading...</div>}
 
         {/* ── MAP TAB (user-journey maps) ──────────────────────────────────── */}
-        {!loading && tab === 'map' && (
+        {!loading && tab === 'map' && adminRole === 'admin' && (
           <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading map…</div>}>
             <JourneyMap showRoadmap={adminRole === 'admin'} />
           </React.Suspense>
@@ -4363,20 +4365,6 @@ export default function AdminPanel() {
                     </div>
                   )}
                 </div>
-                );
-              })()}
-
-              {/* Manager stale-lead alert — the one cockpit piece that stays on
-                  People (it's the daily to-do generator). Banner + team table
-                  moved to the manager's Performance tab; dates moved to Plans. */}
-              {currentManager && effScope === 'team' && (() => {
-                const staleTotal = (managerSummary?.marketers ?? []).reduce((sum, m) => sum + m.stale_leads, 0) + (managerSummary?.unassigned_stale ?? 0);
-                if (staleTotal === 0) return null;
-                return (
-                  <div style={{ marginBottom: 18, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#92400e', fontWeight: 600 }}>
-                    ⏳ {staleTotal} lead{staleTotal === 1 ? '' : 's'} waiting 48h+ without progress
-                    {(managerSummary?.unassigned_stale ?? 0) > 0 && <span style={{ fontWeight: 500 }}> ({managerSummary!.unassigned_stale} unassigned)</span>}
-                  </div>
                 );
               })()}
 
@@ -6248,28 +6236,54 @@ export default function AdminPanel() {
         {tab === 'marketers' && adminRole !== 'admin' && currentManager && (() => {
           const inr = (n: number) => '₹' + Math.round(Number(n || 0)).toLocaleString('en-IN');
           const teamApps = applications.filter(a => managerAssignedSlugs.includes(a.event_slug));
-          const fullyPaid   = teamApps.filter(a => a.status === 'fully_paid').length;
-          const advanceOnly = teamApps.filter(a => a.status === 'advance_paid').length;
+          const fullyPaid = teamApps.filter(a => a.status === 'fully_paid').length;
           const managedTrips = trips.filter(t => managerAssignedSlugs.includes(t.slug ?? ''));
           const activeRoster = managerRoster.filter(mk => mk.active);
-          const Tile = ({ label, value, accent }: { label: string; value: any; accent?: boolean }) => (
-            <div style={{ flex: 1, minWidth: 0, background: accent ? '#f0fdf4' : '#fafafa', border: `1px solid ${accent ? '#bbf7d0' : '#eee'}`, borderRadius: 10, padding: '10px 12px' }}>
-              <div style={{ fontSize: 10, color: accent ? '#15803d' : '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: accent ? '#16a34a' : '#111', lineHeight: 1.1, marginTop: 3 }}>{value}</div>
-            </div>
-          );
+          // One consolidated earnings view: the single ₹ a fully-paid ticket
+          // pays THEM on each event — manager rate + (for dual-role people in
+          // that event's marketer pool) their marketer rate on their own
+          // sales. Covers pure managers and manager+marketer alike, including
+          // events they only market.
+          const myMkId = currentMarketer?.id ?? null;
+          const relevantSlugs = Array.from(new Set([...managerAssignedSlugs, ...(myMkId ? marketerAssignedSlugs : [])]));
+          const earningRows = relevantSlugs.flatMap(slug => {
+            const t = trips.find(x => x.slug === slug);
+            if (!t) return [];
+            const managed = managerAssignedSlugs.includes(slug);
+            const inPool = !!myMkId && (managed ? (managerEventMarketers[slug] ?? []).includes(myMkId) : true);
+            const mgrRate = managed ? Number(t.manager_commission ?? currentManager.commission_amount ?? 0) : 0;
+            const mkRate = inPool ? Number(t.marketer_commission ?? currentMarketer?.commission_amount ?? 50) : 0;
+            const note = managed
+              ? (mkRate > 0 ? `when you sell it yourself · ${inr(mgrRate)} when your team sells` : 'per fully-paid ticket, whoever sells it')
+              : 'when you sell (you market this event)';
+            return [{ slug, title: t.title, self: mgrRate + mkRate, note }];
+          });
+          const estManagerEarnings = managedTrips.reduce((sum, t) =>
+            sum + teamApps.filter(a => a.event_slug === t.slug && a.status === 'fully_paid').length
+                * Number(t.manager_commission ?? currentManager.commission_amount ?? 0), 0);
           return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
 
-            {/* Your earnings across managed events */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Tile label="Advance paid" value={advanceOnly + fullyPaid} />
-              <Tile label="Fully paid" value={fullyPaid} />
-              <Tile label="Est. commission" value={inr(fullyPaid * (currentManager.commission_amount || 0))} accent />
-            </div>
-            <div style={{ fontSize: 11, color: '#999', marginTop: -10 }}>
-              You earn ₹{currentManager.commission_amount}/ticket on every fully-paid ticket of your events, whoever sells it.
+            {/* Your earnings — consolidated per-ticket card */}
+            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '4px 0' }}>
+              <div style={{ padding: '10px 16px 6px', fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                What you earn per fully-paid ticket
+              </div>
+              {earningRows.length === 0 && (
+                <div style={{ padding: '12px 16px', color: '#bbb', fontSize: 13 }}>No events assigned yet.</div>
+              )}
+              {earningRows.map(r => (
+                <div key={r.slug} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 16px', borderTop: '1px solid #f5f5f0', flexWrap: 'wrap' }}>
+                  <span style={{ flex: 1, minWidth: 120, fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                  <span style={{ fontWeight: 800, fontSize: 18, color: '#16a34a', whiteSpace: 'nowrap' }}>{inr(r.self)}</span>
+                  <span style={{ fontSize: 12, color: '#888' }}>{r.note}</span>
+                </div>
+              ))}
+              <div style={{ padding: '10px 16px', borderTop: '1px solid #f5f5f0', fontSize: 12, color: '#888' }}>
+                So far: {fullyPaid} fully-paid ticket{fullyPaid === 1 ? '' : 's'} on your events · est. {inr(estManagerEarnings)} manager earnings
+                {myMkId && myCommissionStats ? <> · {inr(myCommissionStats.total)} marketer commission this month</> : null}
+              </div>
             </div>
 
             {/* Marketer ROI — same table style the founders see, scoped to your events */}
