@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion';
 
 export const CREATOR_LESSON_TWO_FPS = 30;
-export const CREATOR_LESSON_TWO_DURATION = 630;
+export const CREATOR_LESSON_TWO_DURATION = 450;
 export const CREATOR_LESSON_TWO_WIDTH = 1080;
 export const CREATOR_LESSON_TWO_HEIGHT = 1920;
 
@@ -15,9 +15,7 @@ const C = {
   orange: '#FF875E',
   mint: '#BFE5D5',
   violet: '#D8CBFF',
-  blue: '#BFDDE8',
   green: '#1F9D63',
-  red: '#D84C4C',
   muted: '#6F706A',
   line: 'rgba(23, 23, 21, 0.13)',
 };
@@ -107,42 +105,13 @@ const SameVisit: React.FC<{ handle: string }> = ({ handle }) => {
   );
 };
 
-const LaterVisit: React.FC<{ handle: string }> = ({ handle }) => {
-  const frame = useCurrentFrame();
-  const later = frame >= 72;
-  return (
-    <Stage duration={200} background={C.violet}>
-      <div style={{ height: '100%', boxSizing: 'border-box', padding: '94px 76px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Pill>A new visit</Pill><Brand /></div>
-        <div style={{ marginTop: 36, fontSize: 70, lineHeight: 1.04, letterSpacing: -3.1, fontWeight: 950 }}>What if Priya<br />comes back later?</div>
-        <div style={{ marginTop: 48, display: 'grid', gridTemplateColumns: '310px 1fr', gap: 30, alignItems: 'stretch' }}>
-          <div style={{ padding: 30, borderRadius: 42, background: C.white, border: `3px solid ${C.line}`, textAlign: 'center' }}>
-            <div style={{ color: C.muted, fontSize: 24, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2 }}>Calendar</div>
-            <div style={{ marginTop: 34, color: later ? C.red : C.ink, fontSize: 132, lineHeight: 0.9, letterSpacing: -7, fontWeight: 950 }}>{later ? '8' : '1'}</div>
-            <div style={{ color: C.muted, fontSize: 34, marginTop: 18, fontWeight: 850 }}>DAY</div>
-            <div style={{ marginTop: 34, height: 8, borderRadius: 99, background: '#ECE9F6', overflow: 'hidden' }}><div style={{ height: '100%', width: `${interpolate(frame, [18, 92], [8, 100], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}%`, background: C.red }} /></div>
-          </div>
-          <div style={{ padding: 32, borderRadius: 42, background: C.white, border: `3px solid ${C.line}`, opacity: later ? 1 : 0.36 }}>
-            <div style={{ color: C.muted, fontSize: 24, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1.8 }}>Direct visit</div>
-            <div style={{ marginTop: 30, fontSize: 37, lineHeight: 1.2, fontWeight: 950 }}>She types<br />chaptera.in</div>
-            <div style={{ marginTop: 32, padding: '18px 20px', borderRadius: 18, background: '#FFF0F0', color: C.red, fontSize: 27, lineHeight: 1.25, fontWeight: 900, opacity: later ? 1 : 0 }}>No “came from @{handle}” tag</div>
-            <div style={{ marginTop: 38, color: C.muted, fontSize: 78, lineHeight: 1, letterSpacing: -2.5, fontWeight: 950, opacity: later ? 1 : 0 }}>+₹0</div>
-          </div>
-        </div>
-        <div style={{ marginTop: 46, padding: 28, borderRadius: 28, background: C.ink, color: C.white, fontSize: 39, lineHeight: 1.3, fontWeight: 820, opacity: interpolate(frame, [88, 116], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) }}>A new direct visit starts without your tag, so it cannot credit you.</div>
-        <div style={{ marginTop: 'auto', fontSize: 35, lineHeight: 1.3, fontWeight: 800 }}>That is why in-the-moment links—especially auto-DMs—matter.</div>
-      </div>
-    </Stage>
-  );
-};
-
 const Summary: React.FC = () => {
   const frame = useCurrentFrame();
   return (
     <Stage duration={100} background={C.ink}>
       <div style={{ height: '100%', boxSizing: 'border-box', padding: '120px 78px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: C.white }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Pill>Remember this</Pill><Brand /></div>
-        <div style={{ fontSize: 116, lineHeight: 0.95, letterSpacing: -6.2, fontWeight: 950, opacity: interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' }), translate: `0 ${interpolate(frame, [0, 24], [50, 0], { extrapolateRight: 'clamp', easing: EASE })}px` }}>Same visit.<br /><span style={{ color: C.orange }}>Tag reaches pay.</span><br />You earn.</div>
+        <div style={{ fontSize: 116, lineHeight: 0.95, letterSpacing: -6.2, fontWeight: 950, opacity: interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' }), translate: `0 ${interpolate(frame, [0, 24], [50, 0], { extrapolateRight: 'clamp', easing: EASE })}px` }}>One visit.<br /><span style={{ color: C.orange }}>Tag reaches pay.</span><br />You earn.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, color: C.ink, fontSize: 27, fontWeight: 950 }}><div style={{ flex: 1, padding: 22, borderRadius: 22, background: C.mint, textAlign: 'center' }}>YOUR LINK</div><div style={{ color: C.white, fontSize: 42 }}>→</div><div style={{ flex: 1, padding: 22, borderRadius: 22, background: C.orange, textAlign: 'center' }}>PAYMENT</div><div style={{ color: C.white, fontSize: 42 }}>→</div><div style={{ flex: 1, padding: 22, borderRadius: 22, background: C.violet, textAlign: 'center' }}>+₹296</div></div>
       </div>
     </Stage>
@@ -155,8 +124,7 @@ export const CreatorLessonTwo: React.FC<CreatorLessonTwoProps> = ({ handle }) =>
     <AbsoluteFill style={{ background: C.paper }}>
       <Sequence name="Lesson 2 title" from={0} durationInFrames={90}><Intro /></Sequence>
       <Sequence name="Tagged same-visit booking" from={70} durationInFrames={300}><SameVisit handle={normalized} /></Sequence>
-      <Sequence name="Later direct visit has no tag" from={350} durationInFrames={200}><LaterVisit handle={normalized} /></Sequence>
-      <Sequence name="Same-visit takeaway" from={530} durationInFrames={100}><Summary /></Sequence>
+      <Sequence name="Same-visit takeaway" from={350} durationInFrames={100}><Summary /></Sequence>
     </AbsoluteFill>
   );
 };

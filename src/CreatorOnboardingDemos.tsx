@@ -162,11 +162,9 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
   const [showExplainer, setShowExplainer] = useState(true);
   const [scene, setScene] = useState<1 | 2 | 3>(1);
   const [counter, setCounter] = useState(0);
-  const [showCounterexample, setShowCounterexample] = useState(false);
-  const [sawCounterexample, setSawCounterexample] = useState(false);
   const handle = handleFor(demoHandle);
   const counterFinished = counter >= PRIMARY_EVENT.cut;
-  const complete = scene === 3 && sawCounterexample;
+  const complete = scene === 3 && counterFinished;
   useCompleteWhen(complete, onDone);
 
   useEffect(() => {
@@ -180,35 +178,20 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
     return () => window.clearInterval(interval);
   }, [scene]);
 
-  const toggleCounterexample = () => {
-    setShowCounterexample(current => {
-      const next = !current;
-      if (next) setSawCounterexample(true);
-      return next;
-    });
-  };
-
   const replay = () => {
     setScene(1);
     setCounter(0);
-    setShowCounterexample(false);
   };
-
-  const checklistItems = [
-    { label: 'Complete Priya\'s booking', done: scene === 3 },
-    { label: 'Try a later visit', done: sawCounterexample },
-  ];
 
   if (showExplainer) {
     return (
       <div style={stack}>
-        <TapChecklist items={checklistItems} />
         <div style={{ ...card, overflow: 'hidden', background: '#111', maxWidth: 286, width: '100%', margin: '0 auto' }}>
           <React.Suspense fallback={<div role="status" style={{ aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12.5 }}>Loading explainer…</div>}>
             <CreatorLessonTwoPlayer handle={handle} />
           </React.Suspense>
         </div>
-        <p style={{ ...paragraph, color: MUTED, textAlign: 'center' }}>A 21-second sound-off preview of the same-visit rule. Next, you drive Priya's booking yourself.</p>
+        <p style={{ ...paragraph, color: MUTED, textAlign: 'center' }}>A short sound-off preview of how your tag stays with Priya from link to payment. Next, you drive the booking yourself.</p>
         <button type="button" className="creator-demo-pulse" onClick={() => setShowExplainer(false)} style={primaryBtn(true)}>Try it yourself</button>
       </div>
     );
@@ -216,12 +199,11 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <TapChecklist items={checklistItems} />
       <p style={paragraph}>Priya's on the Pondy Beach Houseparty page — and notice the little tag riding along: <b>came from @{handle}</b>. As long as that tag is there, whatever she books is credited to you.</p>
       <p style={paragraph}>Walk her through it.</p>
 
       <div style={{ ...card, padding: 15, background: '#fafafa', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {!showCounterexample && <AttributionTag handle={handle} />}
+        <AttributionTag handle={handle} />
         {scene === 1 && (
           <>
             <div style={{ ...card, padding: 14 }}>
@@ -245,7 +227,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
           <div style={{ textAlign: 'center', padding: '22px 8px' }}>
             <div style={{ width: 42, height: 42, margin: '0 auto 12px', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', background: GREEN, fontWeight: 900 }}>✓</div>
             <div style={{ fontSize: 14, fontWeight: 800 }}>Booking confirmed</div>
-            <div aria-live="polite" style={{ fontSize: 44, lineHeight: 1, color: showCounterexample ? MUTED : GREEN, fontWeight: 900, letterSpacing: -1.4, marginTop: 18 }}>+{inr(showCounterexample ? 0 : counter)}</div>
+            <div aria-live="polite" style={{ fontSize: 44, lineHeight: 1, color: GREEN, fontWeight: 900, letterSpacing: -1.4, marginTop: 18 }}>+{inr(counter)}</div>
             <div style={{ ...helper, marginTop: 8 }}>your commission · 8% of {inr(PRIMARY_EVENT.price)}</div>
           </div>
         )}
@@ -253,15 +235,9 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
 
       {scene === 3 && (
         <>
-          <button type="button" className={!sawCounterexample && counterFinished ? 'creator-demo-pulse' : undefined} aria-pressed={showCounterexample} onClick={toggleCounterexample} style={secondaryBtn}>What if she books next week instead?</button>
-          {showCounterexample && (
-            <div style={{ padding: 14, borderRadius: 14, background: '#f7f7f8', color: INK, fontSize: 13.5, lineHeight: 1.55 }}>
-              The "came from @{handle}" tag is gone — she came back directly, in a new visit. Commission: <b>₹0.</b> The booking has to happen in the visit your link started. (One more reason the auto-DM works so well: the link — and the booking — happen right there, in the moment.)
-            </div>
-          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <button type="button" onClick={replay} style={secondaryBtn}>Replay</button>
-            <ContinueButton enabled={complete} pendingLabel="See what happens if she books later" />
+            <ContinueButton enabled={complete} pendingLabel="Watch your commission land" />
           </div>
         </>
       )}
