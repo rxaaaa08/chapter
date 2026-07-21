@@ -20,7 +20,7 @@ import {
   DemoExitProvider,
   DemoL1,
   DemoL2,
-  DemoL4,
+  DemoL3,
   DemoL5,
   DemoL7,
   DemoL8,
@@ -512,7 +512,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               <DemoExitProvider onExit={() => setOpenLevel(null)}>
                 {openLevel === 1 && <DemoL1 demoHandle={demoHandle} setDemoHandle={setDemoHandle} onDone={() => completeLevel(1)} />}
                 {openLevel === 2 && <DemoL2 demoHandle={demoHandle} onDone={() => completeLevel(2)} />}
-                {openLevel === 3 && <DemoL4 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
+                {openLevel === 3 && <DemoL3 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
                 {openLevel === 4 && <DemoL5 demoHandle={demoHandle} onDone={() => completeLevel(4)} />}
                 {openLevel === 5 && <DemoL7 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
                 {openLevel === 6 && <DemoL8 demoHandle={demoHandle} onDone={() => completeLevel(6)} />}

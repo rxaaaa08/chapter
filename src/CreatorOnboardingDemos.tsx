@@ -195,16 +195,21 @@ export function DemoL2({ onDone }: DemoProps) {
   );
 }
 
-export function DemoL4({ demoHandle, onDone }: DemoProps) {
+export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const [range, setRange] = useState<DemoRange>('month');
+  const [rangeTapped, setRangeTapped] = useState(false);
   const [conversionTapped, setConversionTapped] = useState(false);
+  const [sheetTitle, setSheetTitle] = useState(PRIMARY_EVENT.title);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [openedSheet, setOpenedSheet] = useState(false);
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const handle = handleFor(demoHandle);
-  const complete = conversionTapped && copyTapped;
+  const complete = rangeTapped && conversionTapped && openedSheet && copyTapped;
   const rangeStats = DEMO_RANGE_STATS[range];
   const rangeEarned = rangeStats.paid * PRIMARY_EVENT.cut;
   const rangeTicketLabel = `${rangeStats.paid} ${rangeStats.paid === 1 ? 'ticket' : 'tickets'}`;
+  const overlayHost = typeof document === 'undefined' ? null : document.getElementById('creator-onboarding-root');
   useCompleteWhen(complete, onDone);
 
   useEffect(() => {
@@ -212,6 +217,20 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
     const timeout = window.setTimeout(() => setCopied(false), 1200);
     return () => window.clearTimeout(timeout);
   }, [copied]);
+
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [sheetOpen]);
+
+  const openSheet = (title: string) => {
+    if (!conversionTapped) return;
+    setSheetTitle(title);
+    setOpenedSheet(true);
+    setSheetOpen(true);
+  };
 
   const leaderboard = [
     { rank: 1, handle: 'maya.moves', tickets: 7, earned: 1813 },
@@ -222,7 +241,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You'll find it anytime at <b>chaptera.in/creator</b>. Two things to tap.</p>
+      <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You can open it anytime at <span style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: 750 }}>chaptera.in/creator</span>.</p>
       <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
@@ -232,14 +251,16 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
 
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <div style={eyebrow}>Your funnel</div>
+            <div style={eyebrow}>① Your funnel</div>
             <div style={{ flex: 1 }} />
-            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <div className={!rangeTapped ? 'creator-demo-pulse' : undefined} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', borderRadius: 999, background: !rangeTapped ? GOLD_TINT : '#fff' }}>
               <select
                 value={range}
-                onChange={event => setRange(event.target.value as DemoRange)}
+                onPointerDown={() => setRangeTapped(true)}
+                onKeyDown={() => setRangeTapped(true)}
+                onChange={event => { setRange(event.target.value as DemoRange); setRangeTapped(true); }}
                 aria-label="Funnel date range"
-                style={{ appearance: 'none', WebkitAppearance: 'none', border: `1.5px solid ${HAIR}`, borderRadius: 999, background: '#fff', color: INK, fontSize: 12, fontWeight: 800, padding: '6px 42px 6px 11px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ appearance: 'none', WebkitAppearance: 'none', border: `1.5px solid ${!rangeTapped ? GOLD : HAIR}`, borderRadius: 999, background: 'transparent', color: INK, fontSize: 12, fontWeight: 800, padding: '6px 42px 6px 11px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 {DEMO_RANGES.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
               </select>
@@ -253,32 +274,50 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
               { label: 'Paid', value: rangeStats.paid },
             ].map((tile, index) => <div key={tile.label} style={{ borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', padding: '13px 4px', textAlign: 'center' }}><div style={{ fontSize: 23, fontWeight: 900 }}>{tile.value}</div><div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 4 }}>{tile.label}</div></div>)}
           </div>
-          <div style={{ display: 'grid', gap: 4, marginTop: 9 }}>
+          {rangeTapped && <div style={{ display: 'grid', gap: 4, marginTop: 9 }}>
             <div style={helper}><b style={{ color: INK }}>Clicks:</b> {rangeStats.clicks} people opened your link. Pays ₹0.</div>
             <div style={helper}><b style={{ color: INK }}>Sign-ups:</b> {rangeStats.signups} applied. Still ₹0 — interest isn't income.</div>
             <div style={helper}><b style={{ color: INK }}>Paid:</b> {rangeStats.paid} fully paid — the only tile that pays. {rangeStats.paid} × {inr(PRIMARY_EVENT.cut)} = {inr(rangeEarned)}.</div>
-          </div>
+          </div>}
         </div>
 
         <div>
-          <div style={{ ...eyebrow, marginBottom: 8 }}>① Your conversions</div>
-          <button type="button" className={!conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', borderColor: !conversionTapped ? GOLD : HAIR, background: conversionTapped ? '#f7f7f8' : GOLD_TINT }}>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>② Your conversions</div>
+          <button type="button" disabled={!rangeTapped} className={rangeTapped && !conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: rangeTapped ? INK : MUTED, fontFamily: 'inherit', cursor: rangeTapped ? 'pointer' : 'default', borderColor: rangeTapped && !conversionTapped ? GOLD : HAIR, background: conversionTapped ? '#f7f7f8' : rangeTapped ? GOLD_TINT : '#f7f7f8', opacity: rangeTapped ? 1 : 0.65 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
               <div style={{ ...helper, marginTop: 4 }}>{rangeTicketLabel} · {inr(PRIMARY_EVENT.cut)} per ticket</div>
             </div>
             <div style={{ color: GREEN, fontWeight: 900 }}>{inr(rangeEarned)}</div>
           </button>
-          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · {rangeTicketLabel} · {inr(rangeEarned)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
+          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{inr(PRIMARY_EVENT.cut)} per ticket × {rangeStats.paid} = {inr(rangeEarned)}</div>}
         </div>
 
-        <div style={{ ...card, padding: 13 }}>
-          <div style={eyebrow}>② Your Custom Link</div>
+        <div>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>③ See upcoming events</div>
+          <div style={{ ...card, overflow: 'hidden', opacity: conversionTapped ? 1 : 0.65 }}>
+            {DEMO_EVENTS.map((event, index) => (
+              <button type="button" disabled={!conversionTapped} className={conversionTapped && !openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: conversionTapped && !openedSheet && index === 0 ? GOLD_TINT : '#fff', boxShadow: conversionTapped && !openedSheet && index === 0 ? `inset 0 0 0 2px ${GOLD}` : 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: conversionTapped ? INK : MUTED, fontFamily: 'inherit', cursor: conversionTapped ? 'pointer' : 'default' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 800 }}>{event.title}</div>
+                  <div style={{ ...helper, marginTop: 3 }}>{DEMO_DATES[index]}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ color: conversionTapped ? GREEN : MUTED, fontSize: 13.5, fontWeight: 900 }}>{inr(event.cut)}</div>
+                  <div style={{ fontSize: 9.5, color: MUTED }}>per booking</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ ...card, padding: 13, opacity: openedSheet && !sheetOpen ? 1 : 0.65 }}>
+          <div style={eyebrow}>④ Your Custom Link</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
-            <button type="button" className={conversionTapped && !copyTapped ? 'creator-demo-pulse' : undefined} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : conversionTapped && !copyTapped ? GOLD : INK, color: conversionTapped && !copyTapped && !copied ? INK : '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
+            <button type="button" disabled={!openedSheet || sheetOpen} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: `1.5px solid ${openedSheet && !sheetOpen && !copyTapped ? GOLD : 'transparent'}`, borderRadius: 9, background: copied ? GREEN : openedSheet && !sheetOpen && !copyTapped ? GOLD_TINT : openedSheet && !sheetOpen ? INK : '#d7d7db', color: copied || (openedSheet && !sheetOpen && copyTapped) ? '#fff' : INK, fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: openedSheet && !sheetOpen ? 'pointer' : 'default', fontFamily: 'inherit', boxShadow: openedSheet && !sheetOpen && !copyTapped ? `0 0 0 3px rgba(234, 179, 8, 0.14)` : 'none' }}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
-          {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} — the one link you'll ever share. This button is how it gets everywhere.</div>}
+          {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} is your custom link &amp; you can use this button to copy it.</div>}
         </div>
 
         <div style={{ borderTop: `1px solid ${HAIR}`, paddingTop: 13 }}>
@@ -296,8 +335,21 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
       </div>
       <ContinueButton
         enabled={complete}
-        pendingLabel={!conversionTapped ? 'Tap your conversions to continue' : 'Tap Copy to continue'}
+        pendingLabel={!rangeTapped ? 'Choose a range to continue' : !conversionTapped ? 'Tap your conversions to continue' : !openedSheet ? 'Open an upcoming event to continue' : sheetOpen ? 'Close the details to continue' : 'Tap Copy to continue'}
       />
+
+      {overlayHost && createPortal(
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1000, pointerEvents: sheetOpen ? 'auto' : 'none' }}>
+          <InvitePlanDetailsSheet
+            open={sheetOpen}
+            onClose={() => setSheetOpen(false)}
+            title={sheetTitle}
+            details={PONDY_DETAILS}
+            closeButtonClassName={sheetOpen ? 'creator-demo-pulse' : undefined}
+          />
+        </div>,
+        overlayHost,
+      )}
     </div>
   );
 }
@@ -343,64 +395,6 @@ const PONDY_DETAILS: InvitePlanDetails = {
   ],
   showAccommodation: false,
 };
-
-export function DemoL6({ onDone }: DemoProps) {
-  const [sheetTitle, setSheetTitle] = useState(PRIMARY_EVENT.title);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [openedSheet, setOpenedSheet] = useState(false);
-  const overlayHost = typeof document === 'undefined' ? null : document.getElementById('creator-onboarding-root');
-  useCompleteWhen(openedSheet, onDone);
-
-  useEffect(() => {
-    if (!sheetOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previous; };
-  }, [sheetOpen]);
-
-  const openSheet = (title: string) => {
-    setSheetTitle(title);
-    setOpenedSheet(true);
-    setSheetOpen(true);
-  };
-
-  return (
-    <div style={stack}>
-      <p style={paragraph}>Open an upcoming event to see what you can promote next.</p>
-      <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ padding: 15, borderBottom: `1px solid ${HAIR}` }}>
-          <div style={{ fontSize: 15, fontWeight: 850 }}>See upcoming events</div>
-        </div>
-        {DEMO_EVENTS.map((event, index) => (
-          <button type="button" className={!openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: !openedSheet && index === 0 ? GOLD_TINT : '#fff', boxShadow: !openedSheet && index === 0 ? `inset 0 0 0 2px ${GOLD}` : 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 800 }}>{event.title}</div>
-              <div style={{ ...helper, marginTop: 3 }}>{DEMO_DATES[index]}</div>
-            </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ color: GREEN, fontSize: 13.5, fontWeight: 900 }}>{inr(event.cut)}</div>
-              <div style={{ fontSize: 9.5, color: MUTED }}>per booking</div>
-            </div>
-          </button>
-        ))}
-      </div>
-      <ContinueButton enabled={openedSheet && !sheetOpen} pendingLabel={openedSheet ? 'Close the details to continue' : 'Open an event to continue'} />
-
-      {overlayHost && createPortal(
-        <div style={{ position: 'absolute', inset: 0, zIndex: 1000, pointerEvents: sheetOpen ? 'auto' : 'none' }}>
-          <InvitePlanDetailsSheet
-            open={sheetOpen}
-            onClose={() => setSheetOpen(false)}
-            title={sheetTitle}
-            details={PONDY_DETAILS}
-            closeButtonClassName={sheetOpen ? 'creator-demo-pulse' : undefined}
-          />
-        </div>,
-        overlayHost,
-      )}
-    </div>
-  );
-}
 
 export function DemoL7({ demoHandle, onDone }: DemoProps) {
   const [videoLoaded, setVideoLoaded] = useState(false);
