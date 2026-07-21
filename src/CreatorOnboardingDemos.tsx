@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
 const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
+const CreatorLessonTwoPlayer = React.lazy(() => import('./remotion/CreatorLessonTwoPlayer'));
+const CreatorLessonSevenPlayer = React.lazy(() => import('./remotion/CreatorLessonSevenPlayer'));
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -237,6 +239,7 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
 }
 
 export function DemoL2({ demoHandle, onDone }: DemoProps) {
+  const [showExplainer, setShowExplainer] = useState(true);
   const [scene, setScene] = useState<1 | 2 | 3>(1);
   const [counter, setCounter] = useState(0);
   const [showCounterexample, setShowCounterexample] = useState(false);
@@ -271,12 +274,29 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
     setShowCounterexample(false);
   };
 
+  const checklistItems = [
+    { label: 'Complete Priya\'s booking', done: scene === 3 },
+    { label: 'Try a later visit', done: sawCounterexample },
+  ];
+
+  if (showExplainer) {
+    return (
+      <div style={stack}>
+        <TapChecklist items={checklistItems} />
+        <div style={{ ...card, overflow: 'hidden', background: '#111', maxWidth: 286, width: '100%', margin: '0 auto' }}>
+          <React.Suspense fallback={<div role="status" style={{ aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12.5 }}>Loading explainer…</div>}>
+            <CreatorLessonTwoPlayer handle={handle} />
+          </React.Suspense>
+        </div>
+        <p style={{ ...paragraph, color: MUTED, textAlign: 'center' }}>A 21-second sound-off preview of the same-visit rule. Next, you drive Priya's booking yourself.</p>
+        <button type="button" className="creator-demo-pulse" onClick={() => setShowExplainer(false)} style={primaryBtn(true)}>Try it yourself</button>
+      </div>
+    );
+  }
+
   return (
     <div style={stack}>
-      <TapChecklist items={[
-        { label: 'Complete Priya\'s booking', done: scene === 3 },
-        { label: 'Try a later visit', done: sawCounterexample },
-      ]} />
+      <TapChecklist items={checklistItems} />
       <p style={paragraph}>Priya's on the Pondy Beach Houseparty page — and notice the little tag riding along: <b>came from @{handle}</b>. As long as that tag is there, whatever she books is credited to you.</p>
       <p style={paragraph}>Walk her through it.</p>
 
@@ -633,6 +653,7 @@ export function DemoL6({ onDone }: DemoProps) {
 }
 
 export function DemoL7({ demoHandle, onDone }: DemoProps) {
+  const [showExplainer, setShowExplainer] = useState(true);
   const [selectedPath, setSelectedPath] = useState<'bio' | 'dm' | null>(null);
   const [pathStep, setPathStep] = useState(0);
   const [running, setRunning] = useState(false);
@@ -675,12 +696,29 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
     setRunning(true);
   };
 
+  const checklistItems = [
+    { label: 'Try the bio path', done: playedPaths.has('bio') },
+    { label: 'Try the auto-DM path', done: playedPaths.has('dm') },
+  ];
+
+  if (showExplainer) {
+    return (
+      <div style={stack}>
+        <TapChecklist items={checklistItems} />
+        <div style={{ ...card, overflow: 'hidden', background: '#111', maxWidth: 286, width: '100%', margin: '0 auto' }}>
+          <React.Suspense fallback={<div role="status" style={{ aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12.5 }}>Loading explainer…</div>}>
+            <CreatorLessonSevenPlayer handle={handle} />
+          </React.Suspense>
+        </div>
+        <p style={{ ...paragraph, color: MUTED, textAlign: 'center' }}>A 24-second sound-off race between bio and auto-DM. Next, you try both paths yourself.</p>
+        <button type="button" className="creator-demo-pulse" onClick={() => setShowExplainer(false)} style={primaryBtn(true)}>Try it yourself</button>
+      </div>
+    );
+  }
+
   return (
     <div style={stack}>
-      <TapChecklist items={[
-        { label: 'Try the bio path', done: playedPaths.has('bio') },
-        { label: 'Try the auto-DM path', done: playedPaths.has('dm') },
-      ]} />
+      <TapChecklist items={checklistItems} />
 
       <div>
         <div style={{ fontSize: 18, lineHeight: 1.25, fontWeight: 900 }}>You just posted your Pondy Beach Houseparty reel.</div>
