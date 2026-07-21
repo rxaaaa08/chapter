@@ -170,7 +170,8 @@ export function DemoL2({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>Tap the events to see how your cuts work</p>
+      <p style={paragraph}>You get a commission of up to 8% per ticket.</p>
+      <p style={paragraph}>Tap the events to see how your cuts work. These are demo numbers — the real commission per ticket is available in the real dashboard.</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {DEMO_EVENTS.map((event, index) => {
           const isFlipped = flipped.has(index);
