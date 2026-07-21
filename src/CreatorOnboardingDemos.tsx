@@ -108,28 +108,14 @@ function AttributionTag({ handle }: { handle: string }) {
   );
 }
 
-function EventRows({ showPrice = true }: { showPrice?: boolean }) {
-  return (
-    <div style={{ ...card, overflow: 'hidden' }}>
-      {DEMO_EVENTS.map((event, index) => (
-        <div key={event.title} style={{ padding: '13px 14px', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, flexShrink: 0, background: index === 0 ? 'linear-gradient(145deg, #173a4b, #e6b06b)' : index === 1 ? 'linear-gradient(145deg, #f7c969, #73b5b6)' : 'linear-gradient(145deg, #e6a9a9, #6d7fa8)' }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, lineHeight: 1.3, fontWeight: 750 }}>{event.title}</div>
-            {showPrice && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 3 }}>{inr(event.price)}</div>}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
   const exit = useDemoExit();
-  const [scene, setScene] = useState<'explainer' | 1 | 2 | 3>('explainer');
-  const [handleEditorOpen, setHandleEditorOpen] = useState(false);
   const handle = handleFor(demoHandle);
-  useCompleteWhen(scene === 3, onDone);
+
+  const finish = () => {
+    onDone();
+    exit();
+  };
 
   return (
     <div style={stack}>
@@ -141,112 +127,33 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
         .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .creator-demo-pulse { animation: none; } }
       `}</style>
-      {(scene === 'explainer' || handleEditorOpen) ? (
-        <div style={stack}>
-          <p style={paragraph}>{scene === 'explainer' ? "First, type the handle you're thinking of — we'll use it everywhere in this demo." : 'Change the handle used across this demo.'}</p>
-          <div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: MUTED, fontWeight: 800 }}>@</span>
-                <input
-                  aria-label="Demo creator handle"
-                  value={demoHandle}
-                  onChange={event => setDemoHandle(normalizeDemoHandle(event.target.value))}
-                  placeholder="yourhandle"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  style={{ width: '100%', padding: '12px 13px 12px 29px', borderRadius: 12, border: `1.5px solid ${HAIR}`, fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                />
-              </div>
-              {scene !== 'explainer' && <button type="button" onClick={() => setHandleEditorOpen(false)} style={{ ...secondaryBtn, width: 'auto', padding: '0 14px' }}>Done</button>}
-            </div>
-            <div style={{ ...helper, marginTop: 6 }}>Just for the demo — you'll claim your real handle at the end.</div>
-            {scene === 'explainer' && (
-              <button type="button" onClick={() => setDemoHandle(DEMO_HANDLE_FALLBACK)} style={{ border: 'none', background: 'none', color: INK, fontWeight: 750, fontSize: 12.5, padding: '8px 0 0', cursor: 'pointer', fontFamily: 'inherit' }}>
-                skip for now
-              </button>
-            )}
-          </div>
+      <p style={paragraph}>First, type the handle you're thinking of — we'll use it everywhere in this demo.</p>
+      <div>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: MUTED, fontWeight: 800 }}>@</span>
+          <input
+            aria-label="Demo creator handle"
+            value={demoHandle}
+            onChange={event => setDemoHandle(normalizeDemoHandle(event.target.value))}
+            placeholder="yourhandle"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            style={{ width: '100%', padding: '12px 13px 12px 29px', borderRadius: 12, border: `1.5px solid ${HAIR}`, fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+          />
         </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', alignSelf: 'flex-start', gap: 7, padding: '7px 10px', borderRadius: 999, border: `1px solid ${HAIR}`, background: '#fafafa', color: MUTED, fontSize: 11.5, lineHeight: 1.2, fontWeight: 800 }}>
-          demo as <span style={{ color: INK }}>@{handle}</span>
-          <button type="button" onClick={() => setHandleEditorOpen(true)} style={{ border: 'none', background: 'none', color: INK, padding: 0, font: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>change</button>
-        </div>
-      )}
-
-      {scene === 'explainer' && (
-        <>
-          <div>
-            <p style={paragraph}>Before you try it yourself, watch the whole journey in 35 seconds.</p>
-            <p style={{ ...helper, marginTop: 6 }}>The video updates with your demo handle and works with sound off.</p>
-          </div>
-          <div style={{ width: 'min(100%, 286px)', margin: '0 auto', borderRadius: 26, overflow: 'hidden', background: '#171715', boxShadow: '0 18px 50px rgba(17, 17, 17, 0.16)' }}>
-            <React.Suspense fallback={<div role="status" aria-label="Loading lesson video" style={{ width: '100%', aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13, fontWeight: 750 }}>Loading video…</div>}>
-              <CreatorLessonOnePlayer handle={handle} />
-            </React.Suspense>
-          </div>
-          <button type="button" className="creator-demo-pulse" onClick={() => setScene(1)} style={primaryBtn(true)}>Try the journey yourself</button>
-        </>
-      )}
-
-      {scene === 1 && (
-        <>
-          <div>
-            <p style={paragraph}>Now meet Priya — she just watched your reel about the Pondy Beach Houseparty. Your caption says: <i>"comment LINK and I'll send you everything."</i></p>
-            <p style={{ ...paragraph, marginTop: 8 }}>Watch what happens when she does.</p>
-          </div>
-          <div style={{ ...card, overflow: 'hidden', background: '#101010', color: '#fff' }}>
-            <div style={{ minHeight: 300, padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: 'radial-gradient(circle at 70% 20%, rgba(230,176,107,0.45), transparent 32%), linear-gradient(155deg, #173a4b, #101010 68%)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#fff', color: INK, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 900 }}>{handle.slice(0, 1).toUpperCase()}</div>
-                <div style={{ fontSize: 12.5, fontWeight: 800 }}>@{handle} · reel</div>
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 850, lineHeight: 1.12, letterSpacing: -0.4, maxWidth: 270 }}>Pondy Beach Houseparty was unreal — comment LINK and I'll send you everything</div>
-              <div style={{ padding: '11px 12px', borderRadius: 13, background: 'rgba(255,255,255,0.94)', color: INK, fontSize: 13.5, fontWeight: 750 }}>{FOLLOWER}: LINK</div>
-            </div>
-          </div>
-          <button type="button" className="creator-demo-pulse" onClick={() => setScene(2)} style={primaryBtn(true)}>{FOLLOWER} comments "LINK"</button>
-        </>
-      )}
-
-      {scene === 2 && (
-        <>
-          <div style={{ ...card, padding: 14, background: '#f8f8f9' }}>
-            <div style={{ textAlign: 'center', paddingBottom: 12, borderBottom: `1px solid ${HAIR}` }}>
-              <div style={{ fontSize: 14, fontWeight: 800 }}>@{handle}</div>
-              <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>auto-DM · sent in seconds</div>
-            </div>
-            <div style={{ marginTop: 22, maxWidth: '88%', padding: '12px 13px', borderRadius: '5px 15px 15px 15px', background: '#fff', border: `1px solid ${HAIR}`, fontSize: 13.5, lineHeight: 1.5 }}>
-              Hey Priya! Everything about the Pondy Beach Houseparty — the plan, dates, and booking, all in one place:
-            </div>
-            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-              <button type="button" onClick={() => setScene(3)} style={{ ...secondaryBtn, padding: '10px 8px' }}>I need more details</button>
-              <button type="button" onClick={() => setScene(3)} style={{ ...secondaryBtn, padding: '10px 8px' }}>Book Now</button>
-            </div>
-            <div style={{ ...helper, textAlign: 'center', marginTop: 9 }}>both buttons → chaptera.in/@{handle}</div>
-          </div>
-        </>
-      )}
-
-      {scene === 3 && (
-        <>
-          <div style={{ ...card, padding: 14, background: '#fafafa' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
-              <div style={{ fontSize: 18, fontWeight: 850 }}>chapter அ</div>
-              <AttributionTag handle={handle} />
-            </div>
-            <EventRows />
-          </div>
-          <p style={paragraph}>Whichever button she tapped, she lands here — the full chapter அ page. It answers her questions AND takes her booking. That's why there's only ever <b>one link: yours.</b> No per-event links, no payment-page links.</p>
-          <p style={{ ...paragraph, color: MUTED }}>(How to set up this auto-DM for your own reels — and why the two buttons — is a later level. For now, stay in Priya's shoes.)</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <button type="button" onClick={() => setScene(1)} style={secondaryBtn}>Replay</button>
-            <button type="button" onClick={exit} style={primaryBtn(true)}>Continue</button>
-          </div>
-        </>
-      )}
+        <div style={{ ...helper, marginTop: 6 }}>Just for the demo — you'll claim your real handle at the end.</div>
+      </div>
+      <div>
+        <p style={paragraph}>Watch how one comment carries Priya from your reel to the real chapter அ experiences page.</p>
+        <p style={{ ...helper, marginTop: 6 }}>The video updates with your demo handle and works with sound off.</p>
+      </div>
+      <div style={{ width: 'min(100%, 286px)', margin: '0 auto', borderRadius: 26, overflow: 'hidden', background: '#171715', boxShadow: '0 18px 50px rgba(17, 17, 17, 0.16)' }}>
+        <React.Suspense fallback={<div role="status" aria-label="Loading lesson video" style={{ width: '100%', aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13, fontWeight: 750 }}>Loading video…</div>}>
+          <CreatorLessonOnePlayer handle={handle} />
+        </React.Suspense>
+      </div>
+      <button type="button" className="creator-demo-pulse" onClick={finish} style={primaryBtn(true)}>Mark as done</button>
     </div>
   );
 }
