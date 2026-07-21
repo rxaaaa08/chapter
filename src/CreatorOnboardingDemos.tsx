@@ -6,12 +6,13 @@ const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLesson
 
 // TODO(owner): replace with the creator's recorded comments-to-auto-DM walkthrough.
 const L7_VIMEO_ID = '76979871';
+// TODO(owner): replace with the creator's recorded brand-voice walkthrough.
+const L8_VIMEO_ID = '76979871';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
 const GREEN = '#16a34a';
-const RED = '#dc2626';
 const GOLD = '#eab308';
 const GOLD_TINT = '#fffbeb';
 
@@ -29,7 +30,6 @@ const DEMO_EVENTS = [
 ];
 const DEMO_FUNNEL = { clicks: 120, signups: 14, paid: 5 };
 const DEMO_MONTH_EARNED = DEMO_FUNNEL.paid * PRIMARY_EVENT.cut;
-const FOLLOWER = 'Priya';
 
 const DEMO_DATES = ['Aug 28', 'Aug 2', 'Aug 16'];
 type DemoRange = '24h' | 'week' | 'month' | '90d';
@@ -89,12 +89,6 @@ const primaryBtn = (enabled: boolean): React.CSSProperties => ({
   fontWeight: 700, cursor: enabled ? 'pointer' : 'default', fontFamily: 'inherit',
 });
 
-const secondaryBtn: React.CSSProperties = {
-  width: '100%', padding: '12px 0', borderRadius: 14, border: `1.5px solid ${HAIR}`,
-  background: '#fff', color: INK, fontSize: 14.5, fontWeight: 700,
-  cursor: 'pointer', fontFamily: 'inherit',
-};
-
 const stack: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 18 };
 const card: React.CSSProperties = { border: `1.5px solid ${HAIR}`, borderRadius: 18, background: '#fff' };
 const eyebrow: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: MUTED, letterSpacing: 0.45, textTransform: 'uppercase' };
@@ -104,14 +98,6 @@ const helper: React.CSSProperties = { color: MUTED, fontSize: 12.5, lineHeight: 
 function ContinueButton({ enabled = true, label = 'I Understand', pendingLabel = 'Complete the activity to continue' }: { enabled?: boolean; label?: string; pendingLabel?: string }) {
   const exit = useDemoExit();
   return <button type="button" className={enabled ? 'creator-demo-pulse' : undefined} disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{enabled ? label : pendingLabel}</button>;
-}
-
-function AttributionTag({ handle }: { handle: string }) {
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', alignSelf: 'flex-start', padding: '6px 9px', borderRadius: 999, background: '#f0fdf4', color: GREEN, fontSize: 11.5, fontWeight: 800 }}>
-      came from @{handle}
-    </div>
-  );
 }
 
 export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
@@ -431,7 +417,8 @@ export function DemoL5({ onDone }: DemoProps) {
   );
 }
 
-export function DemoL8({ onDone }: DemoProps) {
+export function DemoL6({ onDone }: DemoProps) {
+  const [videoLoaded, setVideoLoaded] = useState(false);
   const exit = useDemoExit();
   const finish = () => {
     onDone();
@@ -442,23 +429,25 @@ export function DemoL8({ onDone }: DemoProps) {
     <div style={stack}>
       <p style={paragraph}>Last one — and it's about taste.</p>
       <p style={paragraph}>chapter அ is a club people <i>want</i> into, and your audience follows you because they trust you. So we never run fake urgency, invented discounts, or "use my code" bait — there are no codes. There's your link, the real price, and your honest word that the experience is worth it.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <div style={{ ...card, padding: 15, borderColor: '#bbf7d0', background: '#f0fdf4' }}>
-          <div style={{ color: '#166534', fontSize: 13, fontWeight: 900 }}>Do</div>
-          <ul style={{ margin: '10px 0 0', paddingLeft: 17, color: INK, fontSize: 11.5, lineHeight: 1.55 }}>
-            <li>Share what genuinely excited you.</li>
-            <li>Use the real price and your one link.</li>
-            <li>Sound like yourself.</li>
-          </ul>
-        </div>
-        <div style={{ ...card, padding: 15, borderColor: '#fecaca', background: '#fef2f2' }}>
-          <div style={{ color: RED, fontSize: 13, fontWeight: 900 }}>Don't</div>
-          <ul style={{ margin: '10px 0 0', paddingLeft: 17, color: INK, fontSize: 11.5, lineHeight: 1.55 }}>
-            <li>Invent urgency or discounts.</li>
-            <li>Promise a coupon code.</li>
-            <li>Send people to a payment-only link.</li>
-          </ul>
-        </div>
+      <div style={{ position: 'relative', height: 'min(56vh, 460px)', aspectRatio: '9 / 16', maxWidth: '100%', margin: '0 auto', borderRadius: 24, overflow: 'hidden', background: '#000', border: `1.5px solid ${HAIR}` }}>
+        {!videoLoaded && (
+          <div role="status" aria-label="Loading video" style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', background: '#000' }}>
+            <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
+              <circle cx="16" cy="16" r="13" fill="none" stroke="#3f3f46" strokeWidth="3" />
+              <path d="M16 3a13 13 0 0 1 13 13" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                <animateTransform attributeName="transform" type="rotate" from="0 16 16" to="360 16 16" dur="0.8s" repeatCount="indefinite" />
+              </path>
+            </svg>
+          </div>
+        )}
+        <iframe
+          src={`https://player.vimeo.com/video/${L8_VIMEO_ID}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0&api=1`}
+          title="Creator brand voice video"
+          style={{ position: 'absolute', inset: -2, width: 'calc(100% + 4px)', height: 'calc(100% + 4px)', border: 0, clipPath: 'inset(0 round 22px)' }}
+          onLoad={() => setVideoLoaded(true)}
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+        />
       </div>
       <button type="button" onClick={finish} style={primaryBtn(true)}>Finish the demo →</button>
     </div>
