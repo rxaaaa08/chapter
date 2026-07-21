@@ -13,6 +13,7 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 - `src/App.tsx` (~5.4k lines): homepage, INVITE-only flow, `PayUReturnScreen` (payment success/failed/receipt + retry bill), routing shell.
 - `src/AppFlow.tsx` (~5.2k lines): `/plans` chat UI, event details overlay + calendar sheet, OPEN-event booking flow.
 - `src/AdminPanel.tsx` (~6.6k lines): admin + marketer dashboards — People tab, event/timeline editors, marketer cards.
+- `src/CreatorOnboardingDemos.tsx`: schematic replicas of the creator dashboard/booking surfaces; refresh this file whenever those live surfaces change.
 - `src/PaymentOverlay.tsx`: shared PayU bill page (`NativePaymentOverlay`) used by both flows.
 - `src/supabase.ts`: fetchers/mappers. **`Event.id` = `events.slug`.**
 - `src/JourneyMap.tsx` + `src/journeyMapSeeds.ts`: admin "Map" tab — React Flow user-journey maps backed by `journey_maps` (is_admin RLS). Seeds file = "Reset map" baseline; when a flow changes, refresh the matching seed nodes. Dev preview without login: `npm run dev` + `/admin?mapdev`.
