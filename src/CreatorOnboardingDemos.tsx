@@ -4,7 +4,9 @@ import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDeta
 
 const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
 const CreatorLessonTwoPlayer = React.lazy(() => import('./remotion/CreatorLessonTwoPlayer'));
-const CreatorLessonSevenPlayer = React.lazy(() => import('./remotion/CreatorLessonSevenPlayer'));
+
+// TODO(owner): replace with the creator's recorded Level 7 walkthrough.
+const LEVEL_SEVEN_VIMEO_ID = '76979871';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -489,150 +491,44 @@ export function DemoL6({ onDone }: DemoProps) {
 }
 
 export function DemoL7({ demoHandle, onDone }: DemoProps) {
-  const [showExplainer, setShowExplainer] = useState(true);
-  const [selectedPath, setSelectedPath] = useState<'bio' | 'dm' | null>(null);
-  const [pathStep, setPathStep] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [playedPaths, setPlayedPaths] = useState<Set<'bio' | 'dm'>>(new Set());
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const exit = useDemoExit();
   const handle = handleFor(demoHandle);
-  const complete = playedPaths.size === 2;
-  useCompleteWhen(complete, onDone);
-
-  const bioSteps = [
-    'Sees your Pondy reel',
-    `Opens @${handle}'s profile`,
-    'Hunts for the bio link',
-    'Some followers drop off',
-    `Others reach chaptera.in/@${handle}`,
-  ];
-  const dmSteps = [
-    'Comments "LINK"',
-    'Your auto-DM arrives',
-    'Taps either DM button',
-    `Reaches chaptera.in/@${handle}`,
-  ];
-  const activeSteps = selectedPath === 'bio' ? bioSteps : dmSteps;
-  const nextPath = !playedPaths.has('bio') ? 'bio' : !playedPaths.has('dm') ? 'dm' : null;
-
-  useEffect(() => {
-    if (!running || !selectedPath) return;
-    const stepCount = selectedPath === 'bio' ? 5 : 4;
-    if (pathStep >= stepCount - 1) {
-      setRunning(false);
-      setPlayedPaths(current => new Set(current).add(selectedPath));
-      return;
-    }
-    const timeout = window.setTimeout(() => setPathStep(current => current + 1), 520);
-    return () => window.clearTimeout(timeout);
-  }, [running, pathStep, selectedPath]);
-
-  const playPath = (path: 'bio' | 'dm') => {
-    setSelectedPath(path);
-    setPathStep(0);
-    setRunning(true);
+  const finish = () => {
+    onDone();
+    exit();
   };
-
-  const checklistItems = [
-    { label: 'Try the bio path', done: playedPaths.has('bio') },
-    { label: 'Try the auto-DM path', done: playedPaths.has('dm') },
-  ];
-
-  if (showExplainer) {
-    return (
-      <div style={stack}>
-        <TapChecklist items={checklistItems} />
-        <div style={{ ...card, overflow: 'hidden', background: '#111', maxWidth: 286, width: '100%', margin: '0 auto' }}>
-          <React.Suspense fallback={<div role="status" style={{ aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12.5 }}>Loading explainer…</div>}>
-            <CreatorLessonSevenPlayer handle={handle} />
-          </React.Suspense>
-        </div>
-        <p style={{ ...paragraph, color: MUTED, textAlign: 'center' }}>A 24-second sound-off race between bio and auto-DM. Next, you try both paths yourself.</p>
-        <button type="button" className="creator-demo-pulse" onClick={() => setShowExplainer(false)} style={primaryBtn(true)}>Try it yourself</button>
-      </div>
-    );
-  }
 
   return (
     <div style={stack}>
-      <TapChecklist items={checklistItems} />
+      <p style={paragraph}>Watch a creator walk through the comment-to-DM setup that sends your link while interest is still fresh.</p>
+      <p style={{ ...paragraph, color: MUTED }}>Then use the preview below as your builder checklist.</p>
 
-      <div>
-        <div style={{ fontSize: 18, lineHeight: 1.25, fontWeight: 900 }}>You just posted your Pondy Beach Houseparty reel.</div>
-        <div style={{ ...paragraph, marginTop: 6, color: MUTED }}>Where does your link live?</div>
+      <div style={{ position: 'relative', height: 'min(56vh, 460px)', aspectRatio: '9 / 16', maxWidth: '100%', margin: '0 auto', borderRadius: 24, overflow: 'hidden', background: '#000', border: `1.5px solid ${HAIR}` }}>
+        {!videoLoaded && (
+          <div role="status" aria-label="Loading video" style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', background: '#000' }}>
+            <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
+              <circle cx="16" cy="16" r="13" fill="none" stroke="#3f3f46" strokeWidth="3" />
+              <path d="M16 3a13 13 0 0 1 13 13" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                <animateTransform attributeName="transform" type="rotate" from="0 16 16" to="360 16 16" dur="0.8s" repeatCount="indefinite" />
+              </path>
+            </svg>
+          </div>
+        )}
+        <iframe
+          src={`https://player.vimeo.com/video/${LEVEL_SEVEN_VIMEO_ID}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0&api=1`}
+          title="Creator auto-DM setup video"
+          style={{ position: 'absolute', inset: -2, width: 'calc(100% + 4px)', height: 'calc(100% + 4px)', border: 0, clipPath: 'inset(0 round 22px)' }}
+          onLoad={() => setVideoLoaded(true)}
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+        />
       </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {([
-          { id: 'bio' as const, title: 'In my bio', caption: 'Followers find it on my profile.' },
-          { id: 'dm' as const, title: 'Auto-DM commenters', caption: 'The link goes straight to them.' },
-        ]).map(path => {
-          const played = playedPaths.has(path.id);
-          const selected = selectedPath === path.id;
-          return (
-            <button
-              type="button"
-              key={path.id}
-              className={nextPath === path.id ? 'creator-demo-pulse' : undefined}
-              disabled={running}
-              aria-pressed={selected}
-              onClick={() => playPath(path.id)}
-              style={{ ...card, minHeight: 126, padding: 14, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: running ? 'default' : 'pointer', borderColor: selected ? INK : played ? '#86efac' : HAIR, background: played ? '#f0fdf4' : selected ? '#f7f7f8' : '#fff', opacity: running && !selected ? 0.55 : 1 }}
-            >
-              <div aria-hidden="true" style={{ width: 25, height: 25, borderRadius: '50%', display: 'grid', placeItems: 'center', background: played ? GREEN : selected ? INK : '#f2f2f3', color: played || selected ? '#fff' : MUTED, fontSize: 12, fontWeight: 900 }}>{played ? '✓' : path.id === 'bio' ? '1' : '2'}</div>
-              <div style={{ fontSize: 14.5, lineHeight: 1.25, fontWeight: 900, marginTop: 12 }}>{path.title}</div>
-              <div style={{ color: MUTED, fontSize: 11.5, lineHeight: 1.4, marginTop: 5 }}>{path.caption}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedPath && (
-        <div style={{ ...card, padding: 12, borderRadius: 24, background: '#111', borderColor: '#111', boxShadow: '0 18px 45px rgba(17,17,17,0.13)' }}>
-          <div style={{ height: 22, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
-            <div style={{ width: 74, height: 5, borderRadius: 999, background: '#3f3f46' }} />
-          </div>
-          <div style={{ borderRadius: 17, background: '#fff', padding: 13, minHeight: 250 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingBottom: 11, borderBottom: `1px solid ${HAIR}` }}>
-              <div style={{ fontSize: 12, fontWeight: 900 }}>Priya's journey</div>
-              <div style={{ padding: '4px 7px', borderRadius: 999, background: selectedPath === 'dm' ? INK : '#f2f2f3', color: selectedPath === 'dm' ? '#fff' : MUTED, fontSize: 11, fontWeight: 850 }}>{selectedPath === 'dm' ? 'AUTO-DM' : 'BIO'}</div>
-            </div>
-            <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-              {activeSteps.map((stepText, index) => {
-                const visible = pathStep >= index;
-                const isDropoff = selectedPath === 'bio' && index === 3;
-                const isCurrent = visible && (running ? pathStep === index : index === activeSteps.length - 1);
-                return (
-                  <div key={stepText} style={{ display: 'flex', alignItems: 'center', gap: 9, minHeight: 38, padding: '8px 10px', borderRadius: 11, background: visible ? isDropoff ? '#fef2f2' : isCurrent ? '#f0fdf4' : '#f7f7f8' : '#fafafa', border: `1px solid ${visible && isDropoff ? '#fecaca' : visible && isCurrent ? '#bbf7d0' : HAIR}`, opacity: visible ? 1 : 0.32, transition: 'opacity 0.25s, background 0.25s, border-color 0.25s' }}>
-                    <div aria-hidden="true" style={{ width: 19, height: 19, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: visible ? isDropoff ? RED : INK : '#e4e4e7', color: '#fff', fontSize: 11, fontWeight: 900 }}>{isDropoff ? '−' : visible ? '✓' : ''}</div>
-                    <div style={{ color: visible && isDropoff ? RED : INK, fontSize: 12, lineHeight: 1.35, fontWeight: 780 }}>{stepText}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div aria-live="polite" style={{ color: '#fff', fontSize: 12.5, lineHeight: 1.45, padding: '12px 5px 2px', fontWeight: 720 }}>
-            {selectedPath === 'bio'
-              ? 'Your bio works, but every extra hop gives interest time to fade.'
-              : 'The link goes to them in the moment they are interested.'}
-          </div>
-        </div>
-      )}
-
-      {playedPaths.size === 1 && !running && (
-        <div style={{ padding: 12, borderRadius: 13, background: '#fff7ed', color: '#9a3412', fontSize: 13, lineHeight: 1.4, fontWeight: 850, textAlign: 'center' }}>Now try the other one.</div>
-      )}
-
-      {complete && (
-        <div style={{ ...card, padding: 16, borderColor: '#bbf7d0', background: '#f0fdf4' }}>
-          <div style={{ color: '#166534', fontSize: 16, lineHeight: 1.35, fontWeight: 900 }}>Both work. Auto-DM books more — we've tested it.</div>
-          <div style={{ color: '#166534', fontSize: 12.5, lineHeight: 1.5, marginTop: 7 }}>Auto-DM is optional. When you want it, we suggest <b>Superprofile</b> for Instagram comment-to-DM automations.</div>
-        </div>
-      )}
 
       <div role="group" aria-label="Static preview of the auto-DM setup" style={{ ...card, padding: 15, background: '#f8f8f9' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <div style={eyebrow}>Your auto-DM preview</div>
-          <div style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>NOTHING TO TAP</div>
+          <div style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>BUILDER PREVIEW</div>
         </div>
         <div style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.55 }}>Hey! Everything about the trip — the plan, dates, and booking, all in one place.</div>
         <div style={{ display: 'grid', gap: 8, marginTop: 13 }}>
@@ -642,9 +538,10 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
           <div aria-hidden="true" style={{ textAlign: 'center', color: MUTED, fontSize: 15, lineHeight: 1 }}>↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
           <div style={{ padding: 11, borderRadius: 11, background: INK, color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 850 }}>one destination · chaptera.in/@{handle}</div>
         </div>
-        <div style={{ ...helper, fontSize: 11.5, marginTop: 10 }}>A preview of what you'll set up in Superprofile — nothing to tap here. Two mindsets, one page for details and booking. Never two links.</div>
+        <div style={{ ...helper, fontSize: 11.5, marginTop: 10 }}>Both buttons use the same destination: chaptera.in/@{handle}. Never create a separate payment link.</div>
       </div>
-      <ContinueButton enabled={complete} pendingLabel={playedPaths.size === 0 ? 'Try one link path to continue' : 'Try the other link path to continue'} />
+      <p style={paragraph}>For Instagram comment-to-DM automations, we suggest <b>Superprofile</b>.</p>
+      <button type="button" onClick={finish} style={primaryBtn(true)}>Mark as done</button>
     </div>
   );
 }

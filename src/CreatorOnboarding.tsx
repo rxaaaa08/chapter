@@ -14,7 +14,7 @@
 //
 // Layout fills the MobileShell frame (height:100%), so the welcome step centers
 // and doesn't scroll, and the later steps scroll within the frame without a gap.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './supabase';
 import {
   DemoExitProvider,
@@ -152,6 +152,7 @@ const readStoredProgress = (): StoredProgress => {
 type Props = { email: string; onComplete: () => void };
 
 export default function CreatorOnboarding({ email, onComplete }: Props) {
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [step, setStep] = useState<OnboardingStep>('video');
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -160,6 +161,10 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const [completedLevels, setCompletedLevels] = useState<Set<number>>(() => new Set(initialProgress.completed));
   const [openLevel, setOpenLevel] = useState<number | null>(null);
   const [demoHandle, setDemoHandle] = useState(initialProgress.demoHandle);
+
+  useEffect(() => {
+    bodyScrollRef.current?.scrollTo({ top: 0 });
+  }, [openLevel, step]);
 
   useEffect(() => {
     try {
@@ -411,7 +416,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: scrollable ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', justifyContent: step === 'video' ? 'center' : 'flex-start' }}>
+      <div ref={bodyScrollRef} style={{ flex: 1, minHeight: 0, overflowY: scrollable ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', justifyContent: step === 'video' ? 'center' : 'flex-start' }}>
         <div style={{ maxWidth: 460, width: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '18px 18px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}>
 
           {/* ── Step 1: video (centered, unscrollable) ── */}
