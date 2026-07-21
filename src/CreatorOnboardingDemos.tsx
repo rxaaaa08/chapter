@@ -155,7 +155,7 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
   );
 }
 
-export function DemoL3({ onDone }: DemoProps) {
+export function DemoL2({ onDone }: DemoProps) {
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
   const firstUnflipped = DEMO_EVENTS.findIndex((_, index) => !flipped.has(index));
   const complete = flipped.size === DEMO_EVENTS.length;
@@ -163,7 +163,7 @@ export function DemoL3({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>You earn <b>up to 8% of the full ticket price</b> on every booking that comes through your link. Tap the events to see your exact cut.</p>
+      <p style={paragraph}>Tap the events to see how your cuts work</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {DEMO_EVENTS.map((event, index) => {
           const isFlipped = flipped.has(index);
@@ -176,9 +176,12 @@ export function DemoL3({ onDone }: DemoProps) {
               onClick={() => setFlipped(current => new Set(current).add(index))}
               style={{ ...card, padding: 15, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 82, color: INK, transition: 'transform 0.2s, background 0.2s', borderColor: index === firstUnflipped ? GOLD : isFlipped ? '#bbf7d0' : HAIR, background: isFlipped ? '#f0fdf4' : index === firstUnflipped ? GOLD_TINT : '#fff', transform: isFlipped ? 'rotateX(0deg)' : 'none' }}
             >
-              <div style={{ fontSize: 14, fontWeight: 800 }}>{event.title}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>{event.title}</div>
+                <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 850 }}>{inr(event.price)}</div>
+              </div>
               <div style={{ marginTop: 6, fontSize: 13, color: isFlipped ? GREEN : MUTED, fontWeight: isFlipped ? 850 : 650 }}>
-                {isFlipped ? `${event.pct}% → ${inr(event.cut)}` : `${inr(event.price)} ticket`}
+                {isFlipped ? `${event.pct}% → ${inr(event.cut)}` : 'Tap to reveal your cut'}
               </div>
             </button>
           );
