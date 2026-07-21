@@ -124,7 +124,7 @@ const LEVELS = [
   { id: 3, title: 'Your dashboard' },
   { id: 4, title: 'When does the money reach you?' },
   { id: 5, title: 'Comments → auto-DM' },
-  { id: 6, title: 'How we sound' },
+  { id: 6, title: 'Important Rules' },
 ] as const;
 
 type OnboardingStep = 'video' | 'levels' | 'quiz' | 'details';

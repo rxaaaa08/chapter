@@ -520,7 +520,6 @@ export function DemoL6({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>Last one — and it's about taste.</p>
       <p style={paragraph}>chapter அ is a club people <i>want</i> into, and your audience follows you because they trust you. So we never run fake urgency, invented discounts, or "use my code" bait — there are no codes. There's your link, the real price, and your honest word that the experience is worth it.</p>
       <div style={{ position: 'relative', height: 'min(56vh, 460px)', aspectRatio: '9 / 16', maxWidth: '100%', margin: '0 auto', borderRadius: 24, overflow: 'hidden', background: '#000', border: `1.5px solid ${HAIR}` }}>
         {!videoLoaded && (
