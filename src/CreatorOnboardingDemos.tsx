@@ -13,6 +13,8 @@ const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
 const GREEN = '#16a34a';
 const RED = '#dc2626';
+const GOLD = '#eab308';
+const GOLD_TINT = '#fffbeb';
 
 const DEMO_HANDLE_FALLBACK = 'yourhandle';
 // Duplicate of normalizeHandle in CreatorOnboarding.tsx — kept local to
@@ -51,7 +53,21 @@ type DemoL1Props = DemoProps & { setDemoHandle: (value: string) => void };
 const DemoExitContext = createContext<() => void>(() => {});
 
 export function DemoExitProvider({ onExit, children }: { onExit: () => void; children: React.ReactNode }) {
-  return <DemoExitContext.Provider value={onExit}>{children}</DemoExitContext.Provider>;
+  return (
+    <DemoExitContext.Provider value={onExit}>
+      <style>{`
+        @keyframes creatorDemoPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.42); transform: scale(1); }
+          50% { box-shadow: 0 0 0 9px rgba(234, 179, 8, 0); transform: scale(1.015); }
+        }
+        .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .creator-demo-pulse { animation: none; outline: 2px solid ${GOLD}; outline-offset: 3px; }
+        }
+      `}</style>
+      {children}
+    </DemoExitContext.Provider>
+  );
 }
 
 const useDemoExit = () => useContext(DemoExitContext);
@@ -86,31 +102,6 @@ const eyebrow: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: MUT
 const paragraph: React.CSSProperties = { color: INK, fontSize: 14, lineHeight: 1.58, margin: 0 };
 const helper: React.CSSProperties = { color: MUTED, fontSize: 12.5, lineHeight: 1.5 };
 
-type ChecklistItem = { label: string; done: boolean };
-
-function TapChecklist({ items }: { items: ChecklistItem[] }) {
-  return (
-    <>
-      <style>{`
-        @keyframes creatorDemoPulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(17, 17, 17, 0.2); transform: scale(1); }
-          50% { box-shadow: 0 0 0 8px rgba(17, 17, 17, 0); transform: scale(1.025); }
-        }
-        .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) { .creator-demo-pulse { animation: none; outline: 2px solid ${INK}; outline-offset: 3px; } }
-      `}</style>
-      <div aria-label="Tap checklist" style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: 10, border: `1px solid ${HAIR}`, borderRadius: 14, background: '#fafafa' }}>
-        {items.map(item => (
-          <div key={item.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 26, padding: '4px 8px', borderRadius: 999, background: item.done ? '#ecfdf3' : '#fff', border: `1px solid ${item.done ? '#bbf7d0' : HAIR}`, color: item.done ? '#147a3d' : MUTED, fontSize: 11.5, lineHeight: 1.2, fontWeight: 800 }}>
-            <span aria-hidden="true" style={{ width: 15, height: 15, borderRadius: '50%', display: 'grid', placeItems: 'center', flexShrink: 0, background: item.done ? GREEN : '#fff', border: `1.5px solid ${item.done ? GREEN : '#c9c9cd'}`, color: '#fff', fontSize: 9 }}>{item.done ? '✓' : ''}</span>
-            {item.label}
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
 function ContinueButton({ enabled = true, label = 'Continue', pendingLabel = 'Complete the activity to continue' }: { enabled?: boolean; label?: string; pendingLabel?: string }) {
   const exit = useDemoExit();
   return <button type="button" className={enabled ? 'creator-demo-pulse' : undefined} disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{enabled ? label : pendingLabel}</button>;
@@ -135,14 +126,6 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
 
   return (
     <div style={stack}>
-      <style>{`
-        @keyframes creatorDemoPulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(17, 17, 17, 0.2); transform: scale(1); }
-          50% { box-shadow: 0 0 0 9px rgba(17, 17, 17, 0); transform: scale(1.015); }
-        }
-        .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) { .creator-demo-pulse { animation: none; } }
-      `}</style>
       <p style={paragraph}>First, type the handle you're thinking of — we'll use it everywhere in this demo.</p>
       <div>
         <div style={{ position: 'relative' }}>
@@ -269,9 +252,6 @@ export function DemoL3({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <TapChecklist items={[
-        { label: `Reveal event cuts ${flipped.size}/3`, done: flipped.size === DEMO_EVENTS.length },
-      ]} />
       <p style={paragraph}>You earn <b>up to 8% of the full ticket price</b> on every booking that comes through your link. Tap the events to see your exact cut.</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {DEMO_EVENTS.map((event, index) => {
@@ -283,7 +263,7 @@ export function DemoL3({ onDone }: DemoProps) {
               key={event.title}
               aria-pressed={isFlipped}
               onClick={() => setFlipped(current => new Set(current).add(index))}
-              style={{ ...card, padding: 15, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 82, color: INK, transition: 'transform 0.2s, background 0.2s', background: isFlipped ? '#f0fdf4' : '#fff', transform: isFlipped ? 'rotateX(0deg)' : 'none' }}
+              style={{ ...card, padding: 15, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 82, color: INK, transition: 'transform 0.2s, background 0.2s', borderColor: index === firstUnflipped ? GOLD : isFlipped ? '#bbf7d0' : HAIR, background: isFlipped ? '#f0fdf4' : index === firstUnflipped ? GOLD_TINT : '#fff', transform: isFlipped ? 'rotateX(0deg)' : 'none' }}
             >
               <div style={{ fontSize: 14, fontWeight: 800 }}>{event.title}</div>
               <div style={{ marginTop: 6, fontSize: 13, color: isFlipped ? GREEN : MUTED, fontWeight: isFlipped ? 850 : 650 }}>
@@ -307,7 +287,6 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const handle = handleFor(demoHandle);
-  const exploredCount = Number(conversionTapped) + Number(copyTapped);
   const complete = conversionTapped && copyTapped;
   const rangeStats = DEMO_RANGE_STATS[range];
   const rangeEarned = rangeStats.paid * PRIMARY_EVENT.cut;
@@ -328,12 +307,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <TapChecklist items={[
-        { label: 'Your conversions', done: conversionTapped },
-        { label: 'Copy your link', done: copyTapped },
-      ]} />
       <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You'll find it anytime at <b>chaptera.in/creator</b>. Two things to tap.</p>
-      <div aria-live="polite" style={{ ...helper, marginTop: -10, fontWeight: 800 }}>{exploredCount} of 2 explored</div>
       <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
@@ -373,7 +347,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
 
         <div>
           <div style={{ ...eyebrow, marginBottom: 8 }}>① Your conversions</div>
-          <button type="button" className={!conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
+          <button type="button" className={!conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', borderColor: !conversionTapped ? GOLD : HAIR, background: conversionTapped ? '#f7f7f8' : GOLD_TINT }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
               <div style={{ ...helper, marginTop: 4 }}>{rangeStats.paid} tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
@@ -387,7 +361,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           <div style={eyebrow}>② Your Custom Link</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
-            <button type="button" className={conversionTapped && !copyTapped ? 'creator-demo-pulse' : undefined} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : INK, color: '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
+            <button type="button" className={conversionTapped && !copyTapped ? 'creator-demo-pulse' : undefined} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : conversionTapped && !copyTapped ? GOLD : INK, color: conversionTapped && !copyTapped && !copied ? INK : '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
           {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} — the one link you'll ever share. This button is how it gets everywhere.</div>}
         </div>
@@ -477,10 +451,6 @@ export function DemoL6({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <TapChecklist items={[
-        { label: 'Open event details', done: openedSheet },
-        { label: 'Close the details', done: openedSheet && !sheetOpen },
-      ]} />
       <p style={paragraph}>Your dashboard answers this for you. The <b>"See upcoming events"</b> card lists every experience you can promote — with dates, and what each booking pays you.</p>
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: 15, borderBottom: `1px solid ${HAIR}` }}>
@@ -488,7 +458,7 @@ export function DemoL6({ onDone }: DemoProps) {
           <div style={{ ...helper, marginTop: 3 }}>3 to promote · earn up to {inr(PRIMARY_EVENT.cut)} per booking</div>
         </div>
         {DEMO_EVENTS.map((event, index) => (
-          <button type="button" className={!openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
+          <button type="button" className={!openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: !openedSheet && index === 0 ? GOLD_TINT : '#fff', boxShadow: !openedSheet && index === 0 ? `inset 0 0 0 2px ${GOLD}` : 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800 }}>{event.title}</div>
               <div style={{ ...helper, marginTop: 3 }}>{DEMO_DATES[index]}</div>
