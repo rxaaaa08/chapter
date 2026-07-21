@@ -287,13 +287,12 @@ export function DemoL3({ onDone }: DemoProps) {
 }
 
 export function DemoL4({ demoHandle, onDone }: DemoProps) {
-  const [funnelCaption, setFunnelCaption] = useState('');
   const [conversionTapped, setConversionTapped] = useState(false);
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const handle = handleFor(demoHandle);
-  const exploredCount = Number(Boolean(funnelCaption)) + Number(conversionTapped) + Number(copyTapped);
-  const complete = Boolean(funnelCaption) && conversionTapped && copyTapped;
+  const exploredCount = Number(conversionTapped) + Number(copyTapped);
+  const complete = conversionTapped && copyTapped;
   useCompleteWhen(complete, onDone);
 
   useEffect(() => {
@@ -302,21 +301,21 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
     return () => window.clearTimeout(timeout);
   }, [copied]);
 
-  const tiles = [
-    { label: 'Clicks', value: DEMO_FUNNEL.clicks, caption: 'Clicks: 120 people opened your link. Pays ₹0.' },
-    { label: 'Sign-ups', value: DEMO_FUNNEL.signups, caption: "Sign-ups: 14 applied. Still ₹0 — interest isn't income." },
-    { label: 'Paid', value: DEMO_FUNNEL.paid, caption: `Paid: 5 fully paid — the only tile that pays. 5 × ${inr(PRIMARY_EVENT.cut)} = ${inr(DEMO_MONTH_EARNED)}.` },
+  const leaderboard = [
+    { rank: 1, handle: 'maya.moves', tickets: 7, earned: 2072 },
+    { rank: 2, handle, tickets: 5, earned: DEMO_MONTH_EARNED, trainee: true },
+    { rank: 3, handle: 'rohan.routes', tickets: 4, earned: 1184 },
+    { rank: 4, handle: 'nisha.weekends', tickets: 2, earned: 592 },
   ];
 
   return (
     <div style={stack}>
       <TapChecklist items={[
-        { label: 'A funnel tile', done: Boolean(funnelCaption) },
         { label: 'Your conversions', done: conversionTapped },
         { label: 'Copy your link', done: copyTapped },
       ]} />
-      <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You'll find it anytime at <b>chaptera.in/creator</b>. Three things to tap.</p>
-      <div aria-live="polite" style={{ ...helper, marginTop: -10, fontWeight: 800 }}>{exploredCount} of 3 explored</div>
+      <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You'll find it anytime at <b>chaptera.in/creator</b>. Two things to tap.</p>
+      <div aria-live="polite" style={{ ...helper, marginTop: -10, fontWeight: 800 }}>{exploredCount} of 2 explored</div>
       <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
@@ -324,31 +323,25 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           <div style={{ ...helper, marginTop: 7 }}>Paid out monthly.</div>
         </div>
 
-        <div style={{ ...card, padding: 13 }}>
-          <div style={eyebrow}>③ Your Custom Link</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
-            <button type="button" className={Boolean(funnelCaption) && conversionTapped && !copyTapped ? 'creator-demo-pulse' : undefined} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : INK, color: '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
-          </div>
-          {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} — the one link you'll ever share. This button is how it gets everywhere.</div>}
-        </div>
-
         <div>
-          <div style={{ ...eyebrow, marginBottom: 8 }}>① Your funnel</div>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>Your funnel</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: `1.5px solid ${HAIR}`, borderRadius: 14, overflow: 'hidden' }}>
-            {tiles.map((tile, index) => (
-              <button type="button" className={!funnelCaption && index === 0 ? 'creator-demo-pulse' : undefined} key={tile.label} onClick={() => setFunnelCaption(tile.caption)} style={{ border: 'none', borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: funnelCaption === tile.caption ? '#f7f7f8' : '#fff', padding: '13px 4px', fontFamily: 'inherit', cursor: 'pointer' }}>
-                <div style={{ fontSize: 23, fontWeight: 900 }}>{tile.value}</div>
-                <div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 4 }}>{tile.label}</div>
-              </button>
-            ))}
+            {[
+              { label: 'Clicks', value: DEMO_FUNNEL.clicks },
+              { label: 'Sign-ups', value: DEMO_FUNNEL.signups },
+              { label: 'Paid', value: DEMO_FUNNEL.paid },
+            ].map((tile, index) => <div key={tile.label} style={{ borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', padding: '13px 4px', textAlign: 'center' }}><div style={{ fontSize: 23, fontWeight: 900 }}>{tile.value}</div><div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 4 }}>{tile.label}</div></div>)}
           </div>
-          {funnelCaption && <div style={{ ...helper, marginTop: 8 }}>{funnelCaption}</div>}
+          <div style={{ display: 'grid', gap: 4, marginTop: 9 }}>
+            <div style={helper}><b style={{ color: INK }}>Clicks:</b> 120 people opened your link. Pays ₹0.</div>
+            <div style={helper}><b style={{ color: INK }}>Sign-ups:</b> 14 applied. Still ₹0 — interest isn't income.</div>
+            <div style={helper}><b style={{ color: INK }}>Paid:</b> 5 fully paid — the only tile that pays. 5 × {inr(PRIMARY_EVENT.cut)} = {inr(DEMO_MONTH_EARNED)}.</div>
+          </div>
         </div>
 
         <div>
-          <div style={{ ...eyebrow, marginBottom: 8 }}>② Your conversions</div>
-          <button type="button" className={Boolean(funnelCaption) && !conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>① Your conversions</div>
+          <button type="button" className={!conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
               <div style={{ ...helper, marginTop: 4 }}>5 tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
@@ -358,19 +351,31 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · 5 tickets · {inr(DEMO_MONTH_EARNED)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
         </div>
 
+        <div style={{ ...card, padding: 13 }}>
+          <div style={eyebrow}>② Your Custom Link</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
+            <button type="button" className={conversionTapped && !copyTapped ? 'creator-demo-pulse' : undefined} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : INK, color: '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+          {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} — the one link you'll ever share. This button is how it gets everywhere.</div>}
+        </div>
+
         <div style={{ borderTop: `1px solid ${HAIR}`, paddingTop: 13 }}>
           <div style={eyebrow}>The Team</div>
-          <div style={{ marginTop: 9, padding: '10px 12px', borderRadius: 11, background: '#f5f5f5', display: 'flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ fontWeight: 900 }}>3</div>
-            <div style={{ flex: 1, fontSize: 12.5, fontWeight: 800 }}>@{handle} <span style={{ color: MUTED, fontSize: 10.5 }}>you</span></div>
-            <div style={{ color: GREEN, fontWeight: 850 }}>{inr(DEMO_MONTH_EARNED)}</div>
+          <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>
+            {leaderboard.map(row => (
+              <div key={row.rank} style={{ padding: '9px 10px', borderRadius: 10, background: row.trainee ? '#ecfdf3' : '#f7f7f8', border: row.trainee ? '1px solid #bbf7d0' : '1px solid transparent', display: 'grid', gridTemplateColumns: '20px 1fr auto', alignItems: 'center', gap: 7 }}>
+                <div style={{ fontWeight: 900, fontSize: 12 }}>{row.rank}</div>
+                <div style={{ minWidth: 0, fontSize: 11.5, fontWeight: 800 }}>@{row.handle} {row.trainee && <span style={{ color: MUTED, fontSize: 9.5 }}>you</span>}<div style={{ color: MUTED, fontSize: 9.5, marginTop: 2 }}>{row.tickets} tickets</div></div>
+                <div style={{ color: GREEN, fontSize: 11.5, fontWeight: 850 }}>{inr(row.earned)}</div>
+              </div>
+            ))}
           </div>
-          <div style={{ ...helper, marginTop: 8 }}>and yes, there's a leaderboard. Everyone sees everyone's tickets and earnings — including yours.</div>
         </div>
       </div>
       <ContinueButton
         enabled={complete}
-        pendingLabel={!funnelCaption ? 'Tap a funnel tile to continue' : !conversionTapped ? 'Tap your conversions to continue' : 'Tap Copy to continue'}
+        pendingLabel={!conversionTapped ? 'Tap your conversions to continue' : 'Tap Copy to continue'}
       />
     </div>
   );
