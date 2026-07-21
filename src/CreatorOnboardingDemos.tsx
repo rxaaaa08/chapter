@@ -17,11 +17,11 @@ const DEMO_HANDLE_FALLBACK = 'yourhandle';
 const normalizeDemoHandle = (v: string) =>
   v.trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 40);
 
-const PRIMARY_EVENT = { title: 'Pondy Beach Houseparty', price: 3700, cut: 296 };
+const PRIMARY_EVENT = { title: 'Pondy Beach Houseparty', price: 3700, pct: 8, cut: 296 };
 const DEMO_EVENTS = [
   PRIMARY_EVENT,
-  { title: 'Sunrise at Kovalam', price: 900, cut: 72 },
-  { title: 'Chill Sunday Meetup', price: 359, cut: 29 }, // 8% rounded
+  { title: 'Sunrise at Kovalam', price: 900, pct: 6, cut: 54 },
+  { title: 'Chill Sunday Meetup', price: 359, pct: 4, cut: 14 }, // rounded
 ];
 const DEMO_FUNNEL = { clicks: 120, signups: 14, paid: 5 };
 const DEMO_MONTH_EARNED = DEMO_FUNNEL.paid * PRIMARY_EVENT.cut;
@@ -247,22 +247,14 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
 
 export function DemoL3({ onDone }: DemoProps) {
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
-  const [tappedChips, setTappedChips] = useState<Set<number>>(new Set());
   const firstUnflipped = DEMO_EVENTS.findIndex((_, index) => !flipped.has(index));
-  const firstUntappedChip = [0, 1, 2].find(index => !tappedChips.has(index)) ?? -1;
-  const complete = flipped.size === DEMO_EVENTS.length && tappedChips.size === 3;
+  const complete = flipped.size === DEMO_EVENTS.length;
   useCompleteWhen(complete, onDone);
-  const chips = [
-    { label: 'Click', detail: '₹0. Clicks show reach, not income.' },
-    { label: 'Sign-up', detail: "₹0. Interest isn't income either." },
-    { label: 'Fully paid', detail: <><b>This</b> is when you earn. Every time.</> },
-  ];
 
   return (
     <div style={stack}>
       <TapChecklist items={[
         { label: `Reveal event cuts ${flipped.size}/3`, done: flipped.size === DEMO_EVENTS.length },
-        { label: `Check earning moments ${tappedChips.size}/3`, done: tappedChips.size === 3 },
       ]} />
       <p style={paragraph}>You earn <b>up to 8% of the full ticket price</b> on every booking that comes through your link. Tap the events to see your cut.</p>
       <div style={{ display: 'grid', gap: 10 }}>
@@ -279,26 +271,8 @@ export function DemoL3({ onDone }: DemoProps) {
             >
               <div style={{ fontSize: 14, fontWeight: 800 }}>{event.title}</div>
               <div style={{ marginTop: 6, fontSize: 13, color: isFlipped ? GREEN : MUTED, fontWeight: isFlipped ? 850 : 650 }}>
-                {isFlipped ? `your cut: ${inr(event.cut)}` : inr(event.price)}
+                {isFlipped ? `${event.pct}% → ${inr(event.cut)}` : `${inr(event.price)} ticket`}
               </div>
-            </button>
-          );
-        })}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-        {chips.map((chip, index) => {
-          const tapped = tappedChips.has(index);
-          return (
-            <button
-              type="button"
-              className={firstUnflipped === -1 && index === firstUntappedChip ? 'creator-demo-pulse' : undefined}
-              key={chip.label}
-              aria-pressed={tapped}
-              onClick={() => setTappedChips(current => new Set(current).add(index))}
-              style={{ minHeight: 108, borderRadius: 14, padding: '12px 8px', border: `1.5px solid ${tapped ? INK : HAIR}`, background: tapped ? '#f7f7f8' : '#fff', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}
-            >
-              <div style={{ fontSize: 12.5, fontWeight: 850 }}>{chip.label}</div>
-              {tapped && <div style={{ marginTop: 8, fontSize: 10.5, color: MUTED, lineHeight: 1.4 }}>{chip.detail}</div>}
             </button>
           );
         })}
@@ -306,9 +280,7 @@ export function DemoL3({ onDone }: DemoProps) {
       <p style={{ ...paragraph, color: MUTED }}>Commission runs on events where creator earnings are switched on — your dashboard always shows the exact per-event number, so there's never a surprise.</p>
       <ContinueButton
         enabled={complete}
-        pendingLabel={firstUnflipped !== -1
-          ? `Flip ${DEMO_EVENTS.length - flipped.size} more event card${DEMO_EVENTS.length - flipped.size === 1 ? '' : 's'}`
-          : `Tap ${3 - tappedChips.size} more earning moment${3 - tappedChips.size === 1 ? '' : 's'}`}
+        pendingLabel={`Flip ${DEMO_EVENTS.length - flipped.size} more event card${DEMO_EVENTS.length - flipped.size === 1 ? '' : 's'}`}
       />
     </div>
   );
