@@ -31,6 +31,19 @@ const DEMO_MONTH_EARNED = DEMO_FUNNEL.paid * PRIMARY_EVENT.cut;
 const FOLLOWER = 'Priya';
 
 const DEMO_DATES = ['Aug 28', 'Aug 2', 'Aug 16'];
+type DemoRange = '24h' | 'week' | 'month' | '90d';
+const DEMO_RANGES: Array<{ key: DemoRange; label: string }> = [
+  { key: '24h', label: '24 hrs' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+  { key: '90d', label: '90 days' },
+];
+const DEMO_RANGE_STATS: Record<DemoRange, typeof DEMO_FUNNEL> = {
+  '24h': { clicks: 7, signups: 1, paid: 0 },
+  week: { clicks: 32, signups: 4, paid: 1 },
+  month: DEMO_FUNNEL,
+  '90d': { clicks: 338, signups: 40, paid: 14 },
+};
 
 type DemoProps = { demoHandle: string; onDone: () => void };
 type DemoL1Props = DemoProps & { setDemoHandle: (value: string) => void };
@@ -289,12 +302,15 @@ export function DemoL3({ onDone }: DemoProps) {
 }
 
 export function DemoL4({ demoHandle, onDone }: DemoProps) {
+  const [range, setRange] = useState<DemoRange>('month');
   const [conversionTapped, setConversionTapped] = useState(false);
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const handle = handleFor(demoHandle);
   const exploredCount = Number(conversionTapped) + Number(copyTapped);
   const complete = conversionTapped && copyTapped;
+  const rangeStats = DEMO_RANGE_STATS[range];
+  const rangeEarned = rangeStats.paid * PRIMARY_EVENT.cut;
   useCompleteWhen(complete, onDone);
 
   useEffect(() => {
@@ -326,18 +342,32 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
         </div>
 
         <div>
-          <div style={{ ...eyebrow, marginBottom: 8 }}>Your funnel</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <div style={eyebrow}>Your funnel</div>
+            <div style={{ flex: 1 }} />
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <select
+                value={range}
+                onChange={event => setRange(event.target.value as DemoRange)}
+                aria-label="Funnel date range"
+                style={{ appearance: 'none', WebkitAppearance: 'none', border: `1.5px solid ${HAIR}`, borderRadius: 999, background: '#fff', color: INK, fontSize: 12, fontWeight: 800, padding: '6px 42px 6px 11px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {DEMO_RANGES.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+              </select>
+              <span aria-hidden="true" style={{ position: 'absolute', right: 20, width: 8.2, height: 8.2, borderRight: `2.05px solid ${INK}`, borderBottom: `2.05px solid ${INK}`, transform: 'translateY(-2px) rotate(45deg)', pointerEvents: 'none' }} />
+            </div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: `1.5px solid ${HAIR}`, borderRadius: 14, overflow: 'hidden' }}>
             {[
-              { label: 'Clicks', value: DEMO_FUNNEL.clicks },
-              { label: 'Sign-ups', value: DEMO_FUNNEL.signups },
-              { label: 'Paid', value: DEMO_FUNNEL.paid },
+              { label: 'Clicks', value: rangeStats.clicks },
+              { label: 'Sign-ups', value: rangeStats.signups },
+              { label: 'Paid', value: rangeStats.paid },
             ].map((tile, index) => <div key={tile.label} style={{ borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', padding: '13px 4px', textAlign: 'center' }}><div style={{ fontSize: 23, fontWeight: 900 }}>{tile.value}</div><div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 4 }}>{tile.label}</div></div>)}
           </div>
           <div style={{ display: 'grid', gap: 4, marginTop: 9 }}>
-            <div style={helper}><b style={{ color: INK }}>Clicks:</b> 120 people opened your link. Pays ₹0.</div>
-            <div style={helper}><b style={{ color: INK }}>Sign-ups:</b> 14 applied. Still ₹0 — interest isn't income.</div>
-            <div style={helper}><b style={{ color: INK }}>Paid:</b> 5 fully paid — the only tile that pays. 5 × {inr(PRIMARY_EVENT.cut)} = {inr(DEMO_MONTH_EARNED)}.</div>
+            <div style={helper}><b style={{ color: INK }}>Clicks:</b> {rangeStats.clicks} people opened your link. Pays ₹0.</div>
+            <div style={helper}><b style={{ color: INK }}>Sign-ups:</b> {rangeStats.signups} applied. Still ₹0 — interest isn't income.</div>
+            <div style={helper}><b style={{ color: INK }}>Paid:</b> {rangeStats.paid} fully paid — the only tile that pays. {rangeStats.paid} × {inr(PRIMARY_EVENT.cut)} = {inr(rangeEarned)}.</div>
           </div>
         </div>
 
@@ -346,11 +376,11 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           <button type="button" className={!conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
-              <div style={{ ...helper, marginTop: 4 }}>5 tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
+              <div style={{ ...helper, marginTop: 4 }}>{rangeStats.paid} tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
             </div>
-            <div style={{ color: GREEN, fontWeight: 900 }}>{inr(DEMO_MONTH_EARNED)}</div>
+            <div style={{ color: GREEN, fontWeight: 900 }}>{inr(rangeEarned)}</div>
           </button>
-          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · 5 tickets · {inr(DEMO_MONTH_EARNED)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
+          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · {rangeStats.paid} tickets · {inr(rangeEarned)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
         </div>
 
         <div style={{ ...card, padding: 13 }}>
