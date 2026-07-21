@@ -16,6 +16,17 @@
 // and doesn't scroll, and the later steps scroll within the frame without a gap.
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
+import {
+  DemoExitProvider,
+  DemoL1,
+  DemoL2,
+  DemoL3,
+  DemoL4,
+  DemoL5,
+  DemoL6,
+  DemoL7,
+  DemoL8,
+} from './CreatorOnboardingDemos';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -192,7 +203,6 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
       next.add(level);
       return next;
     });
-    setOpenLevel(null);
   };
 
   const allLevelsComplete = LEVELS.every(level => completedLevels.has(level.id));
@@ -404,7 +414,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
             </div>
           )}
 
-          {/* ── Step 2: demo-level map + placeholder level bodies ── */}
+          {/* ── Step 2: demo-level map + interactive level bodies ── */}
           {step === 'levels' && openLevel === null && (
             <>
               <style>{`
@@ -462,7 +472,16 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                   {LEVELS.find(level => level.id === openLevel)?.title}
                 </div>
               </div>
-              <button type="button" onClick={() => completeLevel(openLevel)} style={primaryBtn(true)}>Mark done (placeholder)</button>
+              <DemoExitProvider onExit={() => setOpenLevel(null)}>
+                {openLevel === 1 && <DemoL1 demoHandle={demoHandle} setDemoHandle={setDemoHandle} onDone={() => completeLevel(1)} />}
+                {openLevel === 2 && <DemoL2 demoHandle={demoHandle} onDone={() => completeLevel(2)} />}
+                {openLevel === 3 && <DemoL3 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
+                {openLevel === 4 && <DemoL4 demoHandle={demoHandle} onDone={() => completeLevel(4)} />}
+                {openLevel === 5 && <DemoL5 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
+                {openLevel === 6 && <DemoL6 demoHandle={demoHandle} onDone={() => completeLevel(6)} />}
+                {openLevel === 7 && <DemoL7 demoHandle={demoHandle} onDone={() => completeLevel(7)} />}
+                {openLevel === 8 && <DemoL8 demoHandle={demoHandle} onDone={() => completeLevel(8)} />}
+              </DemoExitProvider>
             </div>
           )}
 
