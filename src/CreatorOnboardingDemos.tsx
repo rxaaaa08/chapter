@@ -382,40 +382,21 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
 }
 
 export function DemoL5({ onDone }: DemoProps) {
-  const [opened, setOpened] = useState<Set<number>>(new Set());
-  const complete = opened.size === 3;
-  useCompleteWhen(complete, onDone);
-  const nodes = [
-    { title: 'Bookings all month', caption: "every fully-paid booking adds to your July total, the moment it's paid." },
-    { title: 'Month closes', caption: 'your July number locks.' },
-    { title: 'Paid to your UPI', caption: "that's why we ask for your UPI ID at signup — it's where your money goes." },
-  ];
-  const firstUnopened = nodes.findIndex((_, index) => !opened.has(index));
+  const exit = useDemoExit();
+  const finish = () => {
+    onDone();
+    exit();
+  };
 
   return (
     <div style={stack}>
-      <TapChecklist items={nodes.map((node, index) => ({ label: node.title, done: opened.has(index) }))} />
-      <p style={paragraph}>Simple rule: <b>you're paid monthly.</b> Everything you earn in a month is paid out after the month closes — straight to your UPI.</p>
-      <div style={{ ...card, padding: 16 }}>
+      <div style={{ ...card, padding: 18 }}>
         <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
         <div style={{ fontSize: 40, lineHeight: 1, fontWeight: 900, letterSpacing: -1.2, marginTop: 5 }}>{inr(DEMO_MONTH_EARNED)}</div>
-        <div style={{ position: 'relative', display: 'grid', gap: 10, marginTop: 22 }}>
-          <div aria-hidden="true" style={{ position: 'absolute', left: 20, top: 22, bottom: 22, width: 2, background: HAIR }} />
-          {nodes.map((node, index) => {
-            const isOpen = opened.has(index);
-            return (
-              <button type="button" className={index === firstUnopened ? 'creator-demo-pulse' : undefined} key={node.title} aria-pressed={isOpen} onClick={() => setOpened(current => new Set(current).add(index))} style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', alignItems: 'flex-start', gap: 12, padding: '11px 10px', border: `1.5px solid ${isOpen ? INK : HAIR}`, borderRadius: 14, background: '#fff', color: INK, textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}>
-                <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: isOpen ? INK : '#fff', border: `2px solid ${isOpen ? INK : HAIR}`, color: '#fff', fontSize: 10, fontWeight: 900 }}>{isOpen ? '✓' : ''}</span>
-                <span>
-                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 850 }}>{node.title}</span>
-                  {isOpen && <span style={{ display: 'block', ...helper, marginTop: 5 }}>{node.caption}</span>}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <div style={{ ...paragraph, marginTop: 14, fontWeight: 800 }}>Paid out monthly — straight to your UPI</div>
       </div>
-      <ContinueButton enabled={complete} pendingLabel={firstUnopened >= 0 ? `Tap ${nodes[firstUnopened].title.toLowerCase()} to continue` : undefined} />
+      <p style={paragraph}>Everything you earn in July is paid after the month closes.</p>
+      <button type="button" onClick={finish} style={primaryBtn(true)}>Continue</button>
     </div>
   );
 }
