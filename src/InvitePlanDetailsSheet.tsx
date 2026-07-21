@@ -35,6 +35,7 @@ export function InvitePlanDetailsSheet({
   isBalancePayment = false,
   isFullPay = false,
   whatsappGroupUrl,
+  closeButtonClassName,
 }: {
   open: boolean;
   onClose: () => void;
@@ -45,6 +46,7 @@ export function InvitePlanDetailsSheet({
   isBalancePayment?: boolean;
   isFullPay?: boolean;
   whatsappGroupUrl?: string;
+  closeButtonClassName?: string;
 }) {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(0);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
@@ -96,7 +98,7 @@ export function InvitePlanDetailsSheet({
             <button
               type="button"
               onClick={onClose}
-              className="absolute right-4 -top-10 z-20 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+              className={`absolute right-4 -top-10 z-20 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm ${closeButtonClassName ?? ''}`}
               aria-label="Close plan details"
             >
               <X size={14} />

@@ -214,6 +214,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   };
 
   const allLevelsComplete = LEVELS.every(level => completedLevels.has(level.id));
+  const completedLevelCount = LEVELS.filter(level => completedLevels.has(level.id)).length;
   const nextUnlockedLevel = LEVELS.find(level => (
     !completedLevels.has(level.id)
     && (level.id === 1 || completedLevels.has(level.id - 1))
@@ -460,8 +461,12 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                 {LEVELS.slice(2).map(renderLevelNode)}
               </div>
 
+              <div aria-live="polite" style={{ color: allLevelsComplete ? GREEN : MUTED, fontSize: 12.5, lineHeight: 1.4, fontWeight: 800, textAlign: 'center' }}>
+                {completedLevelCount} of {LEVELS.length} done
+              </div>
               <button
                 type="button"
+                className={allLevelsComplete ? 'creator-level-next' : undefined}
                 onClick={() => { if (allLevelsComplete) openStep('quiz'); }}
                 disabled={!allLevelsComplete}
                 style={primaryBtn(allLevelsComplete)}

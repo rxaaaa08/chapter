@@ -68,9 +68,34 @@ const eyebrow: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: MUT
 const paragraph: React.CSSProperties = { color: INK, fontSize: 14, lineHeight: 1.58, margin: 0 };
 const helper: React.CSSProperties = { color: MUTED, fontSize: 12.5, lineHeight: 1.5 };
 
-function ContinueButton({ enabled = true, label = 'Continue' }: { enabled?: boolean; label?: string }) {
+type ChecklistItem = { label: string; done: boolean };
+
+function TapChecklist({ items }: { items: ChecklistItem[] }) {
+  return (
+    <>
+      <style>{`
+        @keyframes creatorDemoPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(17, 17, 17, 0.2); transform: scale(1); }
+          50% { box-shadow: 0 0 0 8px rgba(17, 17, 17, 0); transform: scale(1.025); }
+        }
+        .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .creator-demo-pulse { animation: none; outline: 2px solid ${INK}; outline-offset: 3px; } }
+      `}</style>
+      <div aria-label="Tap checklist" style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: 10, border: `1px solid ${HAIR}`, borderRadius: 14, background: '#fafafa' }}>
+        {items.map(item => (
+          <div key={item.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 26, padding: '4px 8px', borderRadius: 999, background: item.done ? '#ecfdf3' : '#fff', border: `1px solid ${item.done ? '#bbf7d0' : HAIR}`, color: item.done ? '#147a3d' : MUTED, fontSize: 11.5, lineHeight: 1.2, fontWeight: 800 }}>
+            <span aria-hidden="true" style={{ width: 15, height: 15, borderRadius: '50%', display: 'grid', placeItems: 'center', flexShrink: 0, background: item.done ? GREEN : '#fff', border: `1.5px solid ${item.done ? GREEN : '#c9c9cd'}`, color: '#fff', fontSize: 9 }}>{item.done ? '✓' : ''}</span>
+            {item.label}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ContinueButton({ enabled = true, label = 'Continue', pendingLabel = 'Complete the activity to continue' }: { enabled?: boolean; label?: string; pendingLabel?: string }) {
   const exit = useDemoExit();
-  return <button type="button" disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{label}</button>;
+  return <button type="button" className={enabled ? 'creator-demo-pulse' : undefined} disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{enabled ? label : pendingLabel}</button>;
 }
 
 function AttributionTag({ handle }: { handle: string }) {
@@ -217,6 +242,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
   const [showCounterexample, setShowCounterexample] = useState(false);
   const [sawCounterexample, setSawCounterexample] = useState(false);
   const handle = handleFor(demoHandle);
+  const counterFinished = counter >= PRIMARY_EVENT.cut;
   const complete = scene === 3 && sawCounterexample;
   useCompleteWhen(complete, onDone);
 
@@ -247,6 +273,10 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
+      <TapChecklist items={[
+        { label: 'Complete Priya\'s booking', done: scene === 3 },
+        { label: 'Try a later visit', done: sawCounterexample },
+      ]} />
       <p style={paragraph}>Priya's on the Pondy Beach Houseparty page — and notice the little tag riding along: <b>came from @{handle}</b>. As long as that tag is there, whatever she books is credited to you.</p>
       <p style={paragraph}>Walk her through it.</p>
 
@@ -258,7 +288,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
               <div style={{ fontSize: 17, fontWeight: 850 }}>{PRIMARY_EVENT.title}</div>
               <div style={{ ...helper, marginTop: 6 }}>dates · pickup points · {inr(PRIMARY_EVENT.price)}</div>
             </div>
-            <button type="button" onClick={() => setScene(2)} style={primaryBtn(true)}>{FOLLOWER} applies</button>
+            <button type="button" className="creator-demo-pulse" onClick={() => setScene(2)} style={primaryBtn(true)}>{FOLLOWER} applies</button>
           </>
         )}
         {scene === 2 && (
@@ -268,7 +298,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
               <div style={{ fontSize: 15, fontWeight: 800 }}>Application sent.</div>
               <div style={{ ...helper, marginTop: 4 }}>The payment page opens…</div>
             </div>
-            <button type="button" onClick={() => setScene(3)} style={primaryBtn(true)}>{FOLLOWER} pays {inr(PRIMARY_EVENT.price)}</button>
+            <button type="button" className="creator-demo-pulse" onClick={() => setScene(3)} style={primaryBtn(true)}>{FOLLOWER} pays {inr(PRIMARY_EVENT.price)}</button>
           </>
         )}
         {scene === 3 && (
@@ -281,18 +311,19 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
         )}
       </div>
 
-      <button type="button" aria-pressed={showCounterexample} onClick={toggleCounterexample} style={secondaryBtn}>What if she books next week instead?</button>
-      {showCounterexample && (
-        <div style={{ padding: 14, borderRadius: 14, background: '#f7f7f8', color: INK, fontSize: 13.5, lineHeight: 1.55 }}>
-          The "came from @{handle}" tag is gone — she came back directly, in a new visit. Commission: <b>₹0.</b> The booking has to happen in the visit your link started. (One more reason the auto-DM works so well: the link — and the booking — happen right there, in the moment.)
-        </div>
-      )}
-
       {scene === 3 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <button type="button" onClick={replay} style={secondaryBtn}>Replay</button>
-          <ContinueButton enabled={complete} />
-        </div>
+        <>
+          <button type="button" className={!sawCounterexample && counterFinished ? 'creator-demo-pulse' : undefined} aria-pressed={showCounterexample} onClick={toggleCounterexample} style={secondaryBtn}>What if she books next week instead?</button>
+          {showCounterexample && (
+            <div style={{ padding: 14, borderRadius: 14, background: '#f7f7f8', color: INK, fontSize: 13.5, lineHeight: 1.55 }}>
+              The "came from @{handle}" tag is gone — she came back directly, in a new visit. Commission: <b>₹0.</b> The booking has to happen in the visit your link started. (One more reason the auto-DM works so well: the link — and the booking — happen right there, in the moment.)
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <button type="button" onClick={replay} style={secondaryBtn}>Replay</button>
+            <ContinueButton enabled={complete} pendingLabel="See what happens if she books later" />
+          </div>
+        </>
       )}
     </div>
   );
@@ -301,6 +332,8 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
 export function DemoL3({ onDone }: DemoProps) {
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
   const [tappedChips, setTappedChips] = useState<Set<number>>(new Set());
+  const firstUnflipped = DEMO_EVENTS.findIndex((_, index) => !flipped.has(index));
+  const firstUntappedChip = [0, 1, 2].find(index => !tappedChips.has(index)) ?? -1;
   const complete = flipped.size === DEMO_EVENTS.length && tappedChips.size === 3;
   useCompleteWhen(complete, onDone);
   const chips = [
@@ -311,6 +344,10 @@ export function DemoL3({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
+      <TapChecklist items={[
+        { label: `Reveal event cuts ${flipped.size}/3`, done: flipped.size === DEMO_EVENTS.length },
+        { label: `Check earning moments ${tappedChips.size}/3`, done: tappedChips.size === 3 },
+      ]} />
       <p style={paragraph}>You earn <b>up to 8% of the full ticket price</b> on every booking that comes through your link. Tap the events to see your cut.</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {DEMO_EVENTS.map((event, index) => {
@@ -318,6 +355,7 @@ export function DemoL3({ onDone }: DemoProps) {
           return (
             <button
               type="button"
+              className={index === firstUnflipped ? 'creator-demo-pulse' : undefined}
               key={event.title}
               aria-pressed={isFlipped}
               onClick={() => setFlipped(current => new Set(current).add(index))}
@@ -337,6 +375,7 @@ export function DemoL3({ onDone }: DemoProps) {
           return (
             <button
               type="button"
+              className={firstUnflipped === -1 && index === firstUntappedChip ? 'creator-demo-pulse' : undefined}
               key={chip.label}
               aria-pressed={tapped}
               onClick={() => setTappedChips(current => new Set(current).add(index))}
@@ -349,7 +388,12 @@ export function DemoL3({ onDone }: DemoProps) {
         })}
       </div>
       <p style={{ ...paragraph, color: MUTED }}>Commission runs on events where creator earnings are switched on — your dashboard always shows the exact per-event number, so there's never a surprise.</p>
-      <ContinueButton enabled={complete} />
+      <ContinueButton
+        enabled={complete}
+        pendingLabel={firstUnflipped !== -1
+          ? `Flip ${DEMO_EVENTS.length - flipped.size} more event card${DEMO_EVENTS.length - flipped.size === 1 ? '' : 's'}`
+          : `Tap ${3 - tappedChips.size} more earning moment${3 - tappedChips.size === 1 ? '' : 's'}`}
+      />
     </div>
   );
 }
@@ -360,6 +404,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const handle = handleFor(demoHandle);
+  const exploredCount = Number(Boolean(funnelCaption)) + Number(conversionTapped) + Number(copyTapped);
   const complete = Boolean(funnelCaption) && conversionTapped && copyTapped;
   useCompleteWhen(complete, onDone);
 
@@ -377,7 +422,13 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
+      <TapChecklist items={[
+        { label: 'A funnel tile', done: Boolean(funnelCaption) },
+        { label: 'Your conversions', done: conversionTapped },
+        { label: 'Copy your link', done: copyTapped },
+      ]} />
       <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You'll find it anytime at <b>chaptera.in/creator</b>. Three things to tap.</p>
+      <div aria-live="polite" style={{ ...helper, marginTop: -10, fontWeight: 800 }}>{exploredCount} of 3 explored</div>
       <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
@@ -386,19 +437,19 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
         </div>
 
         <div style={{ ...card, padding: 13 }}>
-          <div style={eyebrow}>Your Custom Link</div>
+          <div style={eyebrow}>③ Your Custom Link</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
-            <button type="button" onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : INK, color: '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
+            <button type="button" className={Boolean(funnelCaption) && conversionTapped && !copyTapped ? 'creator-demo-pulse' : undefined} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: 'none', borderRadius: 9, background: copied ? GREEN : INK, color: '#fff', fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
           {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} — the one link you'll ever share. This button is how it gets everywhere.</div>}
         </div>
 
         <div>
-          <div style={{ ...eyebrow, marginBottom: 8 }}>Your funnel</div>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>① Your funnel</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: `1.5px solid ${HAIR}`, borderRadius: 14, overflow: 'hidden' }}>
             {tiles.map((tile, index) => (
-              <button type="button" key={tile.label} onClick={() => setFunnelCaption(tile.caption)} style={{ border: 'none', borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: funnelCaption === tile.caption ? '#f7f7f8' : '#fff', padding: '13px 4px', fontFamily: 'inherit', cursor: 'pointer' }}>
+              <button type="button" className={!funnelCaption && index === 0 ? 'creator-demo-pulse' : undefined} key={tile.label} onClick={() => setFunnelCaption(tile.caption)} style={{ border: 'none', borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: funnelCaption === tile.caption ? '#f7f7f8' : '#fff', padding: '13px 4px', fontFamily: 'inherit', cursor: 'pointer' }}>
                 <div style={{ fontSize: 23, fontWeight: 900 }}>{tile.value}</div>
                 <div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 4 }}>{tile.label}</div>
               </button>
@@ -408,8 +459,8 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
         </div>
 
         <div>
-          <div style={{ ...eyebrow, marginBottom: 8 }}>Your conversions</div>
-          <button type="button" onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>② Your conversions</div>
+          <button type="button" className={Boolean(funnelCaption) && !conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
               <div style={{ ...helper, marginTop: 4 }}>5 tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
@@ -429,7 +480,10 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           <div style={{ ...helper, marginTop: 8 }}>and yes, there's a leaderboard. Everyone sees everyone's tickets and earnings — including yours.</div>
         </div>
       </div>
-      <ContinueButton enabled={complete} />
+      <ContinueButton
+        enabled={complete}
+        pendingLabel={!funnelCaption ? 'Tap a funnel tile to continue' : !conversionTapped ? 'Tap your conversions to continue' : 'Tap Copy to continue'}
+      />
     </div>
   );
 }
@@ -443,9 +497,11 @@ export function DemoL5({ onDone }: DemoProps) {
     { title: 'Month closes', caption: 'your July number locks.' },
     { title: 'Paid to your UPI', caption: "that's why we ask for your UPI ID at signup — it's where your money goes." },
   ];
+  const firstUnopened = nodes.findIndex((_, index) => !opened.has(index));
 
   return (
     <div style={stack}>
+      <TapChecklist items={nodes.map((node, index) => ({ label: node.title, done: opened.has(index) }))} />
       <p style={paragraph}>Simple rule: <b>you're paid monthly.</b> Everything you earn in a month is paid out after the month closes — straight to your UPI.</p>
       <div style={{ ...card, padding: 16 }}>
         <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
@@ -455,7 +511,7 @@ export function DemoL5({ onDone }: DemoProps) {
           {nodes.map((node, index) => {
             const isOpen = opened.has(index);
             return (
-              <button type="button" key={node.title} aria-pressed={isOpen} onClick={() => setOpened(current => new Set(current).add(index))} style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', alignItems: 'flex-start', gap: 12, padding: '11px 10px', border: `1.5px solid ${isOpen ? INK : HAIR}`, borderRadius: 14, background: '#fff', color: INK, textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}>
+              <button type="button" className={index === firstUnopened ? 'creator-demo-pulse' : undefined} key={node.title} aria-pressed={isOpen} onClick={() => setOpened(current => new Set(current).add(index))} style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', alignItems: 'flex-start', gap: 12, padding: '11px 10px', border: `1.5px solid ${isOpen ? INK : HAIR}`, borderRadius: 14, background: '#fff', color: INK, textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}>
                 <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: isOpen ? INK : '#fff', border: `2px solid ${isOpen ? INK : HAIR}`, color: '#fff', fontSize: 10, fontWeight: 900 }}>{isOpen ? '✓' : ''}</span>
                 <span>
                   <span style={{ display: 'block', fontSize: 13.5, fontWeight: 850 }}>{node.title}</span>
@@ -466,7 +522,7 @@ export function DemoL5({ onDone }: DemoProps) {
           })}
         </div>
       </div>
-      <ContinueButton enabled={complete} />
+      <ContinueButton enabled={complete} pendingLabel={firstUnopened >= 0 ? `Tap ${nodes[firstUnopened].title.toLowerCase()} to continue` : undefined} />
     </div>
   );
 }
@@ -529,6 +585,10 @@ export function DemoL6({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
+      <TapChecklist items={[
+        { label: 'Open event details', done: openedSheet },
+        { label: 'Close the details', done: openedSheet && !sheetOpen },
+      ]} />
       <p style={paragraph}>Your dashboard answers this for you. The <b>"See upcoming events"</b> card lists every experience you can promote — with dates, and what each booking pays you.</p>
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: 15, borderBottom: `1px solid ${HAIR}` }}>
@@ -536,7 +596,7 @@ export function DemoL6({ onDone }: DemoProps) {
           <div style={{ ...helper, marginTop: 3 }}>3 to promote · earn up to {inr(PRIMARY_EVENT.cut)} per booking</div>
         </div>
         {DEMO_EVENTS.map((event, index) => (
-          <button type="button" key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
+          <button type="button" className={!openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800 }}>{event.title}</div>
               <div style={{ ...helper, marginTop: 3 }}>{DEMO_DATES[index]}</div>
@@ -557,7 +617,7 @@ export function DemoL6({ onDone }: DemoProps) {
           </button>
         ))}
       </div>
-      <ContinueButton enabled={openedSheet && !sheetOpen} />
+      <ContinueButton enabled={openedSheet && !sheetOpen} pendingLabel={openedSheet ? 'Close the details to continue' : 'Open an event to continue'} />
 
       <div style={{ position: 'fixed', top: 0, bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 448, zIndex: 1000, pointerEvents: sheetOpen ? 'auto' : 'none' }}>
         <InvitePlanDetailsSheet
@@ -565,6 +625,7 @@ export function DemoL6({ onDone }: DemoProps) {
           onClose={() => setSheetOpen(false)}
           title={sheetTitle}
           details={PONDY_DETAILS}
+          closeButtonClassName={sheetOpen ? 'creator-demo-pulse' : undefined}
         />
       </div>
     </div>
@@ -599,6 +660,7 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
+      <TapChecklist items={[{ label: 'Walk both link paths', done: hasRun }]} />
       <p style={paragraph}>Remember how Priya reached your link in level 1? Comment → auto-DM. Now set it up from your side.</p>
       <p style={paragraph}><b>The play:</b> set your reels to auto-DM anyone who comments a keyword (like "LINK"). The DM carries your link — so the link goes <i>to them</i>, right in the moment they're interested.</p>
       <p style={paragraph}><b>The two buttons.</b> Give your auto-DM two buttons — <b>"I need more details"</b> and <b>"Book Now"</b> — and point <b>both at your same link.</b> Different people are in different mindsets when they tap; your chapter அ page serves both — it answers the details <i>and</i> takes the booking. Never two different links. One link: yours.</p>
@@ -629,7 +691,7 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
           <div style={{ ...helper, fontSize: 10.5, marginTop: 11 }}>the link comes to them — nothing to hunt for.</div>
         </div>
       </div>
-      <button type="button" disabled={running} onClick={runPaths} style={primaryBtn(!running)}>Walk both paths</button>
+      <button type="button" className={!hasRun ? 'creator-demo-pulse' : undefined} disabled={running} onClick={runPaths} style={primaryBtn(!running)}>Walk both paths</button>
 
       <div style={{ ...card, padding: 15, background: '#f8f8f9' }}>
         <div style={eyebrow}>your auto-DM</div>
@@ -639,7 +701,7 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
           <div style={{ ...card, borderColor: '#d7d7db', padding: 10, fontSize: 11.5, fontWeight: 800 }}>Book Now <span style={{ color: MUTED }}>→ chaptera.in/@{handle}</span></div>
         </div>
       </div>
-      <ContinueButton enabled={hasRun} />
+      <ContinueButton enabled={hasRun} pendingLabel="Walk both paths to continue" />
     </div>
   );
 }
@@ -662,16 +724,21 @@ export function DemoL8({ onDone }: DemoProps) {
       color: GREEN,
     },
   ];
+  const firstUnrevealed = contrasts.findIndex((_, index) => !revealed.has(index));
 
   return (
     <div style={stack}>
+      <TapChecklist items={[
+        { label: 'Reveal the hype post', done: revealed.has(0) },
+        { label: 'Reveal the honest post', done: revealed.has(1) },
+      ]} />
       <p style={paragraph}>Last one — and it's about taste.</p>
       <p style={paragraph}>chapter அ is a club people <i>want</i> into, and your audience follows you because they trust you. So we never run fake urgency, invented discounts, or "use my code" bait — there are no codes. There's your link, the real price, and your honest word that the experience is worth it.</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {contrasts.map((contrast, index) => {
           const isRevealed = revealed.has(index);
           return (
-            <button type="button" key={contrast.quote} aria-pressed={isRevealed} onClick={() => setRevealed(current => new Set(current).add(index))} style={{ ...card, padding: 17, minHeight: 142, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: isRevealed ? '#fafafa' : '#fff', borderColor: isRevealed ? contrast.color : HAIR }}>
+            <button type="button" className={index === firstUnrevealed ? 'creator-demo-pulse' : undefined} key={contrast.quote} aria-pressed={isRevealed} onClick={() => setRevealed(current => new Set(current).add(index))} style={{ ...card, padding: 17, minHeight: 142, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: isRevealed ? '#fafafa' : '#fff', borderColor: isRevealed ? contrast.color : HAIR }}>
               <div style={{ fontSize: 16, lineHeight: 1.42, fontWeight: 750 }}>“{contrast.quote}”</div>
               {isRevealed && (
                 <div style={{ marginTop: 16 }}>
@@ -683,7 +750,7 @@ export function DemoL8({ onDone }: DemoProps) {
           );
         })}
       </div>
-      <ContinueButton enabled={complete} label="Finish the demo →" />
+      <ContinueButton enabled={complete} label="Finish the demo →" pendingLabel={firstUnrevealed === 0 ? 'Reveal the hype post to continue' : 'Reveal the honest post to continue'} />
     </div>
   );
 }
