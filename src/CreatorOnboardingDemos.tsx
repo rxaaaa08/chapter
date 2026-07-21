@@ -4,8 +4,8 @@ import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDeta
 
 const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
 
-// TODO(owner): replace with the creator's recorded Level 7 walkthrough.
-const LEVEL_SEVEN_VIMEO_ID = '76979871';
+// TODO(owner): replace with the creator's recorded comments-to-auto-DM walkthrough.
+const L7_VIMEO_ID = '76979871';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -396,46 +396,16 @@ const PONDY_DETAILS: InvitePlanDetails = {
   showAccommodation: false,
 };
 
-export function DemoL7({ demoHandle, onDone }: DemoProps) {
+export function DemoL5({ onDone }: DemoProps) {
   const [videoLoaded, setVideoLoaded] = useState(false);
-  const [activePath, setActivePath] = useState<'bio' | 'dm' | null>(null);
-  const [pathStep, setPathStep] = useState(0);
-  const [playedPaths, setPlayedPaths] = useState<Set<'bio' | 'dm'>>(new Set());
-  const handle = handleFor(demoHandle);
-  const complete = playedPaths.size === 2;
-  const nextPath = !playedPaths.has('bio') ? 'bio' : !playedPaths.has('dm') ? 'dm' : null;
-  useCompleteWhen(complete, onDone);
-
-  useEffect(() => {
-    if (!activePath) return;
-    const timeout = window.setTimeout(() => {
-      if (pathStep < 3) {
-        setPathStep(current => current + 1);
-        return;
-      }
-      setPlayedPaths(current => new Set(current).add(activePath));
-      setActivePath(null);
-      setPathStep(0);
-    }, 650);
-    return () => window.clearTimeout(timeout);
-  }, [activePath, pathStep]);
-
-  const playPath = (path: 'bio' | 'dm') => {
-    if (activePath) return;
-    setPathStep(0);
-    setActivePath(path);
+  const exit = useDemoExit();
+  const finish = () => {
+    onDone();
+    exit();
   };
-
-  const paths: Array<{ key: 'bio' | 'dm'; title: string; caption: string; steps: string[] }> = [
-    { key: 'bio', title: 'Send them to your bio', caption: 'Every hop is another place to drop off.', steps: ['Reel', 'Profile', 'Bio link', 'Booking'] },
-    { key: 'dm', title: 'Auto-DM the link', caption: 'Their comment gets a straight path.', steps: ['LINK comment', 'Instant DM', 'Tap button', 'Booking'] },
-  ];
 
   return (
     <div style={stack}>
-      <p style={paragraph}>Watch a creator walk through the comment-to-DM setup that sends your link while interest is still fresh.</p>
-      <p style={{ ...paragraph, color: MUTED }}>Then play both paths and watch where each follower has to go.</p>
-
       <div style={{ position: 'relative', height: 'min(56vh, 460px)', aspectRatio: '9 / 16', maxWidth: '100%', margin: '0 auto', borderRadius: 24, overflow: 'hidden', background: '#000', border: `1.5px solid ${HAIR}` }}>
         {!videoLoaded && (
           <div role="status" aria-label="Loading video" style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', background: '#000' }}>
@@ -448,7 +418,7 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
           </div>
         )}
         <iframe
-          src={`https://player.vimeo.com/video/${LEVEL_SEVEN_VIMEO_ID}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0&api=1`}
+          src={`https://player.vimeo.com/video/${L7_VIMEO_ID}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0&api=1`}
           title="Creator auto-DM setup video"
           style={{ position: 'absolute', inset: -2, width: 'calc(100% + 4px)', height: 'calc(100% + 4px)', border: 0, clipPath: 'inset(0 round 22px)' }}
           onLoad={() => setVideoLoaded(true)}
@@ -456,73 +426,7 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
           allowFullScreen
         />
       </div>
-
-      <div style={{ display: 'grid', gap: 10 }}>
-        {paths.map(path => {
-          const isActive = activePath === path.key;
-          const isPlayed = playedPaths.has(path.key);
-          const isNext = !activePath && nextPath === path.key;
-          return (
-            <button
-              key={path.key}
-              type="button"
-              className={isNext ? 'creator-demo-pulse' : undefined}
-              disabled={activePath !== null}
-              aria-pressed={isPlayed}
-              onClick={() => playPath(path.key)}
-              style={{ ...card, width: '100%', padding: 15, borderColor: isNext || isActive ? GOLD : isPlayed ? '#bbf7d0' : HAIR, background: isNext || isActive ? GOLD_TINT : isPlayed ? '#f0fdf4' : '#fff', color: INK, textAlign: 'left', fontFamily: 'inherit', cursor: activePath ? 'default' : 'pointer' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 900 }}>{path.title}</div>
-                  <div style={{ ...helper, marginTop: 3 }}>{path.caption}</div>
-                </div>
-                <div aria-live="polite" style={{ color: isPlayed ? GREEN : MUTED, fontSize: 10.5, fontWeight: 850 }}>{isActive ? 'PLAYING' : isPlayed ? 'PLAYED ✓' : 'TAP TO PLAY'}</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', alignItems: 'center', gap: 4, marginTop: 16 }}>
-                {path.steps.map((step, index) => {
-                  const reached = isPlayed || isActive && index <= pathStep;
-                  const current = isActive && index === pathStep;
-                  const bioDropOff = path.key === 'bio' && isActive && index < pathStep;
-                  return (
-                    <React.Fragment key={step}>
-                      <div style={{ gridColumn: index + 1, gridRow: 1, position: 'relative', zIndex: 1, minWidth: 0, padding: '9px 3px', borderRadius: 10, border: `1.5px solid ${current ? GOLD : reached ? '#86efac' : HAIR}`, background: current ? GOLD : reached ? '#f0fdf4' : '#f7f7f8', color: current ? INK : reached ? '#166534' : MUTED, opacity: bioDropOff ? Math.max(0.28, 1 - (pathStep - index) * 0.24) : isActive && index > pathStep ? 0.48 : 1, transform: current ? 'translateY(-6px)' : 'translateY(0)', transition: 'transform 0.35s ease, opacity 0.35s ease, background 0.35s ease', textAlign: 'center', fontSize: 9.5, lineHeight: 1.15, fontWeight: 850 }}>
-                        {step}
-                      </div>
-                      {index < path.steps.length - 1 && <div aria-hidden="true" style={{ gridColumn: `${index + 1} / ${index + 3}`, gridRow: 1, height: 2, margin: '0 10px', background: reached && (isPlayed || pathStep > index) ? path.key === 'bio' ? '#facc15' : '#86efac' : HAIR, opacity: path.key === 'bio' && isActive && pathStep > index ? Math.max(0.25, 0.85 - (pathStep - index) * 0.24) : 1, transition: 'opacity 0.35s ease, background 0.35s ease' }} />}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div role="group" aria-label="Static preview of the suggested auto-DM" style={{ ...card, padding: 15, background: '#f8f8f9' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ ...eyebrow, color: INK }}>Our suggested auto-DM</div>
-          <div style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>STATIC PREVIEW</div>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 13.5, lineHeight: 1.55 }}>Hey! Everything about the trip — the plan, dates, and booking — is right here.</div>
-        <div style={{ display: 'grid', gap: 8, marginTop: 13 }}>
-          {['I need more details', 'Book Now'].map(label => (
-            <div key={label} style={{ ...card, borderColor: '#d7d7db', padding: 10, fontSize: 11.5, fontWeight: 800, background: '#fff' }}>{label}</div>
-          ))}
-          <div aria-hidden="true" style={{ textAlign: 'center', color: MUTED, fontSize: 15, lineHeight: 1 }}>↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
-          <div style={{ padding: 11, borderRadius: 11, background: INK, color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 850 }}>one destination · chaptera.in/@{handle}</div>
-        </div>
-        <div style={{ ...eyebrow, color: INK, marginTop: 18 }}>Why this exact format</div>
-        <ul style={{ margin: '10px 0 0', paddingLeft: 18, color: INK, fontSize: 11.5, lineHeight: 1.55 }}>
-          <li>Two buttons make it obvious there's something to TAP — a bare link in a DM often gets read as plain text and skipped.</li>
-          <li>Two mindsets, one page: "I need more details" catches the curious, "Book Now" catches the decided — and the same page serves both.</li>
-          <li>Both buttons carry the SAME link, so your credit is safe no matter which one they tap.</li>
-          <li>The link reaches them in the moment they asked — no bio-hunting, no drop-off.</li>
-          <li>It runs by itself: every "LINK" comment gets the DM instantly, even while you sleep.</li>
-        </ul>
-      </div>
-      <p style={paragraph}>For Instagram comment-to-DM automations, we suggest <b>Superprofile</b>.</p>
-      <ContinueButton enabled={complete} pendingLabel={playedPaths.has('bio') ? 'Play the auto-DM path to continue' : 'Play both paths to continue'} />
+      <button type="button" onClick={finish} style={primaryBtn(true)}>I Understand</button>
     </div>
   );
 }

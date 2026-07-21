@@ -22,7 +22,7 @@ import {
   DemoL2,
   DemoL3,
   DemoL4,
-  DemoL7,
+  DemoL5,
   DemoL8,
 } from './CreatorOnboardingDemos';
 
@@ -514,7 +514,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                 {openLevel === 2 && <DemoL2 demoHandle={demoHandle} onDone={() => completeLevel(2)} />}
                 {openLevel === 3 && <DemoL3 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
                 {openLevel === 4 && <DemoL4 demoHandle={demoHandle} onDone={() => completeLevel(4)} />}
-                {openLevel === 5 && <DemoL7 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
+                {openLevel === 5 && <DemoL5 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
                 {openLevel === 6 && <DemoL8 demoHandle={demoHandle} onDone={() => completeLevel(6)} />}
               </DemoExitProvider>
             </div>
