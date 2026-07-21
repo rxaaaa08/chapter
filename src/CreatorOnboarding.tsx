@@ -300,6 +300,13 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
+  useEffect(() => {
+    if (step !== 'details') return;
+    const suggestedHandle = normalizeHandle(demoHandle);
+    if (!suggestedHandle) return;
+    setHandle(current => current === '' ? suggestedHandle : current);
+  }, [demoHandle, step]);
+
   const normHandle = normalizeHandle(handle);
   const handleValid = HANDLE_RE.test(normHandle);
   const upiValid = UPI_RE.test(upi.trim());
@@ -590,6 +597,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               <div>
                 <label style={label}>Enter your UPI ID (so we can pay you)</label>
                 <input style={{ ...input, marginTop: 6, borderColor: upiValidationRequested && !upiValid ? RED : HAIR }} value={upi} onChange={e => setUpi(e.target.value)} placeholder="yourname@bank" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                <div style={{ fontSize: 12, color: MUTED, marginTop: 6, lineHeight: 1.4 }}>Remember the payout step from the demo? This is where your monthly earnings land.</div>
                 {upiValidationRequested && !upiValid && <div style={{ fontSize: 12, color: RED, marginTop: 6 }}>That doesn't look like a UPI ID (e.g. name@okhdfc).</div>}
               </div>
 
