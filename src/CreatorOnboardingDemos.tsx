@@ -547,50 +547,35 @@ export function DemoL7({ demoHandle, onDone }: DemoProps) {
 }
 
 export function DemoL8({ onDone }: DemoProps) {
-  const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const complete = revealed.size === 2;
-  useCompleteWhen(complete, onDone);
-  const contrasts = [
-    {
-      quote: '90% OFF if you book in the next 10 minutes!!',
-      verdict: 'Not us.',
-      explanation: "Fake urgency burns your audience's trust — and ours.",
-      color: RED,
-    },
-    {
-      quote: 'went with this crew last month — booking through my link if you want in.',
-      verdict: "That's us.",
-      explanation: 'Honest beats loud, every time.',
-      color: GREEN,
-    },
-  ];
-  const firstUnrevealed = contrasts.findIndex((_, index) => !revealed.has(index));
+  const exit = useDemoExit();
+  const finish = () => {
+    onDone();
+    exit();
+  };
 
   return (
     <div style={stack}>
-      <TapChecklist items={[
-        { label: 'Reveal the hype post', done: revealed.has(0) },
-        { label: 'Reveal the honest post', done: revealed.has(1) },
-      ]} />
       <p style={paragraph}>Last one — and it's about taste.</p>
       <p style={paragraph}>chapter அ is a club people <i>want</i> into, and your audience follows you because they trust you. So we never run fake urgency, invented discounts, or "use my code" bait — there are no codes. There's your link, the real price, and your honest word that the experience is worth it.</p>
-      <div style={{ display: 'grid', gap: 10 }}>
-        {contrasts.map((contrast, index) => {
-          const isRevealed = revealed.has(index);
-          return (
-            <button type="button" className={index === firstUnrevealed ? 'creator-demo-pulse' : undefined} key={contrast.quote} aria-pressed={isRevealed} onClick={() => setRevealed(current => new Set(current).add(index))} style={{ ...card, padding: 17, minHeight: 142, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: isRevealed ? '#fafafa' : '#fff', borderColor: isRevealed ? contrast.color : HAIR }}>
-              <div style={{ fontSize: 16, lineHeight: 1.42, fontWeight: 750 }}>“{contrast.quote}”</div>
-              {isRevealed && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ color: contrast.color, fontSize: 15, fontWeight: 900 }}>{contrast.verdict}</div>
-                  <div style={{ ...helper, marginTop: 4 }}>{contrast.explanation}</div>
-                </div>
-              )}
-            </button>
-          );
-        })}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ ...card, padding: 15, borderColor: '#bbf7d0', background: '#f0fdf4' }}>
+          <div style={{ color: '#166534', fontSize: 13, fontWeight: 900 }}>Do</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 17, color: INK, fontSize: 11.5, lineHeight: 1.55 }}>
+            <li>Share what genuinely excited you.</li>
+            <li>Use the real price and your one link.</li>
+            <li>Sound like yourself.</li>
+          </ul>
+        </div>
+        <div style={{ ...card, padding: 15, borderColor: '#fecaca', background: '#fef2f2' }}>
+          <div style={{ color: RED, fontSize: 13, fontWeight: 900 }}>Don't</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 17, color: INK, fontSize: 11.5, lineHeight: 1.55 }}>
+            <li>Invent urgency or discounts.</li>
+            <li>Promise a coupon code.</li>
+            <li>Send people to a payment-only link.</li>
+          </ul>
+        </div>
       </div>
-      <ContinueButton enabled={complete} label="Finish the demo →" pendingLabel={firstUnrevealed === 0 ? 'Reveal the hype post to continue' : 'Reveal the honest post to continue'} />
+      <button type="button" onClick={finish} style={primaryBtn(true)}>Finish the demo →</button>
     </div>
   );
 }
