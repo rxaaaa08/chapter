@@ -95,6 +95,14 @@ const QUIZ: Question[] = [
   },
 ];
 
+const QUIZ_HINTS = [
+  { level: 2, text: 'Take another look at Watch a booking become your money.' },
+  { level: 3, text: 'Take another look at Your money math.' },
+  { level: 5, text: 'Take another look at When does the money reach you?' },
+  { level: 4, text: 'Take another look at Your dashboard.' },
+  { level: 1, text: 'Take another look at How a follower reaches your link.' },
+];
+
 // Fisher–Yates, returns a new array (never mutates the source options).
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -270,11 +278,12 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const [quizError, setQuizError] = useState('');
   const allAnswered = QUIZ.every((_, i) => answers[i]);
   const wrongIdx = QUIZ.map((_, i) => i).filter(i => answers[i] && answers[i] !== CORRECT[i]);
+  const firstWrongHint = wrongIdx.length > 0 ? QUIZ_HINTS[wrongIdx[0]] : null;
 
   const submitQuiz = () => {
     if (!allAnswered) { setQuizError('Please answer every question.'); return; }
     if (wrongIdx.length > 0) {
-      setQuizError('Some answers aren’t right yet — take another look. Re-watch the video if you need to!');
+      setQuizError('Some answers aren’t right yet.');
       return;
     }
     setQuizError('');
@@ -489,8 +498,8 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
           {step === 'quiz' && (
             <>
               <div>
-                <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5 }}>Before you continue...</div>
-                <div style={{ color: MUTED, fontSize: 14, marginTop: 8, lineHeight: 1.55 }}>Answer all questions correctly to go to next step.</div>
+                <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5 }}>Quick check — 5 questions.</div>
+                <div style={{ color: MUTED, fontSize: 14, marginTop: 8, lineHeight: 1.55 }}>Everything here is something you just played through. All five right to continue.</div>
               </div>
               {shuffled.map((question, i) => (
                 <div key={i}>
@@ -517,9 +526,22 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                   </div>
                 </div>
               ))}
-              {quizError && <div style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>{quizError}</div>}
+              {quizError && allAnswered && firstWrongHint ? (
+                <div style={{ border: '1.5px solid #fecaca', background: '#fef2f2', borderRadius: 12, padding: 13 }}>
+                  <div style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>{firstWrongHint.text}</div>
+                  <button
+                    type="button"
+                    onClick={() => { setOpenLevel(firstWrongHint.level); setStep('levels'); }}
+                    style={{ marginTop: 9, padding: 0, border: 'none', background: 'transparent', color: INK, fontSize: 12.5, fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer', fontFamily: 'inherit' }}
+                  >
+                    Reopen this level
+                  </button>
+                </div>
+              ) : quizError ? (
+                <div style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>{quizError}</div>
+              ) : null}
               <button onClick={submitQuiz} style={primaryBtn(allAnswered)}>Continue</button>
-              <button onClick={returnToPreviousStep} style={secondaryBtn}>Re-watch the video</button>
+              <button onClick={returnToPreviousStep} style={secondaryBtn}>Back to the demo</button>
             </>
           )}
 
