@@ -451,11 +451,10 @@ export function DemoL6({ onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>Your dashboard answers this for you. The <b>"See upcoming events"</b> card lists every experience you can promote — with dates, and what each booking pays you.</p>
+      <p style={paragraph}>Open an upcoming event to see what you can promote next.</p>
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: 15, borderBottom: `1px solid ${HAIR}` }}>
           <div style={{ fontSize: 15, fontWeight: 850 }}>See upcoming events</div>
-          <div style={{ ...helper, marginTop: 3 }}>3 to promote · earn up to {inr(PRIMARY_EVENT.cut)} per booking</div>
         </div>
         {DEMO_EVENTS.map((event, index) => (
           <button type="button" className={!openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: !openedSheet && index === 0 ? GOLD_TINT : '#fff', boxShadow: !openedSheet && index === 0 ? `inset 0 0 0 2px ${GOLD}` : 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
@@ -470,7 +469,6 @@ export function DemoL6({ onDone }: DemoProps) {
           </button>
         ))}
       </div>
-      <p style={paragraph}>This card is your what-to-post radar. Post about what's coming up — your one link does the rest.</p>
       <ContinueButton enabled={openedSheet && !sheetOpen} pendingLabel={openedSheet ? 'Close the details to continue' : 'Open an event to continue'} />
 
       {overlayHost && createPortal(
