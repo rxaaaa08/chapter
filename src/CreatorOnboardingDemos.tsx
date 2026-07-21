@@ -20,17 +20,17 @@ const DEMO_HANDLE_FALLBACK = 'yourhandle';
 const normalizeDemoHandle = (v: string) =>
   v.trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 40);
 
-const PRIMARY_EVENT = { title: 'Pondy Beach Houseparty', price: 3700, pct: 8, cut: 296 };
+const PRIMARY_EVENT = { title: 'Pondy Beach Houseparty', price: 3700, pct: 7, cut: 259 };
 const DEMO_EVENTS = [
   PRIMARY_EVENT,
-  { title: 'Sunrise at Kovalam', price: 900, pct: 6, cut: 54 },
-  { title: 'Chill Sunday Meetup', price: 359, pct: 4, cut: 14 }, // rounded
+  { title: 'Chill Sunday Meetup', price: 359, pct: 8, cut: 29 }, // rounded
+  { title: 'Sunrise at Kovalam', price: 699, pct: 5, cut: 35 }, // rounded
 ];
 const DEMO_FUNNEL = { clicks: 120, signups: 14, paid: 5 };
 const DEMO_MONTH_EARNED = DEMO_FUNNEL.paid * PRIMARY_EVENT.cut;
 const FOLLOWER = 'Priya';
 
-const DEMO_DATES = ['Aug 28', 'Aug 24', 'Aug 2'];
+const DEMO_DATES = ['Aug 28', 'Aug 2', 'Aug 16'];
 
 type DemoProps = { demoHandle: string; onDone: () => void };
 type DemoL1Props = DemoProps & { setDemoHandle: (value: string) => void };
@@ -231,7 +231,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
             <div style={{ width: 42, height: 42, margin: '0 auto 12px', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', background: GREEN, fontWeight: 900 }}>✓</div>
             <div style={{ fontSize: 14, fontWeight: 800 }}>Booking confirmed</div>
             <div aria-live="polite" style={{ fontSize: 44, lineHeight: 1, color: GREEN, fontWeight: 900, letterSpacing: -1.4, marginTop: 18 }}>+{inr(counter)}</div>
-            <div style={{ ...helper, marginTop: 8 }}>your commission · 8% of {inr(PRIMARY_EVENT.price)}</div>
+            <div style={{ ...helper, marginTop: 8 }}>your commission · {PRIMARY_EVENT.pct}% of {inr(PRIMARY_EVENT.price)}</div>
           </div>
         )}
       </div>
@@ -259,7 +259,7 @@ export function DemoL3({ onDone }: DemoProps) {
       <TapChecklist items={[
         { label: `Reveal event cuts ${flipped.size}/3`, done: flipped.size === DEMO_EVENTS.length },
       ]} />
-      <p style={paragraph}>You earn <b>up to 8% of the full ticket price</b> on every booking that comes through your link. Tap the events to see your cut.</p>
+      <p style={paragraph}>You earn <b>up to 8% of the full ticket price</b> on every booking that comes through your link. Tap the events to see your exact cut.</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {DEMO_EVENTS.map((event, index) => {
           const isFlipped = flipped.has(index);
@@ -280,7 +280,6 @@ export function DemoL3({ onDone }: DemoProps) {
           );
         })}
       </div>
-      <p style={{ ...paragraph, color: MUTED }}>Commission runs on events where creator earnings are switched on — your dashboard always shows the exact per-event number, so there's never a surprise.</p>
       <ContinueButton
         enabled={complete}
         pendingLabel={`Flip ${DEMO_EVENTS.length - flipped.size} more event card${DEMO_EVENTS.length - flipped.size === 1 ? '' : 's'}`}
@@ -305,10 +304,10 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
   }, [copied]);
 
   const leaderboard = [
-    { rank: 1, handle: 'maya.moves', tickets: 7, earned: 2072 },
+    { rank: 1, handle: 'maya.moves', tickets: 7, earned: 1813 },
     { rank: 2, handle, tickets: 5, earned: DEMO_MONTH_EARNED, trainee: true },
-    { rank: 3, handle: 'rohan.routes', tickets: 4, earned: 1184 },
-    { rank: 4, handle: 'nisha.weekends', tickets: 2, earned: 592 },
+    { rank: 3, handle: 'rohan.routes', tickets: 4, earned: 1036 },
+    { rank: 4, handle: 'nisha.weekends', tickets: 2, earned: 518 },
   ];
 
   return (
