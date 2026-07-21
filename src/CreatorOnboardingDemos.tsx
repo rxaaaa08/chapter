@@ -127,6 +127,7 @@ function EventRows({ showPrice = true }: { showPrice?: boolean }) {
 export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
   const exit = useDemoExit();
   const [scene, setScene] = useState<'explainer' | 1 | 2 | 3>('explainer');
+  const [handleEditorOpen, setHandleEditorOpen] = useState(false);
   const handle = handleFor(demoHandle);
   useCompleteWhen(scene === 3, onDone);
 
@@ -140,28 +141,40 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
         .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .creator-demo-pulse { animation: none; } }
       `}</style>
-      <div style={stack}>
-        <p style={paragraph}>First, type the handle you're thinking of — we'll use it everywhere in this demo.</p>
-        <div>
-          <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: MUTED, fontWeight: 800 }}>@</span>
-            <input
-              aria-label="Demo creator handle"
-              value={demoHandle}
-              onChange={event => setDemoHandle(normalizeDemoHandle(event.target.value))}
-              placeholder="yourhandle"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              style={{ width: '100%', padding: '12px 13px 12px 29px', borderRadius: 12, border: `1.5px solid ${HAIR}`, fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-            />
+      {(scene === 'explainer' || handleEditorOpen) ? (
+        <div style={stack}>
+          <p style={paragraph}>{scene === 'explainer' ? "First, type the handle you're thinking of — we'll use it everywhere in this demo." : 'Change the handle used across this demo.'}</p>
+          <div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: MUTED, fontWeight: 800 }}>@</span>
+                <input
+                  aria-label="Demo creator handle"
+                  value={demoHandle}
+                  onChange={event => setDemoHandle(normalizeDemoHandle(event.target.value))}
+                  placeholder="yourhandle"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  style={{ width: '100%', padding: '12px 13px 12px 29px', borderRadius: 12, border: `1.5px solid ${HAIR}`, fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+              </div>
+              {scene !== 'explainer' && <button type="button" onClick={() => setHandleEditorOpen(false)} style={{ ...secondaryBtn, width: 'auto', padding: '0 14px' }}>Done</button>}
+            </div>
+            <div style={{ ...helper, marginTop: 6 }}>Just for the demo — you'll claim your real handle at the end.</div>
+            {scene === 'explainer' && (
+              <button type="button" onClick={() => setDemoHandle(DEMO_HANDLE_FALLBACK)} style={{ border: 'none', background: 'none', color: INK, fontWeight: 750, fontSize: 12.5, padding: '8px 0 0', cursor: 'pointer', fontFamily: 'inherit' }}>
+                skip for now
+              </button>
+            )}
           </div>
-          <div style={{ ...helper, marginTop: 6 }}>Just for the demo — you'll claim your real handle at the end.</div>
-          <button type="button" onClick={() => setDemoHandle(DEMO_HANDLE_FALLBACK)} style={{ border: 'none', background: 'none', color: INK, fontWeight: 750, fontSize: 12.5, padding: '8px 0 0', cursor: 'pointer', fontFamily: 'inherit' }}>
-            use my name for now
-          </button>
         </div>
-      </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', alignSelf: 'flex-start', gap: 7, padding: '7px 10px', borderRadius: 999, border: `1px solid ${HAIR}`, background: '#fafafa', color: MUTED, fontSize: 11.5, lineHeight: 1.2, fontWeight: 800 }}>
+          demo as <span style={{ color: INK }}>@{handle}</span>
+          <button type="button" onClick={() => setHandleEditorOpen(true)} style={{ border: 'none', background: 'none', color: INK, padding: 0, font: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>change</button>
+        </div>
+      )}
 
       {scene === 'explainer' && (
         <>

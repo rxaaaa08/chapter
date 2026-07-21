@@ -179,7 +179,12 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
       const target = event.state?.creatorOnboardingStep;
       if (target === 'video' || target === 'levels' || target === 'quiz' || target === 'details') {
         if (target === 'video') setVideoLoaded(false);
-        if (target === 'levels') setOpenLevel(null);
+        if (target === 'levels') {
+          const historyLevel = Number(event.state?.creatorOnboardingLevel);
+          setOpenLevel(Number.isInteger(historyLevel) && historyLevel >= 1 && historyLevel <= LEVELS.length ? historyLevel : null);
+        } else {
+          setOpenLevel(null);
+        }
         setStep(target);
       }
     };
@@ -191,6 +196,17 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
     window.history.pushState({ ...(window.history.state ?? {}), creatorOnboardingStep: target }, '', window.location.href);
     if (target === 'levels') setOpenLevel(null);
     setStep(target);
+  };
+
+  const reopenLevelFromQuiz = (level: number) => {
+    window.history.pushState({
+      ...(window.history.state ?? {}),
+      creatorOnboardingStep: 'levels',
+      creatorOnboardingLevel: level,
+      creatorOnboardingReturnTo: 'quiz',
+    }, '', window.location.href);
+    setOpenLevel(level);
+    setStep('levels');
   };
 
   const returnToPreviousStep = () => {
@@ -366,6 +382,10 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: MUTED };
 
   const scrollable = step !== 'video'; // welcome step is fixed / unscrollable
+  const levelOpenedFromQuiz = step === 'levels'
+    && openLevel !== null
+    && window.history.state?.creatorOnboardingStep === 'levels'
+    && window.history.state?.creatorOnboardingReturnTo === 'quiz';
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' }}>
@@ -375,7 +395,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
         <div style={{ maxWidth: 460, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
             onClick={() => step === 'video' ? signOut() : returnToPreviousStep()}
-            aria-label={step === 'video' ? 'Sign out and go back' : step === 'details' ? 'Back to quiz' : step === 'quiz' ? 'Back to levels' : 'Back to video'}
+            aria-label={step === 'video' ? 'Sign out and go back' : step === 'details' ? 'Back to quiz' : step === 'quiz' ? 'Back to levels' : levelOpenedFromQuiz ? 'Back to quiz' : 'Back to video'}
             disabled={step === 'video' && signingOut}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: 'none', background: 'none', cursor: step === 'video' && signingOut ? 'default' : 'pointer', marginLeft: -8, flexShrink: 0, opacity: step === 'video' && signingOut ? 0.6 : 1 }}
           >
@@ -480,12 +500,12 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
             <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', gap: 22 }}>
               <button
                 type="button"
-                onClick={() => setOpenLevel(null)}
-                aria-label="Back to level map"
+                onClick={() => levelOpenedFromQuiz ? window.history.back() : setOpenLevel(null)}
+                aria-label={levelOpenedFromQuiz ? 'Back to quiz' : 'Back to level map'}
                 style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', color: INK, fontSize: 13.5, fontWeight: 750, padding: '4px 0', cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 <span aria-hidden="true" style={{ display: 'block', width: 9, height: 9, borderLeft: '2px solid ' + INK, borderBottom: '2px solid ' + INK, transform: 'rotate(45deg)' }} />
-                Level map
+                {levelOpenedFromQuiz ? 'Back to quiz' : 'Level map'}
               </button>
               <div>
                 <div style={{ color: MUTED, fontSize: 12, fontWeight: 800, letterSpacing: 0.45, textTransform: 'uppercase' }}>Level {openLevel} of {LEVELS.length}</div>
@@ -543,7 +563,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                   <div style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>{firstWrongHint.text}</div>
                   <button
                     type="button"
-                    onClick={() => { setOpenLevel(firstWrongHint.level); setStep('levels'); }}
+                    onClick={() => reopenLevelFromQuiz(firstWrongHint.level)}
                     style={{ marginTop: 9, padding: 0, border: 'none', background: 'transparent', color: INK, fontSize: 12.5, fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer', fontFamily: 'inherit' }}
                   >
                     Reopen this level
