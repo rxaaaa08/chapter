@@ -32,10 +32,10 @@ const DEMO_MONTH_EARNED = DEMO_FUNNEL.paid * PRIMARY_EVENT.cut;
 const DEMO_DATES = ['Aug 28', 'Aug 2', 'Aug 16'];
 type DemoRange = '24h' | 'week' | 'month' | '90d';
 const DEMO_RANGES: Array<{ key: DemoRange; label: string }> = [
-  { key: '24h', label: '24 hrs' },
-  { key: 'week', label: 'Week' },
-  { key: 'month', label: 'Month' },
-  { key: '90d', label: '90 days' },
+  { key: '24h', label: 'Last 24 hrs' },
+  { key: 'week', label: 'Last week' },
+  { key: 'month', label: 'Last month' },
+  { key: '90d', label: 'Last 90 days' },
 ];
 const DEMO_RANGE_STATS: Record<DemoRange, typeof DEMO_FUNNEL> = {
   '24h': { clicks: 7, signups: 1, paid: 0 },
@@ -57,9 +57,37 @@ export function DemoExitProvider({ onExit, children }: { onExit: () => void; chi
           0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.42); transform: scale(1); }
           50% { box-shadow: 0 0 0 9px rgba(234, 179, 8, 0); transform: scale(1.015); }
         }
+        @keyframes creatorDemoCalmPulse {
+          0%, 100% { box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2); }
+          50% { box-shadow: 0 0 0 7px rgba(234, 179, 8, 0); }
+        }
+        @keyframes creatorHelperFlash {
+          0% { background: rgba(254, 240, 138, 0.7); }
+          100% { background: rgba(255, 251, 235, 0); }
+        }
         .creator-demo-pulse { animation: creatorDemoPulse 1.8s ease-in-out infinite; }
+        .creator-demo-calm-pulse { animation: creatorDemoCalmPulse 1.8s ease-in-out infinite; }
+        .creator-helper-flash { animation: creatorHelperFlash 1.1s ease-out both; }
+        .creator-guide-target { position: relative; z-index: 3; opacity: 1; filter: none; }
+        .creator-guide-dim { opacity: 0.36; filter: saturate(0.6); transition: opacity 180ms ease, filter 180ms ease; }
+        .creator-guide-why {
+          position: absolute; top: 4px; z-index: 5; width: max-content; max-width: 270px;
+          padding: 7px 9px; border-radius: 9px; background: ${INK}; color: #fff;
+          box-shadow: 0 8px 22px rgba(17, 17, 17, 0.18);
+          font-size: 11.5px; font-weight: 750; line-height: 1.35; pointer-events: none;
+        }
+        .creator-guide-why::after {
+          content: ''; position: absolute; bottom: -5px; width: 10px; height: 10px;
+          background: ${INK}; transform: rotate(45deg); border-radius: 1px;
+        }
+        .creator-guide-why-left { left: 8px; }
+        .creator-guide-why-left::after { left: 18px; }
+        .creator-guide-why-right { right: 8px; }
+        .creator-guide-why-right::after { right: 18px; }
         @media (prefers-reduced-motion: reduce) {
-          .creator-demo-pulse { animation: none; outline: 2px solid ${GOLD}; outline-offset: 3px; }
+          .creator-demo-pulse, .creator-demo-calm-pulse { animation: none; outline: 2px solid ${GOLD}; outline-offset: 3px; }
+          .creator-helper-flash { animation: none; background: ${GOLD_TINT}; }
+          .creator-guide-dim { transition: none; }
         }
       `}</style>
       {children}
@@ -98,6 +126,13 @@ function ContinueButton({ enabled = true, label = 'I Understand', pendingLabel =
   return <button type="button" className={enabled ? 'creator-demo-pulse' : undefined} disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{enabled ? label : pendingLabel}</button>;
 }
 
+const guideClass = (active: boolean, guideActive: boolean) => active ? 'creator-guide-target' : guideActive ? 'creator-guide-dim' : undefined;
+const guideTopSpace = (active: boolean, text: string) => active ? (text.length > 58 ? 72 : text.length > 42 ? 58 : 50) : 0;
+
+function GuideWhy({ text, align = 'left' }: { text: string; align?: 'left' | 'right' }) {
+  return <div role="note" className={`creator-guide-why creator-guide-why-${align}`}>{text}</div>;
+}
+
 function FollowerJourneyInfographic({ handle }: { handle: string }) {
   const steps = [
     { mark: 'JOIN', title: 'Priya comments “Join”', detail: 'Pondy Beach Houseparty video', tone: GOLD_TINT, markColor: '#854d0e' },
@@ -128,6 +163,8 @@ function FollowerJourneyInfographic({ handle }: { handle: string }) {
 export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
   const exit = useDemoExit();
   const handle = handleFor(demoHandle);
+  const handleGuide = !demoHandle;
+  const handleWhy = 'Add a handle to personalise this walkthrough.';
 
   const finish = () => {
     onDone();
@@ -136,8 +173,9 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>First, type the handle you're thinking of — we'll use it everywhere in this demo.</p>
-      <div>
+      <p className={handleGuide ? 'creator-guide-dim' : undefined} style={paragraph}>First, type the handle you're thinking of — we'll use it everywhere in this demo.</p>
+      <div className={guideClass(handleGuide, handleGuide)} style={{ position: 'relative', paddingTop: guideTopSpace(handleGuide, handleWhy) }}>
+        {handleGuide && <GuideWhy text={handleWhy} />}
         <div className={!demoHandle ? 'creator-demo-pulse' : undefined} style={{ position: 'relative', borderRadius: 12, boxShadow: !demoHandle ? `0 0 0 2px ${GOLD}` : 'none', background: !demoHandle ? GOLD_TINT : '#fff' }}>
           <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: MUTED, fontWeight: 800 }}>@</span>
           <input
@@ -153,11 +191,11 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
         </div>
         <div style={{ ...helper, marginTop: 6 }}>Just for the demo — you'll claim your real handle at the end.</div>
       </div>
-      <div>
+      <div className={handleGuide ? 'creator-guide-dim' : undefined}>
         <p style={paragraph}>Watch how one comment carries Priya from your reel to the real chapter அ experiences page.</p>
       </div>
-      <FollowerJourneyInfographic handle={handle} />
-      <button type="button" className={demoHandle ? 'creator-demo-pulse' : undefined} onClick={finish} style={primaryBtn(true)}>Continue to Next Lesson</button>
+      <div className={handleGuide ? 'creator-guide-dim' : undefined}><FollowerJourneyInfographic handle={handle} /></div>
+      <div className={handleGuide ? 'creator-guide-dim' : undefined}><button type="button" className={demoHandle ? 'creator-demo-pulse' : undefined} onClick={finish} style={primaryBtn(true)}>Continue to Next Lesson</button></div>
     </div>
   );
 }
@@ -166,46 +204,55 @@ export function DemoL2({ onDone }: DemoProps) {
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
   const firstUnflipped = DEMO_EVENTS.findIndex((_, index) => !flipped.has(index));
   const complete = flipped.size === DEMO_EVENTS.length;
+  const guideActive = !complete;
+  const eventWhy = 'Tap an event to see your cut.';
   useCompleteWhen(complete, onDone);
 
   return (
     <div style={stack}>
-      <p style={paragraph}>You get a commission of up to 8% per ticket.</p>
-      <p style={paragraph}>Tap the events to see how your cuts work. These are demo numbers — the real commission per ticket is available in the real dashboard.</p>
+      <p className={guideActive ? 'creator-guide-dim' : undefined} style={paragraph}>You get a commission of up to 8% per ticket.</p>
+      <p className={guideActive ? 'creator-guide-dim' : undefined} style={paragraph}>Tap the events to see how your cuts work. These are demo numbers — the real commission per ticket is available in the real dashboard.</p>
       <div style={{ display: 'grid', gap: 10 }}>
         {DEMO_EVENTS.map((event, index) => {
           const isFlipped = flipped.has(index);
+          const isNext = index === firstUnflipped;
           return (
-            <button
-              type="button"
-              className={index === firstUnflipped ? 'creator-demo-pulse' : undefined}
-              key={event.title}
-              aria-pressed={isFlipped}
-              onClick={() => setFlipped(current => new Set(current).add(index))}
-              style={{ ...card, padding: 15, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 82, color: INK, transition: 'transform 0.2s, background 0.2s', borderColor: index === firstUnflipped ? GOLD : isFlipped ? '#bbf7d0' : HAIR, background: isFlipped ? '#f0fdf4' : index === firstUnflipped ? GOLD_TINT : '#fff', transform: isFlipped ? 'rotateX(0deg)' : 'none' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 800 }}>{event.title}</div>
-                <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 850 }}>{inr(event.price)}</div>
-              </div>
-              <div style={{ marginTop: 6, fontSize: 13, color: isFlipped ? GREEN : MUTED, fontWeight: isFlipped ? 850 : 650 }}>
-                {isFlipped ? `${event.pct}% → ${inr(event.cut)}` : 'Tap to reveal your cut'}
-              </div>
-            </button>
+            <div key={event.title} className={guideClass(isNext, guideActive)} style={{ position: 'relative', paddingTop: guideTopSpace(isNext, eventWhy) }}>
+              {isNext && <GuideWhy text={eventWhy} />}
+              <button
+                type="button"
+                className={isNext ? 'creator-demo-pulse' : undefined}
+                disabled={!isFlipped && !isNext}
+                aria-pressed={isFlipped}
+                onClick={() => setFlipped(current => new Set(current).add(index))}
+                style={{ ...card, width: '100%', padding: 15, cursor: !isFlipped && !isNext ? 'default' : 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 82, color: INK, transition: 'transform 0.2s, background 0.2s', borderColor: isNext ? GOLD : isFlipped ? '#bbf7d0' : HAIR, background: isFlipped ? '#f0fdf4' : isNext ? GOLD_TINT : '#fff', transform: isFlipped ? 'rotateX(0deg)' : 'none' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{event.title}</div>
+                  <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 850 }}>{inr(event.price)}</div>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 13, color: isFlipped ? GREEN : MUTED, fontWeight: isFlipped ? 850 : 650 }}>
+                  {isFlipped ? `${event.pct}% → ${inr(event.cut)}` : 'Tap to reveal your cut'}
+                </div>
+              </button>
+            </div>
           );
         })}
       </div>
-      <ContinueButton
-        enabled={complete}
-        pendingLabel={`Flip ${DEMO_EVENTS.length - flipped.size} more event card${DEMO_EVENTS.length - flipped.size === 1 ? '' : 's'}`}
-      />
+      <div className={guideActive ? 'creator-guide-dim' : undefined}>
+        <ContinueButton
+          enabled={complete}
+          pendingLabel={`Flip ${DEMO_EVENTS.length - flipped.size} more event card${DEMO_EVENTS.length - flipped.size === 1 ? '' : 's'}`}
+        />
+      </div>
     </div>
   );
 }
 
 export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const [range, setRange] = useState<DemoRange>('month');
-  const [rangeTapped, setRangeTapped] = useState(false);
+  const [rangeComplete, setRangeComplete] = useState(false);
+  const [helperHighlighted, setHelperHighlighted] = useState(false);
   const [conversionTapped, setConversionTapped] = useState(false);
   const [sheetTitle, setSheetTitle] = useState(PRIMARY_EVENT.title);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -213,10 +260,16 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const handle = handleFor(demoHandle);
-  const complete = rangeTapped && conversionTapped && openedSheet && copyTapped;
+  const complete = rangeComplete && conversionTapped && openedSheet && copyTapped;
   const rangeStats = DEMO_RANGE_STATS[range];
   const rangeEarned = rangeStats.paid * PRIMARY_EVENT.cut;
   const rangeTicketLabel = `${rangeStats.paid} ${rangeStats.paid === 1 ? 'ticket' : 'tickets'}`;
+  const guideStage = sheetOpen ? null : !rangeComplete ? 'range' : !conversionTapped ? 'conversion' : !openedSheet ? 'events' : !copyTapped ? 'copy' : null;
+  const guideActive = guideStage !== null;
+  const rangeWhy = 'Change the time range to see how your stats move.';
+  const conversionWhy = 'Tap to see how your earnings add up.';
+  const eventsWhy = 'You can see the details of all the events you need to post about by pressing this!';
+  const copyWhy = 'This copies your custom link.';
   const overlayHost = typeof document === 'undefined' ? null : document.getElementById('creator-onboarding-root');
   useCompleteWhen(complete, onDone);
 
@@ -225,6 +278,12 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
     const timeout = window.setTimeout(() => setCopied(false), 1200);
     return () => window.clearTimeout(timeout);
   }, [copied]);
+
+  useEffect(() => {
+    if (!helperHighlighted) return;
+    const timeout = window.setTimeout(() => setHelperHighlighted(false), 1100);
+    return () => window.clearTimeout(timeout);
+  }, [helperHighlighted]);
 
   useEffect(() => {
     if (!sheetOpen) return;
@@ -249,9 +308,9 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>This is your dashboard — the real one, with demo numbers. You can open it anytime at <span style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: 750 }}>chaptera.in/creator</span>.</p>
+      <p className={guideActive ? 'creator-guide-dim' : undefined} style={paragraph}>This is your dashboard — the real one, with demo numbers. You can open it anytime at <span style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: 750 }}>chaptera.in/creator</span>.</p>
       <div style={{ ...card, padding: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div>
+        <div className={guideActive ? 'creator-guide-dim' : undefined}>
           <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
           <div style={{ fontSize: 38, lineHeight: 1, fontWeight: 900, letterSpacing: -1.2, marginTop: 4 }}>{inr(DEMO_MONTH_EARNED)}</div>
           <div style={{ ...helper, marginTop: 7 }}>Paid out monthly.</div>
@@ -259,39 +318,46 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
 
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <div style={eyebrow}>① Your funnel</div>
+            <div className={guideActive ? 'creator-guide-dim' : undefined} style={eyebrow}>① Your funnel</div>
             <div style={{ flex: 1 }} />
-            <div className={!rangeTapped ? 'creator-demo-pulse' : undefined} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', borderRadius: 999, background: !rangeTapped ? GOLD_TINT : '#fff' }}>
-              <select
-                value={range}
-                onPointerDown={() => setRangeTapped(true)}
-                onKeyDown={() => setRangeTapped(true)}
-                onChange={event => { setRange(event.target.value as DemoRange); setRangeTapped(true); }}
-                aria-label="Funnel date range"
-                style={{ appearance: 'none', WebkitAppearance: 'none', border: `1.5px solid ${!rangeTapped ? GOLD : HAIR}`, borderRadius: 999, background: 'transparent', color: INK, fontSize: 12, fontWeight: 800, padding: '6px 42px 6px 11px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                {DEMO_RANGES.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
-              </select>
-              <span aria-hidden="true" style={{ position: 'absolute', right: 20, width: 8.2, height: 8.2, borderRight: `2.05px solid ${INK}`, borderBottom: `2.05px solid ${INK}`, transform: 'translateY(-2px) rotate(45deg)', pointerEvents: 'none' }} />
+            <div className={guideClass(guideStage === 'range', guideActive)} style={{ position: 'relative', paddingTop: guideTopSpace(guideStage === 'range', rangeWhy) }}>
+              {guideStage === 'range' && <GuideWhy text={rangeWhy} align="right" />}
+              <div className={guideStage === 'range' ? 'creator-demo-pulse' : undefined} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', borderRadius: 999, background: guideStage === 'range' ? GOLD_TINT : '#fff' }}>
+                <select
+                  value={range}
+                  onChange={event => {
+                    const nextRange = event.target.value as DemoRange;
+                    setRange(nextRange);
+                    setRangeComplete(current => current || nextRange === 'week');
+                    setHelperHighlighted(true);
+                  }}
+                  aria-label="Funnel date range"
+                  style={{ appearance: 'none', WebkitAppearance: 'none', border: `1.5px solid ${guideStage === 'range' ? GOLD : HAIR}`, borderRadius: 999, background: 'transparent', color: INK, fontSize: 12, fontWeight: 800, padding: '6px 42px 6px 11px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  {DEMO_RANGES.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+                </select>
+                <span aria-hidden="true" style={{ position: 'absolute', right: 20, width: 8.2, height: 8.2, borderRight: `2.05px solid ${INK}`, borderBottom: `2.05px solid ${INK}`, transform: 'translateY(-2px) rotate(45deg)', pointerEvents: 'none' }} />
+              </div>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: `1.5px solid ${HAIR}`, borderRadius: 14, overflow: 'hidden' }}>
+          <div className={guideActive ? 'creator-guide-dim' : undefined} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: `1.5px solid ${HAIR}`, borderRadius: 14, overflow: 'hidden' }}>
             {[
               { label: 'Clicks', value: rangeStats.clicks },
               { label: 'Sign-ups', value: rangeStats.signups },
               { label: 'Paid', value: rangeStats.paid },
             ].map((tile, index) => <div key={tile.label} style={{ borderLeft: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', padding: '13px 4px', textAlign: 'center' }}><div style={{ fontSize: 23, fontWeight: 900 }}>{tile.value}</div><div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 4 }}>{tile.label}</div></div>)}
           </div>
-          {rangeTapped && <div style={{ display: 'grid', gap: 4, marginTop: 9 }}>
+          <div className={helperHighlighted ? 'creator-helper-flash creator-guide-target' : guideActive ? 'creator-guide-dim' : undefined} style={{ display: 'grid', gap: 4, marginTop: 9, padding: '7px 8px', marginLeft: -8, marginRight: -8, borderRadius: 10 }}>
             <div style={helper}><b style={{ color: INK }}>Clicks:</b> {rangeStats.clicks} people opened your link. Pays ₹0.</div>
             <div style={helper}><b style={{ color: INK }}>Sign-ups:</b> {rangeStats.signups} applied. Still ₹0 — interest isn't income.</div>
             <div style={helper}><b style={{ color: INK }}>Paid:</b> {rangeStats.paid} fully paid — the only tile that pays. {rangeStats.paid} × {inr(PRIMARY_EVENT.cut)} = {inr(rangeEarned)}.</div>
-          </div>}
+          </div>
         </div>
 
-        <div>
+        <div className={guideClass(guideStage === 'conversion', guideActive)} style={{ position: 'relative', paddingTop: guideTopSpace(guideStage === 'conversion', conversionWhy) }}>
+          {guideStage === 'conversion' && <GuideWhy text={conversionWhy} />}
           <div style={{ ...eyebrow, marginBottom: 8 }}>② Your conversions</div>
-          <button type="button" disabled={!rangeTapped} className={rangeTapped && !conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: rangeTapped ? INK : MUTED, fontFamily: 'inherit', cursor: rangeTapped ? 'pointer' : 'default', borderColor: rangeTapped && !conversionTapped ? GOLD : HAIR, background: conversionTapped ? '#f7f7f8' : rangeTapped ? GOLD_TINT : '#f7f7f8', opacity: rangeTapped ? 1 : 0.65 }}>
+          <button type="button" disabled={!rangeComplete} className={guideStage === 'conversion' ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: rangeComplete ? INK : MUTED, fontFamily: 'inherit', cursor: rangeComplete ? 'pointer' : 'default', borderColor: guideStage === 'conversion' ? GOLD : HAIR, background: conversionTapped ? '#f7f7f8' : guideStage === 'conversion' ? GOLD_TINT : '#f7f7f8', opacity: rangeComplete ? 1 : 0.65 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
               <div style={{ ...helper, marginTop: 4 }}>{rangeTicketLabel} · {inr(PRIMARY_EVENT.cut)} per ticket</div>
@@ -301,11 +367,12 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
           {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{inr(PRIMARY_EVENT.cut)} per ticket × {rangeStats.paid} = {inr(rangeEarned)}</div>}
         </div>
 
-        <div>
+        <div className={guideClass(guideStage === 'events', guideActive)} style={{ position: 'relative', paddingTop: guideTopSpace(guideStage === 'events', eventsWhy) }}>
+          {guideStage === 'events' && <GuideWhy text={eventsWhy} />}
           <div style={{ ...eyebrow, marginBottom: 8 }}>③ See upcoming events</div>
           <div style={{ ...card, overflow: 'hidden', opacity: conversionTapped ? 1 : 0.65 }}>
             {DEMO_EVENTS.map((event, index) => (
-              <button type="button" disabled={!conversionTapped} className={conversionTapped && !openedSheet && index === 0 ? 'creator-demo-pulse' : undefined} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: conversionTapped && !openedSheet && index === 0 ? GOLD_TINT : '#fff', boxShadow: conversionTapped && !openedSheet && index === 0 ? `inset 0 0 0 2px ${GOLD}` : 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: conversionTapped ? INK : MUTED, fontFamily: 'inherit', cursor: conversionTapped ? 'pointer' : 'default' }}>
+              <button type="button" disabled={!conversionTapped} className={[guideStage === 'events' && index === 0 ? 'creator-demo-pulse' : undefined, guideStage === 'events' && index !== 0 ? 'creator-guide-dim' : undefined].filter(Boolean).join(' ')} key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: guideStage === 'events' && index === 0 ? GOLD_TINT : '#fff', boxShadow: guideStage === 'events' && index === 0 ? `inset 0 0 0 2px ${GOLD}` : 'none', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: conversionTapped ? INK : MUTED, fontFamily: 'inherit', cursor: conversionTapped ? 'pointer' : 'default' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 800 }}>{event.title}</div>
                   <div style={{ ...helper, marginTop: 3 }}>{DEMO_DATES[index]}</div>
@@ -319,16 +386,19 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
           </div>
         </div>
 
-        <div style={{ ...card, padding: 13, opacity: openedSheet && !sheetOpen ? 1 : 0.65 }}>
-          <div style={eyebrow}>④ Your Custom Link</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
-            <button type="button" disabled={!openedSheet || sheetOpen} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: `1.5px solid ${openedSheet && !sheetOpen && !copyTapped ? GOLD : 'transparent'}`, borderRadius: 9, background: copied ? GREEN : openedSheet && !sheetOpen && !copyTapped ? GOLD_TINT : openedSheet && !sheetOpen ? INK : '#d7d7db', color: copied || (openedSheet && !sheetOpen && copyTapped) ? '#fff' : INK, fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: openedSheet && !sheetOpen ? 'pointer' : 'default', fontFamily: 'inherit', boxShadow: openedSheet && !sheetOpen && !copyTapped ? `0 0 0 3px rgba(234, 179, 8, 0.14)` : 'none' }}>{copied ? 'Copied' : 'Copy'}</button>
+        <div className={guideClass(guideStage === 'copy', guideActive)} style={{ position: 'relative', paddingTop: guideTopSpace(guideStage === 'copy', copyWhy) }}>
+          {guideStage === 'copy' && <GuideWhy text={copyWhy} align="right" />}
+          <div style={{ ...card, padding: 13, opacity: openedSheet && !sheetOpen ? 1 : 0.65 }}>
+            <div style={eyebrow}>④ Your Custom Link</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>chaptera.in/@{handle}</div>
+              <button type="button" className={guideStage === 'copy' ? 'creator-demo-calm-pulse' : undefined} disabled={!openedSheet || sheetOpen} onClick={() => { setCopyTapped(true); setCopied(true); }} style={{ border: `1.5px solid ${guideStage === 'copy' ? GOLD : 'transparent'}`, borderRadius: 9, background: copied ? GREEN : guideStage === 'copy' ? GOLD_TINT : openedSheet && !sheetOpen ? INK : '#d7d7db', color: copied || (openedSheet && !sheetOpen && copyTapped) ? '#fff' : INK, fontSize: 12, fontWeight: 800, padding: '8px 12px', cursor: openedSheet && !sheetOpen ? 'pointer' : 'default', fontFamily: 'inherit' }}>{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+            {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} is your custom link &amp; you can use this button to copy it.</div>}
           </div>
-          {copyTapped && <div style={{ ...helper, marginTop: 9 }}>chaptera.in/@{handle} is your custom link &amp; you can use this button to copy it.</div>}
         </div>
 
-        <div style={{ borderTop: `1px solid ${HAIR}`, paddingTop: 13 }}>
+        <div className={guideActive ? 'creator-guide-dim' : undefined} style={{ borderTop: `1px solid ${HAIR}`, paddingTop: 13 }}>
           <div style={eyebrow}>The Team</div>
           <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>
             {leaderboard.map(row => (
@@ -341,10 +411,12 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
           </div>
         </div>
       </div>
-      <ContinueButton
-        enabled={complete}
-        pendingLabel={!rangeTapped ? 'Choose a range to continue' : !conversionTapped ? 'Tap your conversions to continue' : !openedSheet ? 'Open an upcoming event to continue' : sheetOpen ? 'Close the details to continue' : 'Tap Copy to continue'}
-      />
+      <div className={guideActive ? 'creator-guide-dim' : undefined}>
+        <ContinueButton
+          enabled={complete}
+          pendingLabel={!rangeComplete ? 'Choose Last week to continue' : !conversionTapped ? 'Tap your conversions to continue' : !openedSheet ? 'Open an upcoming event to continue' : sheetOpen ? 'Close the details to continue' : 'Tap Copy to continue'}
+        />
+      </div>
 
       {overlayHost && createPortal(
         <div style={{ position: 'absolute', inset: 0, zIndex: 1000, pointerEvents: sheetOpen ? 'auto' : 'none' }}>
@@ -353,7 +425,6 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
             onClose={() => setSheetOpen(false)}
             title={sheetTitle}
             details={PONDY_DETAILS}
-            closeButtonClassName={sheetOpen ? 'creator-demo-pulse' : undefined}
           />
         </div>,
         overlayHost,
