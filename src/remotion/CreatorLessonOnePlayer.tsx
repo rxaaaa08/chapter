@@ -21,6 +21,7 @@ const CreatorLessonOnePlayer: React.FC<Props> = ({ handle }) => (
     compositionWidth={CREATOR_LESSON_ONE_WIDTH}
     compositionHeight={CREATOR_LESSON_ONE_HEIGHT}
     fps={CREATOR_LESSON_ONE_FPS}
+    acknowledgeRemotionLicense
     controls
     clickToPlay
     showVolumeControls={false}
