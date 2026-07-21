@@ -2,8 +2,6 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { createPortal } from 'react-dom';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
-const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
-
 // TODO(owner): replace with the creator's recorded comments-to-auto-DM walkthrough.
 const L7_VIMEO_ID = '76979871';
 // TODO(owner): replace with the creator's recorded brand-voice walkthrough.
@@ -100,6 +98,33 @@ function ContinueButton({ enabled = true, label = 'I Understand', pendingLabel =
   return <button type="button" className={enabled ? 'creator-demo-pulse' : undefined} disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{enabled ? label : pendingLabel}</button>;
 }
 
+function FollowerJourneyInfographic({ handle }: { handle: string }) {
+  const steps = [
+    { mark: 'JOIN', title: 'Priya comments “Join”', detail: 'Pondy Beach Houseparty video', tone: GOLD_TINT, markColor: '#854d0e' },
+    { mark: 'DM', title: 'She receives your auto-DM', detail: `sent by @${handle}`, tone: '#f4f4f5', markColor: INK },
+    { mark: 'WWW', title: 'She opens chaptera.in', detail: 'trip details and booking', tone: '#eff6ff', markColor: '#1d4ed8' },
+    { mark: '✓', title: 'She books the Pondy trip', detail: `${inr(PRIMARY_EVENT.price)} paid`, tone: '#f0fdf4', markColor: '#166534' },
+    { mark: `+${inr(PRIMARY_EVENT.cut)}`, title: `You earn ${inr(PRIMARY_EVENT.cut)}`, detail: 'added to your creator dashboard', tone: '#ecfdf3', markColor: '#166534' },
+  ];
+
+  return (
+    <ol aria-label="How Priya's booking becomes your commission" style={{ ...card, listStyle: 'none', margin: 0, padding: '4px 14px', overflow: 'hidden', background: '#fbfbfa' }}>
+      {steps.map((step, index) => (
+        <li key={step.title} style={{ position: 'relative', display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr)', alignItems: 'center', gap: 12, minHeight: 67, padding: '7px 0', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}` }}>
+          {index < steps.length - 1 && <span aria-hidden="true" style={{ position: 'absolute', left: 25, top: 51, width: 2, height: 30, background: HAIR }} />}
+          <div aria-hidden="true" style={{ position: 'relative', zIndex: 1, width: 48, height: 48, borderRadius: 14, display: 'grid', placeItems: 'center', border: `1px solid ${index === 0 ? '#fde68a' : HAIR}`, background: step.tone, color: step.markColor, fontSize: step.mark.length > 4 ? 10.5 : 11.5, fontWeight: 900, letterSpacing: step.mark === 'WWW' ? 0.2 : 0 }}>
+            {step.mark}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: INK, fontSize: 13.5, lineHeight: 1.25, fontWeight: 850 }}><span style={{ color: MUTED, marginRight: 6 }}>{index + 1}</span>{step.title}</div>
+            <div style={{ ...helper, marginTop: 3 }}>{step.detail}</div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
   const exit = useDemoExit();
   const handle = handleFor(demoHandle);
@@ -131,11 +156,7 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
       <div>
         <p style={paragraph}>Watch how one comment carries Priya from your reel to the real chapter அ experiences page.</p>
       </div>
-      <div style={{ width: '100%', margin: '0 auto', borderRadius: 20, overflow: 'hidden', background: '#171715', boxShadow: '0 18px 50px rgba(17, 17, 17, 0.16)' }}>
-        <React.Suspense fallback={<div role="status" aria-label="Loading lesson video" style={{ width: '100%', aspectRatio: '16 / 9', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13, fontWeight: 750 }}>Loading video…</div>}>
-          <CreatorLessonOnePlayer handle={handle} />
-        </React.Suspense>
-      </div>
+      <FollowerJourneyInfographic handle={handle} />
       <button type="button" className={demoHandle ? 'creator-demo-pulse' : undefined} onClick={finish} style={primaryBtn(true)}>Continue to Next Lesson</button>
     </div>
   );
