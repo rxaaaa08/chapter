@@ -388,7 +388,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
     && window.history.state?.creatorOnboardingReturnTo === 'quiz';
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' }}>
+    <div id="creator-onboarding-root" style={{ position: 'relative', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' }}>
 
       {/* Header: optional back chevron + step progress */}
       <div style={{ padding: '16px 18px 0', flexShrink: 0 }}>

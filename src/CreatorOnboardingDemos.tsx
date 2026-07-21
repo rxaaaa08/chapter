@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
 const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
@@ -405,6 +406,8 @@ const PONDY_DETAILS: InvitePlanDetails = {
   quickInfo: [
     { label: 'Plan Title', value: PRIMARY_EVENT.title },
     { label: 'Meeting Spot', value: 'Airport Metro' },
+    { label: 'Transport', value: 'Party bus' },
+    { label: "You'll Meet", value: 'Ppl who never say never' },
     { label: 'Group Size', value: '20 people' },
   ],
   included: ['Party bus to the Pondy beach villa', 'Private pool and beach nearby', 'Campfire, BBQ dinner and beach-house stay', 'Next-morning brunch'],
@@ -421,16 +424,11 @@ const PONDY_DETAILS: InvitePlanDetails = {
   showAccommodation: false,
 };
 
-const DEMO_CAPTIONS = [
-  'went with this crew to pondy last month — easily the best weekend of my year. next dates are up, link takes you to everything 🌊',
-  "if you've been waiting for a sign to actually go — this is it. comment LINK and I'll DM you the details.",
-];
-
 export function DemoL6({ onDone }: DemoProps) {
   const [sheetTitle, setSheetTitle] = useState(PRIMARY_EVENT.title);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [openedSheet, setOpenedSheet] = useState(false);
-  const [copiedCaption, setCopiedCaption] = useState<number | null>(null);
+  const overlayHost = typeof document === 'undefined' ? null : document.getElementById('creator-onboarding-root');
   useCompleteWhen(openedSheet, onDone);
 
   useEffect(() => {
@@ -440,21 +438,10 @@ export function DemoL6({ onDone }: DemoProps) {
     return () => { document.body.style.overflow = previous; };
   }, [sheetOpen]);
 
-  useEffect(() => {
-    if (copiedCaption === null) return;
-    const timeout = window.setTimeout(() => setCopiedCaption(null), 1200);
-    return () => window.clearTimeout(timeout);
-  }, [copiedCaption]);
-
   const openSheet = (title: string) => {
     setSheetTitle(title);
     setOpenedSheet(true);
     setSheetOpen(true);
-  };
-
-  const copyCaption = (caption: string, index: number) => {
-    try { void navigator.clipboard?.writeText(caption).catch(() => {}); } catch { /* clipboard unavailable */ }
-    setCopiedCaption(index);
   };
 
   return (
@@ -483,25 +470,20 @@ export function DemoL6({ onDone }: DemoProps) {
         ))}
       </div>
       <p style={paragraph}>This card is your what-to-post radar. Post about what's coming up — your one link does the rest.</p>
-      <div style={{ display: 'grid', gap: 10 }}>
-        {DEMO_CAPTIONS.map((caption, index) => (
-          <button type="button" key={caption} onClick={() => copyCaption(caption, index)} style={{ ...card, padding: 14, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', lineHeight: 1.52, fontSize: 13.5, background: copiedCaption === index ? '#f0fdf4' : '#fff' }}>
-            “{caption}”
-            <span style={{ display: 'block', marginTop: 8, color: copiedCaption === index ? GREEN : MUTED, fontSize: 10.5, fontWeight: 800 }}>{copiedCaption === index ? 'Copied' : 'Tap to copy'}</span>
-          </button>
-        ))}
-      </div>
       <ContinueButton enabled={openedSheet && !sheetOpen} pendingLabel={openedSheet ? 'Close the details to continue' : 'Open an event to continue'} />
 
-      <div style={{ position: 'fixed', top: 0, bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 448, zIndex: 1000, pointerEvents: sheetOpen ? 'auto' : 'none' }}>
-        <InvitePlanDetailsSheet
-          open={sheetOpen}
-          onClose={() => setSheetOpen(false)}
-          title={sheetTitle}
-          details={PONDY_DETAILS}
-          closeButtonClassName={sheetOpen ? 'creator-demo-pulse' : undefined}
-        />
-      </div>
+      {overlayHost && createPortal(
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1000, pointerEvents: sheetOpen ? 'auto' : 'none' }}>
+          <InvitePlanDetailsSheet
+            open={sheetOpen}
+            onClose={() => setSheetOpen(false)}
+            title={sheetTitle}
+            details={PONDY_DETAILS}
+            closeButtonClassName={sheetOpen ? 'creator-demo-pulse' : undefined}
+          />
+        </div>,
+        overlayHost,
+      )}
     </div>
   );
 }
