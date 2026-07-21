@@ -102,7 +102,7 @@ const eyebrow: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: MUT
 const paragraph: React.CSSProperties = { color: INK, fontSize: 14, lineHeight: 1.58, margin: 0 };
 const helper: React.CSSProperties = { color: MUTED, fontSize: 12.5, lineHeight: 1.5 };
 
-function ContinueButton({ enabled = true, label = 'Continue', pendingLabel = 'Complete the activity to continue' }: { enabled?: boolean; label?: string; pendingLabel?: string }) {
+function ContinueButton({ enabled = true, label = 'I Understand', pendingLabel = 'Complete the activity to continue' }: { enabled?: boolean; label?: string; pendingLabel?: string }) {
   const exit = useDemoExit();
   return <button type="button" className={enabled ? 'creator-demo-pulse' : undefined} disabled={!enabled} onClick={() => { if (enabled) exit(); }} style={primaryBtn(enabled)}>{enabled ? label : pendingLabel}</button>;
 }
@@ -403,7 +403,7 @@ export function DemoL5({ onDone }: DemoProps) {
         <div style={{ ...paragraph, marginTop: 14, fontWeight: 800 }}>Paid out monthly — straight to your UPI</div>
       </div>
       <p style={paragraph}>Everything you earn in July is paid after the month closes.</p>
-      <button type="button" onClick={finish} style={primaryBtn(true)}>Continue</button>
+      <button type="button" onClick={finish} style={primaryBtn(true)}>I Understand</button>
     </div>
   );
 }

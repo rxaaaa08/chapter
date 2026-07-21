@@ -19,11 +19,9 @@ import { supabase } from './supabase';
 import {
   DemoExitProvider,
   DemoL1,
-  DemoL2,
   DemoL3,
   DemoL4,
   DemoL5,
-  DemoL6,
   DemoL7,
   DemoL8,
 } from './CreatorOnboardingDemos';
@@ -31,7 +29,6 @@ import {
 const INK = '#111';
 const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
-const GREEN = '#16a34a';
 const RED = '#dc2626';
 
 // TODO(owner): replace with the real onboarding video id once recorded. This is a
@@ -96,10 +93,10 @@ const QUIZ: Question[] = [
 ];
 
 const QUIZ_HINTS = [
-  { level: 2, text: 'Take another look at Watch a booking become your money.' },
-  { level: 3, text: 'Take another look at Your money math.' },
-  { level: 5, text: 'Take another look at When does the money reach you?' },
-  { level: 4, text: 'Take another look at Your dashboard.' },
+  { level: 1, text: 'Take another look at How a follower reaches your link.' },
+  { level: 2, text: 'Take another look at Your money math.' },
+  { level: 4, text: 'Take another look at When does the money reach you?' },
+  { level: 3, text: 'Take another look at Your dashboard.' },
   { level: 1, text: 'Take another look at How a follower reaches your link.' },
 ];
 
@@ -120,16 +117,14 @@ const UPI_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 // Same rule as the invite-only application form: 10 digits, starts 6–9.
 const PHONE_RE = /^[6-9]\d{9}$/;
 
-const PROGRESS_KEY = 'creatorOnboardingProgress';
+const PROGRESS_KEY = 'creatorOnboardingProgressV2';
 const LEVELS = [
   { id: 1, title: 'How a follower reaches your link' },
-  { id: 2, title: 'Watch a booking become your money' },
-  { id: 3, title: 'Your money math' },
-  { id: 4, title: 'Your dashboard — a guided poke-around' },
-  { id: 5, title: 'When does the money reach you?' },
-  { id: 6, title: 'What should you actually post?' },
-  { id: 7, title: 'Comments → auto-DM: the setup that books the most' },
-  { id: 8, title: 'How we sound' },
+  { id: 2, title: 'Your money math' },
+  { id: 3, title: 'Your dashboard' },
+  { id: 4, title: 'When does the money reach you?' },
+  { id: 5, title: 'Comments → auto-DM' },
+  { id: 6, title: 'How we sound' },
 ] as const;
 
 type OnboardingStep = 'video' | 'levels' | 'quiz' | 'details';
@@ -235,7 +230,6 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   };
 
   const allLevelsComplete = LEVELS.every(level => completedLevels.has(level.id));
-  const completedLevelCount = LEVELS.filter(level => completedLevels.has(level.id)).length;
   const nextUnlockedLevel = LEVELS.find(level => (
     !completedLevels.has(level.id)
     && (level.id === 1 || completedLevels.has(level.id - 1))
@@ -474,7 +468,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               </div>
               <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div aria-hidden="true" style={{ position: 'absolute', left: 27, top: 24, bottom: 24, width: 2, background: HAIR }} />
-                {LEVELS.slice(0, 2).map(renderLevelNode)}
+                {LEVELS.slice(0, 1).map(renderLevelNode)}
               </div>
 
               <div style={{ marginTop: 4 }}>
@@ -483,12 +477,9 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               </div>
               <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div aria-hidden="true" style={{ position: 'absolute', left: 27, top: 24, bottom: 24, width: 2, background: HAIR }} />
-                {LEVELS.slice(2).map(renderLevelNode)}
+                {LEVELS.slice(1).map(renderLevelNode)}
               </div>
 
-              <div aria-live="polite" style={{ color: allLevelsComplete ? GREEN : MUTED, fontSize: 12.5, lineHeight: 1.4, fontWeight: 800, textAlign: 'center' }}>
-                {completedLevelCount} of {LEVELS.length} done
-              </div>
               <button
                 type="button"
                 className={allLevelsComplete ? 'creator-level-next' : undefined}
@@ -496,7 +487,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                 disabled={!allLevelsComplete}
                 style={primaryBtn(allLevelsComplete)}
               >
-                Continue to the quiz
+                Continue to Next Step
               </button>
             </>
           )}
@@ -520,13 +511,11 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               </div>
               <DemoExitProvider onExit={() => setOpenLevel(null)}>
                 {openLevel === 1 && <DemoL1 demoHandle={demoHandle} setDemoHandle={setDemoHandle} onDone={() => completeLevel(1)} />}
-                {openLevel === 2 && <DemoL2 demoHandle={demoHandle} onDone={() => completeLevel(2)} />}
-                {openLevel === 3 && <DemoL3 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
-                {openLevel === 4 && <DemoL4 demoHandle={demoHandle} onDone={() => completeLevel(4)} />}
-                {openLevel === 5 && <DemoL5 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
-                {openLevel === 6 && <DemoL6 demoHandle={demoHandle} onDone={() => completeLevel(6)} />}
-                {openLevel === 7 && <DemoL7 demoHandle={demoHandle} onDone={() => completeLevel(7)} />}
-                {openLevel === 8 && <DemoL8 demoHandle={demoHandle} onDone={() => completeLevel(8)} />}
+                {openLevel === 2 && <DemoL3 demoHandle={demoHandle} onDone={() => completeLevel(2)} />}
+                {openLevel === 3 && <DemoL4 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
+                {openLevel === 4 && <DemoL5 demoHandle={demoHandle} onDone={() => completeLevel(4)} />}
+                {openLevel === 5 && <DemoL7 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
+                {openLevel === 6 && <DemoL8 demoHandle={demoHandle} onDone={() => completeLevel(6)} />}
               </DemoExitProvider>
             </div>
           )}
