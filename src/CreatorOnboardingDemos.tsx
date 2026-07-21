@@ -354,7 +354,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
   );
 }
 
-export function DemoL5({ onDone }: DemoProps) {
+export function DemoL4({ onDone }: DemoProps) {
   const exit = useDemoExit();
   const finish = () => {
     onDone();
@@ -366,7 +366,7 @@ export function DemoL5({ onDone }: DemoProps) {
       <div style={{ ...card, padding: 18 }}>
         <div style={{ ...helper, fontWeight: 700 }}>Earned in July</div>
         <div style={{ fontSize: 40, lineHeight: 1, fontWeight: 900, letterSpacing: -1.2, marginTop: 5 }}>{inr(DEMO_MONTH_EARNED)}</div>
-        <div style={{ ...paragraph, marginTop: 14, fontWeight: 800 }}>Paid out monthly — straight to your UPI</div>
+        <div style={{ ...paragraph, marginTop: 14, fontWeight: 800 }}>Paid out monthly</div>
       </div>
       <p style={paragraph}>Everything you earn in July is paid after the month closes.</p>
       <button type="button" onClick={finish} style={primaryBtn(true)}>I Understand</button>
