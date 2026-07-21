@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
+const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
+
 const INK = '#111';
 const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
@@ -13,16 +15,17 @@ const DEMO_HANDLE_FALLBACK = 'yourhandle';
 const normalizeDemoHandle = (v: string) =>
   v.trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 40);
 
+const PRIMARY_EVENT = { title: 'Pondy Beach Houseparty', price: 3700, cut: 296 };
 const DEMO_EVENTS = [
-  { title: 'Gokarna Beach Weekend', price: 1999, cut: 160 },
+  PRIMARY_EVENT,
   { title: 'Sunrise at Kovalam', price: 900, cut: 72 },
-  { title: 'Pondy Beach Houseparty', price: 1499, cut: 120 }, // 8% rounded
+  { title: 'Chill Sunday Meetup', price: 359, cut: 29 }, // 8% rounded
 ];
-const DEMO_FUNNEL = { clicks: 120, signups: 14, paid: 5 }; // 5 × 160 = 800
-const DEMO_MONTH_EARNED = 800;
+const DEMO_FUNNEL = { clicks: 120, signups: 14, paid: 5 };
+const DEMO_MONTH_EARNED = DEMO_FUNNEL.paid * PRIMARY_EVENT.cut;
 const FOLLOWER = 'Priya';
 
-const DEMO_DATES = ['Aug 16–18', 'Aug 24', 'Sep 7'];
+const DEMO_DATES = ['Aug 28', 'Aug 24', 'Aug 2'];
 
 type DemoProps = { demoHandle: string; onDone: () => void };
 type DemoL1Props = DemoProps & { setDemoHandle: (value: string) => void };
@@ -96,7 +99,7 @@ function EventRows({ showPrice = true }: { showPrice?: boolean }) {
 
 export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
   const exit = useDemoExit();
-  const [scene, setScene] = useState<1 | 2 | 3>(1);
+  const [scene, setScene] = useState<'explainer' | 1 | 2 | 3>('explainer');
   const handle = handleFor(demoHandle);
   useCompleteWhen(scene === 3, onDone);
 
@@ -133,10 +136,25 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
         </div>
       </div>
 
+      {scene === 'explainer' && (
+        <>
+          <div>
+            <p style={paragraph}>Before you try it yourself, watch the whole journey in 35 seconds.</p>
+            <p style={{ ...helper, marginTop: 6 }}>The video updates with your demo handle and works with sound off.</p>
+          </div>
+          <div style={{ width: 'min(100%, 286px)', margin: '0 auto', borderRadius: 26, overflow: 'hidden', background: '#171715', boxShadow: '0 18px 50px rgba(17, 17, 17, 0.16)' }}>
+            <React.Suspense fallback={<div role="status" aria-label="Loading lesson video" style={{ width: '100%', aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13, fontWeight: 750 }}>Loading video…</div>}>
+              <CreatorLessonOnePlayer handle={handle} />
+            </React.Suspense>
+          </div>
+          <button type="button" className="creator-demo-pulse" onClick={() => setScene(1)} style={primaryBtn(true)}>Try the journey yourself</button>
+        </>
+      )}
+
       {scene === 1 && (
         <>
           <div>
-            <p style={paragraph}>Now meet Priya — she just watched your reel about Gokarna. Your caption says: <i>"comment LINK and I'll send you everything."</i></p>
+            <p style={paragraph}>Now meet Priya — she just watched your reel about the Pondy Beach Houseparty. Your caption says: <i>"comment LINK and I'll send you everything."</i></p>
             <p style={{ ...paragraph, marginTop: 8 }}>Watch what happens when she does.</p>
           </div>
           <div style={{ ...card, overflow: 'hidden', background: '#101010', color: '#fff' }}>
@@ -145,7 +163,7 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
                 <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#fff', color: INK, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 900 }}>{handle.slice(0, 1).toUpperCase()}</div>
                 <div style={{ fontSize: 12.5, fontWeight: 800 }}>@{handle} · reel</div>
               </div>
-              <div style={{ fontSize: 22, fontWeight: 850, lineHeight: 1.12, letterSpacing: -0.4, maxWidth: 270 }}>Gokarna last weekend was unreal — comment LINK and I'll send you everything</div>
+              <div style={{ fontSize: 22, fontWeight: 850, lineHeight: 1.12, letterSpacing: -0.4, maxWidth: 270 }}>Pondy Beach Houseparty was unreal — comment LINK and I'll send you everything</div>
               <div style={{ padding: '11px 12px', borderRadius: 13, background: 'rgba(255,255,255,0.94)', color: INK, fontSize: 13.5, fontWeight: 750 }}>{FOLLOWER}: LINK</div>
             </div>
           </div>
@@ -161,7 +179,7 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
               <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>auto-DM · sent in seconds</div>
             </div>
             <div style={{ marginTop: 22, maxWidth: '88%', padding: '12px 13px', borderRadius: '5px 15px 15px 15px', background: '#fff', border: `1px solid ${HAIR}`, fontSize: 13.5, lineHeight: 1.5 }}>
-              Hey Priya! Everything about the Gokarna trip — the plan, dates, and booking, all in one place:
+              Hey Priya! Everything about the Pondy Beach Houseparty — the plan, dates, and booking, all in one place:
             </div>
             <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
               <button type="button" onClick={() => setScene(3)} style={{ ...secondaryBtn, padding: '10px 8px' }}>I need more details</button>
@@ -207,7 +225,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
     const started = Date.now();
     const interval = window.setInterval(() => {
       const progress = Math.min(1, (Date.now() - started) / 1000);
-      setCounter(Math.round(160 * progress));
+      setCounter(Math.round(PRIMARY_EVENT.cut * progress));
       if (progress >= 1) window.clearInterval(interval);
     }, 32);
     return () => window.clearInterval(interval);
@@ -229,7 +247,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
 
   return (
     <div style={stack}>
-      <p style={paragraph}>Priya's on the Gokarna page — and notice the little tag riding along: <b>came from @{handle}</b>. As long as that tag is there, whatever she books is credited to you.</p>
+      <p style={paragraph}>Priya's on the Pondy Beach Houseparty page — and notice the little tag riding along: <b>came from @{handle}</b>. As long as that tag is there, whatever she books is credited to you.</p>
       <p style={paragraph}>Walk her through it.</p>
 
       <div style={{ ...card, padding: 15, background: '#fafafa', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -237,8 +255,8 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
         {scene === 1 && (
           <>
             <div style={{ ...card, padding: 14 }}>
-              <div style={{ fontSize: 17, fontWeight: 850 }}>Gokarna Beach Weekend</div>
-              <div style={{ ...helper, marginTop: 6 }}>dates · pickup points · {inr(1999)}</div>
+              <div style={{ fontSize: 17, fontWeight: 850 }}>{PRIMARY_EVENT.title}</div>
+              <div style={{ ...helper, marginTop: 6 }}>dates · pickup points · {inr(PRIMARY_EVENT.price)}</div>
             </div>
             <button type="button" onClick={() => setScene(2)} style={primaryBtn(true)}>{FOLLOWER} applies</button>
           </>
@@ -250,7 +268,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
               <div style={{ fontSize: 15, fontWeight: 800 }}>Application sent.</div>
               <div style={{ ...helper, marginTop: 4 }}>The payment page opens…</div>
             </div>
-            <button type="button" onClick={() => setScene(3)} style={primaryBtn(true)}>{FOLLOWER} pays {inr(1999)}</button>
+            <button type="button" onClick={() => setScene(3)} style={primaryBtn(true)}>{FOLLOWER} pays {inr(PRIMARY_EVENT.price)}</button>
           </>
         )}
         {scene === 3 && (
@@ -258,7 +276,7 @@ export function DemoL2({ demoHandle, onDone }: DemoProps) {
             <div style={{ width: 42, height: 42, margin: '0 auto 12px', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', background: GREEN, fontWeight: 900 }}>✓</div>
             <div style={{ fontSize: 14, fontWeight: 800 }}>Booking confirmed</div>
             <div aria-live="polite" style={{ fontSize: 44, lineHeight: 1, color: showCounterexample ? MUTED : GREEN, fontWeight: 900, letterSpacing: -1.4, marginTop: 18 }}>+{inr(showCounterexample ? 0 : counter)}</div>
-            <div style={{ ...helper, marginTop: 8 }}>your commission · 8% of {inr(1999)}</div>
+            <div style={{ ...helper, marginTop: 8 }}>your commission · 8% of {inr(PRIMARY_EVENT.price)}</div>
           </div>
         )}
       </div>
@@ -354,7 +372,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
   const tiles = [
     { label: 'Clicks', value: DEMO_FUNNEL.clicks, caption: 'Clicks: 120 people opened your link. Pays ₹0.' },
     { label: 'Sign-ups', value: DEMO_FUNNEL.signups, caption: "Sign-ups: 14 applied. Still ₹0 — interest isn't income." },
-    { label: 'Paid', value: DEMO_FUNNEL.paid, caption: 'Paid: 5 fully paid — the only tile that pays. 5 × ₹160 = ₹800.' },
+    { label: 'Paid', value: DEMO_FUNNEL.paid, caption: `Paid: 5 fully paid — the only tile that pays. 5 × ${inr(PRIMARY_EVENT.cut)} = ${inr(DEMO_MONTH_EARNED)}.` },
   ];
 
   return (
@@ -393,12 +411,12 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           <div style={{ ...eyebrow, marginBottom: 8 }}>Your conversions</div>
           <button type="button" onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', background: conversionTapped ? '#f7f7f8' : '#fff' }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 800 }}>Gokarna Beach Weekend</div>
-              <div style={{ ...helper, marginTop: 4 }}>5 tickets · ₹160 per ticket</div>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
+              <div style={{ ...helper, marginTop: 4 }}>5 tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
             </div>
-            <div style={{ color: GREEN, fontWeight: 900 }}>₹800</div>
+            <div style={{ color: GREEN, fontWeight: 900 }}>{inr(DEMO_MONTH_EARNED)}</div>
           </button>
-          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>Gokarna Beach Weekend · 5 tickets · ₹800 · ₹160 per ticket. Every rupee, itemised per event.</div>}
+          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · 5 tickets · {inr(DEMO_MONTH_EARNED)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
         </div>
 
         <div style={{ borderTop: `1px solid ${HAIR}`, paddingTop: 13 }}>
@@ -453,33 +471,33 @@ export function DemoL5({ onDone }: DemoProps) {
   );
 }
 
-const GOKARNA_DETAILS: InvitePlanDetails = {
+const PONDY_DETAILS: InvitePlanDetails = {
   quickInfo: [
-    { label: 'Plan Title', value: 'Gokarna Beach Weekend' },
-    { label: 'Meeting Spot', value: 'Bengaluru' },
-    { label: 'Group Size', value: '12–18' },
+    { label: 'Plan Title', value: PRIMARY_EVENT.title },
+    { label: 'Meeting Spot', value: 'Airport Metro' },
+    { label: 'Group Size', value: '20 people' },
   ],
-  included: ['Round-trip transport', 'Two breakfasts and one dinner', 'Local experience host', 'All planned activities'],
+  included: ['Party bus to the Pondy beach villa', 'Private pool and beach nearby', 'Campfire, BBQ dinner and beach-house stay', 'Next-morning brunch'],
   itinerary: [
     {
-      day: 'Day 1', title: 'Coast, check-in, sunset', description: 'Arrive, settle in, and meet the group before an easy evening by the beach.',
-      schedule: [{ time: 'Morning', activity: 'Arrive in Gokarna' }, { time: 'Evening', activity: 'Sunset walk and group dinner' }],
+      day: 'Day 1', title: 'Party bus, campfire and houseparty', description: 'Meet the group at Airport Metro, ride to Pondy together, then settle into the beach villa.',
+      schedule: [{ time: '4:00 PM', activity: 'Party bus leaves Airport Metro' }, { time: '9:00 PM', activity: 'Campfire and BBQ dinner' }, { time: '10:00 PM', activity: 'Games and the houseparty' }],
     },
     {
-      day: 'Day 2', title: 'Beach trail and slow morning', description: 'Explore the coast together, then wind down before the return journey.',
-      schedule: [{ time: 'Morning', activity: 'Breakfast and beach trail' }, { time: 'Afternoon', activity: 'Lunch and return' }],
+      day: 'Day 2', title: 'A lazy morning by the beach', description: 'Wake up at Casa Tequila, recover over brunch, and head back with the crew.',
+      schedule: [{ time: 'Morning', activity: 'Brunch at the beach house' }, { time: 'Afternoon', activity: 'Return with the party bus' }],
     },
   ],
   showAccommodation: false,
 };
 
 const DEMO_CAPTIONS = [
-  'went with this crew to gokarna last month — easily the best weekend of my year. next dates are up, link takes you to everything 🌊',
+  'went with this crew to pondy last month — easily the best weekend of my year. next dates are up, link takes you to everything 🌊',
   "if you've been waiting for a sign to actually go — this is it. comment LINK and I'll DM you the details.",
 ];
 
 export function DemoL6({ onDone }: DemoProps) {
-  const [sheetTitle, setSheetTitle] = useState('Gokarna Beach Weekend');
+  const [sheetTitle, setSheetTitle] = useState(PRIMARY_EVENT.title);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [openedSheet, setOpenedSheet] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<number | null>(null);
@@ -515,7 +533,7 @@ export function DemoL6({ onDone }: DemoProps) {
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: 15, borderBottom: `1px solid ${HAIR}` }}>
           <div style={{ fontSize: 15, fontWeight: 850 }}>See upcoming events</div>
-          <div style={{ ...helper, marginTop: 3 }}>3 to promote · earn up to ₹160 per booking</div>
+          <div style={{ ...helper, marginTop: 3 }}>3 to promote · earn up to {inr(PRIMARY_EVENT.cut)} per booking</div>
         </div>
         {DEMO_EVENTS.map((event, index) => (
           <button type="button" key={event.title} onClick={() => openSheet(event.title)} style={{ width: '100%', padding: '13px 15px', border: 'none', borderTop: index === 0 ? 'none' : `1px solid ${HAIR}`, background: '#fff', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer' }}>
@@ -546,7 +564,7 @@ export function DemoL6({ onDone }: DemoProps) {
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
           title={sheetTitle}
-          details={GOKARNA_DETAILS}
+          details={PONDY_DETAILS}
         />
       </div>
     </div>

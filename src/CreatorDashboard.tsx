@@ -15,6 +15,8 @@
 // its own rolling range picker (24h / week / month / 90d).
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabase';
+import CreatorOnboarding from './CreatorOnboarding';
+import CreatorUpcomingEvents from './CreatorUpcomingEvents';
 
 type Me = { id: string; handle: string; name: string; email: string; active: boolean };
 type RangeStats = { clicks_total: number; clicks_unique: number; apps_total: number; tickets_paid: number; earned: number };
@@ -67,6 +69,27 @@ export default function CreatorDashboard() {
   const [copied, setCopied] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [authError, setAuthError] = useState('');
+  // New-creator onboarding intent. Set before the Google OAuth redirect and read
+  // back on remount (sessionStorage survives the bounce), so a fresh signer who
+  // chose "I'm a new creator" lands in onboarding instead of the dead-end screen.
+  const [wantsOnboarding, setWantsOnboarding] = useState<boolean>(() => {
+    try { return sessionStorage.getItem('creatorOnboardingIntent') === '1'; } catch { return false; }
+  });
+  const startOnboarding = () => {
+    try { sessionStorage.setItem('creatorOnboardingIntent', '1'); } catch { /* private mode */ }
+    setWantsOnboarding(true);
+  };
+  const clearOnboardingIntent = () => {
+    try { sessionStorage.removeItem('creatorOnboardingIntent'); } catch { /* private mode */ }
+    setWantsOnboarding(false);
+  };
+  // Signup finished → drop the intent and re-run the creator lookup; the row now
+  // exists, so the dashboard renders on the next pass.
+  const completeOnboarding = () => {
+    clearOnboardingIntent();
+    setMeStatus('loading');
+    setLookupNonce(n => n + 1);
+  };
 
   // ── Install-app nudge ──
   // Android/Chrome fires beforeinstallprompt (captured in index.html before
@@ -194,6 +217,10 @@ export default function CreatorDashboard() {
     }).catch(() => setLoading(false));
   }, [me, range]);
 
+  // An existing creator who happened to tap "I'm a new creator" resolves to a real
+  // row — drop the now-stale intent so we never show them onboarding.
+  useEffect(() => { if (me) clearOnboardingIntent(); }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const login = async () => {
     setAuthError('');
     await supabase.auth.signInWithOAuth({
@@ -210,6 +237,7 @@ export default function CreatorDashboard() {
     setMonthEarned(0);
     setLeaderboard([]);
     setCopied(false);
+    clearOnboardingIntent();
   };
   const logout = async () => {
     if (signingOut) return;
@@ -234,11 +262,24 @@ export default function CreatorDashboard() {
     });
   };
 
-  const wrap: React.CSSProperties = { minHeight: '100vh', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' };
+  // 100% (not 100vh) so the screen fills the MobileShell frame exactly — no
+  // overflow past the phone frame on desktop, no stray scroll gap.
+  const wrap: React.CSSProperties = { minHeight: '100%', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' };
 
   // ── Loading (auth not settled, or logged in and lookup still running) ──
   if (!authReady || (email && meStatus === 'loading')) {
-    return <div style={{ ...wrap, display: 'grid', placeItems: 'center' }}><div style={{ color: MUTED, fontSize: 14 }}>Loading…</div></div>;
+    return (
+      <div style={{ ...wrap, display: 'grid', placeItems: 'center' }}>
+        <div role="status" aria-label="Loading">
+          <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="13" fill="none" stroke={HAIR} strokeWidth="3" />
+            <path d="M16 3a13 13 0 0 1 13 13" fill="none" stroke={INK} strokeWidth="3" strokeLinecap="round">
+              <animateTransform attributeName="transform" type="rotate" from="0 16 16" to="360 16 16" dur="0.8s" repeatCount="indefinite" />
+            </path>
+          </svg>
+        </div>
+      </div>
+    );
   }
 
   // ── Not logged in ──
@@ -246,11 +287,16 @@ export default function CreatorDashboard() {
     return (
       <div style={{ ...wrap, display: 'grid', placeItems: 'center', padding: 24 }}>
         <div style={{ maxWidth: 340, width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5, marginBottom: 8 }}>Creator dashboard</div>
-          <div style={{ color: MUTED, fontSize: 14, marginBottom: 26, lineHeight: 1.55 }}>Sign in to see your link's clicks, bookings and earnings.</div>
-          {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 12 }}>{authError}</div>}
-          <button onClick={login} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: INK, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
-            Continue with Google
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.1 }}>chapter அ</div>
+            <div style={{ fontSize: 15, color: MUTED, fontWeight: 600, marginTop: 3 }}>creator dashboard</div>
+          </div>
+          {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 14 }}>{authError}</div>}
+          <button onClick={() => { startOnboarding(); login(); }} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: INK, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+            Register as Creator
+          </button>
+          <button onClick={login} style={{ width: '100%', padding: '13px 0', marginTop: 12, borderRadius: 14, border: '1.5px solid ' + HAIR, background: '#fff', color: INK, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+            Login
           </button>
         </div>
       </div>
@@ -277,23 +323,36 @@ export default function CreatorDashboard() {
     );
   }
 
-  // ── Logged in but not a creator ──
+  // ── Logged in, no creator row yet, chose the new-creator path → onboarding ──
+  if (meStatus === 'absent' && wantsOnboarding) {
+    return <CreatorOnboarding email={email} onComplete={completeOnboarding} />;
+  }
+
+  // ── Logged in but not a creator (and didn't opt into onboarding) ──
   if (!me) {
     return (
       <div style={{ ...wrap, display: 'grid', placeItems: 'center', padding: 24 }}>
         <div style={{ maxWidth: 360, width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: 21, fontWeight: 800, marginBottom: 10 }}>Not a creator account</div>
+          <div style={{ fontSize: 21, fontWeight: 800, marginBottom: 10 }}>You're not a creator yet</div>
           <div style={{ color: MUTED, fontSize: 14, marginBottom: 22, lineHeight: 1.55 }}>
-            <b style={{ color: INK }}>{email}</b> isn't set up as a creator yet. If you think this is a mistake, contact the team to add this exact email.
+            <b style={{ color: INK }}>{email}</b> isn't set up as a creator. Want to become one and start earning?
           </div>
           {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 12 }}>{authError}</div>}
           <button
-            onClick={logout}
-            disabled={signingOut}
-            style={{ padding: '11px 24px', borderRadius: 12, border: '1.5px solid ' + HAIR, background: '#fff', fontWeight: 700, fontSize: 14, cursor: signingOut ? 'default' : 'pointer', opacity: signingOut ? 0.6 : 1 }}
+            onClick={startOnboarding}
+            style={{ width: '100%', maxWidth: 260, padding: '13px 0', borderRadius: 12, border: 'none', background: INK, color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}
           >
-            {signingOut ? 'Signing out…' : 'Sign out'}
+            Become a creator
           </button>
+          <div style={{ marginTop: 14 }}>
+            <button
+              onClick={logout}
+              disabled={signingOut}
+              style={{ padding: '9px 20px', borderRadius: 12, border: '1.5px solid ' + HAIR, background: '#fff', fontWeight: 700, fontSize: 13.5, color: MUTED, cursor: signingOut ? 'default' : 'pointer', opacity: signingOut ? 0.6 : 1 }}
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -346,6 +405,9 @@ export default function CreatorDashboard() {
           </div>
           <div style={{ fontSize: 12, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>You earn when someone books a chapter அ experience through it.</div>
         </div>
+
+        {/* See upcoming events — what to promote + potential earnings */}
+        <CreatorUpcomingEvents />
 
         {/* Install-app nudge (hidden once installed / inside the app) */}
         {showInstallCard && (

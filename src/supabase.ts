@@ -118,6 +118,11 @@ export function mapDbEventToEvent(row: any): any {
     // 'full' = single payment (one amount, no advance/balance split); 'split' default.
     paymentMode: row.payment_mode ?? 'split',
     ctaLabel: row.cta_label ?? '',
+    // Creator (affiliate) economics — used by the creator dashboard's upcoming-
+    // events card to show "you'd earn ₹X per booking". Commission only pays when
+    // affiliateEnabled is true at full-payment time.
+    affiliateEnabled: row.affiliate_enabled ?? false,
+    affiliateCommissionPct: Number(row.affiliate_commission_pct ?? 0) || 0,
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,
     inviteSlug: row.invite_slug ?? undefined,

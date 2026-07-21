@@ -7,12 +7,15 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "remotion:studio": "remotion studio src/remotion/index.ts --no-open",
+    "remotion:render:lesson1": "remotion render src/remotion/index.ts creator-lesson-1 public/creator-onboarding/lesson-1-explainer.mp4",
     "test:aisensy-deeplink": "node scripts/test-aisensy-deeplink.mjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
+    "@remotion/player": "^4.0.495",
     "@sentry/react": "^10.49.0",
     "@supabase/supabase-js": "^2.103.2",
     "@tailwindcss/vite": "^4.1.14",
@@ -23,9 +26,11 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.495"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.495",
     "@types/node": "^22.14.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
