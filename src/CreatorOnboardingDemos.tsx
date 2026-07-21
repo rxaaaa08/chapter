@@ -290,6 +290,7 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
   const complete = conversionTapped && copyTapped;
   const rangeStats = DEMO_RANGE_STATS[range];
   const rangeEarned = rangeStats.paid * PRIMARY_EVENT.cut;
+  const rangeTicketLabel = `${rangeStats.paid} ${rangeStats.paid === 1 ? 'ticket' : 'tickets'}`;
   useCompleteWhen(complete, onDone);
 
   useEffect(() => {
@@ -350,11 +351,11 @@ export function DemoL4({ demoHandle, onDone }: DemoProps) {
           <button type="button" className={!conversionTapped ? 'creator-demo-pulse' : undefined} onClick={() => setConversionTapped(true)} style={{ ...card, width: '100%', padding: 13, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', color: INK, fontFamily: 'inherit', cursor: 'pointer', borderColor: !conversionTapped ? GOLD : HAIR, background: conversionTapped ? '#f7f7f8' : GOLD_TINT }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{PRIMARY_EVENT.title}</div>
-              <div style={{ ...helper, marginTop: 4 }}>{rangeStats.paid} tickets · {inr(PRIMARY_EVENT.cut)} per ticket</div>
+              <div style={{ ...helper, marginTop: 4 }}>{rangeTicketLabel} · {inr(PRIMARY_EVENT.cut)} per ticket</div>
             </div>
             <div style={{ color: GREEN, fontWeight: 900 }}>{inr(rangeEarned)}</div>
           </button>
-          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · {rangeStats.paid} tickets · {inr(rangeEarned)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
+          {conversionTapped && <div style={{ ...helper, marginTop: 8 }}>{PRIMARY_EVENT.title} · {rangeTicketLabel} · {inr(rangeEarned)} · {inr(PRIMARY_EVENT.cut)} per ticket. Every rupee, itemised per event.</div>}
         </div>
 
         <div style={{ ...card, padding: 13 }}>
