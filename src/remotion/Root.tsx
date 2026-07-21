@@ -7,13 +7,6 @@ import {
   CREATOR_LESSON_ONE_WIDTH,
   CreatorLessonOne,
 } from './CreatorLessonOne';
-import {
-  CREATOR_LESSON_TWO_DURATION,
-  CREATOR_LESSON_TWO_FPS,
-  CREATOR_LESSON_TWO_HEIGHT,
-  CREATOR_LESSON_TWO_WIDTH,
-  CreatorLessonTwo,
-} from './CreatorLessonTwo';
 
 export const RemotionRoot: React.FC = () => (
   <>
@@ -24,15 +17,6 @@ export const RemotionRoot: React.FC = () => (
       fps={CREATOR_LESSON_ONE_FPS}
       width={CREATOR_LESSON_ONE_WIDTH}
       height={CREATOR_LESSON_ONE_HEIGHT}
-      defaultProps={{ handle: 'yourhandle' }}
-    />
-    <Composition
-      id="creator-lesson-2"
-      component={CreatorLessonTwo}
-      durationInFrames={CREATOR_LESSON_TWO_DURATION}
-      fps={CREATOR_LESSON_TWO_FPS}
-      width={CREATOR_LESSON_TWO_WIDTH}
-      height={CREATOR_LESSON_TWO_HEIGHT}
       defaultProps={{ handle: 'yourhandle' }}
     />
   </>

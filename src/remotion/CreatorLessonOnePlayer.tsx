@@ -14,7 +14,7 @@ type Props = {
 
 const CreatorLessonOnePlayer: React.FC<Props> = ({ handle }) => (
   <Player
-    aria-label="Lesson 1 explainer: how a follower reaches your link"
+    aria-label="Lesson 1 infographic: from comment to creator commission"
     component={CreatorLessonOne}
     inputProps={{ handle }}
     durationInFrames={CREATOR_LESSON_ONE_DURATION}
@@ -24,7 +24,7 @@ const CreatorLessonOnePlayer: React.FC<Props> = ({ handle }) => (
     controls
     clickToPlay
     showVolumeControls={false}
-    style={{ width: '100%', aspectRatio: '9 / 16' }}
+    style={{ width: '100%', aspectRatio: '16 / 9' }}
   />
 );
 

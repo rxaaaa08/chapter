@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
 const CreatorLessonOnePlayer = React.lazy(() => import('./remotion/CreatorLessonOnePlayer'));
-const CreatorLessonTwoPlayer = React.lazy(() => import('./remotion/CreatorLessonTwoPlayer'));
 
 // TODO(owner): replace with the creator's recorded Level 7 walkthrough.
 const LEVEL_SEVEN_VIMEO_ID = '76979871';
@@ -128,7 +127,7 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
     <div style={stack}>
       <p style={paragraph}>First, type the handle you're thinking of — we'll use it everywhere in this demo.</p>
       <div>
-        <div style={{ position: 'relative' }}>
+        <div className={!demoHandle ? 'creator-demo-pulse' : undefined} style={{ position: 'relative', borderRadius: 12, boxShadow: !demoHandle ? `0 0 0 2px ${GOLD}` : 'none', background: !demoHandle ? GOLD_TINT : '#fff' }}>
           <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: MUTED, fontWeight: 800 }}>@</span>
           <input
             aria-label="Demo creator handle"
@@ -138,108 +137,20 @@ export function DemoL1({ demoHandle, setDemoHandle, onDone }: DemoL1Props) {
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            style={{ width: '100%', padding: '12px 13px 12px 29px', borderRadius: 12, border: `1.5px solid ${HAIR}`, fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+            style={{ width: '100%', padding: '12px 13px 12px 29px', borderRadius: 12, border: `1.5px solid ${!demoHandle ? GOLD : HAIR}`, background: 'transparent', fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
           />
         </div>
         <div style={{ ...helper, marginTop: 6 }}>Just for the demo — you'll claim your real handle at the end.</div>
       </div>
       <div>
         <p style={paragraph}>Watch how one comment carries Priya from your reel to the real chapter அ experiences page.</p>
-        <p style={{ ...helper, marginTop: 6 }}>The video updates with your demo handle and works with sound off.</p>
       </div>
-      <div style={{ width: 'min(100%, 286px)', margin: '0 auto', borderRadius: 26, overflow: 'hidden', background: '#171715', boxShadow: '0 18px 50px rgba(17, 17, 17, 0.16)' }}>
-        <React.Suspense fallback={<div role="status" aria-label="Loading lesson video" style={{ width: '100%', aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13, fontWeight: 750 }}>Loading video…</div>}>
+      <div style={{ width: '100%', margin: '0 auto', borderRadius: 20, overflow: 'hidden', background: '#171715', boxShadow: '0 18px 50px rgba(17, 17, 17, 0.16)' }}>
+        <React.Suspense fallback={<div role="status" aria-label="Loading lesson video" style={{ width: '100%', aspectRatio: '16 / 9', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13, fontWeight: 750 }}>Loading video…</div>}>
           <CreatorLessonOnePlayer handle={handle} />
         </React.Suspense>
       </div>
-      <button type="button" className="creator-demo-pulse" onClick={finish} style={primaryBtn(true)}>Mark as done</button>
-    </div>
-  );
-}
-
-export function DemoL2({ demoHandle, onDone }: DemoProps) {
-  const [showExplainer, setShowExplainer] = useState(true);
-  const [scene, setScene] = useState<1 | 2 | 3>(1);
-  const [counter, setCounter] = useState(0);
-  const handle = handleFor(demoHandle);
-  const counterFinished = counter >= PRIMARY_EVENT.cut;
-  const complete = scene === 3 && counterFinished;
-  useCompleteWhen(complete, onDone);
-
-  useEffect(() => {
-    if (scene !== 3) { setCounter(0); return; }
-    const started = Date.now();
-    const interval = window.setInterval(() => {
-      const progress = Math.min(1, (Date.now() - started) / 1000);
-      setCounter(Math.round(PRIMARY_EVENT.cut * progress));
-      if (progress >= 1) window.clearInterval(interval);
-    }, 32);
-    return () => window.clearInterval(interval);
-  }, [scene]);
-
-  const replay = () => {
-    setScene(1);
-    setCounter(0);
-  };
-
-  if (showExplainer) {
-    return (
-      <div style={stack}>
-        <div style={{ ...card, overflow: 'hidden', background: '#111', maxWidth: 286, width: '100%', margin: '0 auto' }}>
-          <React.Suspense fallback={<div role="status" style={{ aspectRatio: '9 / 16', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12.5 }}>Loading explainer…</div>}>
-            <CreatorLessonTwoPlayer handle={handle} />
-          </React.Suspense>
-        </div>
-        <p style={{ ...paragraph, color: MUTED, textAlign: 'center' }}>A short sound-off preview of how your tag stays with Priya from link to payment. Next, you drive the booking yourself.</p>
-        <button type="button" className="creator-demo-pulse" onClick={() => setShowExplainer(false)} style={primaryBtn(true)}>Try it yourself</button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={stack}>
-      <p style={paragraph}>Priya's on the Pondy Beach Houseparty page — and notice the little tag riding along: <b>came from @{handle}</b>. As long as that tag is there, whatever she books is credited to you.</p>
-      <p style={paragraph}>Walk her through it.</p>
-
-      <div style={{ ...card, padding: 15, background: '#fafafa', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <AttributionTag handle={handle} />
-        {scene === 1 && (
-          <>
-            <div style={{ ...card, padding: 14 }}>
-              <div style={{ fontSize: 17, fontWeight: 850 }}>{PRIMARY_EVENT.title}</div>
-              <div style={{ ...helper, marginTop: 6 }}>dates · pickup points · {inr(PRIMARY_EVENT.price)}</div>
-            </div>
-            <button type="button" className="creator-demo-pulse" onClick={() => setScene(2)} style={primaryBtn(true)}>{FOLLOWER} applies</button>
-          </>
-        )}
-        {scene === 2 && (
-          <>
-            <div style={{ textAlign: 'center', padding: '24px 10px' }}>
-              <div style={{ width: 42, height: 42, margin: '0 auto 12px', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', background: GREEN, fontWeight: 900 }}>✓</div>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>Application sent.</div>
-              <div style={{ ...helper, marginTop: 4 }}>The payment page opens…</div>
-            </div>
-            <button type="button" className="creator-demo-pulse" onClick={() => setScene(3)} style={primaryBtn(true)}>{FOLLOWER} pays {inr(PRIMARY_EVENT.price)}</button>
-          </>
-        )}
-        {scene === 3 && (
-          <div style={{ textAlign: 'center', padding: '22px 8px' }}>
-            <div style={{ width: 42, height: 42, margin: '0 auto 12px', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', background: GREEN, fontWeight: 900 }}>✓</div>
-            <div style={{ fontSize: 14, fontWeight: 800 }}>Booking confirmed</div>
-            <div aria-live="polite" style={{ fontSize: 44, lineHeight: 1, color: GREEN, fontWeight: 900, letterSpacing: -1.4, marginTop: 18 }}>+{inr(counter)}</div>
-            <div style={{ ...helper, marginTop: 8 }}>your commission · {PRIMARY_EVENT.pct}% of {inr(PRIMARY_EVENT.price)}</div>
-          </div>
-        )}
-      </div>
-
-      {scene === 3 && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <button type="button" onClick={replay} style={secondaryBtn}>Replay</button>
-            <ContinueButton enabled={complete} pendingLabel="Watch your commission land" />
-          </div>
-        </>
-      )}
+      <button type="button" className={demoHandle ? 'creator-demo-pulse' : undefined} onClick={finish} style={primaryBtn(true)}>Continue to Next Lesson</button>
     </div>
   );
 }
