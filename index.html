@@ -126,16 +126,28 @@
         border-radius: 16px;
         background: #000000;
         box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+        overflow: hidden;
+        padding: 6px;
+        box-sizing: border-box;
+      }
+      #html-preloader-logo {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: contain;
+        transform: translateY(2px) scale(1.02);
       }
     </style>
   </head>
   <body>
-    <!-- Pre-loader: pure CSS, no image fetch, covers any partial-state flash before React mounts.
+    <!-- Pre-loader: uses the same gold-on-black chapter அ mark as the lifestyle loader.
          Removed via double-rAF in main.tsx after React's first paint. -->
     <div id="html-preloader">
       <div id="html-preloader-inner">
         <div id="html-preloader-glow"></div>
-        <div id="html-preloader-box"></div>
+        <div id="html-preloader-box">
+          <img id="html-preloader-logo" src="/src/assets/chat-profile.jpg" alt="" aria-hidden="true" />
+        </div>
       </div>
     </div>
 
