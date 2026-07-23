@@ -10,3 +10,13 @@ coverage/
 .idea/
 work/
 supabase/.temp/
+
+# Local AI/agent tooling — available on this machine, not committed.
+.agents/
+skills-lock.json
+.claude/skills/sync-map/SKILL.md
+
+# Local visual QA/reference evidence — keep on this machine only.
+.codex-qa/
+design-qa.md
+public/creator_dashboard.png
