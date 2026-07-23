@@ -25,12 +25,14 @@ ALTER TABLE public.affiliates
   ADD COLUMN IF NOT EXISTS phone       text,
   ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
 
--- Back-fill existing creators as already-reviewed (they were hand-added by the
--- founder). Uses created_at so the timestamp is truthful, not "now". Idempotent:
--- only touches rows still NULL, so re-running never clobbers a real review time.
+-- Back-fill only creators that pre-date the self-serve rollout. The explicit
+-- cutoff keeps this migration safely repeatable even when the live schema was
+-- applied manually before its migration history was reconciled: a later run
+-- must never mark a newly self-joined creator as already reviewed.
 UPDATE public.affiliates
    SET reviewed_at = created_at
- WHERE reviewed_at IS NULL;
+ WHERE reviewed_at IS NULL
+   AND created_at < timestamptz '2026-07-21 00:00:00+05:30';
 
 -- ── handle_available(text) ───────────────────────────────────────────────────
 -- The onboarding page needs a live "is @handle free?" check, but anon must not be
