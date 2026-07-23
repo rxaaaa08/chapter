@@ -508,7 +508,7 @@ export default function AdminPanel() {
   const [managerScorecards, setManagerScorecards] = useState<{ benchmark: number; byId: Record<string, any> } | null>(null);
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
-  const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean }>>([]);
+  const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null }>>([]);
   // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
   const [affiliateStats, setAffiliateStats] = useState<Record<string, AffiliateStat>>({});
   const [addingAffiliate, setAddingAffiliate] = useState(false);
@@ -1185,7 +1185,7 @@ export default function AdminPanel() {
   // and the sales ledger (admin has full RLS on all three).
   const loadAffiliatesData = async () => {
     const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }] = await Promise.all([
-      supabase.from('affiliates').select('id, handle, name, email, active').order('created_at'),
+      supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone').order('created_at'),
       supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
@@ -1229,6 +1229,16 @@ export default function AdminPanel() {
     if (error) { showToast(`Failed: ${error.message}`); return; }
     showToast(`${af.name} ${!af.active ? 'reactivated' : 'paused'}`);
     logAdminAction(af.active ? 'affiliate_deactivate' : 'affiliate_reactivate', 'affiliates', af.id, {});
+    loadAffiliatesData();
+  };
+
+  // Clear the "new arrivals" flag once the founder has eyeballed a self-joined
+  // creator. Stamps reviewed_at so the NEW badge disappears. Never un-reviews.
+  const markAffiliateReviewed = async (af: { id: string; name: string }) => {
+    const { error } = await supabase.from('affiliates').update({ reviewed_at: new Date().toISOString() }).eq('id', af.id);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(`${af.name} marked reviewed`);
+    logAdminAction('affiliate_reviewed', 'affiliates', af.id, {});
     loadAffiliatesData();
   };
 
@@ -4309,11 +4319,11 @@ export default function AdminPanel() {
 
           return (
             <div>
-              {/* Commission banner — marketer hat only (dual-role users see it
-                  in My Leads scope). Counts THEIR assigned leads, which for a
-                  pure marketer is everything RLS hands them anyway. */}
-              {currentMarketer && myCommissionStats && effScope === 'mine' && (() => {
-                const myApps = currentManager ? applications.filter(a => a.assigned_marketer_id === currentMarketer.id) : applications;
+              {/* Commission banner — pure marketer accounts only. Managers do
+                  not need marketer earnings or team-ranking cards here, even
+                  when their login also has a marketer side-car. */}
+              {currentMarketer && !currentManager && myCommissionStats && effScope === 'mine' && (() => {
+                const myApps = applications;
                 const fullyPaid   = myApps.filter(a => a.status === 'fully_paid').length;
                 const advanceOnly = myApps.filter(a => a.status === 'advance_paid').length;
                 const paidAdvance = fullyPaid + advanceOnly;
@@ -4370,16 +4380,16 @@ export default function AdminPanel() {
 
               {/* Assigned events + per-date spots left — marketer & manager views.
                   Reserved totals come from the SECURITY DEFINER RPC, so they
-                  reflect ALL bookings, not just this marketer's leads. The
-                  event list follows the scope: marketer-assigned events in
-                  My Leads, managed events in Team Leads. */}
+                  reflect ALL bookings. Dual-role accounts always see the union
+                  of both hats here, independent of the active lead scope. */}
               {(currentMarketer || currentManager) && (() => {
-                const scopeSlugs = effScope === 'team' ? managerAssignedSlugs : marketerAssignedSlugs;
-                const scopeCounts = effScope === 'team' ? managerEventDateCounts : marketerEventDateCounts;
+                const marketerSlugs = new Set(marketerAssignedSlugs);
+                const managerSlugs = new Set(managerAssignedSlugs);
+                const assignedSlugs = new Set([...marketerAssignedSlugs, ...managerAssignedSlugs]);
                 const today = new Date().toISOString().slice(0, 10);
                 const assigned = trips.filter(t =>
                   t.is_active &&
-                  scopeSlugs.includes(t.slug ?? '') &&
+                  assignedSlugs.has(t.slug ?? '') &&
                   (t.event_dates ?? []).some(d => d.start_date && d.start_date >= today)
                 );
                 if (assigned.length === 0) return null;
@@ -4388,15 +4398,22 @@ export default function AdminPanel() {
                     <div style={{ fontSize: 11, color: '#999', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Your Events — Spots Left</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {assigned.map(t => {
+                        const slug = t.slug ?? '';
+                        const isMarketerEvent = marketerSlugs.has(slug);
+                        const isManagerEvent = managerSlugs.has(slug);
+                        const roleLabel = [isMarketerEvent ? 'Marketer' : '', isManagerEvent ? 'Manager' : ''].filter(Boolean).join(' · ');
                         const capacity = (t.total_capacity ?? t.invite_spots) ?? null;
-                        const dateCounts = scopeCounts[t.slug ?? ''] ?? {};
+                        const dateCounts = managerEventDateCounts[slug] ?? marketerEventDateCounts[slug] ?? {};
                         const dates = (t.event_dates ?? [])
                           .filter(d => d.start_date && d.start_date >= today)
                           .slice()
                           .sort((a, b) => a.start_date.localeCompare(b.start_date));
                         return (
                           <div key={t.id ?? t.slug}>
-                            <div style={{ fontWeight: 600, fontSize: 14, color: '#111', marginBottom: 3 }}>{t.title}</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 3 }}>
+                              <span style={{ fontWeight: 600, fontSize: 14, color: '#111' }}>{t.title}</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#aaa' }}>{roleLabel}</span>
+                            </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 16px', fontSize: 13 }}>
                               {dates.map(d => {
                                 const reserved = dateCounts[d.start_date]?.reserved ?? 0;
@@ -4430,6 +4447,35 @@ export default function AdminPanel() {
                   </div>
                 );
               })()}
+
+              {/* Dual-role mode switch — manager hat vs marketer hat. Every
+                  People sub-mode below respects the selected role scope. */}
+              {isDualRole && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ marginBottom: 6, fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>Mode</div>
+                  <div role="radiogroup" aria-label="People role mode" style={{ display: 'inline-flex', gap: 3, padding: 4, background: '#f3f3f3', border: '1px solid #e5e5e5', borderRadius: 10 }}>
+                    {([
+                      { scope: 'team' as const, label: 'Manager' },
+                      { scope: 'mine' as const, label: 'Marketer' },
+                    ]).map(({ scope, label }) => {
+                      const selected = peopleScope === scope;
+                      return (
+                        <label key={scope} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 7, background: selected ? '#fff' : 'transparent', color: selected ? '#111' : '#777', boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.12)' : 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                          <input
+                            type="radio"
+                            name="people-role-mode"
+                            value={scope}
+                            checked={selected}
+                            onChange={() => setPeopleScope(scope)}
+                            style={{ width: 14, height: 14, margin: 0, accentColor: '#111', cursor: 'pointer' }}
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -4467,27 +4513,6 @@ export default function AdminPanel() {
                   {applicationsLoading ? 'Refreshing…' : 'Refresh'}
                 </button>
               </div>
-
-              {/* Dual-role scope switch — worker hat vs manager hat. Every mode
-                  chip below respects whichever scope is active. */}
-              {isDualRole && (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: 5, background: '#eef2ff', borderRadius: 99, width: 'fit-content' }}>
-                  {(['mine', 'team'] as const).map(sc => (
-                    <button
-                      key={sc}
-                      onClick={() => setPeopleScope(sc)}
-                      style={{
-                        padding: '7px 16px', borderRadius: 99, border: 'none', cursor: 'pointer',
-                        fontWeight: 700, fontSize: 13,
-                        background: peopleScope === sc ? '#4338ca' : 'transparent',
-                        color: peopleScope === sc ? '#fff' : '#6366f1',
-                      }}
-                    >
-                      {sc === 'mine' ? '🙋 My Leads' : '🧑‍💼 Team Leads'}
-                    </button>
-                  ))}
-                </div>
-              )}
 
               {/* Mode switcher */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: 5, background: '#f3f3f3', borderRadius: 99, width: 'fit-content' }}>
@@ -5466,6 +5491,12 @@ export default function AdminPanel() {
           const visibleAppEvents = Array.from(effectiveSelected)
             .filter(id => tripById.get(id)?.booking_url !== 'payu-hosted')
             .sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
+          // Open-flow per-event sections use the same picker, but only render
+          // payu-hosted events. Their form/payment stages come from the
+          // event-keyed open_funnel payload + details_form_opened stage map.
+          const visibleOpenEvents = Array.from(effectiveSelected)
+            .filter(id => tripById.get(id)?.booking_url === 'payu-hosted')
+            .sort((a, b) => eventLabelById(a).localeCompare(eventLabelById(b)));
 
           // Open-event funnel pooled GLOBALLY across every open event with data
           // in the window — like the rest of the Journey overview, which is
@@ -5495,6 +5526,45 @@ export default function AdminPanel() {
               <div style={{ fontSize: 28, fontWeight: 800, color: '#111', lineHeight: 1 }}>{value}</div>
               {sub && <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>{sub}</div>}
             </div>
+          );
+
+          type OpenEventRateValues = { numerator: number; denominator: number; detail: string; emptyText: string };
+          const OpenEventRateCard = ({
+            title, description, valuesForEvent, greenAt = 50, yellowAt = 25,
+          }: {
+            title: string;
+            description: string;
+            valuesForEvent: (eventId: string) => OpenEventRateValues;
+            greenAt?: number;
+            yellowAt?: number;
+          }) => (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>{title}</div>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: -6, marginBottom: 10 }}>{description}</div>
+              <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                {visibleOpenEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No open events selected</div>}
+                {visibleOpenEvents.map((eventId, idx) => {
+                  const { numerator, denominator, detail, emptyText } = valuesForEvent(eventId);
+                  const hasData = denominator > 0;
+                  const pct = hasData ? Math.round((numerator / denominator) * 100) : null;
+                  const last = idx === visibleOpenEvents.length - 1;
+                  const color = !hasData ? '#bbb' : pct! >= greenAt ? '#4ade80' : pct! >= yellowAt ? '#fcd34d' : '#fca5a5';
+                  const fill = !hasData ? '#e5e5e5' : pct! >= greenAt ? '#bbf7d0' : pct! >= yellowAt ? '#fde68a' : '#fecaca';
+                  return (
+                    <div key={eventId} style={{ marginBottom: last ? 0 : 14, paddingBottom: last ? 0 : 14, borderBottom: last ? 'none' : '1px solid #f0f0ea' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{eventLabelById(eventId)}</span>
+                        <span style={{ fontSize: 20, fontWeight: 800, color }}>{hasData ? `${pct}%` : '—%'}</span>
+                      </div>
+                      <div style={{ height: 7, background: '#f0f0ea', borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ width: hasData ? `${Math.min(100, pct!)}%` : '4%', height: '100%', background: fill, borderRadius: 99, transition: 'width 0.4s' }} />
+                      </div>
+                      <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>{hasData ? detail : emptyText}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           );
 
           // Trigger a CSV file download from in-memory rows. BOM keeps unicode
@@ -5831,6 +5901,9 @@ export default function AdminPanel() {
                         'Details Opened', 'Calendar Opened', 'Join Plan Rate',
                         'Date Picked', 'Date Pick Rate',
                         'Reached Pricing', 'Tapped Book Now', 'Tapped Contact Us', 'Total CTA', 'Pricing Conversion Rate',
+                        'Open Form Opened', 'Open Form Open Rate',
+                        'Open Details Submitted', 'Open Form Completion Rate',
+                        'Open Paid', 'Open Payment Rate',
                         'Application Started', 'Application Submitted', 'Application Completion Rate',
                         'Approved', 'Advance Paid', 'Payment Conversion Rate',
                         'Doubt-Askers', 'Doubts → Applied', 'Doubt Solved Rate',
@@ -5843,6 +5916,10 @@ export default function AdminPanel() {
                         const booked   = (bookCtaByEvent[id] || 0) + (legacyCtaByEvent[id] || 0);
                         const contact  = contactCtaByEvent[id]      || 0;
                         const totalCta = booked + contact;
+                        const isOpen   = tripById.get(id)?.booking_url === 'payu-hosted';
+                        const openFormOpened = detailsFormOpenedByEvent[id] || 0;
+                        const openDetails = openFunnelByEvent[id]?.details_submitted || 0;
+                        const openPaid = openFunnelByEvent[id]?.paid || 0;
                         const started  = appStartedByEvent[id]      || 0;
                         const submitted= appSubmittedByEvent[id]    || 0;
                         const approved = appsApprovedByEvent[id]    || 0;
@@ -5854,6 +5931,9 @@ export default function AdminPanel() {
                           viewed, opened, pct(opened, viewed),
                           picked, pct(picked, opened),
                           reached, booked, contact, totalCta, pct(totalCta, reached),
+                          isOpen ? openFormOpened : '', isOpen ? pct(openFormOpened, booked) : '',
+                          isOpen ? openDetails : '', isOpen ? pct(openDetails, openFormOpened) : '',
+                          isOpen ? openPaid : '', isOpen ? pct(openPaid, openDetails) : '',
                           started, submitted, pct(submitted, started),
                           approved, paid, pct(paid, approved),
                           doubts, solved, pct(solved, doubts),
@@ -6065,6 +6145,53 @@ export default function AdminPanel() {
                     })}
                   </div>
 
+                  <OpenEventRateCard
+                    title="Open Form Open Rate"
+                    description="For open events, of users who tapped Book Now, how many reached the details form. A low rate means people are dropping between the pricing CTA and the form opening."
+                    valuesForEvent={(eventId) => {
+                      const tappedBook = (bookCtaByEvent[eventId] || 0) + (legacyCtaByEvent[eventId] || 0);
+                      const formOpened = detailsFormOpenedByEvent[eventId] || 0;
+                      return {
+                        numerator: formOpened,
+                        denominator: tappedBook,
+                        detail: `${formOpened} of ${tappedBook} who tapped Book Now reached the form`,
+                        emptyText: 'no Book Now taps in this window',
+                      };
+                    }}
+                  />
+
+                  <OpenEventRateCard
+                    title="Open Form Completion Rate"
+                    description="For open events, of users who opened the details form, how many submitted it and continued to payment. A low rate means the form is losing people before the bill page."
+                    valuesForEvent={(eventId) => {
+                      const formOpened = detailsFormOpenedByEvent[eventId] || 0;
+                      const detailsSubmitted = openFunnelByEvent[eventId]?.details_submitted || 0;
+                      return {
+                        numerator: detailsSubmitted,
+                        denominator: formOpened,
+                        detail: `${detailsSubmitted} of ${formOpened} who opened the form submitted`,
+                        emptyText: 'no tracked form opens in this window',
+                      };
+                    }}
+                  />
+
+                  <OpenEventRateCard
+                    title="Open Payment Rate"
+                    description="For open events, of users who submitted the details form, how many completed payment. A low rate means people are dropping after reaching the bill page."
+                    greenAt={70}
+                    yellowAt={40}
+                    valuesForEvent={(eventId) => {
+                      const detailsSubmitted = openFunnelByEvent[eventId]?.details_submitted || 0;
+                      const paid = openFunnelByEvent[eventId]?.paid || 0;
+                      return {
+                        numerator: paid,
+                        denominator: detailsSubmitted,
+                        detail: `${paid} of ${detailsSubmitted} who submitted the form paid`,
+                        emptyText: 'no form submissions in this window',
+                      };
+                    }}
+                  />
+
                   {/* Application Completion Rate — per event: app_submitted / app_started.
                       Tracks form-open → form-submit. Iterates ALL selected events so
                       newly-tracked plans without data still appear with '—'. */}
@@ -6235,63 +6362,82 @@ export default function AdminPanel() {
             anyway). Data comes from the scoped get_manager_summary. */}
         {tab === 'marketers' && adminRole !== 'admin' && currentManager && (() => {
           const inr = (n: number) => '₹' + Math.round(Number(n || 0)).toLocaleString('en-IN');
-          const teamApps = applications.filter(a => managerAssignedSlugs.includes(a.event_slug));
-          const fullyPaid = teamApps.filter(a => a.status === 'fully_paid').length;
+          const fullyPaidApps = applications.filter(a => a.status === 'fully_paid');
           const managedTrips = trips.filter(t => managerAssignedSlugs.includes(t.slug ?? ''));
           const activeRoster = managerRoster.filter(mk => mk.active);
-          // One consolidated earnings view: the single ₹ a fully-paid ticket
-          // pays THEM on each event — manager rate + (for dual-role people in
-          // that event's marketer pool) their marketer rate on their own
-          // sales. Covers pure managers and manager+marketer alike, including
-          // events they only market.
+          // Bill-style earnings view. Manager commission applies to every
+          // fully-paid ticket on a managed event; marketer commission applies
+          // only to this person's own fully-paid leads. A dual-role event keeps
+          // both calculations on one event line and the footer sums them.
           const myMkId = currentMarketer?.id ?? null;
           const relevantSlugs = Array.from(new Set([...managerAssignedSlugs, ...(myMkId ? marketerAssignedSlugs : [])]));
           const earningRows = relevantSlugs.flatMap(slug => {
             const t = trips.find(x => x.slug === slug);
             if (!t) return [];
             const managed = managerAssignedSlugs.includes(slug);
-            const inPool = !!myMkId && (managed ? (managerEventMarketers[slug] ?? []).includes(myMkId) : true);
+            const inPool = !!myMkId && marketerAssignedSlugs.includes(slug);
             const mgrRate = managed ? Number(t.manager_commission ?? currentManager.commission_amount ?? 0) : 0;
             const mkRate = inPool ? Number(t.marketer_commission ?? currentMarketer?.commission_amount ?? 50) : 0;
-            const note = managed
-              ? (mkRate > 0 ? `when you sell it yourself · ${inr(mgrRate)} when your team sells` : 'per fully-paid ticket, whoever sells it')
-              : 'when you sell (you market this event)';
-            return [{ slug, title: t.title, self: mgrRate + mkRate, note }];
+            const calculations: Array<{ role: 'Manager' | 'Marketer'; rate: number; tickets: number }> = [];
+            if (managed) {
+              calculations.push({
+                role: 'Manager', rate: mgrRate,
+                tickets: fullyPaidApps.filter(a => a.event_slug === slug).length,
+              });
+            }
+            if (inPool) {
+              calculations.push({
+                role: 'Marketer', rate: mkRate,
+                tickets: fullyPaidApps.filter(a => a.event_slug === slug && a.assigned_marketer_id === myMkId).length,
+              });
+            }
+            return [{
+              slug,
+              title: t.title,
+              calculations,
+              total: calculations.reduce((sum, c) => sum + c.rate * c.tickets, 0),
+            }];
           });
-          const estManagerEarnings = managedTrips.reduce((sum, t) =>
-            sum + teamApps.filter(a => a.event_slug === t.slug && a.status === 'fully_paid').length
-                * Number(t.manager_commission ?? currentManager.commission_amount ?? 0), 0);
+          const estimatedTotal = earningRows.reduce((sum, row) => sum + row.total, 0);
           return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
 
-            {/* Your earnings — consolidated per-ticket card */}
-            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '4px 0' }}>
-              <div style={{ padding: '10px 16px 6px', fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                What you earn per fully-paid ticket
+            {/* Earnings bill — one line per event + calculated total. */}
+            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px', fontSize: 11, fontWeight: 800, color: '#777', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                Earnings Breakdown
               </div>
               {earningRows.length === 0 && (
                 <div style={{ padding: '12px 16px', color: '#bbb', fontSize: 13 }}>No events assigned yet.</div>
               )}
               {earningRows.map(r => (
-                <div key={r.slug} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 16px', borderTop: '1px solid #f5f5f0', flexWrap: 'wrap' }}>
-                  <span style={{ flex: 1, minWidth: 120, fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
-                  <span style={{ fontWeight: 800, fontSize: 18, color: '#16a34a', whiteSpace: 'nowrap' }}>{inr(r.self)}</span>
-                  <span style={{ fontSize: 12, color: '#888' }}>{r.note}</span>
+                <div key={r.slug} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 16px', borderTop: '1px solid #f0f0ea' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 650, fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</div>
+                    <div style={{ marginTop: 2, fontSize: 10, fontWeight: 600, color: '#aaa' }}>{r.calculations.map(c => c.role).join(' + ')}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    {r.calculations.map(c => (
+                      <div key={c.role} style={{ fontWeight: 750, fontSize: 14, color: '#333', whiteSpace: 'nowrap' }}>
+                        {inr(c.rate)} <span style={{ color: '#aaa', fontWeight: 600 }}>×</span> {c.tickets}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
-              <div style={{ padding: '10px 16px', borderTop: '1px solid #f5f5f0', fontSize: 12, color: '#888' }}>
-                So far: {fullyPaid} fully-paid ticket{fullyPaid === 1 ? '' : 's'} on your events · est. {inr(estManagerEarnings)} manager earnings
-                {myMkId && myCommissionStats ? <> · {inr(myCommissionStats.total)} marketer commission this month</> : null}
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, padding: '14px 16px', borderTop: '1.5px solid #e5e5e5', background: '#fafafa' }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#555' }}>Estimated Total</span>
+                <span style={{ fontSize: 20, fontWeight: 850, color: '#16a34a', whiteSpace: 'nowrap' }}>{inr(estimatedTotal)}</span>
               </div>
             </div>
 
             {/* Marketer ROI — same table style the founders see, scoped to your events */}
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Marketer ROI</div>
-              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Your team's leads, conversions and revenue on your events. Stale = pending/invited leads sitting 48h+ without progress.</div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Your team's leads, conversions and commission on your events. Stale = pending/invited leads sitting 48h+ without progress.</div>
               <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
                   <thead>
                     <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                       <th style={{ textAlign: 'left', padding: '8px 16px' }}>Marketer</th>
@@ -6299,13 +6445,12 @@ export default function AdminPanel() {
                       <th style={{ textAlign: 'right', padding: '8px 12px' }}>Sold</th>
                       <th style={{ textAlign: 'right', padding: '8px 12px' }}>Conv</th>
                       <th style={{ textAlign: 'right', padding: '8px 12px' }}>Stale</th>
-                      <th style={{ textAlign: 'right', padding: '8px 12px' }}>Revenue</th>
                       <th style={{ textAlign: 'right', padding: '8px 16px' }}>Commission</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(managerSummary?.marketers ?? []).length === 0 && (
-                      <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No marketers with leads on your events yet.</td></tr>
+                      <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No marketers with leads on your events yet.</td></tr>
                     )}
                     {(managerSummary?.marketers ?? []).map(m => {
                       const conv = m.leads > 0 ? Math.round((m.fully_paid / m.leads) * 100) : null;
@@ -6316,7 +6461,6 @@ export default function AdminPanel() {
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: 700 }}>{m.fully_paid}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{conv == null ? '—' : `${conv}%`}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: m.stale_leads > 0 ? '#d97706' : '#bbb', fontWeight: m.stale_leads > 0 ? 700 : 400 }}>{m.stale_leads}</td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{inr(m.revenue)}</td>
                           <td style={{ padding: '10px 16px', textAlign: 'right', color: '#555' }}>{inr(m.commission)}</td>
                         </tr>
                       );
@@ -6659,11 +6803,13 @@ export default function AdminPanel() {
             navigator.clipboard?.writeText(linkFor(h)).then(() => showToast(`Copied ${linkFor(h)}`), () => showToast('Copy failed'));
           };
           const totalUnpaid = Object.keys(affiliateStats).reduce((s, k) => s + affiliateStats[k].unpaid, 0);
+          const newCount = affiliates.filter(a => !a.reviewed_at).length;
           return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 18 }}>Creators</div>
               <span style={{ fontSize: 13, color: '#888' }}>{affiliates.length} {affiliates.length === 1 ? 'creator' : 'creators'}</span>
+              {newCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>{newCount} new</span>}
               <div style={{ flex: 1 }} />
               <button style={s.btn()} onClick={() => setAddingAffiliate(true)}>+ Add Creator</button>
             </div>
@@ -6713,13 +6859,22 @@ export default function AdminPanel() {
                   {affiliates.map((af) => {
                     const st = affiliateStats[af.id] ?? { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 };
                     const conv = st.clicks > 0 ? Math.round((st.tickets / st.clicks) * 100) : null;
+                    const isNew = !af.reviewed_at;
                     return (
-                      <tr key={af.id} style={{ borderTop: '1px solid #f5f5f0', opacity: af.active ? 1 : 0.5 }}>
+                      <tr key={af.id} style={{ borderTop: '1px solid #f5f5f0', opacity: af.active ? 1 : 0.5, background: isNew ? '#fffbeb' : 'transparent' }}>
                         <td style={{ padding: '10px 16px' }}>
-                          <div style={{ fontWeight: 700, color: '#111' }}>{af.name}{!af.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>paused</span>}</div>
+                          <div style={{ fontWeight: 700, color: '#111', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {af.name}
+                            {isNew && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '1px 6px', borderRadius: 999, letterSpacing: 0.4 }}>NEW</span>}
+                            {!af.active && <span style={{ fontSize: 10, color: '#aaa' }}>paused</span>}
+                          </div>
                           <div style={{ fontSize: 12, color: '#6366f1', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                             <span>/@{af.handle}</span>
                             <button onClick={() => copyLink(af.handle)} style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 11, textDecoration: 'underline', padding: 0 }}>copy link</button>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
+                            {af.upi_id ? <>UPI <span style={{ color: '#555', fontWeight: 600 }}>{af.upi_id}</span></> : <span style={{ color: '#c00b0b' }}>no UPI on file</span>}
+                            {af.phone && <span> · {af.phone}</span>}
                           </div>
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{st.clicks}</td>
@@ -6728,6 +6883,7 @@ export default function AdminPanel() {
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>{inr(st.earned)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: st.unpaid > 0 ? '#dc2626' : '#bbb', fontWeight: st.unpaid > 0 ? 700 : 400 }}>{inr(st.unpaid)}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {isNew && <button style={{ ...s.outlineBtn, marginRight: 6 }} onClick={() => markAffiliateReviewed({ id: af.id, name: af.name })}>Mark reviewed</button>}
                           {st.unpaid > 0 && <button style={{ ...s.btn('#111'), padding: '4px 10px', fontSize: 12, marginRight: 6 }} onClick={() => markAffiliatePaid({ id: af.id, name: af.name, unpaid: st.unpaid })}>Mark paid</button>}
                           <button style={s.outlineBtn} onClick={() => toggleAffiliateActive(af)}>{af.active ? 'Pause' : 'Resume'}</button>
                         </td>
