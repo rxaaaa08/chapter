@@ -15,7 +15,9 @@
 // Layout fills the MobileShell frame (height:100%), so the welcome step centers
 // and doesn't scroll, and the later steps scroll within the frame without a gap.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from './supabase';
+import { CreatorTermsContent } from './CreatorTermsContent';
 import {
   DemoExitProvider,
   DemoL1,
@@ -23,7 +25,6 @@ import {
   DemoL3,
   DemoL4,
   DemoL5,
-  DemoL6,
 } from './CreatorOnboardingDemos';
 
 const INK = '#111';
@@ -93,11 +94,11 @@ const QUIZ: Question[] = [
 ];
 
 const QUIZ_HINTS = [
-  { level: 1, text: 'Take another look at How a follower reaches your link.' },
+  { level: 1, text: 'Take another look at The BIG picture.' },
   { level: 2, text: 'Take another look at Your money math.' },
   { level: 4, text: 'Take another look at When does the money reach you?' },
   { level: 3, text: 'Take another look at Your dashboard.' },
-  { level: 1, text: 'Take another look at How a follower reaches your link.' },
+  { level: 1, text: 'Take another look at The BIG picture.' },
 ];
 
 // Fisher–Yates, returns a new array (never mutates the source options).
@@ -117,15 +118,70 @@ const UPI_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 // Same rule as the invite-only application form: 10 digits, starts 6–9.
 const PHONE_RE = /^[6-9]\d{9}$/;
 
-const PROGRESS_KEY = 'creatorOnboardingProgressV2';
+const PROGRESS_KEY = 'creatorOnboardingProgressV3';
 const LEVELS = [
-  { id: 1, title: 'How a follower reaches your link' },
+  { id: 1, title: 'The BIG picture' },
   { id: 2, title: 'Your money math' },
   { id: 3, title: 'Your dashboard' },
   { id: 4, title: 'When does the money reach you?' },
-  { id: 5, title: 'Comments → auto-DM' },
-  { id: 6, title: 'Important Rules' },
+  { id: 5, title: 'Important Rules & Advice' },
 ] as const;
+
+type CreatorFaq = {
+  id: string;
+  question: string;
+  answer: React.ReactNode;
+};
+
+const CREATOR_FAQS: CreatorFaq[] = [
+  {
+    id: 'footage',
+    question: 'Where can I access clips & footages of events required for my editing?',
+    answer: 'You real dashboard will give your our drive link.',
+  },
+  {
+    id: 'approval',
+    question: 'How can I submit my video for approval?',
+    answer: "You'll be able to join our creator's WhatsApp groupchat from your dashboard. You can submit your videos to us there.",
+  },
+  {
+    id: 'post-link',
+    question: 'Where can I post my link?',
+    answer: 'You can use your link anywhere on Instagram. On your bio, through automations or on your stories & so on!',
+  },
+  {
+    id: 'paid',
+    question: 'When will I get paid?',
+    answer: 'Creator earnings are settled monthly. Everything you earn during the month is added together and paid at the end of that month.',
+  },
+  {
+    id: 'post',
+    question: 'How do I know what to post about?',
+    answer: 'Your dashboard lists our upcoming events and their details. Use those details to make clear, exciting content that helps your followers understand the experience before they book.',
+  },
+  {
+    id: 'official-account',
+    question: 'Can my edits be posted on chapter அ’s Instagram?',
+    answer: 'Yes. If you are a video editor and do not post on your own account, you can share your edits with us. We can post them on chapter அ’s official Instagram account and attach your custom link.',
+  },
+  {
+    id: 'other-doubts',
+    question: 'I have other doubts',
+    answer: (
+      <>
+        We&apos;re here to help! To get more clairity, feel free to{' '}
+        <a
+          href="https://wa.me/919940111564"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}
+        >
+          Contact Us
+        </a>
+      </>
+    ),
+  },
+];
 
 type OnboardingStep = 'video' | 'levels' | 'quiz' | 'details';
 type StoredProgress = { completed: number[]; demoHandle: string };
@@ -155,11 +211,32 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const [initialProgress] = useState<StoredProgress>(readStoredProgress);
   const [completedLevels, setCompletedLevels] = useState<Set<number>>(() => new Set(initialProgress.completed));
   const [openLevel, setOpenLevel] = useState<number | null>(null);
-  const [demoHandle, setDemoHandle] = useState(initialProgress.demoHandle);
+  const [demoHandle, setDemoHandle] = useState(initialProgress.demoHandle.slice(0, 17));
+  const [showFaqSheet, setShowFaqSheet] = useState(false);
+  const [openFaq, setOpenFaq] = useState<string | null>('earn');
+  const [showTermsSheet, setShowTermsSheet] = useState(false);
 
   useEffect(() => {
     bodyScrollRef.current?.scrollTo({ top: 0 });
   }, [openLevel, step]);
+
+  useEffect(() => {
+    if (!showFaqSheet) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowFaqSheet(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showFaqSheet]);
+
+  useEffect(() => {
+    if (!showTermsSheet) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowTermsSheet(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showTermsSheet]);
 
   useEffect(() => {
     try {
@@ -174,7 +251,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   // behaves exactly like the in-app chevron instead of leaving the auth flow.
   useEffect(() => {
     const currentState = window.history.state ?? {};
-    window.history.replaceState({ ...currentState, creatorOnboardingStep: 'video' }, '', window.location.href);
+    window.history.replaceState({ ...currentState, creatorOnboardingStep: 'video', creatorOnboardingLevel: null }, '', window.location.href);
     const onPopState = (event: PopStateEvent) => {
       const target = event.state?.creatorOnboardingStep;
       if (target === 'video' || target === 'levels' || target === 'quiz' || target === 'details') {
@@ -193,7 +270,11 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   }, []);
 
   const openStep = (target: 'levels' | 'quiz' | 'details') => {
-    window.history.pushState({ ...(window.history.state ?? {}), creatorOnboardingStep: target }, '', window.location.href);
+    window.history.pushState({
+      ...(window.history.state ?? {}),
+      creatorOnboardingStep: target,
+      creatorOnboardingLevel: null,
+    }, '', window.location.href);
     if (target === 'levels') setOpenLevel(null);
     setStep(target);
   };
@@ -202,10 +283,46 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
     window.history.pushState({
       ...(window.history.state ?? {}),
       creatorOnboardingStep: 'levels',
+      creatorOnboardingLevel: null,
+    }, '', window.location.href);
+    window.history.pushState({
+      ...(window.history.state ?? {}),
+      creatorOnboardingStep: 'levels',
       creatorOnboardingLevel: level,
-      creatorOnboardingReturnTo: 'quiz',
     }, '', window.location.href);
     setOpenLevel(level);
+    setStep('levels');
+  };
+
+  const openLevelFromMap = (level: number) => {
+    const mapState = {
+      ...(window.history.state ?? {}),
+      creatorOnboardingStep: 'levels',
+      creatorOnboardingLevel: null,
+    };
+    // Normalise the visible map entry before pushing the lesson. Without this,
+    // an old level id can survive in history and Back reopens that stale level.
+    window.history.replaceState(mapState, '', window.location.href);
+    window.history.pushState({
+      ...mapState,
+      creatorOnboardingStep: 'levels',
+      creatorOnboardingLevel: level,
+    }, '', window.location.href);
+    setOpenLevel(level);
+  };
+
+  const returnToLevelMap = () => {
+    const historyLevel = Number(window.history.state?.creatorOnboardingLevel);
+    if (window.history.state?.creatorOnboardingStep === 'levels' && historyLevel === openLevel) {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState({
+      ...(window.history.state ?? {}),
+      creatorOnboardingStep: 'levels',
+      creatorOnboardingLevel: null,
+    }, '', window.location.href);
+    setOpenLevel(null);
     setStep('levels');
   };
 
@@ -244,7 +361,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
         key={level.id}
         type="button"
         disabled={!unlocked}
-        onClick={() => { if (unlocked) setOpenLevel(level.id); }}
+        onClick={() => { if (unlocked) openLevelFromMap(level.id); }}
         aria-label={`Level ${level.id}: ${level.title}${completed ? ', completed' : unlocked ? ', unlocked' : ', locked'}`}
         style={{
           position: 'relative', zIndex: 1, width: '100%', display: 'flex', alignItems: 'center', gap: 13,
@@ -255,10 +372,10 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
         <span
           className={next ? 'creator-level-next' : undefined}
           style={{
-            width: 48, height: 48, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center',
+            width: completed ? 34.2 : 48, height: completed ? 34.2 : 48, margin: completed ? 6.9 : 0, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center',
             border: '2px solid ' + (completed || next ? INK : HAIR),
             background: completed ? INK : '#fff', color: completed ? '#fff' : unlocked ? INK : MUTED,
-            fontSize: completed ? 20 : 15, fontWeight: 800, boxSizing: 'border-box',
+            fontSize: completed ? 16.2 : 15, fontWeight: 800, boxSizing: 'border-box',
           }}
         >
           {completed ? '✓' : unlocked ? level.id : (
@@ -315,6 +432,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const [upiValidationRequested, setUpiValidationRequested] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   useEffect(() => {
     if (step !== 'details') return;
@@ -327,8 +445,8 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const handleValid = HANDLE_RE.test(normHandle);
   const upiValid = UPI_RE.test(upi.trim());
   const phoneValid = PHONE_RE.test(phone);
-  const canSubmit = name.trim().length > 0 && handleValid && upiValid && phoneValid && !submitting;
-  const canAttemptSubmit = name.trim().length > 0 && handleValid && upi.trim().length > 0 && phoneValid && !submitting;
+  const canSubmit = name.trim().length > 0 && handleValid && upiValid && phoneValid && termsAccepted && !submitting;
+  const canAttemptSubmit = name.trim().length > 0 && handleValid && upi.trim().length > 0 && phoneValid && termsAccepted && !submitting;
 
   const submit = async () => {
     setUpiValidationRequested(true);
@@ -375,43 +493,59 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
 
   // ── Styles ──
   const input: React.CSSProperties = { width: '100%', padding: '12px 13px', borderRadius: 12, border: '1.5px solid ' + HAIR, fontSize: 15, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' };
-  const primaryBtn = (enabled: boolean): React.CSSProperties => ({ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: enabled ? INK : '#d7d7db', color: '#fff', fontSize: 15, fontWeight: 700, cursor: enabled ? 'pointer' : 'default' });
-  const secondaryBtn: React.CSSProperties = { width: '100%', padding: '12px 0', borderRadius: 14, border: '1.5px solid ' + HAIR, background: '#fff', color: INK, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+  const primaryBtn = (enabled: boolean): React.CSSProperties => ({ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: enabled ? '#FFD700' : '#d7d7db', color: enabled ? INK : '#fff', fontSize: 15, fontWeight: 700, cursor: enabled ? 'pointer' : 'default' });
+  const secondaryBtn: React.CSSProperties = { width: '100%', padding: '12px 0', borderRadius: 14, border: '1.5px solid ' + HAIR, background: '#f6f6f7', color: '#000', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
   const stepDot = (active: boolean): React.CSSProperties => ({ height: 6, borderRadius: 999, flex: 1, background: active ? INK : HAIR });
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: MUTED };
+  const levelMapSubtitle: React.CSSProperties = { color: MUTED, fontSize: 10.5, lineHeight: 1.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', marginTop: 4 };
 
-  const scrollable = step !== 'video'; // welcome step is fixed / unscrollable
-  const levelOpenedFromQuiz = step === 'levels'
-    && openLevel !== null
-    && window.history.state?.creatorOnboardingStep === 'levels'
-    && window.history.state?.creatorOnboardingReturnTo === 'quiz';
+  const onLevelMap = step === 'levels' && openLevel === null;
+  const scrollable = step !== 'video' && !onLevelMap; // welcome + lesson map are fixed / unscrollable
+  const insideLevel = step === 'levels' && openLevel !== null;
 
   return (
     <div id="creator-onboarding-root" style={{ position: 'relative', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' }}>
+      <style>{`
+        @keyframes creatorCtaShimmer {
+          0% { transform: skewX(-12deg) translateX(-100%); }
+          24.25%, 100% { transform: skewX(-12deg) translateX(300%); }
+        }
+        .creator-cta-shimmer { position: relative; overflow: hidden; }
+        .creator-cta-shimmer::before {
+          content: ''; position: absolute; inset: 0; width: 50%; pointer-events: none;
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%);
+          animation: creatorCtaShimmer 3.3s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .creator-cta-shimmer::before { animation: none; display: none; }
+        }
+      `}</style>
 
-      {/* Header: optional back chevron + step progress */}
-      <div style={{ padding: '16px 18px 0', flexShrink: 0 }}>
-        <div style={{ maxWidth: 460, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            onClick={() => step === 'video' ? signOut() : returnToPreviousStep()}
-            aria-label={step === 'video' ? 'Sign out and go back' : step === 'details' ? 'Back to quiz' : step === 'quiz' ? 'Back to levels' : levelOpenedFromQuiz ? 'Back to quiz' : 'Back to video'}
-            disabled={step === 'video' && signingOut}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: 'none', background: 'none', cursor: step === 'video' && signingOut ? 'default' : 'pointer', marginLeft: -8, flexShrink: 0, opacity: step === 'video' && signingOut ? 0.6 : 1 }}
-          >
-            <span style={{ display: 'block', width: 11, height: 11, borderLeft: '2.2px solid ' + INK, borderBottom: '2.2px solid ' + INK, transform: 'rotate(45deg)' }} />
-          </button>
-          <div style={{ flex: 1, display: 'flex', gap: 6 }}>
-            <div style={stepDot(true)} />
-            <div style={stepDot(step === 'levels' || step === 'quiz' || step === 'details')} />
-            <div style={stepDot(step === 'quiz' || step === 'details')} />
-            <div style={stepDot(step === 'details')} />
+      {/* Global progress belongs to the four major onboarding screens, not lessons. */}
+      {!insideLevel && (
+        <div style={{ padding: '16px 18px 0', flexShrink: 0 }}>
+          <div style={{ maxWidth: 460, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => step === 'video' ? signOut() : returnToPreviousStep()}
+              aria-label={step === 'video' ? 'Sign out and go back' : step === 'details' ? 'Back to quiz' : step === 'quiz' ? 'Back to levels' : 'Back to video'}
+              disabled={step === 'video' && signingOut}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: 'none', background: 'none', cursor: step === 'video' && signingOut ? 'default' : 'pointer', marginLeft: -8, flexShrink: 0, opacity: step === 'video' && signingOut ? 0.6 : 1 }}
+            >
+              <span style={{ display: 'block', width: 11, height: 11, borderLeft: '2.2px solid ' + INK, borderBottom: '2.2px solid ' + INK, transform: 'rotate(45deg)' }} />
+            </button>
+            <div style={{ flex: 1, display: 'flex', gap: 6 }}>
+              <div style={stepDot(true)} />
+              <div style={stepDot(step === 'levels' || step === 'quiz' || step === 'details')} />
+              <div style={stepDot(step === 'quiz' || step === 'details')} />
+              <div style={stepDot(step === 'details')} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Body */}
       <div ref={bodyScrollRef} style={{ flex: 1, minHeight: 0, overflowY: scrollable ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', justifyContent: step === 'video' ? 'center' : 'flex-start' }}>
-        <div style={{ maxWidth: 460, width: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '18px 18px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ maxWidth: 460, width: '100%', height: onLevelMap ? '100%' : undefined, margin: '0 auto', boxSizing: 'border-box', padding: onLevelMap ? '18px 18px' : '18px 18px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}>
 
           {/* ── Step 1: video (centered, unscrollable) ── */}
           {step === 'video' && (
@@ -446,11 +580,11 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                   allowFullScreen
                 />
               </div>
-              <button onClick={() => openStep('levels')} style={primaryBtn(true)}>I've watched it — continue</button>
+              <button className="creator-cta-shimmer" onClick={() => openStep('levels')} style={primaryBtn(true)}>I've watched it — continue</button>
             </div>
           )}
 
-          {/* ── Step 2: demo-level map + interactive level bodies ── */}
+          {/* ── Step 2: demo lesson map + interactive level bodies ── */}
           {step === 'levels' && openLevel === null && (
             <>
               <style>{`
@@ -462,33 +596,44 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                 @media (prefers-reduced-motion: reduce) { .creator-level-next { animation: none; } }
               `}</style>
 
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.45, textTransform: 'uppercase' }}>Act 1 · Be your follower</div>
-                <div style={{ color: MUTED, fontSize: 13, marginTop: 4, lineHeight: 1.45 }}>see exactly what your audience experiences.</div>
-              </div>
-              <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <div aria-hidden="true" style={{ position: 'absolute', left: 27, top: 24, bottom: 24, width: 2, background: HAIR }} />
-                {LEVELS.slice(0, 1).map(renderLevelNode)}
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 14 }}>
+                <div>
+                  <div style={{ color: '#2B2B2B', fontSize: 12.43, fontWeight: 800, letterSpacing: 0.45, textTransform: 'uppercase' }}>Act 1 · Be your follower</div>
+                  <div style={levelMapSubtitle}>See what your audience experiences</div>
+                </div>
+                <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div aria-hidden="true" style={{ position: 'absolute', left: 27, top: 24, bottom: 24, width: 2, background: HAIR }} />
+                  {LEVELS.slice(0, 1).map(renderLevelNode)}
+                </div>
+
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ color: '#2B2B2B', fontSize: 12.43, fontWeight: 800, letterSpacing: 0.45, textTransform: 'uppercase' }}>Act 2 · Be the creator</div>
+                  <div style={levelMapSubtitle}>Your money, your dashboard &amp; our rules</div>
+                </div>
+                <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div aria-hidden="true" style={{ position: 'absolute', left: 27, top: 24, bottom: 24, width: 2, background: HAIR }} />
+                  {LEVELS.slice(1).map(renderLevelNode)}
+                </div>
               </div>
 
-              <div style={{ marginTop: 4 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.45, textTransform: 'uppercase' }}>Act 2 · Be the creator</div>
-                <div style={{ color: MUTED, fontSize: 13, marginTop: 4, lineHeight: 1.45 }}>your money, your dashboard, your playbook.</div>
+              <div style={{ marginTop: 'auto', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => { if (allLevelsComplete) openStep('quiz'); }}
+                  disabled={!allLevelsComplete}
+                  className={allLevelsComplete ? 'creator-cta-shimmer' : undefined}
+                  style={{ ...primaryBtn(allLevelsComplete), flexShrink: 0 }}
+                >
+                  Continue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFaqSheet(true)}
+                  style={{ ...secondaryBtn, flexShrink: 0 }}
+                >
+                  I Have a Doubt
+                </button>
               </div>
-              <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <div aria-hidden="true" style={{ position: 'absolute', left: 27, top: 24, bottom: 24, width: 2, background: HAIR }} />
-                {LEVELS.slice(1).map(renderLevelNode)}
-              </div>
-
-              <button
-                type="button"
-                className={allLevelsComplete ? 'creator-level-next' : undefined}
-                onClick={() => { if (allLevelsComplete) openStep('quiz'); }}
-                disabled={!allLevelsComplete}
-                style={primaryBtn(allLevelsComplete)}
-              >
-                Continue to Next Step
-              </button>
             </>
           )}
 
@@ -496,26 +641,24 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
             <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', gap: 22 }}>
               <button
                 type="button"
-                onClick={() => levelOpenedFromQuiz ? window.history.back() : setOpenLevel(null)}
-                aria-label={levelOpenedFromQuiz ? 'Back to quiz' : 'Back to level map'}
-                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', color: INK, fontSize: 13.5, fontWeight: 750, padding: '4px 0', cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={returnToLevelMap}
+                aria-label="Go back to Lesson Map"
+                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', color: MUTED, fontSize: 13.5, fontWeight: 700, padding: '4px 0', cursor: 'pointer', fontFamily: 'inherit' }}
               >
-                <span aria-hidden="true" style={{ display: 'block', width: 9, height: 9, borderLeft: '2px solid ' + INK, borderBottom: '2px solid ' + INK, transform: 'rotate(45deg)' }} />
-                {levelOpenedFromQuiz ? 'Back to quiz' : 'Level map'}
+                <span aria-hidden="true" style={{ display: 'block', width: 9, height: 9, borderLeft: '2px solid ' + MUTED, borderBottom: '2px solid ' + MUTED, transform: 'rotate(45deg)' }} />
+                Lesson Map
               </button>
               <div>
-                <div style={{ color: MUTED, fontSize: 12, fontWeight: 800, letterSpacing: 0.45, textTransform: 'uppercase' }}>Level {openLevel} of {LEVELS.length}</div>
-                <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.2, marginTop: 7 }}>
+                <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.2 }}>
                   {LEVELS.find(level => level.id === openLevel)?.title}
                 </div>
               </div>
-              <DemoExitProvider onExit={() => setOpenLevel(null)}>
+              <DemoExitProvider onExit={returnToLevelMap}>
                 {openLevel === 1 && <DemoL1 demoHandle={demoHandle} setDemoHandle={setDemoHandle} onDone={() => completeLevel(1)} />}
                 {openLevel === 2 && <DemoL2 demoHandle={demoHandle} onDone={() => completeLevel(2)} />}
                 {openLevel === 3 && <DemoL3 demoHandle={demoHandle} onDone={() => completeLevel(3)} />}
                 {openLevel === 4 && <DemoL4 demoHandle={demoHandle} onDone={() => completeLevel(4)} />}
                 {openLevel === 5 && <DemoL5 demoHandle={demoHandle} onDone={() => completeLevel(5)} />}
-                {openLevel === 6 && <DemoL6 demoHandle={demoHandle} onDone={() => completeLevel(6)} />}
               </DemoExitProvider>
             </div>
           )}
@@ -524,8 +667,8 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
           {step === 'quiz' && (
             <>
               <div>
-                <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5 }}>Quick check — 5 questions.</div>
-                <div style={{ color: MUTED, fontSize: 14, marginTop: 8, lineHeight: 1.55 }}>Everything here is something you just played through. All five right to continue.</div>
+                <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5 }}>Before you continue...</div>
+                <div style={{ color: MUTED, fontSize: 14, marginTop: 8, lineHeight: 1.55 }}>Answer everything correctly to go to the next step</div>
               </div>
               {shuffled.map((question, i) => (
                 <div key={i}>
@@ -566,7 +709,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               ) : quizError ? (
                 <div style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>{quizError}</div>
               ) : null}
-              <button onClick={submitQuiz} style={primaryBtn(allAnswered)}>Continue</button>
+              <button className={allAnswered ? 'creator-cta-shimmer' : undefined} onClick={submitQuiz} style={primaryBtn(allAnswered)}>Continue</button>
               <button onClick={returnToPreviousStep} style={secondaryBtn}>Back to the demo</button>
             </>
           )}
@@ -583,7 +726,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
 
               <div>
                 <label style={label}>Your name / brand</label>
-                <input style={{ ...input, marginTop: 6 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tanya Travels" />
+                <input style={{ ...input, marginTop: 6 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tamil Trekker" />
               </div>
 
               <div>
@@ -616,7 +759,6 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               <div>
                 <label style={label}>Enter your UPI ID (so we can pay you)</label>
                 <input style={{ ...input, marginTop: 6, borderColor: upiValidationRequested && !upiValid ? RED : HAIR }} value={upi} onChange={e => setUpi(e.target.value)} placeholder="yourname@bank" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                <div style={{ fontSize: 12, color: MUTED, marginTop: 6, lineHeight: 1.4 }}>Remember the payout step from the demo? This is where your monthly earnings land.</div>
                 {upiValidationRequested && !upiValid && <div style={{ fontSize: 12, color: RED, marginTop: 6 }}>That doesn't look like a UPI ID (e.g. name@okhdfc).</div>}
               </div>
 
@@ -633,12 +775,174 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
                 {phone && !phoneValid && <div style={{ fontSize: 12, color: RED, marginTop: 6 }}>Enter a valid 10-digit mobile number.</div>}
               </div>
 
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 2, userSelect: 'none' }}>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={termsAccepted}
+                  aria-label="Accept Creator Terms and Conditions"
+                  onClick={() => setTermsAccepted(current => !current)}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    padding: 0,
+                    borderRadius: 6,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: termsAccepted ? '2px solid #f2f2f7' : '2px solid #9ca3af',
+                    background: termsAccepted ? '#f2f2f7' : '#fff',
+                    cursor: 'pointer',
+                    transition: 'background 160ms ease, border-color 160ms ease',
+                  }}
+                >
+                  {termsAccepted && (
+                    <svg width="11" height="8" viewBox="0 0 11 8" fill="none" aria-hidden="true">
+                      <path d="M1 4L4 7L10 1" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+                <span style={{ color: '#6b7280', fontSize: 13, lineHeight: 1.4 }}>
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsSheet(true)}
+                    style={{ padding: 0, border: 'none', background: 'transparent', color: '#111827', fontSize: 'inherit', fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}
+                  >
+                    Terms &amp; Conditions
+                  </button>
+                </span>
+              </div>
+
               {submitError && !handleTaken && <div style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>{submitError}</div>}
-              <button onClick={submit} disabled={!canAttemptSubmit} style={primaryBtn(canAttemptSubmit)}>{submitting ? 'Creating your account…' : 'Create my creator account'}</button>
+              <button className={canAttemptSubmit ? 'creator-cta-shimmer' : undefined} onClick={submit} disabled={!canAttemptSubmit} style={primaryBtn(canAttemptSubmit)}>{submitting ? 'Creating your account…' : 'Create my creator account'}</button>
             </>
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {showFaqSheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{ position: 'absolute', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+              onClick={() => setShowFaqSheet(false)}
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="creator-faq-title"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 61, maxHeight: '88%', display: 'flex', flexDirection: 'column' }}
+              onClick={event => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setShowFaqSheet(false)}
+                aria-label="Close FAQs"
+                style={{ position: 'absolute', right: 16, top: -40, width: 32, height: 32, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              </button>
+
+                <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '32px 32px 0 0', overflow: 'hidden', boxShadow: '0 -16px 40px rgba(0,0,0,0.16)' }}>
+                  <div style={{ flexShrink: 0, padding: '24px 24px 18px', borderBottom: '1px solid #f1f1f2' }}>
+                  <div id="creator-faq-title" style={{ fontSize: 21, fontWeight: 850, letterSpacing: -0.45, lineHeight: 1.2 }}>What&apos;s the matter? 🤠</div>
+                  </div>
+
+                <div style={{ minHeight: 0, overflowY: 'auto', padding: '0 24px max(28px, env(safe-area-inset-bottom))' }}>
+                  <div style={{ borderBottom: '1px solid #e4e4e7' }}>
+                    {CREATOR_FAQS.map(faq => {
+                      const expanded = openFaq === faq.id;
+                      const contentId = `creator-faq-${faq.id}`;
+                      return (
+                        <div key={faq.id} style={{ borderTop: '1px solid #e4e4e7' }}>
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            aria-controls={contentId}
+                            onClick={() => setOpenFaq(current => current === faq.id ? null : faq.id)}
+                            style={{ width: '100%', minHeight: 58, padding: '16px 0', border: 'none', background: 'transparent', color: INK, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+                          >
+                            <span style={{ fontSize: 14.5, lineHeight: 1.4, fontWeight: 750 }}>{faq.question}</span>
+                            <span aria-hidden="true" style={{ width: 9, height: 9, flexShrink: 0, borderRight: '1.8px solid #71717a', borderBottom: '1.8px solid #71717a', transform: expanded ? 'rotate(225deg)' : 'rotate(45deg)', transition: 'transform 180ms ease', marginTop: expanded ? 5 : -4, marginRight: 3 }} />
+                          </button>
+                          <AnimatePresence initial={false}>
+                            {expanded && (
+                              <motion.div
+                                id={contentId}
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2, ease: 'easeOut' }}
+                                style={{ overflow: 'hidden' }}
+                              >
+                                <div style={{ padding: '0 28px 18px 0', color: '#57534e', fontSize: 13.5, lineHeight: 1.6 }}>
+                                  {faq.answer}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showTermsSheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              style={{ position: 'absolute', inset: 0, zIndex: 75, background: '#000' }}
+              onClick={() => setShowTermsSheet(false)}
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="creator-terms-title"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 80, maxHeight: '80%', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '32px 32px 0 0', overflow: 'hidden', boxShadow: '0 -16px 40px rgba(0,0,0,0.16)' }}
+              onClick={event => event.stopPropagation()}
+            >
+              <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #f1f1f2', flexShrink: 0 }}>
+                <div id="creator-terms-title" style={{ color: '#18181b', fontSize: 17, fontWeight: 700, lineHeight: 1.3 }}>Terms &amp; Conditions</div>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+                <CreatorTermsContent />
+              </div>
+              <div style={{ padding: '12px 24px max(28px, env(safe-area-inset-bottom))', flexShrink: 0, background: '#fff' }}>
+                <button
+                  type="button"
+                  onClick={() => { setTermsAccepted(true); setShowTermsSheet(false); }}
+                  style={{ width: '100%', padding: '15px 0', borderRadius: 16, border: 'none', background: '#111', color: '#fff', fontSize: 16, fontWeight: 650, fontFamily: 'inherit', cursor: 'pointer' }}
+                >
+                  I Agree
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

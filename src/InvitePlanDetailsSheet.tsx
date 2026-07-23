@@ -36,6 +36,10 @@ export function InvitePlanDetailsSheet({
   isFullPay = false,
   whatsappGroupUrl,
   closeButtonClassName,
+  closeDetailsLabel,
+  closeDetailsHint,
+  closeDetailsButtonClassName,
+  chrome = 'invite',
 }: {
   open: boolean;
   onClose: () => void;
@@ -47,7 +51,12 @@ export function InvitePlanDetailsSheet({
   isFullPay?: boolean;
   whatsappGroupUrl?: string;
   closeButtonClassName?: string;
+  closeDetailsLabel?: string;
+  closeDetailsHint?: string;
+  closeDetailsButtonClassName?: string;
+  chrome?: 'invite' | 'calendar';
 }) {
+  const useCalendarChrome = chrome === 'calendar';
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(0);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const quickInfo = details?.quickInfo ?? [];
@@ -80,19 +89,24 @@ export function InvitePlanDetailsSheet({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
-          className="absolute inset-0 z-[90] flex items-end bg-black/35"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-        >
+        <>
           <motion.div
-            className="relative w-full"
+            className={useCalendarChrome
+              ? 'absolute inset-0 z-40 bg-black/40 backdrop-blur-md pointer-events-auto'
+              : 'absolute inset-0 z-[90] bg-black/35'}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.div
+            className={useCalendarChrome
+              ? 'absolute bottom-0 left-0 right-0 z-50 pointer-events-auto'
+              : 'absolute bottom-0 left-0 right-0 z-[91]'}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 280, damping: 30 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -111,7 +125,10 @@ export function InvitePlanDetailsSheet({
                 .invite-details-scroll::-webkit-scrollbar-track { background: transparent; margin-top: 28px; margin-bottom: 8px; }
                 .invite-details-scroll::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.18); border-radius: 99px; border-top: 16px solid transparent; border-bottom: 16px solid transparent; background-clip: content-box; }
               `}</style>
-              <div className="invite-details-scroll overflow-y-auto" style={{ maxHeight: '78dvh' }}>
+              <div
+                className="invite-details-scroll overflow-y-auto overscroll-contain"
+                style={{ maxHeight: '78dvh', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+              >
               <div className="pt-5 pb-4 border-b border-gray-100">
                 <h3 className="text-xl font-black mb-4 px-6">{planTitle}</h3>
                 <div className="mx-3 border border-dashed border-[#595959] rounded-2xl overflow-hidden bg-gray-50">
@@ -154,7 +171,7 @@ export function InvitePlanDetailsSheet({
               </div>
 
               {included.length > 0 && (
-                <div className="p-6 border-b border-gray-100">
+                <div className={`p-6 ${closeDetailsLabel ? '' : 'border-b border-gray-100'}`}>
                   <h3 className="text-xl font-black mb-4">What's Included</h3>
                   <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
                     <div className="p-4 space-y-3">
@@ -169,7 +186,7 @@ export function InvitePlanDetailsSheet({
                 </div>
               )}
 
-              {itinerary.length > 0 && (
+              {!closeDetailsLabel && itinerary.length > 0 && (
                 <div className="p-6 border-b border-gray-100">
                   <h3 className="text-xl font-black mb-4">You'll Experience</h3>
                   <div className="space-y-3">
@@ -225,6 +242,23 @@ export function InvitePlanDetailsSheet({
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {closeDetailsLabel && (
+                <div className="relative px-5 pt-2 pb-8 border-b border-gray-100">
+                  {closeDetailsHint && (
+                    <div role="note" className="creator-guide-why creator-guide-why-tile creator-guide-why-tile-second" style={{ position: 'relative', top: 'auto', left: 'auto', right: 'auto', width: '100%', maxWidth: 'none', marginBottom: 14 }}>
+                      {closeDetailsHint}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className={`creator-cta-shimmer w-full py-[14px] rounded-[14px] border-0 bg-[#FFD700] text-[#111] text-[15px] font-bold flex items-center justify-center active:opacity-90 transition-opacity ${closeDetailsButtonClassName ?? ''}`}
+                  >
+                    {closeDetailsLabel}
+                  </button>
                 </div>
               )}
 
@@ -356,7 +390,7 @@ export function InvitePlanDetailsSheet({
               </div>
             </div>
           </motion.div>
-        </motion.div>
+        </>
       )}
     </AnimatePresence>
   );

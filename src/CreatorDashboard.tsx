@@ -13,13 +13,78 @@
 // Time windows: payouts run on a MONTHLY cycle, so the earnings hero shows the
 // current calendar month (IST) — what the creator will be paid. The funnel has
 // its own rolling range picker (24h / week / month / 90d).
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import chatProfile from './assets/chat-profile.jpg';
 import { supabase } from './supabase';
 import CreatorOnboarding from './CreatorOnboarding';
 import CreatorUpcomingEvents from './CreatorUpcomingEvents';
+import CreatorFirstBookingChecklist from './CreatorFirstBookingChecklist';
+import { CREATOR_FOOTAGE_URL, CREATOR_GROUP_CHAT_URL } from './creatorLinks';
 
-type Me = { id: string; handle: string; name: string; email: string; active: boolean };
+// Creator checklist state — action flags are persisted per creator id; the
+// 25-click / first-booking ticks derive from live lifetime stats.
+type ChecklistState = { joinedChat: boolean; openedDrive: boolean; copied: boolean };
+type ChecklistStep = 'joined_chat' | 'opened_drive' | 'copied_link';
+type ChecklistRpcRow = { joined_chat: boolean; opened_drive: boolean; copied_link: boolean };
+const CHECKLIST_DEFAULT: ChecklistState = { joinedChat: false, openedDrive: false, copied: false };
+const checklistKey = (id: string) => `creatorChecklist:${id}`;
+
+// The "Essentials" card. Each row renders only when its URL is set; the whole
+// card is null if both are blank. Lives at module scope (depends only on the URLs).
+const RES_INK = '#111';
+const RES_MUTED = '#9a9aa2';
+const essentialTile = (url: string, title: string, helper: string, action: string, icon: React.ReactNode) => (
+  <a className="creator-essential-tile" key={title} href={url} target="_blank" rel="noopener noreferrer" aria-label={`${action}: ${title}`} style={{ minWidth: 0, height: '100%', boxSizing: 'border-box', padding: '18px 11px 16px', background: '#fff', textDecoration: 'none', color: RES_INK, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+    <span aria-hidden="true" style={{ width: 40, height: 36, display: 'grid', placeItems: 'center', marginBottom: 9 }}>{icon}</span>
+    <span style={{ display: 'block', fontSize: 12.5, fontWeight: 800, lineHeight: 1.25 }}>{title}</span>
+    <span style={{ display: 'block', fontSize: 11.5, color: RES_MUTED, lineHeight: 1.45, marginTop: 5, marginBottom: 11 }}>{helper}</span>
+    <span style={{ minHeight: 28, marginTop: 'auto', padding: '6px 10px', border: '1px solid #d9d9dd', borderRadius: 999, background: '#f5f5f6', color: '#4b4b52', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, fontWeight: 800, lineHeight: 1, boxSizing: 'border-box' }}>
+      {action}
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M3.25 8.75 8.75 3.25M4.25 3.25h4.5v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  </a>
+);
+const teamResourcesCard = (CREATOR_FOOTAGE_URL || CREATOR_GROUP_CHAT_URL) ? (
+  <div>
+    <div style={{ fontSize: 11.5, color: RES_MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>The Essentials</div>
+    <div style={{ border: '1px solid #a1a1aa', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
+      <div className="creator-essential-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignItems: 'stretch' }}>
+        {CREATOR_FOOTAGE_URL && essentialTile(
+          CREATOR_FOOTAGE_URL, 'Our Google Drive', 'All the best clips from our events in one place.', 'Open folder',
+          <svg width="34" height="30" viewBox="0 0 64 56" aria-hidden="true">
+            <path fill="#0F9D58" d="M24 4h16l20 34H44L32 18z" />
+            <path fill="#F4B400" d="M24 4 32 18 12 52 4 38z" />
+            <path fill="#4285F4" d="M4 38h40l8 14H12z" />
+          </svg>,
+        )}
+        {CREATOR_GROUP_CHAT_URL && essentialTile(
+          CREATOR_GROUP_CHAT_URL, "Creator's WhatsApp Group", 'Receive instant updates & help from the team.', 'Join group',
+          <svg width="34" height="34" viewBox="0 0 56 56" aria-hidden="true">
+            <circle cx="28" cy="27" r="22" fill="#25D366" />
+            <path d="m12.5 41.5-3 9 9.5-3" fill="#25D366" />
+            <path d="M18.5 15.5c.8-.8 2.1-.7 2.8.2l3.2 4.2c.6.8.5 1.8-.2 2.5l-2 2c2.1 4.2 5.2 7.3 9.4 9.4l2-2c.7-.7 1.7-.8 2.5-.2l4.2 3.2c.9.7 1 2 .2 2.8l-1.7 1.7c-1.8 1.8-4.5 2.4-6.9 1.6-8.9-3.1-15.9-10.1-19-19-.8-2.4-.2-5.1 1.6-6.9z" fill="#fff" />
+          </svg>,
+        )}
+      </div>
+      <CreatorUpcomingEvents embedded />
+    </div>
+  </div>
+) : null;
+
+type Me = {
+  id: string;
+  handle: string;
+  name: string;
+  email: string;
+  active: boolean;
+  checklist_joined_chat_at: string | null;
+  checklist_opened_drive_at: string | null;
+  checklist_copied_link_at: string | null;
+};
 type RangeStats = { clicks_total: number; clicks_unique: number; apps_total: number; tickets_paid: number; earned: number };
+type LifetimeStats = Pick<RangeStats, 'clicks_total' | 'tickets_paid'>;
 type EventRow = { event_slug: string; title: string; tickets: number; earned: number };
 type LeaderRow = { handle: string; name: string; tickets: number; earned: number; is_me: boolean };
 
@@ -51,6 +116,122 @@ const istMonth = () => {
   return { from: `${y}-${m}-01T00:00:00+05:30`, name };
 };
 
+function CreatorConversionsCard({ events }: { events: EventRow[] }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>Your conversions</div>
+      <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, overflow: 'hidden' }}>
+        {events.length === 0 && (
+          <div style={{ padding: '18px 16px', color: MUTED, fontSize: 13.5, lineHeight: 1.5, textAlign: 'center' }}>
+            No paid tickets in this range yet.
+          </div>
+        )}
+        {events.map((ev, i) => (
+          <div key={ev.event_slug} style={{ padding: '15px 16px', borderTop: i === 0 ? 'none' : '1px solid ' + HAIR }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'baseline', columnGap: 14 }}>
+              <div style={{ minWidth: 0, fontWeight: 750, fontSize: 14.5, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</div>
+              <div style={{ justifySelf: 'end', textAlign: 'right', fontWeight: 800, fontSize: 15, lineHeight: 1.25, color: GREEN, whiteSpace: 'nowrap' }}>{inr(ev.earned)}</div>
+              <div style={{ gridColumn: '1 / -1', minWidth: 0, fontSize: 12, color: MUTED, lineHeight: 1.35, marginTop: 5 }}>
+                {ev.tickets} {ev.tickets === 1 ? 'ticket' : 'tickets'} × {inr(commissionPerTicket(ev))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CreatorTeamCard({ leaderboard }: { leaderboard: LeaderRow[] }) {
+  const leaderboardScrollRef = useRef<HTMLDivElement>(null);
+  const [leaderScroll, setLeaderScroll] = useState({ ratio: 1, progress: 0, scrollable: false });
+
+  const syncLeaderboardScroll = (node: HTMLDivElement | null) => {
+    if (!node) return;
+    const maxScroll = Math.max(0, node.scrollHeight - node.clientHeight);
+    const rawRatio = node.scrollHeight > 0 ? Math.min(1, node.clientHeight / node.scrollHeight) : 1;
+    const minRatio = node.clientHeight > 0 ? Math.min(1, 22 / node.clientHeight) : 1;
+    const next = {
+      ratio: Math.max(rawRatio, minRatio),
+      progress: maxScroll > 0 ? node.scrollTop / maxScroll : 0,
+      scrollable: maxScroll > 1,
+    };
+    setLeaderScroll(current => (
+      Math.abs(current.ratio - next.ratio) < 0.001
+      && Math.abs(current.progress - next.progress) < 0.001
+      && current.scrollable === next.scrollable
+    ) ? current : next);
+  };
+
+  useEffect(() => {
+    const node = leaderboardScrollRef.current;
+    if (!node) return;
+    const sync = () => syncLeaderboardScroll(node);
+    sync();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null;
+    observer?.observe(node);
+    window.addEventListener('resize', sync);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', sync);
+    };
+  }, [leaderboard.length]);
+
+  return (
+    <div>
+      <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 12 }}>The Team</div>
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0, border: '1px solid ' + INK, borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
+          <div
+            ref={leaderboardScrollRef}
+            className="creator-leaderboard-scroll"
+            onScroll={event => syncLeaderboardScroll(event.currentTarget)}
+            style={{ maxHeight: 244, overflowY: 'auto', overscrollBehavior: 'contain' }}
+          >
+            {leaderboard.length === 0 && <div style={{ color: MUTED, fontSize: 13.5, padding: '18px 16px' }}>No earnings on the board yet. Be the first!</div>}
+            {leaderboard.map((r, i) => (
+              <div key={r.handle} style={{ display: 'grid', gridTemplateColumns: '20px minmax(0, 1fr) minmax(88px, auto)', alignItems: 'center', columnGap: 12, padding: '12px 14px', borderTop: i === 0 ? 'none' : '1px solid ' + HAIR, background: r.is_me ? '#f5f5f5' : '#fff' }}>
+                <div style={{ width: 20, textAlign: 'center', fontWeight: 800, fontSize: 14, color: i === 0 ? '#eab308' : i === 1 ? '#94a3b8' : i === 2 ? '#d97706' : '#ccc' }}>{i + 1}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    @{r.handle}{r.is_me && <span style={{ fontSize: 11, color: MUTED, marginLeft: 6, fontWeight: 600 }}>you</span>}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: MUTED }}>{r.tickets} {r.tickets === 1 ? 'ticket' : 'tickets'}</div>
+                </div>
+                <div style={{ minWidth: 88, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', justifySelf: 'end', textAlign: 'right' }}>
+                  {r.tickets === 0 ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 16, padding: '2px 6px', border: '1px solid #e1f2e6', borderRadius: 999, background: '#f7fcf8', color: '#4f7f5d', fontSize: 9.5, fontWeight: 750, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                      Newly Joined
+                    </span>
+                  ) : (
+                    <div style={{ fontWeight: 800, fontSize: 15, color: GREEN, whiteSpace: 'nowrap' }}>{inr(r.earned)}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {leaderScroll.scrollable && (
+          <div aria-hidden="true" style={{ position: 'relative', width: 3, flexShrink: 0, margin: '8px 0', borderRadius: 999, background: '#e4e4e7', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: `${leaderScroll.progress * (1 - leaderScroll.ratio) * 100}%`, height: `${leaderScroll.ratio * 100}%`, borderRadius: 999, background: INK, transition: 'top 80ms linear' }} />
+          </div>
+        )}
+      </div>
+      <div style={{ marginTop: 18, color: '#57534e', fontSize: 13.5, lineHeight: 1.6, textAlign: 'center' }}>
+        Need help? Feel free to{' '}
+        <a
+          href="https://wa.me/919940111564"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}
+        >
+          Contact Us
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export default function CreatorDashboard() {
   const [authReady, setAuthReady] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
@@ -64,10 +245,15 @@ export default function CreatorDashboard() {
   const [funnel, setFunnel] = useState<RangeStats | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [monthEarned, setMonthEarned] = useState<number>(0);
+  const [lifetimeClicks, setLifetimeClicks] = useState<number>(0);
+  const [lifetimeTickets, setLifetimeTickets] = useState<number>(0);
+  const [checklist, setChecklist] = useState<ChecklistState>(CHECKLIST_DEFAULT);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   const [authError, setAuthError] = useState('');
   // New-creator onboarding intent. Set before the Google OAuth redirect and read
   // back on remount (sessionStorage survives the bounce), so a fresh signer who
@@ -162,7 +348,7 @@ export default function CreatorDashboard() {
         try {
           // Self-select RLS returns only this creator's own affiliates row.
           const res: any = await withTimeout(
-            supabase.from('affiliates').select('id, handle, name, email, active').maybeSingle(),
+            supabase.from('affiliates').select('id, handle, name, email, active, checklist_joined_chat_at, checklist_opened_drive_at, checklist_copied_link_at').maybeSingle(),
             5000,
           );
           data = res.data; error = res.error;
@@ -187,18 +373,85 @@ export default function CreatorDashboard() {
     return () => { cancelled = true; };
   }, [authReady, email, lookupNonce]);
 
-  // Month earnings (calendar month, the payout cycle) + team board — load once.
+  // Month earnings, lifetime checklist milestones, and team board — load once.
   useEffect(() => {
     if (!me) return;
     Promise.all([
       supabase.rpc('creator_stats_since', { p_from: month.from }),
+      supabase.rpc('creator_stats'),
       supabase.rpc('affiliate_leaderboard'),
-    ]).then(([monthRes, lbRes]) => {
-      const row = Array.isArray(monthRes.data) ? monthRes.data[0] : monthRes.data;
-      setMonthEarned(Number((row as RangeStats)?.earned) || 0);
+    ]).then(([monthRes, lifetimeRes, lbRes]) => {
+      const monthRow = Array.isArray(monthRes.data) ? monthRes.data[0] : monthRes.data;
+      const lifetimeRow = Array.isArray(lifetimeRes.data) ? lifetimeRes.data[0] : lifetimeRes.data;
+      const tickets = Number((lifetimeRow as LifetimeStats)?.tickets_paid) || 0;
+      setMonthEarned(Number((monthRow as RangeStats)?.earned) || 0);
+      setLifetimeClicks(Number((lifetimeRow as LifetimeStats)?.clicks_total) || 0);
+      setLifetimeTickets(tickets);
       setLeaderboard((lbRes.data as LeaderRow[]) ?? []);
     }).catch(() => {});
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load permanent checklist flags from the creator row. Merge the old
+  // localStorage shape once so existing completions migrate to the database.
+  useEffect(() => {
+    if (!me) { setChecklist(CHECKLIST_DEFAULT); return; }
+    let cancelled = false;
+    let legacy = CHECKLIST_DEFAULT;
+    try {
+      const raw = localStorage.getItem(checklistKey(me.id));
+      const parsed = raw ? JSON.parse(raw) : {};
+      legacy = {
+        joinedChat: Boolean(parsed.joinedChat),
+        openedDrive: Boolean(parsed.openedDrive),
+        copied: Boolean(parsed.copied),
+      };
+    } catch { /* private mode / malformed legacy state */ }
+
+    const server = {
+      joinedChat: Boolean(me.checklist_joined_chat_at),
+      openedDrive: Boolean(me.checklist_opened_drive_at),
+      copied: Boolean(me.checklist_copied_link_at),
+    };
+    const merged = {
+      joinedChat: server.joinedChat || legacy.joinedChat,
+      openedDrive: server.openedDrive || legacy.openedDrive,
+      copied: server.copied || legacy.copied,
+    };
+    setChecklist(merged);
+
+    const pending: ChecklistStep[] = [];
+    if (legacy.joinedChat && !server.joinedChat) pending.push('joined_chat');
+    if (legacy.openedDrive && !server.openedDrive) pending.push('opened_drive');
+    if (legacy.copied && !server.copied) pending.push('copied_link');
+    if (pending.length > 0) {
+      void (async () => {
+        for (const p_step of pending) {
+          if (cancelled) return;
+          await supabase.rpc('complete_creator_checklist_step', { p_step });
+        }
+      })();
+    }
+    return () => { cancelled = true; };
+  }, [me]);
+
+  const completeChecklistStep = (step: ChecklistStep, patch: Partial<ChecklistState>) => {
+    setChecklist(prev => {
+      const next = { ...prev, ...patch };
+      if (me) { try { localStorage.setItem(checklistKey(me.id), JSON.stringify(next)); } catch { /* private mode */ } }
+      return next;
+    });
+    if (!me) return;
+    void supabase.rpc('complete_creator_checklist_step', { p_step: step }).then(({ data, error }) => {
+      if (error) return; // optimistic local fallback retries through migration on next login
+      const row = (Array.isArray(data) ? data[0] : data) as ChecklistRpcRow | null;
+      if (!row) return;
+      setChecklist(prev => ({
+        joinedChat: prev.joinedChat || Boolean(row.joined_chat),
+        openedDrive: prev.openedDrive || Boolean(row.opened_drive),
+        copied: prev.copied || Boolean(row.copied_link),
+      }));
+    });
+  };
 
   // Funnel — reloads whenever the range chip changes.
   useEffect(() => {
@@ -235,6 +488,9 @@ export default function CreatorDashboard() {
     setFunnel(null);
     setEvents([]);
     setMonthEarned(0);
+    setLifetimeClicks(0);
+    setLifetimeTickets(0);
+    setChecklist(CHECKLIST_DEFAULT);
     setLeaderboard([]);
     setCopied(false);
     clearOnboardingIntent();
@@ -253,11 +509,28 @@ export default function CreatorDashboard() {
     }
   };
 
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [accountMenuOpen]);
+
   const link = me ? `${window.location.origin}/@${me.handle}` : '';
   const linkShort = link.replace(/^https?:\/\//, '');
   const copyLink = () => {
     navigator.clipboard?.writeText(link).then(() => {
       setCopied(true);
+      if (!checklist.copied) completeChecklistStep('copied_link', { copied: true });
       setTimeout(() => setCopied(false), 1600);
     });
   };
@@ -270,13 +543,25 @@ export default function CreatorDashboard() {
   if (!authReady || (email && meStatus === 'loading')) {
     return (
       <div style={{ ...wrap, display: 'grid', placeItems: 'center' }}>
-        <div role="status" aria-label="Loading">
-          <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="16" r="13" fill="none" stroke={HAIR} strokeWidth="3" />
-            <path d="M16 3a13 13 0 0 1 13 13" fill="none" stroke={INK} strokeWidth="3" strokeLinecap="round">
-              <animateTransform attributeName="transform" type="rotate" from="0 16 16" to="360 16 16" dur="0.8s" repeatCount="indefinite" />
-            </path>
-          </svg>
+        <style>{`
+          @keyframes creatorLoaderEnter {
+            from { opacity: 0; transform: scale(0.85); }
+            to { opacity: 1; transform: scale(1); }
+          }
+          @keyframes creatorLoaderGlow {
+            0%, 100% { opacity: 0.15; transform: scale(1); }
+            50% { opacity: 0.45; transform: scale(1.18); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .creator-loader-mark { animation: none !important; }
+            .creator-loader-glow { animation: none !important; opacity: 0.25 !important; }
+          }
+        `}</style>
+        <div role="status" aria-label="Loading" className="creator-loader-mark" style={{ position: 'relative', width: 64, height: 64, animation: 'creatorLoaderEnter 0.35s ease-out both' }}>
+          <div className="creator-loader-glow" aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 16, background: '#FFD700', filter: 'blur(10px)', animation: 'creatorLoaderGlow 2s ease-in-out infinite' }} />
+          <div style={{ position: 'relative', width: 64, height: 64, borderRadius: 16, background: '#000', boxShadow: '0 8px 22px rgba(0,0,0,0.22)', overflow: 'hidden', padding: 6, boxSizing: 'border-box' }}>
+            <img src={chatProfile} alt="" aria-hidden="true" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'translateY(2px) scale(1.02)' }} />
+          </div>
         </div>
       </div>
     );
@@ -285,19 +570,51 @@ export default function CreatorDashboard() {
   // ── Not logged in ──
   if (!email) {
     return (
-      <div style={{ ...wrap, display: 'grid', placeItems: 'center', padding: 24 }}>
+      <div style={{ ...wrap, width: '100%', height: '100%', minHeight: 0, display: 'grid', placeItems: 'center', boxSizing: 'border-box', overflow: 'hidden', overscrollBehavior: 'none', padding: 24 }}>
+        <style>{`
+          @keyframes creatorLoginCtaShimmer {
+            0% { transform: skewX(-12deg) translateX(-100%); }
+            24.25%, 100% { transform: skewX(-12deg) translateX(300%); }
+          }
+          .creator-login-cta-shimmer { position: relative; overflow: hidden; }
+          .creator-login-cta-shimmer::before {
+            content: ''; position: absolute; inset: 0; width: 50%; pointer-events: none;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%);
+            animation: creatorLoginCtaShimmer 3.3s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .creator-login-cta-shimmer::before { animation: none; display: none; }
+          }
+        `}</style>
         <div style={{ maxWidth: 340, width: '100%', textAlign: 'center' }}>
-          <div style={{ marginBottom: 26 }}>
-            <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.1 }}>chapter அ</div>
-            <div style={{ fontSize: 15, color: MUTED, fontWeight: 600, marginTop: 3 }}>creator dashboard</div>
+          <div style={{ border: '1px dashed #d8c27a', borderRadius: 20, padding: '18px 14px 14px', background: '#fff' }}>
+            <div style={{ marginBottom: 26 }}>
+              <div style={{ position: 'relative', width: 64, height: 64, overflow: 'hidden', margin: '0 auto 12px' }}>
+                <img
+                  src="/icon-512.png"
+                  alt="Chapter அ logo"
+                  style={{ position: 'absolute', left: '50%', top: '50%', width: 116, height: 116, maxWidth: 'none', transform: 'translate(-50%, -41%)' }}
+                />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.1 }}>chapter <span style={{ fontWeight: 900, WebkitTextStroke: '0.35px currentColor' }}>அ</span></div>
+              <div style={{ fontSize: 15, color: '#6b6b73', fontWeight: 400, letterSpacing: 1.6, textTransform: 'uppercase', marginTop: 3 }}>creator dashboard</div>
+            </div>
+            {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 14 }}>{authError}</div>}
+            <button className="creator-login-cta-shimmer" onClick={() => { startOnboarding(); login(); }} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: '#FFD700', color: INK, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+              Register as Creator
+            </button>
+            <div aria-hidden="true" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 2px' }}>
+              <span style={{ flex: 1, height: 0, borderTop: '1px dashed #d4d4d8' }} />
+              <span style={{ color: '#a1a1aa', fontSize: 11.5, fontWeight: 400, lineHeight: 1 }}>or</span>
+              <span style={{ flex: 1, height: 0, borderTop: '1px dashed #d4d4d8' }} />
+            </div>
+            <button onClick={login} style={{ width: '100%', padding: '13px 0', borderRadius: 14, border: '1.5px solid ' + HAIR, background: '#fff', color: INK, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+              Log in to Dashboard
+            </button>
+            <div style={{ color: MUTED, fontSize: 12.5, fontWeight: 400, lineHeight: 1.45, marginTop: 12 }}>
+              New here? Press Register as Creator to get started.
+            </div>
           </div>
-          {authError && <div style={{ color: '#dc2626', fontSize: 12.5, marginBottom: 14 }}>{authError}</div>}
-          <button onClick={() => { startOnboarding(); login(); }} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: INK, color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
-            Register as Creator
-          </button>
-          <button onClick={login} style={{ width: '100%', padding: '13px 0', marginTop: 12, borderRadius: 14, border: '1.5px solid ' + HAIR, background: '#fff', color: INK, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
-            Login
-          </button>
         </div>
       </div>
     );
@@ -367,47 +684,109 @@ export default function CreatorDashboard() {
     { label: 'Sign-ups', value: funnel?.apps_total ?? 0, sub: interestPct != null ? `${interestPct}% of clicks showed interest` : '' },
     { label: 'Paid', value: funnel?.tickets_paid ?? 0, sub: conv != null ? `${conv}% of clicks` : '' },
   ];
+  const checklistComplete = checklist.joinedChat
+    && checklist.openedDrive
+    && checklist.copied
+    && lifetimeClicks >= 25
+    && lifetimeTickets > 0;
 
   return (
-    <div style={{ ...wrap, padding: '22px 18px 64px' }}>
+    <div style={{ ...wrap, padding: '22px 18px 32px' }}>
+      <style>{`
+        .creator-leaderboard-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .creator-leaderboard-scroll::-webkit-scrollbar { display: none; }
+        .creator-essential-grid > .creator-essential-tile + .creator-essential-tile { border-left: 1px solid #ececed; }
+        .creator-essential-tile { transition: background-color 150ms ease; }
+        .creator-essential-tile:active { background: #f3f3f4 !important; }
+        .creator-essential-tile:focus-visible { outline: 2px solid #111; outline-offset: -3px; }
+        @media (hover: hover) {
+          .creator-essential-tile:hover { background: #fafafa !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .creator-essential-tile { transition: none; }
+        }
+      `}</style>
       <div style={{ maxWidth: 440, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.1 }}>Hi {me.name.split(' ')[0]}</div>
-            {!me.active && <div style={{ fontSize: 12.5, color: '#dc2626', marginTop: 2 }}>Your account is paused — contact the team.</div>}
-          </div>
+        {/* Compact account control */}
+        <div ref={accountMenuRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', zIndex: 20 }}>
           <button
-            onClick={logout}
-            disabled={signingOut}
-            style={{ padding: '6px 12px', borderRadius: 9, border: 'none', background: 'none', fontSize: 13, fontWeight: 600, color: MUTED, cursor: signingOut ? 'default' : 'pointer', opacity: signingOut ? 0.6 : 1 }}
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={accountMenuOpen}
+            aria-controls="creator-account-menu"
+            onClick={() => setAccountMenuOpen(open => !open)}
+            style={{ height: 36, padding: '5px 10px 5px 6px', borderRadius: 999, border: '1px solid ' + HAIR, background: '#fff', color: INK, display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', cursor: 'pointer' }}
           >
-            {signingOut ? 'Signing out…' : 'Sign out'}
+            <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: '50%', background: INK, color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 850, textTransform: 'uppercase' }}>
+              {me.name.trim().charAt(0) || me.handle.charAt(0)}
+            </span>
+            <span style={{ fontSize: 13.5, fontWeight: 750, whiteSpace: 'nowrap' }}>{me.name.split(' ')[0]}</span>
+            <span aria-hidden="true" style={{ width: 16, height: 16, flexShrink: 0, display: 'grid', placeItems: 'center', color: MUTED, transform: accountMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 160ms ease' }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 5.25 7 9l4-3.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
           </button>
+          {accountMenuOpen && (
+            <div id="creator-account-menu" role="menu" style={{ position: 'absolute', left: 0, top: 43, width: 148, padding: 4, border: '1px solid ' + HAIR, borderRadius: 12, background: '#fff', boxShadow: '0 12px 30px rgba(0,0,0,0.12)', display: 'grid', gap: 8 }}>
+              <a
+                href="https://wa.me/919940111564"
+                target="_blank"
+                rel="noopener noreferrer"
+                role="menuitem"
+                onClick={() => setAccountMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: 36, boxSizing: 'border-box', padding: '9px 10px', borderRadius: 8, background: '#f7f7f8', color: INK, textAlign: 'left', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', lineHeight: 1, textDecoration: 'none' }}
+              >
+                Contact Us
+              </a>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setAccountMenuOpen(false); void logout(); }}
+                disabled={signingOut}
+                style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: 36, boxSizing: 'border-box', padding: '9px 10px', borderRadius: 8, border: 'none', background: '#f7f7f8', color: INK, textAlign: 'left', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', lineHeight: 1, cursor: signingOut ? 'default' : 'pointer', opacity: signingOut ? 0.6 : 1 }}
+              >
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </button>
+            </div>
+          )}
+          {!me.active && <div style={{ fontSize: 12.5, color: '#dc2626', marginTop: 6, textAlign: 'left' }}>Your account is paused — contact the team.</div>}
         </div>
 
         {/* Earnings — the hero, this month (payout cycle) */}
         <div>
-          <div style={{ fontSize: 12.5, color: MUTED, fontWeight: 600, marginBottom: 4 }}>Earned in {month.name}</div>
+          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 500, letterSpacing: 2.8, lineHeight: 1.3, textTransform: 'uppercase', marginBottom: 7 }}>Earned in {month.name}</div>
           <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: -1.5, lineHeight: 1, color: INK }}>{inr(monthEarned)}</div>
-          <div style={{ fontSize: 13.5, color: MUTED, marginTop: 10 }}>Paid out monthly.</div>
         </div>
 
         {/* Your link */}
-        <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, padding: 16 }}>
-          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Your Custom Link</div>
+        <div style={{ border: '1px solid #a1a1aa', borderRadius: 16, padding: '12px 14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkShort}</div>
             <button onClick={copyLink} style={{ flexShrink: 0, padding: '8px 16px', borderRadius: 10, border: 'none', background: copied ? GREEN : INK, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'background 0.15s' }}>
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <div style={{ fontSize: 12, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>You earn when someone books a chapter அ experience through it.</div>
         </div>
 
-        {/* See upcoming events — what to promote + potential earnings */}
-        <CreatorUpcomingEvents />
+        {/* Permanent creator milestones — disappears only when every step is done. */}
+        {me.active && !checklistComplete && (
+          <CreatorFirstBookingChecklist
+            joinedChat={checklist.joinedChat}
+            openedDrive={checklist.openedDrive}
+            copied={checklist.copied}
+            clicks={lifetimeClicks}
+            firstBooking={lifetimeTickets > 0}
+            chatUrl={CREATOR_GROUP_CHAT_URL}
+            footageUrl={CREATOR_FOOTAGE_URL}
+            onJoinChat={() => completeChecklistStep('joined_chat', { joinedChat: true })}
+            onOpenDrive={() => completeChecklistStep('opened_drive', { openedDrive: true })}
+          />
+        )}
+
+        {/* The Essentials — footage/creatives to post + the creator group chat */}
+        {teamResourcesCard}
 
         {/* Install-app nudge (hidden once installed / inside the app) */}
         {showInstallCard && (
@@ -482,58 +861,10 @@ export default function CreatorDashboard() {
         </div>
 
         {/* Your conversions — itemizes the "Paid" tile for the selected range */}
-        <div>
-          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>Your conversions</div>
-          <div style={{ border: '1.5px solid ' + HAIR, borderRadius: 16, overflow: 'hidden' }}>
-            {events.length === 0 && (
-              <div style={{ padding: '18px 16px', color: MUTED, fontSize: 13.5, lineHeight: 1.5 }}>
-                No paid tickets in this range yet.
-              </div>
-            )}
-            {events.map((ev, i) => (
-              <div key={ev.event_slug} style={{ padding: '14px 16px', borderTop: i === 0 ? 'none' : '1px solid ' + HAIR }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 750, fontSize: 14.5, lineHeight: 1.25 }}>{ev.title}</div>
-                    <div style={{ fontSize: 11.5, color: MUTED, marginTop: 4 }}>{ev.tickets} {ev.tickets === 1 ? 'ticket bought' : 'tickets bought'}</div>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontWeight: 800, fontSize: 15, color: GREEN }}>{inr(ev.earned)}</div>
-                    <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>total</div>
-                  </div>
-                </div>
-                <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 12, background: '#f7f7f8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                  <span style={{ fontSize: 12, color: MUTED, fontWeight: 700 }}>Commission per ticket</span>
-                  <span style={{ fontSize: 13.5, color: INK, fontWeight: 800 }}>{inr(commissionPerTicket(ev))}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <CreatorConversionsCard events={events} />
 
         {/* The Team */}
-        <div>
-          <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 12 }}>The Team</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {leaderboard.length === 0 && <div style={{ color: MUTED, fontSize: 13.5, padding: '10px 0' }}>No earnings on the board yet. Be the first!</div>}
-            {leaderboard.map((r, i) => (
-              <div key={r.handle} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: r.is_me ? '#f5f5f5' : 'transparent' }}>
-                <div style={{ width: 20, textAlign: 'center', fontWeight: 800, fontSize: 14, color: i === 0 ? '#eab308' : i === 1 ? '#94a3b8' : i === 2 ? '#d97706' : '#ccc' }}>{i + 1}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    @{r.handle}{r.is_me && <span style={{ fontSize: 11, color: MUTED, marginLeft: 6, fontWeight: 600 }}>you</span>}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: MUTED }}>{r.tickets} {r.tickets === 1 ? 'ticket' : 'tickets'}</div>
-                </div>
-                <div style={{ fontWeight: 800, fontSize: 15, color: r.earned > 0 ? GREEN : MUTED }}>{inr(r.earned)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ fontSize: 11.5, color: MUTED, textAlign: 'center', lineHeight: 1.55, marginTop: 4 }}>
-          You earn a commission when someone books through your link and pays. Earnings are paid out monthly.
-        </div>
+        <CreatorTeamCard leaderboard={leaderboard} />
       </div>
     </div>
   );
