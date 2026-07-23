@@ -4019,6 +4019,12 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 
 	  const renderCalendar = () => {
 	    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+	    // A date in the past is NEVER bookable — regardless of capacity or DB status.
+	    // Without this, raising an event's capacity would re-open already-elapsed
+	    // dates whose "sold out" was only implied by reserved >= capacity (recurring
+	    // events share one capacity across every date). Elapsed = strictly before today.
+	    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+	    const isPastDate = (baseDate?: string) => !!baseDate && new Date(baseDate + 'T00:00:00') < todayStart;
 	    // Shift so Monday = 0, Sunday = 6 (common in India)
 	    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
 	    // ── Per-date spots-left (native application events) ──────────────────────
@@ -4042,7 +4048,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      for (const d of sortedTripDates) {
 	        const reserved = reservedForDate(d.date);
 	        const avail = cap - reserved;
-	        if (d.status === 'sold_out' || avail <= 0) continue;       // sold out → skip
+	        if (d.status === 'sold_out' || avail <= 0 || isPastDate(d.date)) continue;      // sold out → skip
 	        if (reserved / cap >= 0.5) { earliestFillingFastDate = d.date; earliestFillingFastLeft = avail; break; }
 	      }
 	    }
@@ -4052,7 +4058,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      // available = capacity > 0 → wrongly painted green across the whole month.
 	      if (!capEligible || !cap || !baseDate || !dbStatus) return null;
 	      const avail = cap - reservedForDate(baseDate);
-	      if (dbStatus === 'sold_out' || avail <= 0) return 'sold';
+	      if (dbStatus === 'sold_out' || avail <= 0 || isPastDate(baseDate)) return 'sold';
 	      if (baseDate === earliestFillingFastDate) return 'amber';
 	      return 'green';
 	    };
