@@ -19,6 +19,7 @@ import { supabase } from './supabase';
 import CreatorOnboarding from './CreatorOnboarding';
 import CreatorUpcomingEvents from './CreatorUpcomingEvents';
 import CreatorFirstBookingChecklist from './CreatorFirstBookingChecklist';
+import CreatorVideoTasks, { CreatorTasksCard, latestByTask, loadCreatorSubmissions, loadCreatorTasks, type CreatorSubmission, type CreatorTask } from './CreatorVideoTasks';
 import { CREATOR_FOOTAGE_URL, CREATOR_GROUP_CHAT_URL } from './creatorLinks';
 
 // Creator checklist state — action flags are persisted per creator id; the
@@ -248,6 +249,10 @@ export default function CreatorDashboard() {
   const [lifetimeClicks, setLifetimeClicks] = useState<number>(0);
   const [lifetimeTickets, setLifetimeTickets] = useState<number>(0);
   const [checklist, setChecklist] = useState<ChecklistState>(CHECKLIST_DEFAULT);
+  // Video tasks: derived from live events, never assigned. `submissions` is this
+  // creator's own rows only — RLS guarantees that, so the query carries no filter.
+  const [tasks, setTasks] = useState<CreatorTask[]>([]);
+  const [submissions, setSubmissions] = useState<CreatorSubmission[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -431,6 +436,24 @@ export default function CreatorDashboard() {
         }
       })();
     }
+    return () => { cancelled = true; };
+  }, [me]);
+
+  // Video tasks + this creator's submissions. Runs only once `me` has settled,
+  // never inside onAuthStateChange — the token may not be attached yet there,
+  // which is the race that once produced a false "not a creator" screen.
+  useEffect(() => {
+    if (!me) { setTasks([]); setSubmissions([]); return; }
+    let cancelled = false;
+    void (async () => {
+      const [taskRows, submissionRows] = await Promise.all([
+        loadCreatorTasks().catch(() => [] as CreatorTask[]),
+        loadCreatorSubmissions(),
+      ]);
+      if (cancelled) return;
+      setTasks(taskRows);
+      setSubmissions(submissionRows);
+    })();
     return () => { cancelled = true; };
   }, [me]);
 
@@ -684,9 +707,14 @@ export default function CreatorDashboard() {
     { label: 'Sign-ups', value: funnel?.apps_total ?? 0, sub: interestPct != null ? `${interestPct}% of clicks showed interest` : '' },
     { label: 'Paid', value: funnel?.tickets_paid ?? 0, sub: conv != null ? `${conv}% of clicks` : '' },
   ];
+  // The first-ever submission ticks the checklist step; the recurring ask lives
+  // in the "Your Tasks" card this checklist becomes once every step is done.
+  const hasEverSubmitted = submissions.length > 0;
+  const latestSubmissionByTask = latestByTask(submissions);
   const checklistComplete = checklist.joinedChat
     && checklist.openedDrive
     && checklist.copied
+    && hasEverSubmitted
     && lifetimeClicks >= 25
     && lifetimeTickets > 0;
 
@@ -770,18 +798,33 @@ export default function CreatorDashboard() {
           </div>
         </div>
 
-        {/* Permanent creator milestones — disappears only when every step is done. */}
-        {me.active && !checklistComplete && (
-          <CreatorFirstBookingChecklist
-            joinedChat={checklist.joinedChat}
-            openedDrive={checklist.openedDrive}
-            copied={checklist.copied}
-            clicks={lifetimeClicks}
-            firstBooking={lifetimeTickets > 0}
-            chatUrl={CREATOR_GROUP_CHAT_URL}
-            footageUrl={CREATOR_FOOTAGE_URL}
-            onJoinChat={() => completeChecklistStep('joined_chat', { joinedChat: true })}
-            onOpenDrive={() => completeChecklistStep('opened_drive', { openedDrive: true })}
+        {/* Creator milestones → then the rolling task list. This card never goes
+            away: once the checklist is finished it becomes "Your Tasks", so the
+            dashboard always answers "what should I do next?". */}
+        {me.active && (checklistComplete
+          ? <CreatorTasksCard tasks={tasks} latest={latestSubmissionByTask} />
+          : (
+            <CreatorFirstBookingChecklist
+              joinedChat={checklist.joinedChat}
+              openedDrive={checklist.openedDrive}
+              copied={checklist.copied}
+              hasEverSubmitted={hasEverSubmitted}
+              clicks={lifetimeClicks}
+              firstBooking={lifetimeTickets > 0}
+              chatUrl={CREATOR_GROUP_CHAT_URL}
+              footageUrl={CREATOR_FOOTAGE_URL}
+              onJoinChat={() => completeChecklistStep('joined_chat', { joinedChat: true })}
+              onOpenDrive={() => completeChecklistStep('opened_drive', { openedDrive: true })}
+            />
+          ))}
+
+        {/* Where the video actually gets sent — directly under the card above,
+            which is what step ④'s hint points at. */}
+        {me.active && (
+          <CreatorVideoTasks
+            tasks={tasks}
+            latest={latestSubmissionByTask}
+            onSubmitted={row => setSubmissions(prev => [row, ...prev])}
           />
         )}
 

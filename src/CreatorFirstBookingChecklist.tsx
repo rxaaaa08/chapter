@@ -1,17 +1,23 @@
 // Creator dashboard — creator checklist (Phase I / I3, extended in J3).
 //
 // A persistent card for BRAND-NEW creators that carries onboarding past signup
-// to the real finish line: their first paid booking. Five steps —
+// to the real finish line: their first paid booking. Six steps —
 //   ① Join the creator group chat  (opens the chat link, ticks on tap)
 //   ② Open the Drive footage folder (opens the Drive link, ticks on tap)
 //   ③ Copy your custom link         (ticks when the dashboard's Copy button is used)
-//   ④ Get your first 25 clicks      (auto-ticks from lifetime stats)
-//   ⑤ Get your 1st Commission       (auto-ticks from lifetime stats)
+//   ④ Submit a video                (ticks on their first ever submission)
+//   ⑤ Get your first 25 clicks      (auto-ticks from lifetime stats)
+//   ⑥ Get your 1st Commission       (auto-ticks from lifetime stats)
+//
+// Step ④ has no button on purpose: the submission card sits directly below this
+// one, so the hint points there instead of duplicating the input.
 //
 // Presentational only: it holds no source of truth. The dashboard owns the
-// persisted action flags (①–③) and passes the live-stat values (④⑤) plus the
+// persisted action flags (①–③) and passes the live-stat values (④–⑥) plus the
 // shared resource URLs as props, so this component never fetches or writes
-// state. The dashboard removes the whole card when every step is complete.
+// state. Once every step is done the dashboard swaps this card for the "Your
+// Tasks" card — it is never removed, so the creator always opens the dashboard
+// to something that tells them what to do next.
 import React from 'react';
 
 const INK = '#111';
@@ -23,6 +29,7 @@ type Props = {
   joinedChat: boolean;
   openedDrive: boolean;
   copied: boolean;
+  hasEverSubmitted: boolean;
   clicks: number;
   firstBooking: boolean;
   chatUrl: string;
@@ -31,7 +38,7 @@ type Props = {
   onOpenDrive: () => void;
 };
 
-export default function CreatorFirstBookingChecklist({ joinedChat, openedDrive, copied, clicks, firstBooking, chatUrl, footageUrl, onJoinChat, onOpenDrive }: Props) {
+export default function CreatorFirstBookingChecklist({ joinedChat, openedDrive, copied, hasEverSubmitted, clicks, firstBooking, chatUrl, footageUrl, onJoinChat, onOpenDrive }: Props) {
   const reachedClickGoal = clicks >= 25;
 
   type Step = { key: string; done: boolean; title: string; hint: string; link?: string; cta?: string; onOpen?: () => void };
@@ -39,6 +46,7 @@ export default function CreatorFirstBookingChecklist({ joinedChat, openedDrive, 
     { key: 'chat', done: joinedChat, title: 'Join the creator group chat', hint: 'Instant updates from the team.', link: chatUrl, cta: 'Join the group chat', onOpen: onJoinChat },
     { key: 'drive', done: openedDrive, title: 'Open Google Drive footage folder', hint: 'Access highlight clips of the best moments from our events.', link: footageUrl, cta: 'Open Google Drive', onOpen: onOpenDrive },
     { key: 'copy', done: copied, title: 'Copy your custom link', hint: 'Use the Copy button above to grab your link.' },
+    { key: 'video', done: hasEverSubmitted, title: 'Submit a video for the Upcoming Event', hint: 'Use the card below to send us your video.' },
     { key: 'click', done: reachedClickGoal, title: 'Get your first 25 clicks', hint: `${Math.min(clicks, 25)} of 25 clicks — keep sharing your custom link.` },
     { key: 'booking', done: firstBooking, title: 'Get your 1st Commission', hint: 'This ticks the moment someone books through your custom link.' },
   ];
