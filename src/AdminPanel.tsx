@@ -73,6 +73,9 @@ type Trip = {
   affiliate_enabled?: boolean;
   affiliate_commission_pct?: number;
   affiliate_commission?: number | null;
+  // True = the first video a new creator must make. Until one of their videos is
+  // approved, creators see only starter events.
+  affiliate_starter_task?: boolean;
   // Per-event marketer commission (₹ per fully-paid ticket). NULL/undefined =
   // fall back to each marketer's own call_marketers.commission_amount (₹50).
   marketer_commission?: number | null;
@@ -8436,6 +8439,25 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 </div>
               )}
             </div>
+
+            {/* The starter task: which event a brand-new creator must make their
+                first video for. Only meaningful while commissions are on. */}
+            {trip.affiliate_enabled && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, padding: '8px 14px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!!trip.affiliate_starter_task}
+                  onChange={e => set('affiliate_starter_task', e.target.checked)}
+                  style={{ marginTop: 2, width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }}
+                />
+                <span>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: '#111' }}>Starter task for new creators</span>
+                  <span style={{ display: 'block', fontSize: 11, color: '#888', lineHeight: 1.5, marginTop: 2 }}>
+                    New creators are asked for a video on this event only. Everything else opens up to them once you approve their first video, so a first attempt never goes out on a big trip. Tick this on your cheapest, most frequent event.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           {/* Per-city pricing */}
