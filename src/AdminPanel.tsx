@@ -116,6 +116,18 @@ type Trip = {
   city_details?: Record<string, { included: string[]; not_included: string[]; optional_activities: string[]; itinerary: ItineraryDay[]; meeting_spot?: string; transport?: string; price_full?: number; price_advance?: number }>;
 };
 type AffiliateStat = { clicks: number; apps: number; tickets: number; earned: number; unpaid: number };
+// A creator's video submission. Rows only exist once a creator actually submits,
+// so counting them per creator IS the measure of who is working.
+type CreatorVideoRow = {
+  id: string;
+  affiliate_id: string;
+  event_slug: string;
+  event_date: string;
+  video_url: string;
+  status: 'pending' | 'approved' | 'changes_requested';
+  review_note: string | null;
+  submitted_at: string;
+};
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type PayuPayment = {
   id?: string;
@@ -513,6 +525,13 @@ export default function AdminPanel() {
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
   const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null }>>([]);
+  // Creator video submissions — the activity log behind the "Creator videos"
+  // card. Loaded with the roster so a creator with zero videos still shows up;
+  // that row (blank "last video") is the whole point of the table.
+  const [creatorVideos, setCreatorVideos] = useState<CreatorVideoRow[]>([]);
+  const [openVideoCreator, setOpenVideoCreator] = useState<string | null>(null);
+  const [videoNotes, setVideoNotes] = useState<Record<string, string>>({});
+  const [reviewingVideo, setReviewingVideo] = useState<string>('');
   // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
   const [affiliateStats, setAffiliateStats] = useState<Record<string, AffiliateStat>>({});
   const [addingAffiliate, setAddingAffiliate] = useState(false);
@@ -1188,13 +1207,15 @@ export default function AdminPanel() {
   // Pull roster + build per-creator rollups from clicks, attributed applications
   // and the sales ledger (admin has full RLS on all three).
   const loadAffiliatesData = async () => {
-    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }] = await Promise.all([
+    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }] = await Promise.all([
       supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone').order('created_at'),
       supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
+      supabase.from('creator_submissions').select('id, affiliate_id, event_slug, event_date, video_url, status, review_note, submitted_at').order('submitted_at', { ascending: false }),
     ]);
     setAffiliates((affRows ?? []) as any);
+    setCreatorVideos((videoRows ?? []) as CreatorVideoRow[]);
     const stats: Record<string, AffiliateStat> = {};
     const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 });
     (clickRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).clicks += 1; });
@@ -1233,6 +1254,27 @@ export default function AdminPanel() {
     if (error) { showToast(`Failed: ${error.message}`); return; }
     showToast(`${af.name} ${!af.active ? 'reactivated' : 'paused'}`);
     logAdminAction(af.active ? 'affiliate_deactivate' : 'affiliate_reactivate', 'affiliates', af.id, {});
+    loadAffiliatesData();
+  };
+
+  // Review a creator's video. Two outcomes only — approved, or changes wanted
+  // with a note the creator reads on their own dashboard. The note is optional
+  // on both. RLS restricts this table to strict admins, so ops never lands here.
+  const reviewCreatorVideo = async (video: CreatorVideoRow, status: 'approved' | 'changes_requested') => {
+    setReviewingVideo(video.id);
+    const { data: userData } = await supabase.auth.getUser();
+    const note = (videoNotes[video.id] ?? '').trim();
+    const { error } = await supabase.from('creator_submissions').update({
+      status,
+      review_note: note || null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: userData?.user?.email?.toLowerCase() ?? null,
+    }).eq('id', video.id);
+    setReviewingVideo('');
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(status === 'approved' ? 'Video approved' : 'Changes requested');
+    logAdminAction('creator_video_review', 'creator_submissions', video.id, { status, event_slug: video.event_slug });
+    setVideoNotes(prev => ({ ...prev, [video.id]: '' }));
     loadAffiliatesData();
   };
 
@@ -6819,7 +6861,7 @@ export default function AdminPanel() {
             </div>
 
             <div style={{ background: '#eef2ff', border: '1.5px solid #c7d2fe', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#3730a3', lineHeight: 1.55 }}>
-              <b>How this works:</b> each creator gets a link <code>{window.location.origin}/@handle</code>. When someone books through it and pays in full for an <b>affiliate-enabled</b> event, the creator earns <b>8%</b> of the ticket price. Turn commissions on per event from the event editor. Creators log in with the Google email you set here to see their own dashboard.
+              <b>How this works:</b> each creator gets a link <code>{window.location.origin}/@handle</code>. When someone books through it and pays in full for an <b>affiliate-enabled</b> event, the creator earns that event's <b>creator fee</b> — a flat ₹ per ticket, or a % of the ticket price if no flat fee is set. Turn commissions on and set the fee per event from the event editor. Creators log in with the Google email you set here to see their own dashboard.
             </div>
 
             {addingAffiliate && (
@@ -6900,6 +6942,134 @@ export default function AdminPanel() {
 
             <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
               Sign-ups = people who gave their details / started a booking via their link — for invite events they submitted the application form, for open events they reached checkout; neither has paid yet (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* ── CREATOR VIDEOS — who is actually working (Performance, admin) ─── */}
+        {tab === 'marketers' && adminRole === 'admin' && (() => {
+          const fmtDay = (iso: string) => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' }).format(d);
+          };
+          const titleFor = (slug: string) => trips.find(t => t.slug === slug)?.title?.trim() || slug;
+          const byCreator: Record<string, CreatorVideoRow[]> = {};
+          creatorVideos.forEach(v => { (byCreator[v.affiliate_id] ??= []).push(v); });
+          const pendingTotal = creatorVideos.filter(v => v.status === 'pending').length;
+          // Blank "last video" sorts first, then oldest — so whoever has gone
+          // quiet is at the top of the table without anyone having to look for them.
+          const rows = affiliates.map(af => {
+            const videos = byCreator[af.id] ?? [];
+            return {
+              af,
+              videos,
+              last: videos[0]?.submitted_at ?? '',
+              pending: videos.filter(v => v.status === 'pending').length,
+            };
+          }).sort((a, b) => (a.last || '').localeCompare(b.last || ''));
+
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Creator videos</div>
+              {pendingTotal > 0
+                ? <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>{pendingTotal} to review</span>
+                : <span style={{ fontSize: 13, color: '#888' }}>nothing to review</span>}
+            </div>
+
+            <div style={{ background: '#fff', border: '1.5px solid #e8e8e0', borderRadius: 12, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#faf9f5', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                    <th style={{ textAlign: 'left', padding: '8px 16px' }}>Creator</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Videos</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Last video</th>
+                    <th style={{ textAlign: 'right', padding: '8px 16px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 && <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No creators yet.</td></tr>}
+                  {rows.map(({ af, videos, last, pending }) => {
+                    const open = openVideoCreator === af.id;
+                    return (
+                      <React.Fragment key={af.id}>
+                        <tr
+                          onClick={() => setOpenVideoCreator(open ? null : af.id)}
+                          style={{ borderTop: '1px solid #f5f5f0', cursor: 'pointer', opacity: af.active ? 1 : 0.5, background: open ? '#faf9f5' : 'transparent' }}
+                        >
+                          <td style={{ padding: '10px 16px' }}>
+                            <div style={{ fontWeight: 700, color: '#111' }}>{af.name}</div>
+                            <div style={{ fontSize: 12, color: '#6366f1', marginTop: 2 }}>/@{af.handle}</div>
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: videos.length === 0 ? '#c0c0c0' : '#111' }}>{videos.length}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: last ? '#555' : '#c0c0c0' }}>{last ? fmtDay(last) : '—'}</td>
+                          <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {pending > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>Review{pending > 1 ? ` ${pending}` : ''}</span>}
+                          </td>
+                        </tr>
+
+                        {open && (
+                          <tr style={{ background: '#faf9f5' }}>
+                            <td colSpan={4} style={{ padding: '4px 16px 14px' }}>
+                              {videos.length === 0 && <div style={{ fontSize: 12.5, color: '#999', padding: '8px 0' }}>No videos submitted yet.</div>}
+                              {videos.map(v => (
+                                <div key={v.id} style={{ borderTop: '1px solid #ececde', padding: '10px 0', display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                                  <div style={{ flex: 1, minWidth: 200 }}>
+                                    <div style={{ fontWeight: 700, color: '#111', fontSize: 12.5 }}>
+                                      {titleFor(v.event_slug)} <span style={{ color: '#999', fontWeight: 500 }}>· {fmtDay(v.event_date)}</span>
+                                    </div>
+                                    <a href={v.video_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 12, color: '#6366f1', textDecoration: 'underline', wordBreak: 'break-all' }}>
+                                      {v.video_url}
+                                    </a>
+                                    <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
+                                      sent {fmtDay(v.submitted_at)}
+                                      {v.status === 'approved' && <span style={{ color: '#16a34a', fontWeight: 700 }}> · approved</span>}
+                                      {v.status === 'changes_requested' && <span style={{ color: '#b45309', fontWeight: 700 }}> · changes requested</span>}
+                                      {v.review_note && <span> · “{v.review_note}”</span>}
+                                    </div>
+                                  </div>
+                                  {v.status === 'pending' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                      <input
+                                        placeholder="Note (optional)"
+                                        value={videoNotes[v.id] ?? ''}
+                                        onClick={e => e.stopPropagation()}
+                                        onChange={e => setVideoNotes(prev => ({ ...prev, [v.id]: e.target.value }))}
+                                        style={{ ...s.input, marginBottom: 0, width: 180, fontSize: 12, padding: '6px 8px' }}
+                                      />
+                                      <button
+                                        disabled={reviewingVideo === v.id}
+                                        onClick={e => { e.stopPropagation(); void reviewCreatorVideo(v, 'approved'); }}
+                                        style={{ ...s.btn('#16a34a'), padding: '5px 12px', fontSize: 12 }}
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        disabled={reviewingVideo === v.id}
+                                        onClick={e => { e.stopPropagation(); void reviewCreatorVideo(v, 'changes_requested'); }}
+                                        style={{ ...s.outlineBtn, fontSize: 12 }}
+                                      >
+                                        Ask changes
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
+              Every creator sees the same task — one per event with creator commission switched on that still has an upcoming date — and pastes a link when their video is ready. Tap a row to watch what they sent and approve it, or ask for changes with a note they'll read on their dashboard. Creators with a blank "last video" are sitting in the roster without posting; pair that with their clicks in the Creators table above, since a video nobody sees drives no bookings.
             </div>
           </div>
           );
