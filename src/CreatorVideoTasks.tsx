@@ -190,10 +190,15 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props)
 
   const inputBlock = (task: CreatorTask, key: string) => (
     <div style={{ marginTop: 10 }}>
+      {/* The placeholder is a full instruction and doesn't fit a 375px field at
+          the input's own size, so shrink the placeholder only — pasted Drive
+          URLs still render at 14px where they stay readable. */}
+      <style>{`.creator-video-url::placeholder { font-size: 12.5px; }`}</style>
       <input
+        className="creator-video-url"
         value={urls[key] ?? ''}
         onChange={e => setUrls(prev => ({ ...prev, [key]: e.target.value }))}
-        placeholder="Paste your Google Drive link"
+        placeholder="Upload video to your Google Drive & paste link"
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
@@ -235,12 +240,12 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props)
 
           return (
             <div key={key} style={{ padding: 14, borderTop: i === 0 ? 'none' : '1px solid ' + HAIR }}>
-              {/* Date sits inline with the title; the per-booking commission is
-                  deliberately NOT repeated here — it already appears on the
+              {/* Title and date are one line in one style — the date is part of
+                  the task, not a footnote to it. The per-booking commission is
+                  deliberately NOT repeated here: it already appears on the
                   upcoming-events card, and this card is about sending the video. */}
               <div style={{ fontSize: 14, fontWeight: 750, color: INK, lineHeight: 1.35 }}>
-                {task.title.trim()}
-                <span style={{ color: MUTED, fontWeight: 600 }}> · {fmtDate(task.date)}</span>
+                {task.title.trim()} · {fmtDate(task.date)}
               </div>
 
               {sub && sub.status === 'pending' && (
