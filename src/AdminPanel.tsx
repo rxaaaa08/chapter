@@ -65,10 +65,14 @@ type Trip = {
   // for the full price (advance is ignored; status jumps straight to paid).
   payment_mode?: string;
   // Creator affiliate commissions: off by default. When on, a fully-paid ticket
-  // booked via a creator's link pays affiliate_commission_pct% (default 8) of the
-  // full price. See the Creators tab.
+  // booked via a creator's link pays the creator. `affiliate_commission` is a
+  // flat ₹ per ticket and wins when set; otherwise affiliate_commission_pct%
+  // (default 8) of the full price applies. Flat is preferred because a
+  // percentage produces a different figure per city and per ticket type.
+  // See the Creators tab.
   affiliate_enabled?: boolean;
   affiliate_commission_pct?: number;
+  affiliate_commission?: number | null;
   // Per-event marketer commission (₹ per fully-paid ticket). NULL/undefined =
   // fall back to each marketer's own call_marketers.commission_amount (₹50).
   marketer_commission?: number | null;
@@ -8232,15 +8236,33 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 <div style={{ fontSize: 11, color: '#888' }}>When on, a fully-paid ticket booked via a creator link pays them a commission.</div>
               </div>
               {trip.affiliate_enabled && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <input
-                    type="number" min={0} max={100} step={0.5}
-                    onWheel={e => (e.target as HTMLInputElement).blur()}
-                    value={trip.affiliate_commission_pct ?? 8}
-                    onChange={e => set('affiliate_commission_pct', Number(e.target.value))}
-                    style={{ width: 60, padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, textAlign: 'right' }}
-                  />
-                  <span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>% of full price</span>
+                <div style={{ display: 'grid', gap: 5, justifyItems: 'end', flexShrink: 0 }}>
+                  {/* Flat ₹ per ticket is the primary control: one number the
+                      creator can be told, identical across cities and ticket types. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>₹</span>
+                    <input
+                      type="number" min={0} step={1}
+                      onWheel={e => (e.target as HTMLInputElement).blur()}
+                      value={trip.affiliate_commission ?? 0}
+                      onChange={e => set('affiliate_commission', Number(e.target.value))}
+                      style={{ width: 72, padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, fontWeight: 700, textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>per ticket</span>
+                  </div>
+                  {/* Percentage stays as the fallback for events where a flat fee
+                      makes no sense (a ₹35 fee on a ₹19,000 trip would be 0.2%). */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: Number(trip.affiliate_commission ?? 0) > 0 ? 0.45 : 1 }}>
+                    <span style={{ fontSize: 11, color: '#888' }}>or</span>
+                    <input
+                      type="number" min={0} max={100} step={0.5}
+                      onWheel={e => (e.target as HTMLInputElement).blur()}
+                      value={trip.affiliate_commission_pct ?? 8}
+                      onChange={e => set('affiliate_commission_pct', Number(e.target.value))}
+                      style={{ width: 52, padding: '4px 6px', border: '1px solid #ddd', borderRadius: 6, fontSize: 11.5, textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: 11, color: '#888' }}>% — used only when ₹ is 0</span>
+                  </div>
                 </div>
               )}
             </div>
