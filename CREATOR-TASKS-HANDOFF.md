@@ -20,7 +20,7 @@ checklist card this work extends).
 | **2** | Creator dashboard: 6th checklist step, "Your Tasks" mode, submission card | ✅ **BUILT** — `c211388` (new `src/CreatorVideoTasks.tsx`), `48719ae` (wiring) |
 | **3** | Admin: the simple creator-activity table + review | ✅ **BUILT** — `0d3f6f6` (Performance → Creator videos) |
 | **4** | Gender field at creator registration | ✅ **BUILT** — `db0f872`, `1d731bd`, `2fc77a9`. ⚠️ **OWNER MUST DEPLOY `creator-signup` BEFORE THIS IS PUSHED** |
-| **5** | Refresh the onboarding demo replica (level 3) to match | ⬜ not started |
+| **5** | Refresh the onboarding demo replica (level 3) to match | ✅ **BUILT** — `ccc69f0`. Scoped by the owner to the submission card + its tip only; the money-math level and every % is deliberately untouched |
 
 Nothing has been pushed. `main` currently carries commit `a726918` unpushed.
 
@@ -239,9 +239,11 @@ will be set around that ballpark, and what actually matters to both sides is the
 change `CORRECT` or `QUIZ_ANSWER_KEY`**, and do not re-raise it; that keeps the
 zero-deploy property of this whole build intact.
 
-**One thing still stale:** the onboarding demo level 2 ("your money math") teaches
-per-event percentages and now contradicts the product. Refresh it with the Phase 5
-demo work.
+**Level 2 percentages: LEAVE THEM.** The demo's money-math level still teaches
+per-event percentages while the product now pays flat fees. The owner reviewed
+this on 2026-07-25 and chose to keep it as-is — Phase 5 was deliberately scoped
+to adding the submission card and its tip, nothing to do with % or rupee figures.
+Do not "fix" this without being asked.
 
 While verifying that, a live hole turned up and was fixed in
 `20260725_affiliate_commission_price_fallback.sql` (commit `647ee0b`): the
