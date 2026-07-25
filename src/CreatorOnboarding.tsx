@@ -32,9 +32,8 @@ const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
 const RED = '#dc2626';
 
-// TODO(owner): replace with the real onboarding video id once recorded. This is a
-// public Vimeo sample standing in so the flow is testable end-to-end meanwhile.
-const PLACEHOLDER_VIMEO_ID = '76979871';
+// The creator welcome video (Vimeo id from vimeo.com/1212874247).
+const PLACEHOLDER_VIMEO_ID = '1212874247';
 
 // Correct answer token per question, in order. MUST stay identical to
 // QUIZ_ANSWER_KEY in supabase/functions/creator-signup — the server re-checks

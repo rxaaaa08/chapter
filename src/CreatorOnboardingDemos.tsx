@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { ChevronRight, Globe, IndianRupee, MessageSquare } from 'lucide-react';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
-// TODO(owner): replace with the creator's recorded comments-to-auto-DM walkthrough.
-const L7_VIMEO_ID = '76979871';
+// The final-lesson / brand-voice rules video (Vimeo id from vimeo.com/1212875214).
+const L7_VIMEO_ID = '1212875214';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
