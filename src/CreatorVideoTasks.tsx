@@ -302,7 +302,7 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterO
           commission-enabled event, so approval is worth chasing. */}
       {starterOnly && (
         <div style={{ fontSize: 11.5, color: MUTED, marginTop: 8, lineHeight: 1.5 }}>
-          More events with higher commissions open up once first video is approved.
+          More events with higher commissions open up once your first video is approved.
         </div>
       )}
     </div>
