@@ -297,11 +297,12 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterO
         })}
       </div>
 
-      {/* Without this, a creator seeing one event assumes that is all there is —
-          and never learns that approval is the thing that opens the rest. */}
+      {/* Without this, a creator seeing one event assumes that is all there is.
+          Naming the money is the point: the starter meetup pays the least of any
+          commission-enabled event, so approval is worth chasing. */}
       {starterOnly && (
         <div style={{ fontSize: 11.5, color: MUTED, marginTop: 8, lineHeight: 1.5 }}>
-          Start here — more events open up once your first video is approved.
+          More events with higher commissions open up once first video is approved.
         </div>
       )}
     </div>
