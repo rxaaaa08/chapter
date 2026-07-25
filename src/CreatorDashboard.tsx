@@ -255,6 +255,13 @@ export default function CreatorDashboard() {
   const [submissions, setSubmissions] = useState<CreatorSubmission[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // The centered mark stays up until the dashboard's first data has landed, so a
+  // creator never sees a frame of ₹0.00 and empty cards before the real numbers
+  // arrive. One flag per initial load; each flips true even on failure, so a
+  // broken RPC shows the dashboard rather than spinning forever.
+  const [statsReady, setStatsReady] = useState(false);   // month earnings + lifetime milestones + team board
+  const [funnelReady, setFunnelReady] = useState(false); // funnel + conversions (first load only)
+  const [tasksReady, setTasksReady] = useState(false);   // video tasks + own submissions
   const [copied, setCopied] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -393,7 +400,7 @@ export default function CreatorDashboard() {
       setLifetimeClicks(Number((lifetimeRow as LifetimeStats)?.clicks_total) || 0);
       setLifetimeTickets(tickets);
       setLeaderboard((lbRes.data as LeaderRow[]) ?? []);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setStatsReady(true));
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load permanent checklist flags from the creator row. Merge the old
@@ -446,15 +453,28 @@ export default function CreatorDashboard() {
     if (!me) { setTasks([]); setSubmissions([]); return; }
     let cancelled = false;
     void (async () => {
-      const [taskRows, submissionRows] = await Promise.all([
-        loadCreatorTasks().catch(() => [] as CreatorTask[]),
-        loadCreatorSubmissions(),
-      ]);
-      if (cancelled) return;
-      setTasks(taskRows);
-      setSubmissions(submissionRows);
+      try {
+        const [taskRows, submissionRows] = await Promise.all([
+          loadCreatorTasks().catch(() => [] as CreatorTask[]),
+          loadCreatorSubmissions(),
+        ]);
+        if (cancelled) return;
+        setTasks(taskRows);
+        setSubmissions(submissionRows);
+      } finally {
+        if (!cancelled) setTasksReady(true);
+      }
     })();
     return () => { cancelled = true; };
+  }, [me]);
+
+  // Belt and braces: a request that neither resolves nor rejects would otherwise
+  // hold the loading mark forever. After this window the dashboard renders with
+  // whatever has arrived — the old behaviour — rather than showing nothing.
+  useEffect(() => {
+    if (!me) return;
+    const timer = setTimeout(() => { setStatsReady(true); setFunnelReady(true); setTasksReady(true); }, 6000);
+    return () => clearTimeout(timer);
   }, [me]);
 
   const completeChecklistStep = (step: ChecklistStep, patch: Partial<ChecklistState>) => {
@@ -490,7 +510,10 @@ export default function CreatorDashboard() {
       setFunnel((row as RangeStats) ?? null);
       setEvents((evRes.data as EventRow[]) ?? []);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(() => setLoading(false))
+      // First load only — never set back to false, or changing the range chip
+      // would throw the whole dashboard back to the loading mark.
+      .finally(() => setFunnelReady(true));
   }, [me, range]);
 
   // An existing creator who happened to tap "I'm a new creator" resolves to a real
@@ -516,6 +539,11 @@ export default function CreatorDashboard() {
     setChecklist(CHECKLIST_DEFAULT);
     setLeaderboard([]);
     setCopied(false);
+    // Signing out must re-arm the loading gate, or the next login would flash
+    // the previous creator's empty dashboard before their own data arrives.
+    setStatsReady(false);
+    setFunnelReady(false);
+    setTasksReady(false);
     clearOnboardingIntent();
   };
   const logout = async () => {
@@ -563,7 +591,11 @@ export default function CreatorDashboard() {
   const wrap: React.CSSProperties = { minHeight: '100%', background: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', color: INK, WebkitFontSmoothing: 'antialiased' };
 
   // ── Loading (auth not settled, or logged in and lookup still running) ──
-  if (!authReady || (email && meStatus === 'loading')) {
+  // Loading mark: while auth settles, while the creator row is being looked up,
+  // and — once we know they ARE a creator — until their first data has landed.
+  // The onboarding, "not a creator" and error branches below are unaffected.
+  const dashboardDataReady = statsReady && funnelReady && tasksReady;
+  if (!authReady || (email && meStatus === 'loading') || (meStatus === 'found' && me?.active && !dashboardDataReady)) {
     return (
       <div style={{ ...wrap, display: 'grid', placeItems: 'center' }}>
         <style>{`
