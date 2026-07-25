@@ -61,7 +61,7 @@ const teamResourcesCard = (CREATOR_FOOTAGE_URL || CREATOR_GROUP_CHAT_URL) ? (
           </svg>,
         )}
         {CREATOR_GROUP_CHAT_URL && essentialTile(
-          CREATOR_GROUP_CHAT_URL, "Creator's WhatsApp Group", 'Receive instant updates & help from the team.', 'Join group',
+          CREATOR_GROUP_CHAT_URL, "Creator's Groupchat", 'Receive instant updates & help from the team.', 'Join group',
           <svg width="34" height="34" viewBox="0 0 56 56" aria-hidden="true">
             <circle cx="28" cy="27" r="22" fill="#25D366" />
             <path d="m12.5 41.5-3 9 9.5-3" fill="#25D366" />
@@ -818,8 +818,12 @@ export default function CreatorDashboard() {
             />
           ))}
 
-        {/* Where the video actually gets sent — directly under the card above,
-            which is what step ④'s hint points at. */}
+        {/* The Essentials — footage/creatives to post + the creator group chat */}
+        {teamResourcesCard}
+
+        {/* Where the video actually gets sent. Sits below The Essentials on
+            purpose: a creator needs the footage folder before they have a video
+            to submit, so the order follows the actual sequence of work. */}
         {me.active && (
           <CreatorVideoTasks
             tasks={tasks}
@@ -827,9 +831,6 @@ export default function CreatorDashboard() {
             onSubmitted={row => setSubmissions(prev => [row, ...prev])}
           />
         )}
-
-        {/* The Essentials — footage/creatives to post + the creator group chat */}
-        {teamResourcesCard}
 
         {/* Install-app nudge (hidden once installed / inside the app) */}
         {showInstallCard && (

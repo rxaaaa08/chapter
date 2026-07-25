@@ -17,7 +17,7 @@
 import React, { useState } from 'react';
 import { supabase } from './supabase';
 import { fetchEvents } from './supabase';
-import { resolveCreatorEarn, resolveDefaultFullPrice } from './eventPricing';
+import { resolveDefaultFullPrice } from './eventPricing';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -25,10 +25,6 @@ const HAIR = '#ececed';
 const GREEN = '#16a34a';
 const AMBER = '#b45309';
 const RED = '#dc2626';
-
-// Whole rupees here (unlike the dashboard's 2-decimal `inr`) — this is a
-// per-booking headline, and "earn ₹26.93 per booking" reads like a bug.
-const inr = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
 // "2026-08-02" → "Aug 2". Robust to full ISO timestamps.
 const fmtDate = (iso: string) => {
@@ -44,7 +40,6 @@ export type CreatorTask = {
   slug: string;
   title: string;
   date: string;   // YYYY-MM-DD — the nearest upcoming date for this event
-  earn: number;   // commission per booking, in rupees
 };
 
 export type CreatorSubmission = {
@@ -75,12 +70,7 @@ export async function loadCreatorTasks(): Promise<CreatorTask[]> {
         .map(d => String(d.date ?? '').slice(0, 10))
         .filter(d => d && d >= today)
         .sort();
-      return {
-        slug: event.id as string,
-        title: event.title as string,
-        date: upcoming[0] ?? '',
-        earn: resolveCreatorEarn(event, priceFull),
-      };
+      return { slug: event.id as string, title: event.title as string, date: upcoming[0] ?? '' };
     })
     .filter((t: CreatorTask) => Boolean(t.date))
     .sort((a: CreatorTask, b: CreatorTask) => a.date.localeCompare(b.date));
@@ -203,7 +193,7 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props)
       <input
         value={urls[key] ?? ''}
         onChange={e => setUrls(prev => ({ ...prev, [key]: e.target.value }))}
-        placeholder="Paste your video link"
+        placeholder="Paste your Google Drive link"
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
@@ -245,9 +235,12 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props)
 
           return (
             <div key={key} style={{ padding: 14, borderTop: i === 0 ? 'none' : '1px solid ' + HAIR }}>
-              <div style={{ fontSize: 14, fontWeight: 750, color: INK, lineHeight: 1.35 }}>{task.title.trim()}</div>
-              <div style={{ fontSize: 11.5, color: MUTED, marginTop: 3 }}>
-                {fmtDate(task.date)} · earn {inr(task.earn)} per booking
+              {/* Date sits inline with the title; the per-booking commission is
+                  deliberately NOT repeated here — it already appears on the
+                  upcoming-events card, and this card is about sending the video. */}
+              <div style={{ fontSize: 14, fontWeight: 750, color: INK, lineHeight: 1.35 }}>
+                {task.title.trim()}
+                <span style={{ color: MUTED, fontWeight: 600 }}> · {fmtDate(task.date)}</span>
               </div>
 
               {sub && sub.status === 'pending' && (

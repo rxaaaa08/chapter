@@ -9,8 +9,8 @@
 //   ⑤ Get your first 25 clicks      (auto-ticks from lifetime stats)
 //   ⑥ Get your 1st Commission       (auto-ticks from lifetime stats)
 //
-// Step ④ has no button on purpose: the submission card sits directly below this
-// one, so the hint points there instead of duplicating the input.
+// Step ④ has no button on purpose: the "Submit your video" card lower down the
+// dashboard owns the input, so the hint names that card instead of duplicating it.
 //
 // Presentational only: it holds no source of truth. The dashboard owns the
 // persisted action flags (①–③) and passes the live-stat values (④–⑥) plus the
@@ -46,7 +46,7 @@ export default function CreatorFirstBookingChecklist({ joinedChat, openedDrive, 
     { key: 'chat', done: joinedChat, title: 'Join the creator group chat', hint: 'Instant updates from the team.', link: chatUrl, cta: 'Join the group chat', onOpen: onJoinChat },
     { key: 'drive', done: openedDrive, title: 'Open Google Drive footage folder', hint: 'Access highlight clips of the best moments from our events.', link: footageUrl, cta: 'Open Google Drive', onOpen: onOpenDrive },
     { key: 'copy', done: copied, title: 'Copy your custom link', hint: 'Use the Copy button above to grab your link.' },
-    { key: 'video', done: hasEverSubmitted, title: 'Submit a video for the Upcoming Event', hint: 'Use the card below to send us your video.' },
+    { key: 'video', done: hasEverSubmitted, title: 'Submit a video for the Upcoming Event', hint: 'Use the "Submit your video" card below to send it to us.' },
     { key: 'click', done: reachedClickGoal, title: 'Get your first 25 clicks', hint: `${Math.min(clicks, 25)} of 25 clicks — keep sharing your custom link.` },
     { key: 'booking', done: firstBooking, title: 'Get your 1st Commission', hint: 'This ticks the moment someone books through your custom link.' },
   ];
