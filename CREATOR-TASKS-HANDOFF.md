@@ -208,6 +208,33 @@ creators a new task — that is the design goal.
 
 ---
 
+### 5.1 Adjacent fix already shipped — how commission is actually calculated
+
+A creator's commission is NOT the number on the task card. It is computed at
+`fully_paid` from **the city the buyer picked**: `pct × price for that city`. So
+Sunrise at Kovalam pays ₹56 on a Chennai ticket (₹699) and ₹24 on an
+own-transport Kovalam ticket (₹299). The card shows one figure — see the open
+question about a range in §11.
+
+While verifying that, a live hole turned up and was fixed in
+`20260725_affiliate_commission_price_fallback.sql` (commit `647ee0b`): the
+accrual fell back to the invisible plan-level `events.price_full` when the city
+didn't match, which is **0** on every event created since June — the amount
+rounded to zero and **no commission row was written at all**, silently. A
+booking recorded as `'chennai'` instead of `'Chennai'` was enough to trigger it,
+because the accrual matched city keys case-sensitively while checkout matches
+case-insensitively. The affiliate accrual now resolves its own price (buyer's
+city case-insensitive → lowest offered city price → legacy column). All 24
+commissions ever accrued recompute to their stored amounts, so nothing owed
+changed.
+
+**Still open, deliberately not done:** `event_net_price` keeps the old fallback
+for checkout, revenue/profit reporting and marketer/manager commission. Kovalam's
+plan-level ₹900 means an unmatched city at checkout would **overcharge** a
+customer (₹900 vs ₹699/₹299). Latent — every application on record carries a
+valid city. Fixing the shared function moves reported revenue, so it needs its
+own session with before/after verification.
+
 ## 6. PHASE 2 — the creator dashboard
 
 Files: `src/CreatorDashboard.tsx`, `src/CreatorFirstBookingChecklist.tsx`, plus
