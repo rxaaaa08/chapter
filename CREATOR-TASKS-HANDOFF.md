@@ -19,7 +19,7 @@ checklist card this work extends).
 | **1** | `creator_submissions` table + RLS + `submit_creator_video()` RPC | ✅ **BUILT** — migration applied to prod, committed `a726918` |
 | **2** | Creator dashboard: 6th checklist step, "Your Tasks" mode, submission card | ✅ **BUILT** — `c211388` (new `src/CreatorVideoTasks.tsx`), `48719ae` (wiring) |
 | **3** | Admin: the simple creator-activity table + review | ✅ **BUILT** — `0d3f6f6` (Performance → Creator videos) |
-| **4** | Gender field at creator registration | ⬜ not started — **needs an owner edge-function deploy** |
+| **4** | Gender field at creator registration | ✅ **BUILT** — `db0f872`, `1d731bd`, `2fc77a9`. ⚠️ **OWNER MUST DEPLOY `creator-signup` BEFORE THIS IS PUSHED** |
 | **5** | Refresh the onboarding demo replica (level 3) to match | ⬜ not started |
 
 Nothing has been pushed. `main` currently carries commit `a726918` unpushed.
