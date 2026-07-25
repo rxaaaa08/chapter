@@ -17,7 +17,7 @@ checklist card this work extends).
 | Phase | What | Status |
 |---|---|---|
 | **1** | `creator_submissions` table + RLS + `submit_creator_video()` RPC | ✅ **BUILT** — migration applied to prod, committed `a726918` |
-| **2** | Creator dashboard: 6th checklist step, "Your Tasks" mode, submission card | ⬜ not started |
+| **2** | Creator dashboard: 6th checklist step, "Your Tasks" mode, submission card | ✅ **BUILT** — `c211388` (new `src/CreatorVideoTasks.tsx`), `48719ae` (wiring) |
 | **3** | Admin: the simple creator-activity table + review | ⬜ not started |
 | **4** | Gender field at creator registration | ⬜ not started — **needs an owner edge-function deploy** |
 | **5** | Refresh the onboarding demo replica (level 3) to match | ⬜ not started |
@@ -193,7 +193,14 @@ Never read `price_full` directly or the card will show ₹0.
 | Event | Slug | Next date | Price used | Pct | Earn/booking |
 |---|---|---|---|---|---|
 | Chill Sunday Meetup | `anna-nagar-meetup` | 2026-08-02 | ₹359 (Chennai) | 7.5% | **₹27** |
-| Sunrise at Kovalam | `sunrise-at-kovalam` | 2026-08-16 | ₹900 | 8% | **₹72** |
+| Sunrise at Kovalam | `sunrise-at-kovalam` | 2026-08-16 | ₹699 (Chennai) | 8% | **₹56** |
+
+Kovalam prices differently per city (Chennai ₹699 with the bus, Kovalam ₹299
+own-transport). `resolveDefaultFullPrice` takes the FIRST configured city, so
+the card advertises ₹56 — matching what the existing "See upcoming events" card
+already shows. Keeping the two cards consistent matters more than picking a
+different city here; if the owner wants a range ("₹24–56") that is a change to
+both cards, not just this one.
 
 Pondy Beach Houseparty currently has `affiliate_enabled = false`, so it is not a
 task. Flipping that flag on an event is the ONLY action needed to give 100
