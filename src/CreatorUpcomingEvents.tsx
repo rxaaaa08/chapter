@@ -18,7 +18,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight } from 'lucide-react';
 import { fetchEvents } from './supabase';
-import { resolveCreatorEarn, resolveDefaultFullPrice } from './eventPricing';
+import { formatCreatorEarn, resolveCreatorEarn, resolveDefaultFullPrice } from './eventPricing';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
 const INK = '#111';
@@ -26,7 +26,9 @@ const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
 const GREEN = '#16a34a';
 
-const inr = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
+// Commission figures use the shared formatter so this card and the "Submit your
+// video" card can never print the same fee as two different numbers.
+const inr = formatCreatorEarn;
 
 // "2026-08-16" → "Aug 16". Robust to full ISO timestamps.
 const fmtDate = (iso: string) => {

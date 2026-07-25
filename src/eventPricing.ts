@@ -49,6 +49,20 @@ type CreatorEarnSource = {
 // it is the same figure for every city and ticket type, which is the whole point
 // of it. Otherwise fall back to the percentage of the resolved full price.
 // Mirrors accrue_affiliate_sale() in the database; keep the two in step.
+// Format a creator's per-booking commission. Paise are shown only when they
+// exist, so a ₹26.93 fee reads exactly as ₹26.93 — matching the "5 tickets ×
+// ₹26.93" line on the dashboard's conversions card — while a round ₹50 fee does
+// not become "₹50.00". Rounding to whole rupees here made the same commission
+// appear as two different numbers on one screen.
+export function formatCreatorEarn(earn: number): string {
+  const value = Number(earn) || 0;
+  const hasPaise = Math.abs(value - Math.round(value)) > 0.005;
+  return '₹' + value.toLocaleString('en-IN', {
+    minimumFractionDigits: hasPaise ? 2 : 0,
+    maximumFractionDigits: hasPaise ? 2 : 0,
+  });
+}
+
 export function resolveCreatorEarn(event: CreatorEarnSource, fullPrice: number): number {
   const flat = positiveNumber(event.affiliateCommission) || positiveNumber(event.affiliate_commission);
   if (flat > 0) return flat;
