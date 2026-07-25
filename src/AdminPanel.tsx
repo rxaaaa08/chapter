@@ -527,7 +527,7 @@ export default function AdminPanel() {
   const [managerScorecards, setManagerScorecards] = useState<{ benchmark: number; byId: Record<string, any> } | null>(null);
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
-  const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null }>>([]);
+  const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null; gender: string | null }>>([]);
   // Creator video submissions — the activity log behind the "Creator videos"
   // card. Loaded with the roster so a creator with zero videos still shows up;
   // that row (blank "last video") is the whole point of the table.
@@ -1211,7 +1211,7 @@ export default function AdminPanel() {
   // and the sales ledger (admin has full RLS on all three).
   const loadAffiliatesData = async () => {
     const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }] = await Promise.all([
-      supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone').order('created_at'),
+      supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone, gender').order('created_at'),
       supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
@@ -6924,6 +6924,8 @@ export default function AdminPanel() {
                           <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
                             {af.upi_id ? <>UPI <span style={{ color: '#555', fontWeight: 600 }}>{af.upi_id}</span></> : <span style={{ color: '#c00b0b' }}>no UPI on file</span>}
                             {af.phone && <span> · {af.phone}</span>}
+                            {/* Blank for everyone who signed up before we asked. */}
+                            {af.gender && <span> · {af.gender}</span>}
                           </div>
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{st.clicks}</td>
