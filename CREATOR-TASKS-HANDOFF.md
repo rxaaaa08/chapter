@@ -18,7 +18,7 @@ checklist card this work extends).
 |---|---|---|
 | **1** | `creator_submissions` table + RLS + `submit_creator_video()` RPC | ✅ **BUILT** — migration applied to prod, committed `a726918` |
 | **2** | Creator dashboard: 6th checklist step, "Your Tasks" mode, submission card | ✅ **BUILT** — `c211388` (new `src/CreatorVideoTasks.tsx`), `48719ae` (wiring) |
-| **3** | Admin: the simple creator-activity table + review | ⬜ not started |
+| **3** | Admin: the simple creator-activity table + review | ✅ **BUILT** — `0d3f6f6` (Performance → Creator videos) |
 | **4** | Gender field at creator registration | ⬜ not started — **needs an owner edge-function deploy** |
 | **5** | Refresh the onboarding demo replica (level 3) to match | ⬜ not started |
 
@@ -229,16 +229,19 @@ straight number. `resolveCreatorEarn()` in `src/eventPricing.ts` is the single
 client-side implementation (mirrors `accrue_affiliate_sale`) — use it, never
 recompute `price × pct` in a component.
 
-**Two things this leaves stale — pick up when convenient:**
-1. The onboarding quiz answer is *"Upto 8% of the full ticket price"*, and ₹35 on
-   a ₹359 ticket is 9.7%, while ₹100 on a ₹3,700 ticket is 2.7%. "Up to" is not
-   *false* (it reads as a ceiling and creators are never paid less than they were
-   promised in rupees), but the percentage is no longer a useful mental model.
-   Rewording means changing `CORRECT` in `CreatorOnboarding.tsx` AND
-   `QUIZ_ANSWER_KEY` in `supabase/functions/creator-signup` in the same commit,
-   plus **an owner deploy** — that is the only reason it hasn't been done.
-2. The onboarding demo level 2 ("your money math") teaches per-event percentages
-   and now contradicts the product. Refresh it with the Phase 5 demo work.
+Flat fees set on prod: Chill Sunday **₹35**, Sunrise at Kovalam **₹50**, Pondy
+Beach Houseparty **₹100** (dormant — its `affiliate_enabled` is still false).
+
+**The quiz wording is a CLOSED question.** Owner decision, 2026-07-25: leave
+*"Upto 8% of the full ticket price"* exactly as it is. Their reasoning — flat fees
+will be set around that ballpark, and what actually matters to both sides is the
+₹-per-ticket figure, which the dashboard shows honestly per event. **Do not
+change `CORRECT` or `QUIZ_ANSWER_KEY`**, and do not re-raise it; that keeps the
+zero-deploy property of this whole build intact.
+
+**One thing still stale:** the onboarding demo level 2 ("your money math") teaches
+per-event percentages and now contradicts the product. Refresh it with the Phase 5
+demo work.
 
 While verifying that, a live hole turned up and was fixed in
 `20260725_affiliate_commission_price_fallback.sql` (commit `647ee0b`): the
