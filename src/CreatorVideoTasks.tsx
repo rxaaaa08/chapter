@@ -17,7 +17,7 @@
 import React, { useState } from 'react';
 import { supabase } from './supabase';
 import { fetchEvents } from './supabase';
-import { resolveDefaultFullPrice } from './eventPricing';
+import { resolveCreatorEarn, resolveDefaultFullPrice } from './eventPricing';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -75,8 +75,12 @@ export async function loadCreatorTasks(): Promise<CreatorTask[]> {
         .map(d => String(d.date ?? '').slice(0, 10))
         .filter(d => d && d >= today)
         .sort();
-      const pct = Number(event.affiliateCommissionPct) || 0;
-      return { slug: event.id as string, title: event.title as string, date: upcoming[0] ?? '', earn: priceFull * pct / 100 };
+      return {
+        slug: event.id as string,
+        title: event.title as string,
+        date: upcoming[0] ?? '',
+        earn: resolveCreatorEarn(event, priceFull),
+      };
     })
     .filter((t: CreatorTask) => Boolean(t.date))
     .sort((a: CreatorTask, b: CreatorTask) => a.date.localeCompare(b.date));

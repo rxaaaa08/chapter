@@ -123,6 +123,9 @@ export function mapDbEventToEvent(row: any): any {
     // affiliateEnabled is true at full-payment time.
     affiliateEnabled: row.affiliate_enabled ?? false,
     affiliateCommissionPct: Number(row.affiliate_commission_pct ?? 0) || 0,
+    // Flat ₹ per ticket. When > 0 it overrides the percentage, so a creator sees
+    // one figure regardless of the buyer's city or ticket type.
+    affiliateCommission: Number(row.affiliate_commission ?? 0) || 0,
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,
     inviteSlug: row.invite_slug ?? undefined,

@@ -37,3 +37,21 @@ export function resolveDefaultFullPrice(event: EventPriceSource): number {
 
   return positiveNumber(event.priceFull) || positiveNumber(event.price_full);
 }
+
+type CreatorEarnSource = {
+  affiliateCommission?: unknown;
+  affiliate_commission?: unknown;
+  affiliateCommissionPct?: unknown;
+  affiliate_commission_pct?: unknown;
+};
+
+// What a creator earns per booking on this event. A flat ₹ fee wins when set —
+// it is the same figure for every city and ticket type, which is the whole point
+// of it. Otherwise fall back to the percentage of the resolved full price.
+// Mirrors accrue_affiliate_sale() in the database; keep the two in step.
+export function resolveCreatorEarn(event: CreatorEarnSource, fullPrice: number): number {
+  const flat = positiveNumber(event.affiliateCommission) || positiveNumber(event.affiliate_commission);
+  if (flat > 0) return flat;
+  const pct = positiveNumber(event.affiliateCommissionPct) || positiveNumber(event.affiliate_commission_pct);
+  return pct > 0 ? fullPrice * pct / 100 : 0;
+}

@@ -18,7 +18,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight } from 'lucide-react';
 import { fetchEvents } from './supabase';
-import { resolveDefaultFullPrice } from './eventPricing';
+import { resolveCreatorEarn, resolveDefaultFullPrice } from './eventPricing';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 
 const INK = '#111';
@@ -100,7 +100,7 @@ export default function CreatorUpcomingEvents({ embedded = false }: CreatorUpcom
               affiliateEnabled: Boolean(e.affiliateEnabled),
               affiliateCommissionPct: pct,
               upcomingDates,
-              earn: e.affiliateEnabled ? priceFull * pct / 100 : 0,
+              earn: e.affiliateEnabled ? resolveCreatorEarn(e, priceFull) : 0,
               // Same fields the invite flow feeds the sheet (App.tsx builds this
               // exact object as planDetails) — so the creator gets the identical sheet.
               details: {
