@@ -204,9 +204,14 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props)
         spellCheck={false}
         style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1.5px solid ' + (errors[key] ? RED : HAIR), fontSize: 14, fontFamily: 'inherit', color: INK, outline: 'none' }}
       />
-      <div style={{ fontSize: 11.5, color: MUTED, marginTop: 6, lineHeight: 1.45 }}>
-        Make sure anyone with the link can view it.
-      </div>
+      {/* Only worth saying once they have a link in hand — before that the
+          placeholder is already telling them what to do, and two lines of
+          instruction on an empty field is noise. */}
+      {(urls[key] ?? '').trim().length > 0 && (
+        <div style={{ fontSize: 11.5, color: MUTED, marginTop: 6, lineHeight: 1.45 }}>
+          Make sure anyone with the link can view it.
+        </div>
+      )}
       {errors[key] && <div style={{ fontSize: 12, color: RED, marginTop: 6, lineHeight: 1.45 }}>{errors[key]}</div>}
       <button
         type="button"
