@@ -208,13 +208,37 @@ creators a new task — that is the design goal.
 
 ---
 
-### 5.1 Adjacent fix already shipped — how commission is actually calculated
+### 5.1 How creator commission is actually calculated (owner decision, 2026-07-25)
 
-A creator's commission is NOT the number on the task card. It is computed at
-`fully_paid` from **the city the buyer picked**: `pct × price for that city`. So
-Sunrise at Kovalam pays ₹56 on a Chennai ticket (₹699) and ₹24 on an
-own-transport Kovalam ticket (₹299). The card shows one figure — see the open
-question about a range in §11.
+**A flat ₹ fee per ticket, set per event, is now the preferred model.**
+`events.affiliate_commission` wins whenever it is > 0 and applies to every city
+and ticket type; `affiliate_commission_pct` remains the fallback for events where
+a flat fee makes no sense (₹35 on a ₹19,000 trip is 0.2%). Shipped in
+`20260725_affiliate_flat_commission.sql` (commits `ce59735`, `51c167d`,
+`96e3833`), with the input in the event editor above the percentage.
+
+Set on prod 2026-07-25: **Chill Sunday Meetup ₹35**, **Pondy Beach Houseparty
+₹100** (Pondy's `affiliate_enabled` is still false, so the fee is dormant until
+the owner turns it on). **Sunrise at Kovalam is still on 8%** and therefore still
+pays a different amount per city (₹56 Chennai / ₹24 own-transport) — the owner
+has not set a flat fee for it yet.
+
+Why this replaced the range-display idea: a percentage produces a different rupee
+figure for every city and ticket type, so a creator could never be told a
+straight number. `resolveCreatorEarn()` in `src/eventPricing.ts` is the single
+client-side implementation (mirrors `accrue_affiliate_sale`) — use it, never
+recompute `price × pct` in a component.
+
+**Two things this leaves stale — pick up when convenient:**
+1. The onboarding quiz answer is *"Upto 8% of the full ticket price"*, and ₹35 on
+   a ₹359 ticket is 9.7%, while ₹100 on a ₹3,700 ticket is 2.7%. "Up to" is not
+   *false* (it reads as a ceiling and creators are never paid less than they were
+   promised in rupees), but the percentage is no longer a useful mental model.
+   Rewording means changing `CORRECT` in `CreatorOnboarding.tsx` AND
+   `QUIZ_ANSWER_KEY` in `supabase/functions/creator-signup` in the same commit,
+   plus **an owner deploy** — that is the only reason it hasn't been done.
+2. The onboarding demo level 2 ("your money math") teaches per-event percentages
+   and now contradicts the product. Refresh it with the Phase 5 demo work.
 
 While verifying that, a live hole turned up and was fixed in
 `20260725_affiliate_commission_price_fallback.sql` (commit `647ee0b`): the
