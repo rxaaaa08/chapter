@@ -447,7 +447,7 @@ export function DemoL2({ onDone }: DemoProps) {
 
 function DemoEssentialResourceTile({ kind }: { kind: 'drive' | 'whatsapp' }) {
   const drive = kind === 'drive';
-  const title = drive ? 'Our Google Drive' : "Creator's WhatsApp Group";
+  const title = drive ? 'Our Google Drive' : "Creator's Groupchat";
   const detail = drive
     ? 'All the best clips from our events in one place.'
     : 'Receive instant updates & help from the team.';
@@ -482,8 +482,12 @@ function DemoEssentialResourceTile({ kind }: { kind: 'drive' | 'whatsapp' }) {
   );
 }
 
-type L3Stage = 'hero' | 'range' | 'clicks' | 'signups' | 'paid' | 'conversion' | 'resources' | 'events' | 'closeSheet' | 'copy' | 'team';
-const L3_STAGE_ORDER: L3Stage[] = ['hero', 'range', 'clicks', 'signups', 'paid', 'conversion', 'resources', 'events', 'closeSheet', 'copy', 'team'];
+// 'submit' sits between closing the details sheet and copying the link, so the
+// tour tells the real story in order: read the event details → make and submit
+// your video → copy your link and post. This array position is what drives the
+// dim/gold ordering and the progression, so the sequence lives in one place.
+type L3Stage = 'hero' | 'range' | 'clicks' | 'signups' | 'paid' | 'conversion' | 'resources' | 'events' | 'closeSheet' | 'submit' | 'copy' | 'team';
+const L3_STAGE_ORDER: L3Stage[] = ['hero', 'range', 'clicks', 'signups', 'paid', 'conversion', 'resources', 'events', 'closeSheet', 'submit', 'copy', 'team'];
 
 export function DemoL3({ demoHandle, onDone }: DemoProps) {
   // Default range is 'week' so the range stop can grow the numbers by switching
@@ -501,6 +505,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [openedSheet, setOpenedSheet] = useState(false);
   const [closedSheet, setClosedSheet] = useState(false);
+  const [submitTapped, setSubmitTapped] = useState(false);
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const [teamTapped, setTeamTapped] = useState(false);
@@ -513,10 +518,10 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const rangeEarned = lineEarned(rangeLines);
 
   const complete = heroTapped && rangeComplete && clicksTapped && signupsTapped && paidTapped
-    && conversionTapped && resourcesTapped && openedSheet && closedSheet && copyTapped && teamTapped;
+    && conversionTapped && resourcesTapped && openedSheet && closedSheet && submitTapped && copyTapped && teamTapped;
   useCompleteWhen(complete, onDone);
 
-  // Eleven stops, in order. While a sheet is open, no body target is active.
+  // Twelve stops, in order. While a sheet is open, no body target is active.
   const nextStage: L3Stage | null = sheetOpen ? null
     : !heroTapped ? 'hero'
     : !rangeComplete ? 'range'
@@ -527,6 +532,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
     : !resourcesTapped ? 'resources'
     : !openedSheet ? 'events'
     : !closedSheet ? 'closeSheet'
+    : !submitTapped ? 'submit'
     : !copyTapped ? 'copy'
     : !teamTapped ? 'team'
     : null;
@@ -553,6 +559,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
     resources: 'The Google drive has highlights clips from our events. Join group chat to get instant updates from us.',
     events: 'Always read event details before creating promotions. Videos with proper details will get you more commissions. Press Open Details to continue...',
     closeSheet: '',
+    submit: 'Make a video using clips from our Google Drive, upload it to your Google Drive, and paste the link here. We review it and approve it.',
     copy: 'Use this button to copy your custom link.',
     team: "We show every creator's performance and earnings as we strongly support transparency. Tap Finish to end the tour.",
   };
@@ -805,7 +812,53 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
           </div>
         </div>
 
-        {/* Stop 9 — copy the custom link. */}
+        {/* Stop 10 — submit the video. A static replica of the real card: the
+            demos never touch the network, so Submit only advances the tour and
+            flips the row to the "under review" state the creator will really
+            see. Sits below The Essentials exactly as it does on the live
+            dashboard — the footage folder comes before the video. */}
+        <div className={guideClass(isFocused('submit'), shouldDim('submit'))} style={{ position: 'relative', paddingTop: guideTopSpace(isFocused('submit'), focusText('submit')) }}>
+          {isFocused('submit') && <GuideWhy text={focusText('submit')} align="center-right" />}
+          <div style={{ ...eyebrow, marginBottom: 8 }}>Submit your video</div>
+          <div style={{ border: '1px solid #a1a1aa', borderRadius: 16, background: '#fff', padding: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 750, color: INK, lineHeight: 1.35 }}>
+              {PRIMARY_EVENT.title} · {DEMO_DATES[0]}
+            </div>
+
+            {submitTapped ? (
+              <div style={{ fontSize: 12.5, color: INK, marginTop: 9, fontWeight: 700 }}>Submitted — under review</div>
+            ) : (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: `1.5px solid ${HAIR}`, fontSize: 12.5, color: MUTED }}>
+                  Upload video to your Google Drive &amp; paste link
+                </div>
+                <button
+                  type="button"
+                  className={isActive('submit') ? 'creator-demo-calm-pulse' : undefined}
+                  disabled={!isActive('submit')}
+                  onClick={() => tapTarget('submit', () => setSubmitTapped(true))}
+                  style={{
+                    width: '100%',
+                    marginTop: 10,
+                    padding: '11px 16px',
+                    borderRadius: 10,
+                    border: `1.5px solid ${isActive('submit') ? GOLD : 'transparent'}`,
+                    background: isActive('submit') ? GOLD_TINT : '#d4d4d8',
+                    color: isActive('submit') ? INK : '#fff',
+                    fontWeight: 800,
+                    fontSize: 13.5,
+                    fontFamily: 'inherit',
+                    cursor: isActive('submit') ? 'pointer' : 'default',
+                  }}
+                >
+                  Submit
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Stop 11 — copy the custom link. */}
         <div className={guideClass(isFocused('copy'), shouldDim('copy'))} style={{ position: 'relative', paddingBottom: guideTopSpace(isFocused('copy'), focusText('copy')) }}>
           {isFocused('copy') && <GuideWhy text={focusText('copy')} align="right" placement="below" />}
           <div style={{ ...card, padding: 13 }}>
@@ -864,6 +917,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
             : !openedSheet ? 'Open an upcoming event to continue'
             : sheetOpen ? 'Close the details to continue'
             : !closedSheet ? 'Close the details to continue'
+            : !submitTapped ? 'Submit your video to continue'
             : !copyTapped ? 'Tap Copy to continue'
             : 'Tap the leaderboard to finish'
           }
