@@ -262,6 +262,35 @@ customer (₹900 vs ₹699/₹299). Latent — every application on record carri
 valid city. Fixing the shared function moves reported revenue, so it needs its
 own session with before/after verification.
 
+### 5.2 The starter task — training wheels for new creators (owner decision, 2026-07-25)
+
+Built: `20260725_affiliate_starter_task.sql` + commits `33e62d2`, `39aafca`,
+`a955166`.
+
+A creator with **no approved video** is shown ONLY the starter event(s) — in the
+submission card, the "Your Tasks" card, AND the Essentials "See upcoming events"
+list. Once any one of their videos is **approved**, everything opens up.
+
+Locked answers (do not reopen):
+- ✅ **Approval unlocks, not submission** — otherwise any pasted link unlocks
+  every event and the check is meaningless.
+- ✅ **A flag, not a hard-coded slug**: `events.affiliate_starter_task`, ticked
+  from the event editor (checkbox under the creator-commission controls). Chill
+  Sunday Meetup is today's starter.
+- ✅ **Fallback**: if no starter event has an upcoming date, show the nearest
+  task instead — a new creator is never left with an empty card.
+- ✅ **The upcoming-events list is narrowed too** (owner chose consistency over
+  showing every earning opportunity).
+- ✅ **Applies to the existing roster too** — nobody has an approved video, so
+  every current creator starts narrowed. Owner's explicit call.
+- ✅ One line explains it while narrowed: _"Start here — more events open up once
+  your first video is approved."_
+
+`narrowToStarter()` in `src/CreatorVideoTasks.tsx` is the single implementation —
+generic, and imported by `CreatorUpcomingEvents` too. Never re-implement the rule
+locally; three lists disagreeing about what a creator may work on is worse than
+any one of them being wrong.
+
 ## 6. PHASE 2 — the creator dashboard
 
 Files: `src/CreatorDashboard.tsx`, `src/CreatorFirstBookingChecklist.tsx`, plus
