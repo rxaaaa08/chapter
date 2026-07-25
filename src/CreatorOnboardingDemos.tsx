@@ -559,7 +559,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
     resources: 'The Google drive has highlights clips from our events. Join group chat to get instant updates from us.',
     events: 'Always read event details before creating promotions. Videos with proper details will get you more commissions. Press Open Details to continue...',
     closeSheet: '',
-    submit: 'Make a video using clips from our Google Drive, upload it to your Google Drive, and paste the link here. We review it and approve it.',
+    submit: 'Upload your reel to your Google Drive or Youtube and submit link here. We will review it & approve it. Press Submit to continue...',
     copy: 'Use this button to copy your custom link.',
     team: "We show every creator's performance and earnings as we strongly support transparency. Tap Finish to end the tour.",
   };
