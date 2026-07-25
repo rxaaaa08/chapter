@@ -425,6 +425,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
 
   // ── Details ──
   const [name, setName] = useState('');
+  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('');
   const [handle, setHandle] = useState('');
   const [upi, setUpi] = useState('');
   const [phone, setPhone] = useState('');
@@ -445,8 +446,8 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
   const handleValid = HANDLE_RE.test(normHandle);
   const upiValid = UPI_RE.test(upi.trim());
   const phoneValid = PHONE_RE.test(phone);
-  const canSubmit = name.trim().length > 0 && handleValid && upiValid && phoneValid && termsAccepted && !submitting;
-  const canAttemptSubmit = name.trim().length > 0 && handleValid && upi.trim().length > 0 && phoneValid && termsAccepted && !submitting;
+  const canSubmit = name.trim().length > 0 && gender !== '' && handleValid && upiValid && phoneValid && termsAccepted && !submitting;
+  const canAttemptSubmit = name.trim().length > 0 && gender !== '' && handleValid && upi.trim().length > 0 && phoneValid && termsAccepted && !submitting;
 
   const submit = async () => {
     setUpiValidationRequested(true);
@@ -467,6 +468,7 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
         },
         body: JSON.stringify({
           name: name.trim(),
+          gender,
           handle: normHandle,
           upi_id: upi.trim(),
           phone,
@@ -727,6 +729,35 @@ export default function CreatorOnboarding({ email, onComplete }: Props) {
               <div>
                 <label style={label}>Your name / brand</label>
                 <input style={{ ...input, marginTop: 6 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tamil Trekker" />
+              </div>
+
+              {/* Three fixed options rather than a text field, so the column stays
+                  queryable instead of filling with free-text variants. */}
+              <div>
+                <label style={label}>Gender</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 6 }}>
+                  {([['male', 'Male'], ['female', 'Female'], ['other', 'Other']] as const).map(([value, text]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setGender(value)}
+                      aria-pressed={gender === value}
+                      style={{
+                        padding: '12px 0',
+                        borderRadius: 12,
+                        border: '1.5px solid ' + (gender === value ? INK : HAIR),
+                        background: gender === value ? INK : '#fff',
+                        color: gender === value ? '#fff' : INK,
+                        fontSize: 14.5,
+                        fontWeight: 700,
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>

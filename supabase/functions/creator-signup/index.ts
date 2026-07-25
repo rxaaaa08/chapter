@@ -116,9 +116,14 @@ Deno.serve(async (req) => {
   const handle = normalizeHandle(body?.handle);
   const upi = String(body?.upi_id ?? '').trim();
   const phone = normalizePhone(body?.phone);
+  // Constrained to the three values the affiliates CHECK allows, so a crafted
+  // request can't put free text (or anything else) in the column.
+  const genderRaw = String(body?.gender ?? '').trim().toLowerCase();
+  const gender = ['male', 'female', 'other'].includes(genderRaw) ? genderRaw : '';
   const quiz = Array.isArray(body?.quiz_answers) ? body.quiz_answers.map((a: unknown) => String(a ?? '')) : [];
 
   if (name.length < 1 || name.length > 80) return reply(400, { error: 'Please enter your name.' }, cors);
+  if (!gender) return reply(400, { error: 'Please select your gender.' }, cors);
   if (!/^[a-z0-9._]{1,40}$/.test(handle)) return reply(400, { error: 'Pick a handle using letters, numbers, dots or underscores.' }, cors);
   if (!UPI_RE.test(upi)) return reply(400, { error: 'Enter a valid UPI ID (looks like name@bank) so we can pay you.' }, cors);
   if (!phone) return reply(400, { error: 'Enter a valid 10-digit phone number.' }, cors);
@@ -154,7 +159,7 @@ Deno.serve(async (req) => {
   // ── Insert. active=true (auto-activate), reviewed_at defaults NULL (= NEW). ──
   const { data: created, error: insertErr } = await admin
     .from('affiliates')
-    .insert({ handle, name, email, upi_id: upi, phone, active: true })
+    .insert({ handle, name, email, upi_id: upi, phone, gender, active: true })
     .select('id, handle')
     .single();
 
