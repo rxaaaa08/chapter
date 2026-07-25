@@ -126,6 +126,9 @@ export function mapDbEventToEvent(row: any): any {
     // Flat ₹ per ticket. When > 0 it overrides the percentage, so a creator sees
     // one figure regardless of the buyer's city or ticket type.
     affiliateCommission: Number(row.affiliate_commission ?? 0) || 0,
+    // The first video a new creator is asked to make. Creators with no approved
+    // video see only starter events until one is approved.
+    affiliateStarterTask: row.affiliate_starter_task ?? false,
     inviteOnly: row.invite_only ?? false,
     waitlistUrl: row.waitlist_url ?? undefined,
     inviteSlug: row.invite_slug ?? undefined,

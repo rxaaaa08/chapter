@@ -20,6 +20,7 @@ import { ChevronRight } from 'lucide-react';
 import { fetchEvents } from './supabase';
 import { formatCreatorEarn, resolveCreatorEarn, resolveDefaultFullPrice } from './eventPricing';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
+import { narrowToStarter } from './CreatorVideoTasks';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -50,15 +51,20 @@ type UpcomingEvent = {
   affiliateCommissionPct: number;
   upcomingDates: string[]; // sorted ISO date strings, today or later
   earn: number;            // commission per booking, 0 if not enabled
+  isStarter: boolean;      // the event new creators make their first video for
   // Everything the shared InvitePlanDetailsSheet reads, straight off the event.
   details: InvitePlanDetails;
 };
 
 type CreatorUpcomingEventsProps = {
   embedded?: boolean;
+  // True for a creator with no approved video: they see only the starter
+  // event(s), matching what their submission card asks of them. Defaults to
+  // false so any other caller keeps the full list.
+  starterOnly?: boolean;
 };
 
-export default function CreatorUpcomingEvents({ embedded = false }: CreatorUpcomingEventsProps) {
+export default function CreatorUpcomingEvents({ embedded = false, starterOnly = false }: CreatorUpcomingEventsProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [events, setEvents] = useState<UpcomingEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +109,7 @@ export default function CreatorUpcomingEvents({ embedded = false }: CreatorUpcom
               affiliateCommissionPct: pct,
               upcomingDates,
               earn: e.affiliateEnabled ? resolveCreatorEarn(e, priceFull) : 0,
+              isStarter: Boolean(e.affiliateStarterTask),
               // Same fields the invite flow feeds the sheet (App.tsx builds this
               // exact object as planDetails) — so the creator gets the identical sheet.
               details: {
@@ -117,13 +124,19 @@ export default function CreatorUpcomingEvents({ embedded = false }: CreatorUpcom
           // Keep only events that actually have a future date, nearest first.
           .filter(e => e.upcomingDates.length > 0)
           .sort((a, b) => a.upcomingDates[0].localeCompare(b.upcomingDates[0]));
-        if (!cancelled) { setEvents(mapped); setLoading(false); }
+        // Same narrowing rule as the submission card, so the two never disagree
+        // about which events a new creator is being pointed at.
+        const visible = narrowToStarter(mapped, !starterOnly);
+        if (!cancelled) { setEvents(visible); setLoading(false); }
       } catch {
         if (!cancelled) { setEvents([]); setLoading(false); }
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+    // Re-runs when starterOnly resolves: the dashboard can only know whether a
+    // creator has an approved video after their submissions load, so this starts
+    // false and may flip once. Re-fetching is cheap and keeps one code path.
+  }, [starterOnly]);
 
   // Freeze only the dashboard scroller while the sheet is open. The page shell
   // itself stays fixed, matching the /plans calendar interaction.

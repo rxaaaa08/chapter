@@ -39,8 +39,23 @@ const istToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkat
 export type CreatorTask = {
   slug: string;
   title: string;
-  date: string;   // YYYY-MM-DD — the nearest upcoming date for this event
+  date: string;     // YYYY-MM-DD — the nearest upcoming date for this event
+  isStarter: boolean; // the event new creators must make their first video for
 };
+
+// A creator with no approved video yet is held to the starter event(s) — their
+// first attempt should be the cheap weekly meetup, not a flagship trip. If no
+// starter event happens to be running, fall back to the nearest one so a new
+// creator is never left with nothing to do.
+//
+// Generic because the upcoming-events card applies the same rule to its own
+// rows; the two lists must narrow identically or they'd contradict each other.
+// Callers pass lists already sorted nearest-date-first, so [0] is the fallback.
+export function narrowToStarter<T extends { isStarter: boolean }>(items: T[], hasApprovedVideo: boolean): T[] {
+  if (hasApprovedVideo) return items;
+  const starters = items.filter(item => item.isStarter);
+  return starters.length > 0 ? starters : items.slice(0, 1);
+}
 
 export type CreatorSubmission = {
   id: string;
@@ -70,7 +85,12 @@ export async function loadCreatorTasks(): Promise<CreatorTask[]> {
         .map(d => String(d.date ?? '').slice(0, 10))
         .filter(d => d && d >= today)
         .sort();
-      return { slug: event.id as string, title: event.title as string, date: upcoming[0] ?? '' };
+      return {
+        slug: event.id as string,
+        title: event.title as string,
+        date: upcoming[0] ?? '',
+        isStarter: Boolean(event.affiliateStarterTask),
+      };
     })
     .filter((t: CreatorTask) => Boolean(t.date))
     .sort((a: CreatorTask, b: CreatorTask) => a.date.localeCompare(b.date));
@@ -145,9 +165,12 @@ type Props = {
   tasks: CreatorTask[];
   latest: Record<string, CreatorSubmission>;
   onSubmitted: (row: CreatorSubmission) => void;
+  // True while this creator has no approved video, i.e. the list they're seeing
+  // is deliberately narrowed to the starter event.
+  starterOnly?: boolean;
 };
 
-export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props) {
+export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterOnly = false }: Props) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string>('');
@@ -273,6 +296,14 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted }: Props)
           );
         })}
       </div>
+
+      {/* Without this, a creator seeing one event assumes that is all there is —
+          and never learns that approval is the thing that opens the rest. */}
+      {starterOnly && (
+        <div style={{ fontSize: 11.5, color: MUTED, marginTop: 8, lineHeight: 1.5 }}>
+          Start here — more events open up once your first video is approved.
+        </div>
+      )}
     </div>
   );
 }

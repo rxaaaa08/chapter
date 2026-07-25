@@ -19,7 +19,7 @@ import { supabase } from './supabase';
 import CreatorOnboarding from './CreatorOnboarding';
 import CreatorUpcomingEvents from './CreatorUpcomingEvents';
 import CreatorFirstBookingChecklist from './CreatorFirstBookingChecklist';
-import CreatorVideoTasks, { CreatorTasksCard, latestByTask, loadCreatorSubmissions, loadCreatorTasks, type CreatorSubmission, type CreatorTask } from './CreatorVideoTasks';
+import CreatorVideoTasks, { CreatorTasksCard, latestByTask, loadCreatorSubmissions, loadCreatorTasks, narrowToStarter, type CreatorSubmission, type CreatorTask } from './CreatorVideoTasks';
 import { CREATOR_FOOTAGE_URL, CREATOR_GROUP_CHAT_URL } from './creatorLinks';
 
 // Creator checklist state — action flags are persisted per creator id; the
@@ -47,7 +47,10 @@ const essentialTile = (url: string, title: string, helper: string, action: strin
     </span>
   </a>
 );
-const teamResourcesCard = (CREATOR_FOOTAGE_URL || CREATOR_GROUP_CHAT_URL) ? (
+// Takes starterOnly rather than reading state, so it can stay at module scope:
+// a creator with no approved video sees the same narrowed event list here as in
+// their submission card.
+const teamResourcesCard = (starterOnly: boolean) => (CREATOR_FOOTAGE_URL || CREATOR_GROUP_CHAT_URL) ? (
   <div>
     <div style={{ fontSize: 11.5, color: RES_MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>The Essentials</div>
     <div style={{ border: '1px solid #a1a1aa', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
@@ -69,7 +72,7 @@ const teamResourcesCard = (CREATOR_FOOTAGE_URL || CREATOR_GROUP_CHAT_URL) ? (
           </svg>,
         )}
       </div>
-      <CreatorUpcomingEvents embedded />
+      <CreatorUpcomingEvents embedded starterOnly={starterOnly} />
     </div>
   </div>
 ) : null;
@@ -743,6 +746,11 @@ export default function CreatorDashboard() {
   // in the "Your Tasks" card this checklist becomes once every step is done.
   const hasEverSubmitted = submissions.length > 0;
   const latestSubmissionByTask = latestByTask(submissions);
+  // Training wheels: until one of their videos is APPROVED, a creator is only
+  // asked for the starter event. Approval — not merely submitting — is the gate,
+  // so nobody's first attempt at a flagship trip goes out unseen.
+  const hasApprovedVideo = submissions.some(s => s.status === 'approved');
+  const visibleTasks = narrowToStarter<CreatorTask>(tasks, hasApprovedVideo);
   const checklistComplete = checklist.joinedChat
     && checklist.openedDrive
     && checklist.copied
@@ -834,7 +842,7 @@ export default function CreatorDashboard() {
             away: once the checklist is finished it becomes "Your Tasks", so the
             dashboard always answers "what should I do next?". */}
         {me.active && (checklistComplete
-          ? <CreatorTasksCard tasks={tasks} latest={latestSubmissionByTask} />
+          ? <CreatorTasksCard tasks={visibleTasks} latest={latestSubmissionByTask} />
           : (
             <CreatorFirstBookingChecklist
               joinedChat={checklist.joinedChat}
@@ -851,16 +859,17 @@ export default function CreatorDashboard() {
           ))}
 
         {/* The Essentials — footage/creatives to post + the creator group chat */}
-        {teamResourcesCard}
+        {teamResourcesCard(!hasApprovedVideo)}
 
         {/* Where the video actually gets sent. Sits below The Essentials on
             purpose: a creator needs the footage folder before they have a video
             to submit, so the order follows the actual sequence of work. */}
         {me.active && (
           <CreatorVideoTasks
-            tasks={tasks}
+            tasks={visibleTasks}
             latest={latestSubmissionByTask}
             onSubmitted={row => setSubmissions(prev => [row, ...prev])}
+            starterOnly={!hasApprovedVideo}
           />
         )}
 
