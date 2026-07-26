@@ -535,6 +535,9 @@ export default function AdminPanel() {
   const [openVideoCreator, setOpenVideoCreator] = useState<string | null>(null);
   const [videoNotes, setVideoNotes] = useState<Record<string, string>>({});
   const [reviewingVideo, setReviewingVideo] = useState<string>('');
+  // Creator signup funnel — how many Google accounts entered the /creator flow
+  // vs actually finished. Cleaner than auth.users, which mixes every login type.
+  const [signupFunnel, setSignupFunnel] = useState<{ started: number; completed: number }>({ started: 0, completed: 0 });
   // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
   const [affiliateStats, setAffiliateStats] = useState<Record<string, AffiliateStat>>({});
   const [addingAffiliate, setAddingAffiliate] = useState(false);
@@ -1210,15 +1213,18 @@ export default function AdminPanel() {
   // Pull roster + build per-creator rollups from clicks, attributed applications
   // and the sales ledger (admin has full RLS on all three).
   const loadAffiliatesData = async () => {
-    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }] = await Promise.all([
+    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }, { data: intentRows }] = await Promise.all([
       supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone, gender').order('created_at'),
       supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
       supabase.from('creator_submissions').select('id, affiliate_id, event_slug, event_date, video_url, status, review_note, submitted_at').order('submitted_at', { ascending: false }),
+      supabase.from('creator_signup_intents').select('email, completed_at'),
     ]);
     setAffiliates((affRows ?? []) as any);
     setCreatorVideos((videoRows ?? []) as CreatorVideoRow[]);
+    const intents = (intentRows ?? []) as Array<{ completed_at: string | null }>;
+    setSignupFunnel({ started: intents.length, completed: intents.filter(r => r.completed_at).length });
     const stats: Record<string, AffiliateStat> = {};
     const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 });
     (clickRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).clicks += 1; });
@@ -6861,6 +6867,16 @@ export default function AdminPanel() {
               {newCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>{newCount} new</span>}
               <div style={{ flex: 1 }} />
               <button style={s.btn()} onClick={() => setAddingAffiliate(true)}>+ Add Creator</button>
+            </div>
+
+            {/* Signup funnel — Google accounts that entered the /creator flow vs
+                finished. Only counts entries since this shipped; older creators
+                are backfilled as completed, so "didn't finish" starts at 0 and
+                grows only with real, post-launch drop-offs. */}
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12.5, color: '#555', background: '#f7f7f8', border: '1px solid #ececed', borderRadius: 10, padding: '10px 14px' }}>
+              <span><b style={{ color: '#111', fontSize: 14 }}>{signupFunnel.started}</b> entered the signup</span>
+              <span><b style={{ color: '#16a34a', fontSize: 14 }}>{signupFunnel.completed}</b> became creators</span>
+              <span><b style={{ color: signupFunnel.started - signupFunnel.completed > 0 ? '#dc2626' : '#999', fontSize: 14 }}>{signupFunnel.started - signupFunnel.completed}</b> didn't finish</span>
             </div>
 
             <div style={{ background: '#eef2ff', border: '1.5px solid #c7d2fe', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#3730a3', lineHeight: 1.55 }}>
