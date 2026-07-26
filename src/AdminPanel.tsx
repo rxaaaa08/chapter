@@ -454,6 +454,9 @@ export default function AdminPanel() {
   const [newFixedLabel, setNewFixedLabel] = useState('');
   const [newFixedAmount, setNewFixedAmount] = useState('');
   const [marketerStats, setMarketerStats] = useState<Record<string, { total: number; ticketCount: number }>>({});
+  // Outstanding (unpaid) marketer commissions, one row per event + date + marketer.
+  // Founder-only; feeds the Outstanding payouts view + per-date Settle buttons.
+  const [marketerPayouts, setMarketerPayouts] = useState<Array<{ event_slug: string; event_title: string | null; selected_date: string | null; marketer_id: string; marketer_name: string | null; tickets: number; amount: number }>>([]);
   const [eventMarketersMap, setEventMarketersMap] = useState<Record<string, string[]>>({});
   // Per-date booking counts for the events the logged-in marketer is assigned to.
   // Keyed slug → { 'YYYY-MM-DD' → { registered, reserved } }. Reserved is the
@@ -855,15 +858,17 @@ export default function AdminPanel() {
   // the event_marketers map for use in the event-edit form.
   const loadMarketersData = async () => {
     setMarketersLoading(true);
-    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }] = await Promise.all([
+    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }, { data: payoutRows }] = await Promise.all([
       supabase.from('call_marketers').select('id, email, name, commission_amount, active').order('created_at'),
       supabase.from('marketer_sales').select('marketer_id, amount'),
       supabase.from('event_marketers').select('event_slug, marketer_id'),
       supabase.rpc('get_performance_summary'),
       supabase.from('fixed_costs').select('*').order('created_at'),
+      supabase.rpc('get_marketer_payouts_outstanding'),
     ]);
     setMarketersLoading(false);
     setPerfSummary(perfRows ?? null);
+    setMarketerPayouts((payoutRows ?? []) as any);
     setFixedCosts((fcRows ?? []) as any);
     setMarketers((mkRows ?? []) as any);
     const stats: Record<string, { total: number; ticketCount: number }> = {};
@@ -882,6 +887,17 @@ export default function AdminPanel() {
       map[r.event_slug] = arr;
     });
     setEventMarketersMap(map);
+  };
+
+  // Settle every unpaid marketer commission for one event + date (founder-only
+  // RPC stamps paid_out_at). Clears that date from Outstanding payouts and drops
+  // the tickets + owed from each marketer. Not reversible from the UI.
+  const settleMarketerPayout = async (eventSlug: string, selectedDate: string | null, label: string, tickets: number, amount: number) => {
+    if (!window.confirm(`Mark ${label} as paid out?\n\nThis clears ${tickets} ${tickets === 1 ? 'ticket' : 'tickets'} (₹${Math.round(amount).toLocaleString('en-IN')}) from outstanding payouts. It can't be undone here.`)) return;
+    const { data, error } = await supabase.rpc('settle_marketer_payouts', { p_event_slug: eventSlug, p_selected_date: selectedDate });
+    if (error) { alert('Could not settle: ' + error.message); return; }
+    logAdminAction('marketer_payout_settle', 'marketer_sales', null, { event_slug: eventSlug, selected_date: selectedDate, ...(data as any) });
+    await loadMarketersData();
   };
 
   // Load per-date booking counts for the events the logged-in marketer is
@@ -6609,6 +6625,30 @@ export default function AdminPanel() {
               const forecast: any[] = (ps.forecast || []).map((f: any) => ({ ...f, net: num(f.profit) - fixed }));
               const thisMonthNet = num(ps.this_month_profit) - fixed;
               const maxAbs = Math.max(1, ...forecast.map(f => Math.abs(num(f.net))));
+              // Outstanding marketer payouts (founder-only RPC), grouped two ways:
+              // per-marketer "unpaid tickets + owed", and per event+date for the
+              // settle list. Both shrink the moment a date is settled.
+              const owedByMk = new Map<string, { name: string; tickets: number; amount: number }>();
+              marketerPayouts.forEach(r => {
+                const cur = owedByMk.get(r.marketer_id) ?? { name: r.marketer_name || '—', tickets: 0, amount: 0 };
+                cur.tickets += num(r.tickets); cur.amount += num(r.amount);
+                owedByMk.set(r.marketer_id, cur);
+              });
+              const owedRows = Array.from(owedByMk.values()).sort((a, b) => b.amount - a.amount);
+              const byDate = new Map<string, { event_slug: string; selected_date: string | null; title: string; tickets: number; amount: number; splits: Array<{ name: string; tickets: number }> }>();
+              marketerPayouts.forEach(r => {
+                const key = r.event_slug + '||' + (r.selected_date ?? '');
+                const cur = byDate.get(key) ?? { event_slug: r.event_slug, selected_date: r.selected_date, title: (r.event_title || r.event_slug || '').trim(), tickets: 0, amount: 0, splits: [] };
+                cur.tickets += num(r.tickets); cur.amount += num(r.amount);
+                cur.splits.push({ name: r.marketer_name || '—', tickets: num(r.tickets) });
+                byDate.set(key, cur);
+              });
+              const payoutDates = Array.from(byDate.values()).sort((a, b) => (a.selected_date || '').localeCompare(b.selected_date || ''));
+              const fmtPayoutDate = (d: string | null) => {
+                if (!d) return 'No date set';
+                const dt = new Date(d + 'T00:00:00');
+                return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+              };
               return (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -6712,20 +6752,19 @@ export default function AdminPanel() {
                     </div>
                   </div>
 
-                  {/* Marketer ROI */}
+                  {/* Conversion Rate — lifetime. Leads vs. conversions; never
+                      resets when a payout is settled. */}
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Marketer ROI</div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Leads assigned vs. how many they converted (Conv = sold ÷ leads), plus the revenue they generated and commission earned.</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Conversion Rate</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Lifetime. Leads assigned vs. how many they converted (Conv = sold ÷ leads). This does not reset when you settle a payout.</div>
                     <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 680 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 420 }}>
                         <thead>
                           <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                             <th style={{ textAlign: 'left', padding: '8px 16px' }}>Marketer</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px' }}>Leads</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Sold</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Conv</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Revenue generated</th>
-                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Commission</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Converted</th>
+                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Conv</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -6738,9 +6777,7 @@ export default function AdminPanel() {
                               <td style={{ padding: '10px 16px', fontWeight: 600, color: '#111' }}>{m.name}{!m.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>inactive</span>}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{assigned}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{sold}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: conv == null ? '#bbb' : conv >= 40 ? '#16a34a' : conv >= 15 ? '#d97706' : '#dc2626' }}>{conv == null ? '—' : `${conv}%`}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{inr(m.revenue_generated)}</td>
-                              <td style={{ padding: '10px 16px', textAlign: 'right', color: '#555' }}>{inr(m.commission)}</td>
+                              <td style={{ padding: '10px 16px', textAlign: 'right', color: conv == null ? '#bbb' : conv >= 40 ? '#16a34a' : conv >= 15 ? '#d97706' : '#dc2626' }}>{conv == null ? '—' : `${conv}%`}</td>
                             </tr>
                             );
                           })}
@@ -6749,30 +6786,53 @@ export default function AdminPanel() {
                     </div>
                   </div>
 
-                  {/* Fixed costs ledger */}
+                  {/* Outstanding payouts — only unsettled events. Unpaid tickets +
+                      money owed per marketer, plus a per-date Settle action. Both
+                      the ticket count and the amount drop when a date is settled. */}
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Monthly Fixed Costs</div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Recurring tools/subscriptions (AiSensy, Claude, …). These are subtracted from your monthly profit above.</div>
-                    <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '12px 16px' }}>
-                      {fixedCosts.length === 0 && <div style={{ color: '#bbb', fontSize: 13, marginBottom: 10 }}>No fixed costs yet.</div>}
-                      {fixedCosts.map(fc => (
-                        <div key={fc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #f5f5f0' }}>
-                          <span style={{ flex: 1, fontSize: 13, color: '#111' }}>{fc.label}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>{inr(fc.amount)}/mo</span>
-                          <button onClick={() => removeFixedCost(fc.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12 }}>Remove</button>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Marketer Payouts</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Only unsettled events. Unpaid tickets and money owed — both drop the moment you settle a date below.</div>
+                    <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto', marginBottom: 12 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 420 }}>
+                        <thead>
+                          <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <th style={{ textAlign: 'left', padding: '8px 16px' }}>Marketer</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid tickets</th>
+                            <th style={{ textAlign: 'right', padding: '8px 16px' }}>Owed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {owedRows.length === 0 && (
+                            <tr><td colSpan={3} style={{ padding: '14px 16px', color: '#bbb', fontSize: 13 }}>Nothing owed — every date is settled.</td></tr>
+                          )}
+                          {owedRows.map((r, i) => (
+                            <tr key={i} style={{ borderTop: '1px solid #f5f5f0' }}>
+                              <td style={{ padding: '10px 16px', fontWeight: 600, color: '#111' }}>{r.name}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{r.tickets}</td>
+                              <td style={{ padding: '10px 16px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{inr(r.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {payoutDates.length > 0 && (
+                      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 2px 8px' }}>Settle a date once you've paid the marketers for it</div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {payoutDates.map((d) => (
+                        <div key={d.event_slug + '||' + (d.selected_date ?? '')} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '12px 14px' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 650, fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</div>
+                            <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{fmtPayoutDate(d.selected_date)} · {d.tickets} {d.tickets === 1 ? 'ticket' : 'tickets'} · {d.splits.map(s => `${s.name} ${s.tickets}`).join(', ')}</div>
+                          </div>
+                          <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 15, color: '#111', whiteSpace: 'nowrap' }}>{inr(d.amount)}</div>
+                          <button
+                            onClick={() => settleMarketerPayout(d.event_slug, d.selected_date, `${d.title} · ${fmtPayoutDate(d.selected_date)}`, d.tickets, d.amount)}
+                            disabled={marketersLoading}
+                            style={{ whiteSpace: 'nowrap', padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: marketersLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: marketersLoading ? 0.55 : 1 }}
+                          >Settle</button>
                         </div>
                       ))}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                        <input value={newFixedLabel} onChange={e => setNewFixedLabel(e.target.value)} placeholder="e.g. AiSensy"
-                          style={{ flex: 1, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }} />
-                        <input type="number" min={0} value={newFixedAmount} onChange={e => setNewFixedAmount(e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} placeholder="₹/mo"
-                          style={{ width: 90, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }} />
-                        <button style={s.btn()} onClick={addFixedCost}>Add</button>
-                      </div>
-                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0ea', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                        <span style={{ color: '#888', fontWeight: 600 }}>Total fixed costs</span>
-                        <span style={{ fontWeight: 700, color: '#111' }}>{inr(ps.fixed_costs_total)}/mo</span>
-                      </div>
                     </div>
                   </div>
 
@@ -6818,24 +6878,20 @@ export default function AdminPanel() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#fafafa', borderBottom: '1.5px solid #eee' }}>
-                    {['Name', 'Email', '₹ / ticket', 'Tickets sold', 'Total earned', 'Status', ''].map(h => (
+                    {['Name', 'Email', 'Status', ''].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700, color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {marketers.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#888' }}>No marketers yet. Click "+ Add Marketer".</td></tr>
+                    <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#888' }}>No marketers yet. Click "+ Add Marketer".</td></tr>
                   )}
                   {marketers.map(mk => {
-                    const stats = marketerStats[mk.id] ?? { total: 0, ticketCount: 0 };
                     return (
                       <tr key={mk.id} style={{ borderBottom: '1px solid #f4f4f4', opacity: mk.active ? 1 : 0.5 }}>
                         <td style={{ padding: '12px 14px', fontWeight: 600 }}>{mk.name}</td>
                         <td style={{ padding: '12px 14px', color: '#666' }}>{mk.email}</td>
-                        <td style={{ padding: '12px 14px' }}>₹{mk.commission_amount}</td>
-                        <td style={{ padding: '12px 14px' }}>{stats.ticketCount}</td>
-                        <td style={{ padding: '12px 14px', fontWeight: 700 }}>₹{stats.total.toLocaleString('en-IN')}</td>
                         <td style={{ padding: '12px 14px' }}>
                           <span style={{ background: mk.active ? '#dcfce7' : '#fee2e2', color: mk.active ? '#15803d' : '#b91c1c', padding: '3px 9px', borderRadius: 6, fontWeight: 700, fontSize: 11 }}>
                             {mk.active ? 'Active' : 'Inactive'}
@@ -6852,6 +6908,40 @@ export default function AdminPanel() {
                 </tbody>
               </table>
             </div>
+
+            {/* Monthly Fixed Costs — kept last in the tab per owner. Lives outside
+                the money IIFE now, so it defines its own ₹ formatter + reads the
+                total from perfSummary. */}
+            {(() => {
+              const fcInr = (n: any) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+              return (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Monthly Fixed Costs</div>
+                <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Recurring tools/subscriptions (AiSensy, Claude, …). These are subtracted from your monthly profit above.</div>
+                <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '12px 16px' }}>
+                  {fixedCosts.length === 0 && <div style={{ color: '#bbb', fontSize: 13, marginBottom: 10 }}>No fixed costs yet.</div>}
+                  {fixedCosts.map(fc => (
+                    <div key={fc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #f5f5f0' }}>
+                      <span style={{ flex: 1, fontSize: 13, color: '#111' }}>{fc.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>{fcInr(fc.amount)}/mo</span>
+                      <button onClick={() => removeFixedCost(fc.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12 }}>Remove</button>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                    <input value={newFixedLabel} onChange={e => setNewFixedLabel(e.target.value)} placeholder="e.g. AiSensy"
+                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }} />
+                    <input type="number" min={0} value={newFixedAmount} onChange={e => setNewFixedAmount(e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} placeholder="₹/mo"
+                      style={{ width: 90, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }} />
+                    <button style={s.btn()} onClick={addFixedCost}>Add</button>
+                  </div>
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0ea', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                    <span style={{ color: '#888', fontWeight: 600 }}>Total fixed costs</span>
+                    <span style={{ fontWeight: 700, color: '#111' }}>{fcInr(perfSummary?.fixed_costs_total)}/mo</span>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
           </div>
         )}
 
