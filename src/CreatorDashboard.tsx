@@ -343,6 +343,17 @@ export default function CreatorDashboard() {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
+  // Funnel capture: once a Google account has settled on the /creator surface,
+  // record that they entered the creator flow — whether they clicked "Register"
+  // or "Log in" (people misclick). The RPC reads the email from the auth token
+  // and keeps one row per email, so this is a safe fire-and-forget. Scoped to
+  // this component, so admins/marketers on their own dashboards never count.
+  // Kept OUT of onAuthStateChange for the same token-race reason as the lookup.
+  useEffect(() => {
+    if (!authReady || !email) return;
+    void supabase.rpc('record_creator_signup_intent').then(() => {}, () => {});
+  }, [authReady, email]);
+
   // Look up the creator row once auth has settled (and again on manual retry).
   // Failures surface as an error state with a Retry button — they must NEVER be
   // silently treated as "not a creator". An empty result on the first try right
