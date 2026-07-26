@@ -250,15 +250,15 @@ export default function AdminPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings'>(
+  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'content' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings'>(
     () => {
       const stored = localStorage.getItem('adminTab');
       // 'affiliates' is no longer its own tab — Creators now live inside Performance.
       if (stored === 'affiliates') return 'marketers';
-      return (stored as 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') ?? 'people';
+      return (stored as 'trips' | 'flow' | 'people' | 'content' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') ?? 'people';
     }
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: 'trips' | 'flow' | 'people' | 'content' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -820,6 +820,12 @@ export default function AdminPanel() {
       .order('created_at', { ascending: false });
     if (data) setPayuPayments(data as PayuPayment[]);
   };
+
+  // Content tab (Creators + Creator videos) self-loads, so a refresh that lands
+  // on a remembered Content tab isn't stuck with empty cards until you click away.
+  useEffect(() => {
+    if (adminRole === 'admin' && tab === 'content') loadAffiliatesData();
+  }, [adminRole, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch ALL rows from a table, paging past PostgREST's 1000-row response
   // cap. Without this the People tab silently showed only the most recent
@@ -2823,7 +2829,8 @@ export default function AdminPanel() {
         {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); if (adminRole === 'admin') { loadMarketersData(); loadAffiliatesData(); loadManagersCard(); } else if (currentManager) { loadManagerTeam(currentManager.id); } }}>Performance</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'content')} onClick={() => { switchTab('content'); loadAffiliatesData(); }}>Content</button>}
+        {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); if (adminRole === 'admin') { loadMarketersData(); loadManagersCard(); } else if (currentManager) { loadManagerTeam(currentManager.id); } }}>Performance</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Briefing</button>}
@@ -6848,8 +6855,8 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* ── CREATORS (AFFILIATES) — a card inside the Performance tab ─────── */}
-        {tab === 'marketers' && adminRole === 'admin' && (() => {
+        {/* ── CREATORS (AFFILIATES) — a card inside the Content tab ────────── */}
+        {tab === 'content' && adminRole === 'admin' && (() => {
           // 2 decimals — matches the creator dashboard so small commissions
           // (e.g. 8% of a ₹1 ticket = ₹0.08) aren't hidden as ₹0 in Earned/Unpaid.
           const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -6968,8 +6975,8 @@ export default function AdminPanel() {
           );
         })()}
 
-        {/* ── CREATOR VIDEOS — who is actually working (Performance, admin) ─── */}
-        {tab === 'marketers' && adminRole === 'admin' && (() => {
+        {/* ── CREATOR VIDEOS — who is actually working (Content tab, admin) ── */}
+        {tab === 'content' && adminRole === 'admin' && (() => {
           const fmtDay = (iso: string) => {
             if (!iso) return '';
             const d = new Date(iso);
