@@ -1068,7 +1068,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; girlsOnly?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; girlsOnly?: boolean; isOpenEvent?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
@@ -1175,14 +1175,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     if (lookupPhone.length !== 10) return null;
     const { data: eventRow } = await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, booking_url, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .eq('invite_slug', slug)
       .maybeSingle();
 
     // Fall back to slug match if invite_slug didn't find it
     const event = eventRow ?? (await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, booking_url, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .eq('slug', slug)
       .maybeSingle()).data;
     if (!event) return null;
@@ -1330,6 +1330,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       priceAdvance: isFullPay ? priceFull : (isBalancePayment ? balanceAmount : priceAdvance),
       priceFull,
       paymentMode: event.payment_mode ?? 'split',
+      // Open events (booking_url = 'payu-hosted') have no invitation step. Leads
+      // reach this invite chat only via cart-abandon / recovery deep-links, so the
+      // greeting copy must drop invite framing ("your vibe matched our club", etc.).
+      isOpenEvent: event.booking_url === 'payu-hosted',
       // GalCode events (girls-only flag in quick_info) get a "galcode" chat header.
       girlsOnly: Array.isArray(event.quick_info) && event.quick_info.some((i: any) =>
         ['girls only event', "girl's only event", 'girls_only_event'].includes(String(i.label ?? '').trim().toLowerCase())
@@ -2507,8 +2511,30 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               return `${dayName}, ${month} ${day}${suffix}`;
             };
             const meetingPointDateFormatted = meetingPointDate ? formatMeetingDate(meetingPointDate) : null;
+            // Step index 2 is the balance-settle step — used for the "settle balance
+            // by {date}" line an open-event advance-paid lead sees.
+            const balanceDate = nativeEventData?.bookingSteps?.[2]?.date ?? null;
+            const balanceDateFormatted = balanceDate ? formatMeetingDate(balanceDate) : null;
+            const greetTitle = nativeEventData?.title ?? 'this plan';
 
-            const botGreeting = isFullyPaid
+            // Open events have no invitation step (leads arrive here only via a
+            // cart-abandon / recovery deep-link), so the copy drops all invite
+            // framing — no "your vibe matched our club" or "invitation does not
+            // reserve your spot" — and leans on genuine first-come-first-served
+            // urgency instead. Invite-only events keep their original ladder below.
+            const openGreeting = isFullyPaid
+              ? `Hi ${firstName}! You're all set for ${greetTitle} 🎉 We're sorting out the final logistics now.\n\nJust join the group chat & we'll share all the details there${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' soon'}.`
+              : isSoldOut
+              ? `Hey ${firstName}, all ${totalSpots} spots for ${greetTitle} are taken 😔\n\nSpots here are first come, first served — and a spot is only confirmed once payment's done.\n\nJoin the waitlist & we'll remind you about our next plan!`
+              : isPaid
+              ? `Hi ${firstName}, your spot for ${greetTitle} is locked in 🙌\n\nSettle balance${balanceDateFormatted ? ` by ${balanceDateFormatted}` : ' a few days before the plan'} to complete your booking. We'll add you to the plan group chat & share meeting-point details closer to the day.\n\nWhat would you like to do now?`
+              : (inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50)
+              ? `Hi ${firstName}! You're 1 step away from confirming your spot for ${greetTitle}!\n\nSpots here are first come, first served — and your spot is only confirmed once payment's done.\n\n${inviteReservedCount} of ${totalSpots} spots are already taken, so grab yours before it's gone! What would you like to do now?`
+              : (inviteReservedCount != null && totalSpots != null)
+              ? `Hi ${firstName}! You're 1 step away from confirming your spot for ${greetTitle}!\n\nSpots here are first come, first served — and your spot is only confirmed once payment's done. What would you like to do now?`
+              : `Hi ${firstName}! What would you like to do now?`;
+
+            const inviteGreeting = isFullyPaid
               ? `Hi ${firstName}! We can't wait to see you in ${nativeEventData?.title ?? 'this trip'}. We're currently sorting out all the final logistics…\n\nJust join the group chat & we will send all details there${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' soon'}.`
               : isSoldOut
               ? `Hey ${firstName}, we really wanted you in this plan but...\n\nAll ${totalSpots} spots in ${nativeEventData?.title ?? 'this plan'} are already reserved.\n\nPlease note — your spot is only reserved once the advance is settled.\n\nJoin the waitlist & we'll let you know if someone cancels their spot. We hope to see you in the future!`
@@ -2519,6 +2545,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               : (inviteReservedCount != null && totalSpots != null)
               ? `Hi ${firstName}, out of ${applicationPhrase} applications, your vibe matched our club perfectly!\n\nBut please note — invitation does not reserve your spot. We follow 1st come - 1st served basis.\n\nSpots are reserved for those who settle ${isFullPay ? 'payment' : 'the advance'} first. What would you like to do?`
               : `Hi ${firstName}! What would you like to do now?`;
+
+            const botGreeting = nativeEventData?.isOpenEvent ? openGreeting : inviteGreeting;
 
             const hasEssentials = !!(chatEventQuickInfo.length > 0 || chatEventTransportPlan[0]?.time || nativeEventData?.firstDate);
 
