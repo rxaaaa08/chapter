@@ -14,10 +14,11 @@
 //
 // Writes go through the submit_creator_video() RPC — creators have no INSERT
 // policy on creator_submissions, so status/review columns can never be forged.
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { supabase } from './supabase';
 import { fetchEvents } from './supabase';
 import { resolveDefaultFullPrice } from './eventPricing';
+import CreatorInspiration from './CreatorInspiration';
 
 const INK = '#111';
 const MUTED = '#9a9aa2';
@@ -177,6 +178,16 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterO
   // Tasks whose input the creator has deliberately reopened to send another
   // video (repeat submissions are allowed — the server caps them at 10).
   const [reopened, setReopened] = useState<Record<string, boolean>>({});
+  // The "Watch our videos" inspiration panel (full-screen, opened from the link
+  // at the bottom of this card). It portals into the MobileShell overlay layer
+  // so it stays clipped to the phone frame instead of covering the whole window.
+  const [showInspiration, setShowInspiration] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const shell = rootRef.current?.closest<HTMLElement>('[data-mobile-shell]');
+    setOverlayHost(shell?.querySelector<HTMLElement>('[data-mobile-shell-overlay-host]') ?? null);
+  }, []);
 
   if (tasks.length === 0) return null;
 
@@ -258,7 +269,7 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterO
   );
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 10 }}>Submit your video</div>
       <div style={{ border: '1px solid #a1a1aa', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
         {tasks.map((task, i) => {
@@ -295,6 +306,21 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterO
             </div>
           );
         })}
+
+        {/* Inspiration prompt — a footer row INSIDE the card, below the submit
+            button, so it reads as "stuck? here's what good looks like" without
+            competing with the submit action. Styled to match the footer's
+            "Contact Us" deeplink (muted lead text + blue underlined link). */}
+        <div style={{ padding: '0 14px 14px', marginTop: -2, color: '#57534e', fontSize: 13.5, lineHeight: 1.6, textAlign: 'center' }}>
+          Need inspiration?{' '}
+          <button
+            type="button"
+            onClick={() => setShowInspiration(true)}
+            style={{ padding: 0, border: 'none', background: 'none', color: '#2563eb', fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}
+          >
+            Watch our videos
+          </button>
+        </div>
       </div>
 
       {/* Without this, a creator seeing one event assumes that is all there is.
@@ -305,6 +331,8 @@ export default function CreatorVideoTasks({ tasks, latest, onSubmitted, starterO
           More events with higher commissions open up once your first video is approved.
         </div>
       )}
+
+      <CreatorInspiration open={showInspiration} onClose={() => setShowInspiration(false)} host={overlayHost} />
     </div>
   );
 }
