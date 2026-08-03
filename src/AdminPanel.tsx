@@ -1,6 +1,7 @@
 // chaptera admin panel
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, parseHeroImages, fetchEventCounts, fetchEventDateCounts } from './supabase';
+import { dateKeyInTimeZone, isoDateKey, payuTripDateKey } from './dateKeys';
 
 // Journey Map tab (React Flow) — lazy so the map library only downloads when
 // the tab is opened, never in the customer-facing bundle.
@@ -603,6 +604,10 @@ export default function AdminPanel() {
   const [applicationsStatusFilter, setApplicationsStatusFilter] = useState<'all' | string>('all');
   // 'all' | 'unassigned' | <marketer id>. Admin-only filter.
   const [applicationsMarketerFilter, setApplicationsMarketerFilter] = useState<'all' | string>('all');
+  // People tab: whether the collapsed "Paid · past dates" fold is expanded.
+  // Fully-paid people whose event date has passed are tucked away by default
+  // so the working list stays the current/upcoming cohort.
+  const [pastPaidExpanded, setPastPaidExpanded] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
   const [resendingDetailsId, setResendingDetailsId] = useState<string | null>(null);
@@ -1248,6 +1253,27 @@ export default function AdminPanel() {
     }
     setEventMarketersMap(prev => ({ ...prev, [eventSlug]: nextIds }));
     logAdminAction('event_marketers_set', 'event_marketers', null, { event_slug: eventSlug, marketer_ids: nextIds });
+  };
+
+  // Manual "Reshuffle leads": force a full, even round-robin re-deal of the
+  // event's unpaid leads across its active marketers. Unlike toggling the
+  // chips (which only redistributes orphans), this deliberately moves leads a
+  // marketer may be mid-conversation with, so it always asks first. Paid leads
+  // never move. Runs the founders-only force_reshuffle_event_marketers RPC.
+  const [reshufflingSlug, setReshufflingSlug] = useState<string | null>(null);
+  const reshuffleEventMarketers = async (eventSlug: string) => {
+    const count = (eventMarketersMap[eventSlug] ?? []).length;
+    if (count === 0) { showToast('Assign at least one marketer first'); return; }
+    if (!window.confirm(
+      `Reshuffle all unpaid leads for this event evenly across the ${count} assigned marketer${count === 1 ? '' : 's'}?\n\n` +
+      `Already-paid leads stay put. Leads someone is mid-conversation with can move to a different marketer.`
+    )) return;
+    setReshufflingSlug(eventSlug);
+    const { data, error } = await supabase.rpc('force_reshuffle_event_marketers', { p_event_slug: eventSlug });
+    setReshufflingSlug(null);
+    if (error) { showToast('Reshuffle failed: ' + error.message); return; }
+    logAdminAction('event_marketers_reshuffle', 'event_marketers', null, { event_slug: eventSlug, moved: data });
+    showToast(`Reshuffled ${data ?? 0} lead${data === 1 ? '' : 's'} across ${count} marketer${count === 1 ? '' : 's'}`);
   };
 
   // Save the per-event marketer commission (₹ per fully-paid ticket). NULL
@@ -3131,6 +3157,8 @@ export default function AdminPanel() {
                                 onChange={ids => setEventMarketers(trip.slug, ids)}
                                 commission={editingTrip.marketer_commission ?? null}
                                 onSaveCommission={val => setEventCommission(trip.slug, val)}
+                                onReshuffle={() => reshuffleEventMarketers(trip.slug!)}
+                                reshuffling={reshufflingSlug === trip.slug}
                                 onOpen={loadMarketersData}
                                 s={s}
                               />
@@ -4126,6 +4154,53 @@ export default function AdminPanel() {
                     : a.assigned_marketer_id === applicationsMarketerFilter);
             return eventMatch && dateMatch && statusMatch && searchMatch && marketerMatch;
           });
+          // ── "Paid · past dates" fold (owner request 2026-08-02) ─────────────
+          // Fully-paid people whose event date has already passed are done, so
+          // they get collapsed under a dropdown at the bottom of the list —
+          // keeping the main list the current/upcoming cohort the callers still
+          // need to work, instead of mixing past attendees with fresh leads.
+          // Only folds when the view is broad: skipped in Payments mode, and
+          // whenever a specific date or a paid status is explicitly filtered
+          // (there the user is deliberately looking at those very people).
+          const todayDateKey = dateKeyInTimeZone(new Date(), 'Asia/Kolkata');
+          const paidEventDateKey = (a: any): number | null => {
+            // selected_date is the current cohort and intentionally wins: when
+            // the founder postpones a date, the bulk repoint moves paid people
+            // with it. PayU remains an immutable fallback for legacy/missing
+            // application dates, not an override for a deliberate postponement.
+            const applicationDateKey = isoDateKey(a.selected_date);
+            if (applicationDateKey !== null) return applicationDateKey;
+            const successfulPayments = paymentsFor(a.phone, a.event_slug).all
+              .filter((payment: PayuPayment) => payment.status === 'success')
+              .sort((left: PayuPayment, right: PayuPayment) =>
+                String(left.created_at ?? '').localeCompare(String(right.created_at ?? ''))
+              );
+            for (const payment of successfulPayments) {
+              const paymentDateKey = payuTripDateKey(payment);
+              if (paymentDateKey !== null) return paymentDateKey;
+            }
+            return null;
+          };
+          const isPastPaid = (a: any) => {
+            if (a.status !== 'fully_paid' || todayDateKey === null) return false;
+            const eventDateKey = paidEventDateKey(a);
+            return eventDateKey !== null && eventDateKey < todayDateKey;
+          };
+          const collapseActive = peopleMode !== 'payments'
+            && applicationsDateFilter === 'all'
+            && applicationsStatusFilter !== 'fully_paid'
+            && applicationsStatusFilter !== 'advance_paid';
+          const pastPaidApps = collapseActive ? filteredApps.filter(isPastPaid) : [];
+          const activeApps   = collapseActive ? filteredApps.filter(a => !isPastPaid(a)) : filteredApps;
+          // The rows the table actually renders: active leads, then (if any past
+          // paid) a divider toggle, then the past-paid rows only when expanded.
+          const rowItems: any[] = collapseActive
+            ? [
+                ...(activeApps.length ? activeApps : (pastPaidApps.length ? [{ __emptyActive: true }] : [])),
+                ...(pastPaidApps.length ? [{ __divider: true }] : []),
+                ...(pastPaidExpanded ? pastPaidApps : []),
+              ]
+            : filteredApps;
           // Dates that actually have leads (respecting the current event filter),
           // so the date dropdown only ever offers dates worth picking. Formatted
           // for the option labels; sorted chronologically.
@@ -4901,7 +4976,31 @@ export default function AdminPanel() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredApps.map(app => {
+                      {rowItems.map((app: any) => {
+                        // Divider toggle for the collapsed "Paid · past dates" fold.
+                        if (app.__divider) return (
+                          <tr key="__pastpaid_divider" style={{ background: '#fafafa', borderTop: '1px solid #ececec' }}>
+                            <td colSpan={headers[peopleMode].length} style={{ padding: 0 }}>
+                              <button
+                                type="button"
+                                onClick={() => setPastPaidExpanded(v => !v)}
+                                style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}
+                              >
+                                <span style={{ fontSize: 10, color: '#aaa' }}>{pastPaidExpanded ? '▾' : '▸'}</span>
+                                Paid · past dates ({pastPaidApps.length})
+                                <span style={{ fontWeight: 500, color: '#bbb' }}>— {pastPaidExpanded ? 'hide' : 'show'}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                        // Shown when every current lead is cleared but past-paid remain.
+                        if (app.__emptyActive) return (
+                          <tr key="__emptyActive">
+                            <td colSpan={headers[peopleMode].length} style={{ padding: '16px 12px', textAlign: 'center', color: '#aaa', fontSize: 13 }}>
+                              No current leads to work — all caught up 🎉
+                            </td>
+                          </tr>
+                        );
                         const callNt  = callNotesEdits[app.id]  ?? app.call_notes  ?? '';
                         const pays = paymentsFor(app.phone, app.event_slug);
                         const eventTitle = titleBySlug[app.event_slug] ?? app.event_slug ?? '—';
@@ -7981,13 +8080,15 @@ export default function AdminPanel() {
 // Renders below the TripForm. Picking marketers writes to event_marketers;
 // the DB redistribute trigger handles fanning existing applications across
 // the new set (no client-side redistribute needed).
-function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commission, onSaveCommission, onOpen, s }: {
+function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commission, onSaveCommission, onReshuffle, reshuffling, onOpen, s }: {
   eventSlug: string;
   marketers: Array<{ id: string; name: string; email: string; reviewed_at: string | null }>;
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   commission: number | null;
   onSaveCommission: (val: number | null) => void;
+  onReshuffle: () => void;
+  reshuffling: boolean;
   onOpen?: () => void;
   s: any;
 }) {
@@ -8004,8 +8105,27 @@ function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commi
   const commDirty = commValid && parsedComm !== commission;
   return (
     <div style={{ marginTop: 18, padding: 16, background: '#fafafa', borderRadius: 12, border: '1.5px solid #eee' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-        Marketers on this event
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>
+          Marketers on this event
+        </div>
+        {/* Force an even round-robin re-deal of all unpaid leads across the
+            selected marketers. Deliberately moves in-progress leads, so the
+            handler confirms first. Paid leads never move. */}
+        <button
+          type="button"
+          onClick={onReshuffle}
+          disabled={reshuffling || selectedIds.length === 0}
+          title={selectedIds.length === 0 ? 'Assign at least one marketer first' : 'Re-split all unpaid leads evenly across the selected marketers'}
+          style={{
+            padding: '6px 12px', borderRadius: 99, border: '1.5px solid #d7d7d7',
+            background: '#fff', color: '#555', fontWeight: 700, fontSize: 12,
+            cursor: (reshuffling || selectedIds.length === 0) ? 'not-allowed' : 'pointer',
+            opacity: (reshuffling || selectedIds.length === 0) ? 0.55 : 1, whiteSpace: 'nowrap',
+          }}
+        >
+          {reshuffling ? 'Reshuffling…' : '↻ Reshuffle leads'}
+        </button>
       </div>
       {marketers.length === 0 ? (
         <div style={{ fontSize: 13, color: '#888' }}>No active marketers. Add them in the Marketers tab.</div>
