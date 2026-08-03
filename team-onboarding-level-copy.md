@@ -1,14 +1,17 @@
-# Marketer onboarding — full level copy (draft for owner review)
+# Core team onboarding — full level copy (historical draft)
 
 _Draft 1, 2026-07-21. Companion to `marketer-self-serve-onboarding-proposal.md`.
 Every mechanism described below was verified against the code before writing
 (retarget-check, cart-abandonment, resendInviteDetails, date-shift/waitlist).
 Edit freely — this is meant to sound like you, not like me._
 
+> Historical source draft. The shipped, owner-reviewed wording lives in Part E
+> of `TEAM-ONBOARDING-COMPLETE-HANDOFF.md`; use that document for implementation.
+
 **Demo event used throughout:** the real **"Chill Sunday Meetup"** — the event
 a new marketer is actually assigned to first (owner's call). Real details,
 verified in prod 2026-07-21: ₹359, **single payment**, meeting area
-Nungambakkam at 11:00 AM, own transport, group of 22, runs on Sundays. Mock
+Nungambakkam at 11:00 AM, own transport, group size 25, runs on Sundays. Mock
 dates: **Sun 2 Aug (Date A)** and **Sun 16 Aug (Date B)**. Default ₹50/ticket
 commission applies (no per-event override). Demo customer = the trainee
 themself (whatever name they enter in L2).
@@ -109,7 +112,7 @@ Button: **Apply**.
 On submit, full-screen beat:
 
 > **Application sent.**
-> Right now, on a marketer's dashboard, a new lead just appeared — yours.
+> Right now, on a Team Dashboard, a new lead just appeared — yours.
 >
 > From this moment on, you're not the customer anymore.
 > **You're the marketer. And your first lead is… you.**
@@ -588,7 +591,7 @@ Button: **Finish up →** _(leads into the details form)_
   contact leads only through the booking process, and collect payments only
   through the official payment link."*
 
-Button: **Create my marketer account**
+Button: **Join the team**
 
 _(On tap, the signup function re-verifies everything server-side and enrolls
 them on the spot — both panel-access rows created in one atomic transaction.)_
@@ -597,17 +600,16 @@ them on the spot — both panel-access rows created in one atomic transaction.)_
 
 ## "You're in" screen
 
-> **Welcome to the team.**
+> **You're on the team.**
 >
-> Your marketer account is live — this is the real dashboard now, not
-> practice.
+> Your Team Dashboard is live — this is the real thing now, not practice.
 >
 > One heads-up so the quiet start doesn't worry you: leads arrive when you're
 > **assigned to an event**, and events are staffed as they need people. An
 > empty dashboard today is normal — it means you're on the roster, ready to
 > be staffed. We'll reach out on WhatsApp when your first event comes up.
 
-Button: **Open my dashboard** _(→ /admin, already signed in; lands on the
+Button: **Open my Team Dashboard** _(→ /admin, already signed in; lands on the
 empty My Leads with the coaching empty state + Training card)_
 
 ---

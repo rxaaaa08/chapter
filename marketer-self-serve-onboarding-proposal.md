@@ -487,7 +487,7 @@ funnel narrows twice:
 - ✅ **Direct auto-enroll** — no approve/decline step; atomic enroll RPC +
   NEW badge for after-the-fact review (§4). Approval tray and decline flow
   dropped from scope. UPI + required phone still collected.
-- ✅ Level copy drafted: `marketer-onboarding-level-copy.md` (mechanics
+- ✅ Level copy drafted: `team-onboarding-level-copy.md` (mechanics
   verified against code first). Owner to edit voice.
 
 **Still open:**
@@ -524,5 +524,5 @@ per commit, nothing pushed without a go-ahead.
 
 Owner action points: record the vertical welcome video and the L13 sales-call
 voice notes (any time — non-blocking; suggested beats are in the copy doc),
-edit the level copy (`marketer-onboarding-level-copy.md`), deploy the Phase 2
+edit the level copy (`team-onboarding-level-copy.md`), deploy the Phase 2
 function, approve the first real batch.

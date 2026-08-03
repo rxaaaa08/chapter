@@ -1,7 +1,7 @@
 # CORE TEAM ONBOARDING — COMPLETE BUILD HANDOFF
 
 _Single self-contained spec. Consolidated 2026-08-02 from three source docs
-(`marketer-self-serve-onboarding-proposal.md`, `marketer-onboarding-level-copy.md`,
+(`marketer-self-serve-onboarding-proposal.md`, `team-onboarding-level-copy.md`,
 `MARKETER-ONBOARDING-HANDOFF.md`). Everything needed to build this feature is in
 THIS file — you do not need the other three._
 
@@ -668,12 +668,12 @@ render + `loadMarketersData` + `MarketerAssignment`).
 
 1. **Field guide**: the status one-liners (Part E, Appendix A) as a reference
    card reachable from the map footer and — later, owner's call — from the
-   marketer dashboard.
+   Team Dashboard.
 2. **Empty-state coaching** on My Leads for marketers with zero leads (the
    "You're in" framing: "leads arrive when you're added to an event" + a static
    example lead card + a link to `/team` read-only). This IS an AdminPanel
    edit — keep it small and scoped to the marketer empty state.
-3. **Training card** in the marketer dashboard linking back to `/team`
+3. **Training card** in the Team Dashboard linking back to `/team`
    (which, for an enrolled marketer, opens the map in read-only revisit mode —
    levels all unlocked, no re-submission).
 4. Add one line to `CLAUDE.md`'s file map: the three new files + "when
@@ -896,7 +896,7 @@ buttons. Button: **Apply — practice only**.
 On submit, full-screen beat:
 
 > **Application sent.**
-> Right now, on a marketer's dashboard, a new lead just appeared — yours.
+> Right now, on a Team Dashboard, a new lead just appeared — yours.
 >
 > From this moment on, you're not the customer anymore.
 > **You're the marketer. And your first lead is… you.**

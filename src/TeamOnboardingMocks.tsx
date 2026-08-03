@@ -98,7 +98,7 @@ function BotBubble({ children }: { children: React.ReactNode }) {
 }
 
 function TypingDots() {
-  return <BotBubble><span aria-label="Chapter is typing" style={{ display: 'inline-flex', gap: 4 }}>{[0, 1, 2].map(index => <span key={index} style={{ width: 5, height: 5, borderRadius: '50%', background: '#a1a1aa', animation: `team-dot-pulse 1s ${index * 120}ms infinite ease-in-out` }} />)}</span></BotBubble>;
+  return <BotBubble><span aria-label="Chapter is typing" style={{ display: 'inline-flex', gap: 4 }}>{[0, 1, 2].map(index => <span key={index} className="team-typing-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#a1a1aa', animation: `teamDotPulse 1s ${index * 120}ms infinite ease-in-out` }} />)}</span></BotBubble>;
 }
 
 function GoldReply({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
@@ -128,11 +128,11 @@ function LevelOneMock({ onReadyChange }: MockProps) {
       {screen === 'chat' && (
         <div style={{ borderRadius: 14, background: '#f1f1f2', minHeight: 272, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <span style={{ width: 27, height: 27, borderRadius: '50%', background: INK, color: GOLD, display: 'grid', placeItems: 'center', fontWeight: 950, fontSize: 12 }}>C</span>
-            <div><div style={{ fontSize: 11.5, fontWeight: 900 }}>Chapter</div><div style={{ color: MUTED, fontSize: 9.5 }}>Your weekend co-pilot</div></div>
+            <span style={{ width: 27, height: 27, borderRadius: 9, background: INK, color: GOLD, display: 'grid', placeItems: 'center', fontWeight: 950, fontSize: 13 }}>அ</span>
+            <div style={{ fontSize: 11.5, fontWeight: 900 }}>chapter அ</div>
           </div>
           <BotBubble>Hey! I&apos;ll help you find people and plans that feel like your kind of weekend.</BotBubble>
-          {selectedCity && <div style={{ alignSelf: 'flex-end', borderRadius: '14px 5px 14px 14px', background: INK, color: '#fff', padding: '8px 10px', fontSize: 11.5, fontWeight: 800 }}>{selectedCity}</div>}
+          {selectedCity && <div style={{ alignSelf: 'flex-end', borderRadius: '14px 5px 14px 14px', background: GOLD, color: INK, padding: '8px 10px', fontSize: 11.5, fontWeight: 800 }}>{selectedCity}</div>}
           {typing ? <TypingDots /> : chatPhase === 'city' ? (
             <>
               <BotBubble>First up — where are you looking to step out?</BotBubble>
@@ -241,7 +241,7 @@ function LevelTwoMock({ demoLead, onReadyChange, onTestApplication }: MockProps)
           <div style={{ width: 44, height: 44, margin: '0 auto', borderRadius: '50%', display: 'grid', placeItems: 'center', background: INK, color: '#fff', fontSize: 21, fontWeight: 900 }}>✓</div>
           <div style={{ marginTop: 12, fontSize: 19, fontWeight: 900 }}>Application sent.</div>
           <div style={{ marginTop: 8, color: MUTED, fontSize: 12.5, lineHeight: 1.55 }}>From this moment on, you&apos;re not the customer anymore.<br /><strong style={{ color: INK }}>You&apos;re the marketer. And your first lead is… {name.trim()}.</strong></div>
-          <Caption>Right now, on a marketer&apos;s dashboard, this application would arrive as a new lead.</Caption>
+          <Caption>Right now, this application would arrive as a new lead on the Team Dashboard.</Caption>
           <div style={{ marginTop: 10, color: MUTED, fontSize: 11.5 }}>Sun 2 Aug · Nungambakkam</div>
           <button type="button" onClick={() => setOpened(true)} style={{ ...action, marginTop: 13 }}>{opened ? 'Dashboard opened ✓' : 'Open my dashboard'}</button>
         </div>

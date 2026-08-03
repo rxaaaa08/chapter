@@ -384,7 +384,7 @@ function DetailsScreen({ email, initialName, answers, onSuccess, onQuizFailed }:
       if (!response.ok) {
         if (body.quiz_failed) { onQuizFailed(); return; }
         if (body.error === 'admin_email') throw new Error('This email is a founder account. Use a different Google account for marketer access.');
-        if (body.error === 'inactive_marketer') throw new Error('This marketer account is inactive. Contact the founder for help.');
+        if (body.error === 'inactive_marketer') throw new Error('This team account is inactive. Contact the founder for help.');
         if (response.status === 429) throw new Error('Too many attempts. Wait 10 minutes, then try again.');
         throw new Error(body.message || body.error || 'We could not create your account. Please try again.');
       }
@@ -637,10 +637,11 @@ function SharedStyles() {
     @keyframes teamLoaderGlow { 0%,100% { box-shadow:0 0 22px rgba(255,215,0,.22); } 50% { box-shadow:0 0 42px rgba(255,215,0,.48); } }
     @keyframes teamSpinner { to { transform: rotate(360deg); } }
     @keyframes teamLevelPulse { 0%,100% { box-shadow:0 0 0 0 rgba(17,17,17,.13); } 50% { box-shadow:0 0 0 8px rgba(17,17,17,0); } }
+    @keyframes teamDotPulse { 0%,80%,100% { opacity:.25; transform:translateY(0); } 40% { opacity:1; transform:translateY(-2px); } }
     .team-cta-shimmer::before { content:''; position:absolute; inset:0 auto 0 -35%; width:32%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent); animation:teamCtaShimmer 2.2s ease-in-out infinite; pointer-events:none; }
     .team-loader-mark { animation:teamLoaderEnter .35s ease-out both, teamLoaderGlow 1.8s ease-in-out infinite .35s; }
     .team-spinner { animation:teamSpinner .8s linear infinite; }
     .team-level-pulse { animation:teamLevelPulse 1.8s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .team-cta-shimmer::before,.team-loader-mark,.team-spinner,.team-level-pulse { animation:none !important; } }
+    @media (prefers-reduced-motion: reduce) { .team-cta-shimmer::before,.team-loader-mark,.team-spinner,.team-level-pulse,.team-typing-dot { animation:none !important; } }
   `}</style>;
 }
