@@ -6,6 +6,7 @@ import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
 import CreatorDashboard from './CreatorDashboard';
+import TeamOnboarding from './TeamOnboarding';
 import { NativePaymentOverlay } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug, isInAppBrowserBlocked } from './supabase';
@@ -4638,6 +4639,7 @@ export default function App() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || (window.navigator as any).standalone === true;
     if (isStandalone && !window.location.pathname.startsWith('/creator')
+        && !window.location.pathname.startsWith('/team')
         && window.location.pathname !== '/admin') {
       window.history.replaceState({}, '', '/admin');
       return '/admin';
@@ -4659,6 +4661,7 @@ export default function App() {
     && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
   const isAdmin = routePath === '/admin';
   const isCreatorPage = routePath === '/creator';
+  const isTeamPage = routePath === '/team';
   const isLegacyJoinPage = routePath === '/join';
   const isLifestylePage = routePath === '/lifestyle' || isLegacyJoinPage;
   const isGalcodePage = routePath === '/galcode';
@@ -4681,12 +4684,12 @@ export default function App() {
   const isMyPlansPage = routePath === '/myplans';
   // /plans and /myplans both suppress the homepage (myplans redirects to /invite, plans renders AppFlow)
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
-  const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !isCreatorPage && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
+  const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !isCreatorPage && !isTeamPage && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     captureAffiliateRef();
-    if (!isAdmin && !isCreatorPage) trackEvent('page_view');
+    if (!isAdmin && !isCreatorPage && !isTeamPage) trackEvent('page_view');
   }, []);
 
   useEffect(() => {
@@ -4811,6 +4814,18 @@ export default function App() {
         <LandscapeBlocker />
         <MobileShell scroll>
           <CreatorDashboard />
+        </MobileShell>
+      </>
+    );
+  }
+
+  if (isTeamPage) {
+    return (
+      <>
+        <InAppBrowserNudge />
+        <LandscapeBlocker />
+        <MobileShell>
+          <TeamOnboarding />
         </MobileShell>
       </>
     );

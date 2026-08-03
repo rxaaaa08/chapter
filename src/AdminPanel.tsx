@@ -440,7 +440,12 @@ export default function AdminPanel() {
   // for the event-edit form's marketer multi-select.
   const [currentMarketer, setCurrentMarketer] = useState<{ id: string; name: string; email: string; commission_amount: number } | null>(null);
   const [myCommissionStats, setMyCommissionStats] = useState<{ total: number; ticketCount: number } | null>(null);
-  const [marketers, setMarketers] = useState<Array<{ id: string; email: string; name: string; commission_amount: number; active: boolean }>>([]);
+  const [marketers, setMarketers] = useState<Array<{ id: string; email: string; name: string; commission_amount: number; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null }>>([]);
+  // Self-serve marketer onboarding: the durable top-line conversion funnel and
+  // the in-progress level where each unfinished trainee currently sits.
+  // Both source tables are strict-admin only; ops sessions never fetch them.
+  const [marketerSignupFunnel, setMarketerSignupFunnel] = useState<{ started: number; completed: number }>({ started: 0, completed: 0 });
+  const [marketerLevelDropoff, setMarketerLevelDropoff] = useState<Array<{ level: number; count: number }>>([]);
   // id → name map for tagging each lead's marketer in the admin Call view.
   const [marketerNameById, setMarketerNameById] = useState<Record<string, string>>({});
   // Transparent team board (active marketers' tickets sold + earned, all-time),
@@ -857,20 +862,35 @@ export default function AdminPanel() {
   // Admin-only. Pulls the marketer roster, their commission totals, and
   // the event_marketers map for use in the event-edit form.
   const loadMarketersData = async () => {
+    if (adminRole !== 'admin') return;
     setMarketersLoading(true);
-    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }, { data: payoutRows }] = await Promise.all([
-      supabase.from('call_marketers').select('id, email, name, commission_amount, active').order('created_at'),
+    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }, { data: payoutRows }, { data: intentRows }, { data: signupRows }] = await Promise.all([
+      supabase.from('call_marketers').select('id, email, name, commission_amount, active, reviewed_at, upi_id, phone').order('created_at'),
       supabase.from('marketer_sales').select('marketer_id, amount'),
       supabase.from('event_marketers').select('event_slug, marketer_id'),
       supabase.rpc('get_performance_summary'),
       supabase.from('fixed_costs').select('*').order('created_at'),
       supabase.rpc('get_marketer_payouts_outstanding'),
+      supabase.from('marketer_signup_intents').select('email, completed_at'),
+      supabase.from('marketer_signups').select('email, progress, status'),
     ]);
     setMarketersLoading(false);
     setPerfSummary(perfRows ?? null);
     setMarketerPayouts((payoutRows ?? []) as any);
     setFixedCosts((fcRows ?? []) as any);
     setMarketers((mkRows ?? []) as any);
+    const intents = (intentRows ?? []) as Array<{ completed_at: string | null }>;
+    setMarketerSignupFunnel({ started: intents.length, completed: intents.filter(row => row.completed_at).length });
+    const startedIntentEmails = new Set((intentRows ?? []).map((row: any) => String(row.email ?? '').toLowerCase()));
+    const completedIntentEmails = new Set((intentRows ?? []).filter((row: any) => row.completed_at).map((row: any) => String(row.email ?? '').toLowerCase()));
+    const dropoff: Record<number, number> = {};
+    (signupRows ?? []).forEach((row: any) => {
+      const signupEmail = String(row.email ?? '').toLowerCase();
+      if (row.status !== 'in_progress' || !startedIntentEmails.has(signupEmail) || completedIntentEmails.has(signupEmail)) return;
+      const level = Math.min(13, Math.max(1, Number(row.progress?.current_level) || 1));
+      dropoff[level] = (dropoff[level] ?? 0) + 1;
+    });
+    setMarketerLevelDropoff(Object.entries(dropoff).map(([level, count]) => ({ level: Number(level), count })).sort((a, b) => a.level - b.level));
     const stats: Record<string, { total: number; ticketCount: number }> = {};
     (salesRows ?? []).forEach((r: any) => {
       const k = r.marketer_id;
@@ -1201,6 +1221,16 @@ export default function AdminPanel() {
     }
     showToast(`${mk.name} ${activating ? 'reactivated' : 'deactivated'}`);
     logAdminAction(mk.active ? 'marketer_deactivate' : 'marketer_reactivate', 'call_marketers', mk.id, {});
+    loadMarketersData();
+  };
+
+  // Clear the self-enrollment NEW flag after the founder has checked the row.
+  // Hand-added historical marketers were backfilled as reviewed in Phase 1.
+  const markMarketerReviewed = async (mk: { id: string; name: string }) => {
+    const { error } = await supabase.from('call_marketers').update({ reviewed_at: new Date().toISOString() }).eq('id', mk.id);
+    if (error) { showToast(`Failed: ${error.message}`); return; }
+    showToast(`${mk.name} marked reviewed`);
+    logAdminAction('marketer_reviewed', 'call_marketers', mk.id, {});
     loadMarketersData();
   };
 
@@ -4078,8 +4108,8 @@ export default function AdminPanel() {
               ? a.assigned_marketer_id === currentMarketer!.id
               : managerAssignedSlugs.includes(a.event_slug);
           };
-          const filteredApps = applications.filter(a => {
-            if (!scopeMatch(a)) return false;
+          const scopedApplications = applications.filter(scopeMatch);
+          const filteredApps = scopedApplications.filter(a => {
             const pays = paymentsFor(a.phone, a.event_slug);
             const eventMatch  = applicationsEventFilter  === 'all' || a.event_slug === applicationsEventFilter;
             const dateMatch   = applicationsDateFilter   === 'all' || a.selected_date === applicationsDateFilter;
@@ -4397,6 +4427,16 @@ export default function AdminPanel() {
 
           return (
             <div>
+              {/* Always-on training shortcut for the marketer hat. Enrolled
+                  marketers revisit an unlocked, read-only lesson map. */}
+              {currentMarketer && effScope === 'mine' && (
+                <a href="/team?revisit=1" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e8d36c', background: 'linear-gradient(135deg,#fffbea,#fff)', color: '#111', textDecoration: 'none' }}>
+                  <span style={{ width: 38, height: 38, borderRadius: 11, background: '#111', color: '#FFD700', display: 'grid', placeItems: 'center', fontSize: 19, fontWeight: 850, flex: '0 0 auto' }}>அ</span>
+                  <span style={{ flex: 1, minWidth: 0 }}><strong style={{ display: 'block', fontSize: 13.5 }}>Training &amp; status field guide</strong><span style={{ display: 'block', color: '#777', fontSize: 11.5, marginTop: 2 }}>Revisit any lesson without changing your live account.</span></span>
+                  <span aria-hidden="true" style={{ fontSize: 18 }}>›</span>
+                </a>
+              )}
+
               {/* Commission banner — pure marketer accounts only. Managers do
                   not need marketer earnings or team-ranking cards here, even
                   when their login also has a marketer side-car. */}
@@ -4714,7 +4754,17 @@ export default function AdminPanel() {
               {/* Loading / Empty */}
               {applicationsLoading && <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading…</div>}
               {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length === 0 && (
-                <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>No people match the current filters.</div>
+                currentMarketer && effScope === 'mine' && scopedApplications.length === 0 && peopleMode === 'call' ? (
+                  <div style={{ ...s.card, padding: 20, border: '1.5px solid #e8d36c', background: '#fffdf4' }}>
+                    <div style={{ fontSize: 18, fontWeight: 750, color: '#111' }}>You&apos;re in! You&apos;ll start receiving leads when you&apos;re added to an event.</div>
+                    <p style={{ margin: '7px 0 15px', color: '#666', fontSize: 13, lineHeight: 1.55 }}>An empty dashboard is normal — it means you&apos;re on the roster, ready to be staffed. We&apos;ll message you on WhatsApp when your first event comes up.</p>
+                    <div style={{ border: '1px solid #ececed', borderRadius: 12, background: '#fff', padding: 13, textAlign: 'left' }}>
+                      <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 10 }}><div><div style={{ color: '#999', fontSize: 9.5, fontWeight: 750, letterSpacing: .7, textTransform: 'uppercase' }}>Example lead</div><div style={{ marginTop: 3, color: '#111', fontWeight: 700 }}>Aarav · Chill Sunday Meetup</div></div><span style={{ borderRadius: 999, background: '#f4f4f5', border: '1px solid #e4e4e7', color: '#52525b', padding: '3px 8px', fontSize: 10, fontWeight: 750 }}>Pending</span></div>
+                      <div style={{ marginTop: 9, color: '#777', fontSize: 11.5 }}>Applied, waiting for your call and approval.</div>
+                    </div>
+                    <a href="/team?revisit=1" style={{ display: 'inline-block', marginTop: 14, color: '#111', fontSize: 12.5, fontWeight: 700, textDecoration: 'underline' }}>Review training and the status guide →</a>
+                  </div>
+                ) : <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>No people match the current filters.</div>
               )}
               {!applicationsLoading && peopleMode === 'doubts' && doubtsLoadError && (
                 <div style={{ ...s.card, background: '#fff5f5', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, padding: '12px 16px' }}>
@@ -6847,9 +6897,26 @@ export default function AdminPanel() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 8 }}>
               <div style={{ fontWeight: 700, fontSize: 18 }}>Marketers</div>
               <span style={{ fontSize: 13, color: '#888' }}>{marketers.length} {marketers.length === 1 ? 'marketer' : 'marketers'}</span>
+              {marketers.filter(marketer => !marketer.reviewed_at).length > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>{marketers.filter(marketer => !marketer.reviewed_at).length} new</span>}
               <div style={{ flex: 1 }} />
               <button style={s.btn()} onClick={() => setAddingMarketer(true)}>+ Add Marketer</button>
             </div>
+
+            {/* Self-serve signup funnel — strict-admin reads only. Historical
+                marketers are backfilled, so unfinished starts at zero and only
+                reflects real post-launch drop-off. */}
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12.5, color: '#555', background: '#f7f7f8', border: '1px solid #ececed', borderRadius: 10, padding: '10px 14px' }}>
+              <span><b style={{ color: '#111', fontSize: 14 }}>{marketerSignupFunnel.started}</b> entered the signup</span>
+              <span><b style={{ color: '#16a34a', fontSize: 14 }}>{marketerSignupFunnel.completed}</b> became marketers</span>
+              <span><b style={{ color: marketerSignupFunnel.started - marketerSignupFunnel.completed > 0 ? '#dc2626' : '#999', fontSize: 14 }}>{marketerSignupFunnel.started - marketerSignupFunnel.completed}</b> didn&apos;t finish</span>
+            </div>
+
+            {marketerLevelDropoff.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: '#777' }}>
+                <span style={{ fontWeight: 700, color: '#555' }}>Unfinished by current level</span>
+                {marketerLevelDropoff.map(item => <span key={item.level} title={`${item.count} ${item.count === 1 ? 'person' : 'people'} currently at level ${item.level}`} style={{ border: '1px solid #e4e4e7', background: '#fff', borderRadius: 999, padding: '3px 8px' }}>L{item.level} <b style={{ color: '#111' }}>{item.count}</b></span>)}
+              </div>
+            )}
 
             <div style={{ background: '#fef3c7', border: '1.5px solid #fcd34d', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#92400e', lineHeight: 1.55 }}>
               <b>How this works:</b> add a marketer here with their Google email — they can log straight into the admin panel and will only see leads assigned to them. Assignment is round-robin per event — assign marketers to events from the event-edit form. Deactivating a marketer also revokes their login.
@@ -6888,9 +6955,16 @@ export default function AdminPanel() {
                     <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#888' }}>No marketers yet. Click "+ Add Marketer".</td></tr>
                   )}
                   {marketers.map(mk => {
+                    const isNew = !mk.reviewed_at;
                     return (
-                      <tr key={mk.id} style={{ borderBottom: '1px solid #f4f4f4', opacity: mk.active ? 1 : 0.5 }}>
-                        <td style={{ padding: '12px 14px', fontWeight: 600 }}>{mk.name}</td>
+                      <tr key={mk.id} style={{ borderBottom: '1px solid #f4f4f4', opacity: mk.active ? 1 : 0.5, background: isNew ? '#fffbeb' : 'transparent' }}>
+                        <td style={{ padding: '12px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>{mk.name}{isNew && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '1px 6px', borderRadius: 999, letterSpacing: 0.4 }}>NEW</span>}</div>
+                          <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
+                            {mk.upi_id ? <>UPI <span style={{ color: '#555', fontWeight: 600 }}>{mk.upi_id}</span></> : <span style={{ color: '#c00b0b' }}>no UPI on file</span>}
+                            {mk.phone && <span> · {mk.phone}</span>}
+                          </div>
+                        </td>
                         <td style={{ padding: '12px 14px', color: '#666' }}>{mk.email}</td>
                         <td style={{ padding: '12px 14px' }}>
                           <span style={{ background: mk.active ? '#dcfce7' : '#fee2e2', color: mk.active ? '#15803d' : '#b91c1c', padding: '3px 9px', borderRadius: 6, fontWeight: 700, fontSize: 11 }}>
@@ -6898,6 +6972,7 @@ export default function AdminPanel() {
                           </span>
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                          {isNew && <button style={{ ...s.outlineBtn, marginRight: 6 }} onClick={() => markMarketerReviewed({ id: mk.id, name: mk.name })}>Mark reviewed</button>}
                           <button style={s.outlineBtn} onClick={() => toggleMarketerActive(mk)}>
                             {mk.active ? 'Deactivate' : 'Reactivate'}
                           </button>
@@ -7908,7 +7983,7 @@ export default function AdminPanel() {
 // the new set (no client-side redistribute needed).
 function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commission, onSaveCommission, onOpen, s }: {
   eventSlug: string;
-  marketers: Array<{ id: string; name: string; email: string }>;
+  marketers: Array<{ id: string; name: string; email: string; reviewed_at: string | null }>;
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   commission: number | null;
@@ -7950,6 +8025,7 @@ function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commi
                 }}
               >
                 {on ? '✓ ' : ''}{mk.name}
+                {!mk.reviewed_at && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 850, color: on ? '#111' : '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 999, padding: '1px 5px', verticalAlign: 1 }}>NEW</span>}
               </button>
             );
           })}
