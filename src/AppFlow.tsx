@@ -1303,34 +1303,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     historyLayerRef.current = nextLayer;
   }, [activeHistoryLayer, isDetailsHistoryManaged]);
 
-  // Push a layer's history entry from INSIDE the tap that opens it, instead of
-  // letting the effect above do it a task later.
-  //
-  // WebKit only treats a history entry as real if it was created during a user
-  // interaction; entries pushed outside a gesture become dummy entries that
-  // back skips without ever firing popstate. The effect above runs as a React
-  // passive effect — after render and after paint, in a separate task — so by
-  // the time it pushes, the tap is over. That is invisible in Safari but is the
-  // best available explanation for the Instagram in-app browser on iOS, where
-  // back does nothing on any sheet (Safari on the same phone is fine).
-  //
-  // Currently wired to the calendar only, deliberately: it is a single-sheet
-  // test of that theory on a live booking flow. If Instagram's back closes the
-  // calendar, every other sheet should adopt the same call and the effect
-  // becomes the fallback for sheets that open without a tap. If it changes
-  // nothing, revert this and stop pursuing user-activation as the cause.
-  //
-  // Safe to call unconditionally: it no-ops when this layer is already the
-  // current one, and it leaves historyLayerRef exactly where the effect would
-  // have, so the effect then sees previousLayer === nextLayer and skips its own
-  // push. Without that the sheet would get two entries and need two backs.
-  const pushHistoryLayerFromGesture = useCallback((layer: HistoryLayer) => {
-    if (typeof window === 'undefined' || !isDetailsHistoryManaged) return;
-    if (historyLayerRef.current === layer) return;
-    window.history.pushState({ chapteraLayer: layer }, '', window.location.href);
-    historyLayerRef.current = layer;
-  }, [isDetailsHistoryManaged]);
-
   useEffect(() => {
     if (typeof window === 'undefined' || !isDetailsHistoryManaged) return;
     const onPopState = () => {
@@ -2442,7 +2414,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             onPlanSwitcherVisibilityChange={setDetailsPlanSwitcherOpen}
             closePolicySignal={closeDetailsPolicySignal}
             onPolicyVisibilityChange={setDetailsPolicyOpen}
-            onPushHistoryLayer={pushHistoryLayerFromGesture}
             onSwitchEvent={(e, city) => {
               setSelectedEvent(e);
               setSelectedCategory(e.category);
@@ -4010,7 +3981,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, closePolicySignal, onPolicyVisibilityChange, onPushHistoryLayer, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onPushHistoryLayer?: (layer: HistoryLayer) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -4968,12 +4939,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
           <button
             onClick={() => {
               trackEvent('calendar_opened', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
-              // Push the history entry here, synchronously inside the tap, before
-              // any state change — see pushHistoryLayerFromGesture. This is the
-              // whole point of the experiment; moving it after setShowCalendar
-              // would still be inside the gesture, but keeping it first makes the
-              // ordering obvious to the next reader.
-              onPushHistoryLayer?.('details-calendar');
               setShowCalendar(true);
             }}
             className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
