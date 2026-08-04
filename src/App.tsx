@@ -40,6 +40,28 @@ function MobileShell({ children, scroll = false }: { children: React.ReactNode; 
 }
 
 
+// The URL that should be showing at a given step of the invite flow.
+//
+// Same rule as sheetUrl() in AppFlow.tsx, and the same reason: Instagram's iOS
+// in-app browser only registers a history entry with its back chevron when that
+// entry carries a URL DISTINCT from the current one. Every pushState here used
+// to pass window.location.href, so the whole invite journey — reveal, chat,
+// timeline, plan details, bill — produced entries the chevron could not see,
+// and back did nothing from any of them.
+//
+// Registration happens at push time; a later replaceState cannot rescue an
+// entry that was pushed at the current URL. Everything else in the query string
+// is preserved (?ref= creator attribution, ?dbg=, PayU return params).
+// Named ...HistoryStep, not InviteStep — that name is already taken further down
+// by the unrelated 'card' | 'timeline' | 'bill' screen enum.
+type InviteHistoryStep = 'revealed' | 'chat' | 'retry-chat' | 'timeline' | 'lifestyle' | 'planDetails' | 'bill' | 'retry-bill';
+
+function inviteStepUrl(step: InviteHistoryStep): string {
+  const params = new URLSearchParams(window.location.search);
+  params.set('step', step);
+  return `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+}
+
 // ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────
 function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; onViewExperiences: () => void }) {
   const [showSending, setShowSending] = useState(false);
@@ -1422,7 +1444,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       setLoading(false);
       setWipePhase('revealed');
       verificationFrameControls.set({ clipPath: 'inset(0 0 100% 0)', opacity: 0 });
-      window.history.pushState({ chapteraInviteStep: 'revealed' }, '', window.location.href);
+      window.history.pushState({ chapteraInviteStep: 'revealed' }, '', inviteStepUrl('revealed'));
       endDeeplinkResolving();
     });
   };
@@ -1456,7 +1478,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
           clipPath: 'inset(0 0 100% 0)',
           opacity: 0,
         });
-        window.history.pushState({ chapteraInviteStep: 'revealed' }, '', window.location.href);
+        window.history.pushState({ chapteraInviteStep: 'revealed' }, '', inviteStepUrl('revealed'));
       });
     });
   };
@@ -1683,7 +1705,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
           setLoading(false);
           endDeeplinkResolving();
           setVerifiedSlug(eventSlug);
-          window.history.pushState({ chapteraInviteStep: 'chat' }, '', window.location.href);
+          window.history.pushState({ chapteraInviteStep: 'chat' }, '', inviteStepUrl('chat'));
           setInviteChatStep('prompt');
           setInviteMessages([]);
           setIsInviteTyping(false);
@@ -1778,7 +1800,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       window.clearTimeout(chatTransitionTimerRef.current);
       chatTransitionTimerRef.current = null;
     }
-    window.history.pushState({ chapteraInviteStep: 'chat' }, '', window.location.href);
+    window.history.pushState({ chapteraInviteStep: 'chat' }, '', inviteStepUrl('chat'));
     if (showTransitionLoader) {
       chatTransitionTimerRef.current = window.setTimeout(() => {
         setChatTransitioning(false);
@@ -1836,7 +1858,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       setWipePhase('revealed');
       // Push a clean buffer entry so browser back hits /invite (not the payment-failed URL).
       // onPop will re-push again when back is pressed, keeping the user in the chat.
-      window.history.pushState({ chapteraRetryChat: true }, '', window.location.href);
+      window.history.pushState({ chapteraRetryChat: true }, '', inviteStepUrl('retry-chat'));
       setInviteChatStep('prompt');
       setInviteMessages([]);
       setIsInviteTyping(false);
@@ -1917,7 +1939,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       setTcAccepted(true);
       setPosterLoaded(true);  // skip poster — timeline covers the screen
       setChatOpen(true);      // chat underneath so back-from-timeline reveals it
-      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
+      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', inviteStepUrl('timeline'));
       setShowNativeTimeline(true);
       setIsTimelineRestoreLoading(false);
     }).catch(() => setIsTimelineRestoreLoading(false));
@@ -1980,7 +2002,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
         }
       } catch { /* proceed — see note above */ }
     }
-    window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
+    window.history.pushState({ chapteraInviteStep: 'timeline' }, '', inviteStepUrl('timeline'));
     setShowNativeTimeline(true);
   };
 
@@ -1989,7 +2011,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     setWipePhase('wiping');
     window.setTimeout(() => {
       setWipePhase('revealed');
-      window.history.pushState({ chapteraInviteStep: 'lifestyle' }, '', window.location.href);
+      window.history.pushState({ chapteraInviteStep: 'lifestyle' }, '', inviteStepUrl('lifestyle'));
     }, 760);
   };
 
@@ -2014,7 +2036,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       if (chatOpen) {
         if (isRetryChatRef.current) {
           // Back is disabled for retry chat — re-push to cancel the navigation
-          window.history.pushState({ chapteraInviteStep: 'chat', isRetry: true }, '', window.location.href);
+          window.history.pushState({ chapteraInviteStep: 'chat', isRetry: true }, '', inviteStepUrl('chat'));
           return;
         }
         setChatOpen(false);
@@ -2718,7 +2740,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               </a>
                             )}
                             {!isSoldOut && (
-                              <button className={btnClass} onClick={() => { window.history.pushState({ chapteraInviteStep: 'planDetails' }, '', window.location.href); setShowPlanDetailsSheet(true); }}>
+                              <button className={btnClass} onClick={() => { window.history.pushState({ chapteraInviteStep: 'planDetails' }, '', inviteStepUrl('planDetails')); setShowPlanDetailsSheet(true); }}>
                                 <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 1.2, ease: 'easeInOut' }} />
                                 <span>Re-check plan details</span>
                                 <Send size={16} />
@@ -2812,7 +2834,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                               <MessageCircle size={14} className="shrink-0" />
                             </button>
                             {!isSoldOut && (
-                              <button className={btnClass} onClick={() => { window.history.pushState({ chapteraInviteStep: 'planDetails' }, '', window.location.href); setShowPlanDetailsSheet(true); }}>
+                              <button className={btnClass} onClick={() => { window.history.pushState({ chapteraInviteStep: 'planDetails' }, '', inviteStepUrl('planDetails')); setShowPlanDetailsSheet(true); }}>
                                 <span>Re-check plan details</span>
                                 <Send size={14} className="shrink-0" />
                               </button>
@@ -2899,7 +2921,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               reserved={inviteReservedCount}
               onPayAdvance={() => {
                 if (typeof window !== 'undefined') {
-                  window.history.pushState({ chapteraInviteStep: 'bill' }, '', window.location.href);
+                  window.history.pushState({ chapteraInviteStep: 'bill' }, '', inviteStepUrl('bill'));
                 }
                 // Save bill state now so a page refresh (or browser-back from PayU) restores the overlay
                 if (nativeEventData) {
@@ -3543,7 +3565,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
   const openInviteBooking = () => {
     // All invite payment flows now route through PayU (NativeBookingTimeline → NativePaymentOverlay)
     if (typeof window !== 'undefined') {
-      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', window.location.href);
+      window.history.pushState({ chapteraInviteStep: 'timeline' }, '', inviteStepUrl('timeline'));
     }
     setStep('timeline');
   };
@@ -3681,7 +3703,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
               inviteSpots={eventInfo.inviteSpots ?? null}
               onPayAdvance={() => {
                 if (typeof window !== 'undefined') {
-                  window.history.pushState({ chapteraInviteStep: 'bill' }, '', window.location.href);
+                  window.history.pushState({ chapteraInviteStep: 'bill' }, '', inviteStepUrl('bill'));
                 }
                 setStep('bill');
               }}
@@ -4052,7 +4074,7 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
               // silently crossing back into the original /invite document — which
               // re-shows a near-identical bill, making the first Back appear to do
               // nothing. The popstate listener below consumes this entry.
-              try { window.history.pushState({ chapteraRetryBill: true }, '', window.location.href); } catch { /* history may be unavailable */ }
+              try { window.history.pushState({ chapteraRetryBill: true }, '', inviteStepUrl('retry-bill')); } catch { /* history may be unavailable */ }
               setShowRetryBill(true);
             } else {
               onDone(returnPath);
