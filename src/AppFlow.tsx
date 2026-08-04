@@ -2361,6 +2361,31 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             >
               HASH
             </button>
+            {/* PUSH-URL — the one combination never tested, and the last thing
+                that separates our sheets from BookMyShow's.
+                  Our sheets pushState with window.location.href, i.e. an entry
+                  whose URL is IDENTICAL to the current one, and Instagram never
+                  lights the chevron for those. A hash change doesn't light it
+                  either, and a real load lights it but is inert when pressed.
+                  BookMyShow lights it by opening a sheet, first page in a fresh
+                  tab, no page load involved — so a same-document entry CAN do
+                  it. The untested variable is whether the entry needs a
+                  genuinely different URL.
+                Pushed straight from the tap, so it is also inside the user
+                gesture. No reload: this is the same API our sheets already use,
+                only with a distinct URL. */}
+            <button
+              type="button"
+              onClick={() => {
+                // No manual counter bump: the patched pushState above already
+                // counts this, and bumping here too made one tap read as two.
+                const n = Date.now().toString().slice(-4);
+                window.history.pushState({ chapteraProbe: n }, '', `${window.location.pathname}?dbg=1&p=${n}`);
+              }}
+              style={{ background: '#60a5fa', color: '#000', padding: '3px 8px', borderRadius: 4, border: 0, font: 'inherit', fontWeight: 700 }}
+            >
+              PUSH-URL
+            </button>
           </div>
         </div>
       )}
