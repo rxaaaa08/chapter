@@ -131,6 +131,7 @@ type CreatorVideoRow = {
   status: 'pending' | 'approved' | 'changes_requested';
   review_note: string | null;
   submitted_at: string;
+  seen_at: string | null;
 };
 type ChatMsg = { id: string; step_key: string; bot_message: string; flow: string };
 type PayuPayment = {
@@ -245,21 +246,36 @@ function tripDisplayPrice(trip: Trip): number {
   return Number(trip.price_full) || 0;
 }
 
+// The tabs across the top. Deliberately short: several older tabs were folded
+// into sub-views rather than kept as siblings, because the header is a single
+// non-wrapping row and every extra tab makes the whole panel harder to scan.
+//   'marketers' renders as "Team"   ▸ Performance · Marketers · Managers · Creators
+//   'analytics' renders as "Growth" ▸ Analytics · Experiments
+//   'map'       renders as "Build"  ▸ journey maps + roadmap + to-dos
+const ADMIN_TABS = ['trips', 'flow', 'people', 'marketers', 'analytics', 'map', 'settings'] as const;
+type AdminTab = typeof ADMIN_TABS[number];
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const [adminRole, setAdminRole] = useState<'admin' | 'ops' | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authDenied, setAuthDenied] = useState(false);
   const [debugEmail, setDebugEmail] = useState<string>('');
-  const [tab, setTab] = useState<'trips' | 'flow' | 'people' | 'content' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings'>(
+  // Remembered tab, read once per mount. Both the tab and its sub-view derive
+  // from it, so a refresh lands exactly where you left off.
+  const [rememberedTab] = useState(() => localStorage.getItem('adminTab'));
+  const [tab, setTab] = useState<AdminTab>(
     () => {
-      const stored = localStorage.getItem('adminTab');
-      // 'affiliates' is no longer its own tab — Creators now live inside Performance.
-      if (stored === 'affiliates') return 'marketers';
-      return (stored as 'trips' | 'flow' | 'people' | 'content' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') ?? 'people';
+      // Retired tab keys map onto the sub-view that absorbed them:
+      // 'affiliates' → Creators, 'content' → Team ▸ Creators,
+      // 'manager' (the old Briefing tab) → Team ▸ Managers,
+      // 'experiments' → Growth ▸ Experiments.
+      if (rememberedTab === 'affiliates' || rememberedTab === 'content' || rememberedTab === 'manager') return 'marketers';
+      if (rememberedTab === 'experiments') return 'analytics';
+      return ADMIN_TABS.includes(rememberedTab as AdminTab) ? (rememberedTab as AdminTab) : 'people';
     }
   );
-  const switchTab = (t: 'trips' | 'flow' | 'people' | 'content' | 'marketers' | 'affiliates' | 'analytics' | 'experiments' | 'map' | 'manager' | 'settings') => { setTab(t); localStorage.setItem('adminTab', t); };
+  const switchTab = (t: AdminTab) => { setTab(t); localStorage.setItem('adminTab', t); };
   // L4: probe whether the deployed create-payu-order function is pointed at
   // PayU's test or live gateway. Surfaced as a badge in the header so it's
   // immediately obvious whether real money is at stake.
@@ -274,6 +290,15 @@ export default function AdminPanel() {
   }, []);
   const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
   const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
+  // Team ▸ Performance (forecast, unit economics, payouts, fixed costs) ·
+  // Marketers (roster + hiring) · Managers (the daily briefing engine, then the
+  // human manager roster) · Creators (video review queue + creator roster).
+  const [teamMode, setTeamMode] = useState<'money' | 'marketers' | 'managers' | 'creators'>(
+    () => rememberedTab === 'content' ? 'creators' : rememberedTab === 'manager' ? 'managers' : 'money'
+  );
+  // Growth ▸ Overview (the funnel snapshot) · Trends (the same numbers per day,
+  // plotted against the release log).
+  const [growthMode, setGrowthMode] = useState<'overview' | 'trends'>(() => rememberedTab === 'experiments' ? 'trends' : 'overview');
   const [peopleSearch, setPeopleSearch] = useState('');
   // Normalize city_details keys to match the casing in the cities array.
   // Older saves may have stored keys like "delhi" when the city is "Delhi".
@@ -441,6 +466,10 @@ export default function AdminPanel() {
   // for the event-edit form's marketer multi-select.
   const [currentMarketer, setCurrentMarketer] = useState<{ id: string; name: string; email: string; commission_amount: number } | null>(null);
   const [myCommissionStats, setMyCommissionStats] = useState<{ total: number; ticketCount: number } | null>(null);
+  // The marketer ledger is the source of truth once open events can pay either
+  // half or full commission. Kept row-level so the manager/marketer earnings
+  // bill can sum the exact amount per event instead of rate × paid tickets.
+  const [myMarketerSales, setMyMarketerSales] = useState<Array<{ application_id: string; amount: number; accrued_at: string }>>([]);
   const [marketers, setMarketers] = useState<Array<{ id: string; email: string; name: string; commission_amount: number; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null }>>([]);
   // Self-serve marketer onboarding: the durable top-line conversion funnel and
   // the in-progress level where each unfinished trainee currently sits.
@@ -537,6 +566,7 @@ export default function AdminPanel() {
 
   // ── Affiliates (creators) — admin-only, populated when admin opens Creators ──
   const [affiliates, setAffiliates] = useState<Array<{ id: string; handle: string; name: string; email: string; active: boolean; reviewed_at: string | null; upi_id: string | null; phone: string | null; gender: string | null }>>([]);
+  const [creatorSearch, setCreatorSearch] = useState('');
   // Creator video submissions — the activity log behind the "Creator videos"
   // card. Loaded with the roster so a creator with zero videos still shows up;
   // that row (blank "last video") is the whole point of the table.
@@ -731,21 +761,30 @@ export default function AdminPanel() {
         setCurrentManager(mgr ?? null);
         setCurrentMarketer(mk ?? null);
         if (mk?.id) {
-          // Sum sales this calendar month — drives the banner copy.
+          // Fetch the authoritative ledger once. The monthly slice drives the
+          // banner; the full set drives the per-event earnings bill below.
           const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
           const { data: sales } = await supabase
             .from('marketer_sales')
-            .select('amount')
-            .eq('marketer_id', mk.id)
-            .gte('accrued_at', monthStart.toISOString());
-          const total = (sales ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
-          setMyCommissionStats({ total, ticketCount: (sales ?? []).length });
+            .select('application_id, amount, accrued_at')
+            .eq('marketer_id', mk.id);
+          const ledger = (sales ?? []).map((row: any) => ({
+            application_id: String(row.application_id),
+            amount: Number(row.amount),
+            accrued_at: String(row.accrued_at),
+          }));
+          const monthlySales = ledger.filter(row => new Date(row.accrued_at) >= monthStart);
+          const total = monthlySales.reduce((sum, row) => sum + row.amount, 0);
+          setMyMarketerSales(ledger);
+          setMyCommissionStats({ total, ticketCount: monthlySales.length });
         } else {
           setMyCommissionStats(null);
+          setMyMarketerSales([]);
         }
       } else {
         setCurrentMarketer(null);
         setMyCommissionStats(null);
+        setMyMarketerSales([]);
         setCurrentManager(null);
       }
       // Mark this device as an admin device so the PWA always opens at /admin
@@ -834,11 +873,22 @@ export default function AdminPanel() {
     if (data) setPayuPayments(data as PayuPayment[]);
   };
 
-  // Content tab (Creators + Creator videos) self-loads, so a refresh that lands
-  // on a remembered Content tab isn't stuck with empty cards until you click away.
+  // Team and Growth each hold several sub-views, so their data is fetched from
+  // an effect keyed on the sub-view rather than from the tab button's onClick.
+  // That way switching sub-view loads what that sub-view needs, and a refresh
+  // landing on a remembered tab isn't stuck with empty cards until you click
+  // away. Only the sub-view you are actually looking at gets fetched.
   useEffect(() => {
-    if (adminRole === 'admin' && tab === 'content') loadAffiliatesData();
-  }, [adminRole, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (adminRole !== 'admin' || tab !== 'marketers') return;
+    if (teamMode === 'creators') loadAffiliatesData();
+    else { loadMarketersData(); loadManagersCard(); }
+  }, [adminRole, tab, teamMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (adminRole !== 'admin' || tab !== 'analytics') return;
+    if (growthMode === 'trends') loadExperiments();
+    else loadAnalytics();
+  }, [adminRole, tab, growthMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch ALL rows from a table, paging past PostgREST's 1000-row response
   // cap. Without this the People tab silently showed only the most recent
@@ -1296,7 +1346,7 @@ export default function AdminPanel() {
       supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
-      supabase.from('creator_submissions').select('id, affiliate_id, event_slug, event_date, video_url, status, review_note, submitted_at').order('submitted_at', { ascending: false }),
+      supabase.from('creator_submissions').select('id, affiliate_id, event_slug, event_date, video_url, status, review_note, submitted_at, seen_at').order('submitted_at', { ascending: false }),
       supabase.from('creator_signup_intents').select('email, completed_at'),
     ]);
     setAffiliates((affRows ?? []) as any);
@@ -1356,6 +1406,8 @@ export default function AdminPanel() {
       review_note: note || null,
       reviewed_at: new Date().toISOString(),
       reviewed_by: userData?.user?.email?.toLowerCase() ?? null,
+      // Reviewing implies you saw it — clear the "unseen" dot too (first stamp wins).
+      seen_at: video.seen_at ?? new Date().toISOString(),
     }).eq('id', video.id);
     setReviewingVideo('');
     if (error) { showToast(`Failed: ${error.message}`); return; }
@@ -1363,6 +1415,17 @@ export default function AdminPanel() {
     logAdminAction('creator_video_review', 'creator_submissions', video.id, { status, event_slug: video.event_slug });
     setVideoNotes(prev => ({ ...prev, [video.id]: '' }));
     loadAffiliatesData();
+  };
+
+  // Stamp a video "seen" the moment the founder opens its link. Independent of
+  // approve/ask-changes — it only drives the "unseen" dot on the review queue.
+  // Optimistic: flip local state first so the dot vanishes instantly; the write
+  // is fire-and-forget (a missed stamp just re-shows the dot on next load).
+  const markVideoSeen = (video: CreatorVideoRow) => {
+    if (video.seen_at) return;
+    const ts = new Date().toISOString();
+    setCreatorVideos(prev => prev.map(v => (v.id === video.id ? { ...v, seen_at: ts } : v)));
+    void supabase.from('creator_submissions').update({ seen_at: ts }).eq('id', video.id);
   };
 
   // Clear the "new arrivals" flag once the founder has eyeballed a self-joined
@@ -2862,6 +2925,10 @@ export default function AdminPanel() {
     page: { minHeight: '100vh', background: '#f5f5f0', fontFamily: 'sans-serif', padding: '0 0 60px' } as React.CSSProperties,
     header: { background: '#fff', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 10 } as React.CSSProperties,
     tab: (active: boolean) => ({ padding: '8px 20px', borderRadius: 99, border: 'none', background: active ? '#111' : 'transparent', color: active ? '#fff' : '#666', fontWeight: 600, cursor: 'pointer', fontSize: 14 }) as React.CSSProperties,
+    // Sub-view pill inside a tab — matches the Flow tab's Media/Timelines/FAQs
+    // switcher so every consolidated tab reads the same way.
+    subTab: (active: boolean) => ({ padding: '8px 18px', borderRadius: 99, border: 'none', background: active ? '#111' : '#fff', color: active ? '#fff' : '#555', fontWeight: 700, fontSize: 13, cursor: 'pointer', boxShadow: active ? '0 2px 6px rgba(0,0,0,0.15)' : 'none', transition: 'all 0.15s' }) as React.CSSProperties,
+    subTabBar: { display: 'flex', gap: 8, marginBottom: 18, padding: 5, background: '#f3f3f3', borderRadius: 99, width: 'fit-content' } as React.CSSProperties,
     card: { background: '#fff', borderRadius: 14, padding: 20, marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' } as React.CSSProperties,
     label: { fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block', textTransform: 'uppercase', letterSpacing: 0.5 } as React.CSSProperties,
     input: { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e5e5', fontSize: 14, boxSizing: 'border-box', outline: 'none' } as React.CSSProperties,
@@ -2901,13 +2968,13 @@ export default function AdminPanel() {
         {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'trips')} onClick={() => switchTab('trips')}>Plans</button>}
         {adminRole === 'admin' && <button style={s.tab(tab === 'flow')} onClick={() => switchTab('flow')}>Flow</button>}
         <button style={s.tab(tab === 'people')} onClick={() => { switchTab('people'); loadApplications(); refreshPayuPayments(); }}>People</button>
-        {adminRole === 'admin' && <button style={s.tab(tab === 'content')} onClick={() => { switchTab('content'); loadAffiliatesData(); }}>Content</button>}
-        {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); if (adminRole === 'admin') { loadMarketersData(); loadManagersCard(); } else if (currentManager) { loadManagerTeam(currentManager.id); } }}>Performance</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => { switchTab('analytics'); loadAnalytics(); }}>Analytics</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'experiments')} onClick={() => { switchTab('experiments'); loadExperiments(); }}>Experiments</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'manager')} onClick={() => switchTab('manager')}>Briefing</button>}
-        {adminRole === 'admin' && <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Map</button>}
-        <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }}>⚙ Settings</button>
+        {/* Team, Growth and Build each fetch their own data from the sub-view
+            effects above, so these buttons only switch tabs. Managers aren't
+            admins and have no sub-views — they still need their team loaded. */}
+        {(adminRole === 'admin' || !!currentManager) && <button style={s.tab(tab === 'marketers')} onClick={() => { switchTab('marketers'); if (adminRole !== 'admin' && currentManager) loadManagerTeam(currentManager.id); }}>Team</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'analytics')} onClick={() => switchTab('analytics')}>Growth</button>}
+        {adminRole === 'admin' && <button style={s.tab(tab === 'map')} onClick={() => switchTab('map')}>Build</button>}
+        <button style={s.tab(tab === 'settings')} onClick={() => { switchTab('settings'); loadNotifDevices(); }} title="Settings" aria-label="Settings">⚙</button>
         <button onClick={logout} style={{ marginLeft: 8, padding: '7px 16px', borderRadius: 99, border: '1.5px solid #e0e0e0', background: '#fff', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Sign out</button>
       </div>
 
@@ -2918,13 +2985,6 @@ export default function AdminPanel() {
         {!loading && tab === 'map' && adminRole === 'admin' && (
           <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading map…</div>}>
             <JourneyMap showRoadmap={adminRole === 'admin'} />
-          </React.Suspense>
-        )}
-
-        {/* ── MANAGER TAB (read-only ops manager) ─────────────────────────── */}
-        {!loading && tab === 'manager' && adminRole === 'admin' && (
-          <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading manager…</div>}>
-            <ManagerPanel />
           </React.Suspense>
         )}
 
@@ -3152,6 +3212,7 @@ export default function AdminPanel() {
                             {adminRole === 'admin' && trip.slug && (
                               <MarketerAssignment
                                 eventSlug={trip.slug}
+                                isOpenEvent={editingTrip.booking_url === 'payu-hosted'}
                                 marketers={marketers.filter(m => m.active)}
                                 selectedIds={eventMarketersMap[trip.slug] ?? []}
                                 onChange={ids => setEventMarketers(trip.slug, ids)}
@@ -3232,7 +3293,7 @@ export default function AdminPanel() {
             {([
               ['media', 'Media'],
               ['timelines', 'Timelines'],
-              ['faqs', 'FAQs'],
+              ['faqs', 'Doubt answers'],
             ] as const).map(([mode, label]) => (
               <button
                 key={mode}
@@ -3260,7 +3321,9 @@ export default function AdminPanel() {
         {!loading && tab === 'flow' && flowMode === 'media' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-              <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Media</div>
+              {/* No page title — the Media pill above names this page. The
+                  spacer keeps the city filter right-aligned. */}
+              <div style={{ flex: 1 }} />
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
                   value={mediaCityFilter}
@@ -3483,7 +3546,8 @@ export default function AdminPanel() {
         {!loading && tab === 'flow' && flowMode === 'timelines' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, marginTop: 28 }}>
-              <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Timelines</div>
+              {/* No page title — the Timelines pill above names this page. */}
+              <div style={{ flex: 1 }} />
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
                   value={timelinesCityFilter}
@@ -3796,7 +3860,10 @@ export default function AdminPanel() {
         {!loading && tab === 'flow' && flowMode === 'faqs' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-              <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Automatic Doubt Answers</div>
+              {/* No page title — the Doubt answers pill above names this page.
+                  The pill was "FAQs" while this heading said "Automatic Doubt
+                  Answers"; the page keeps the clearer of the two names. */}
+              <div style={{ flex: 1 }} />
               <div style={{ position: 'relative', minWidth: 190 }}>
                 <select
                   value={qnaCityFilter}
@@ -4071,6 +4138,22 @@ export default function AdminPanel() {
           const normalizePhone10 = (phone: any) => String(phone ?? '').replace(/\D/g, '').slice(-10);
           const titleBySlug: Record<string, string> = {};
           trips.forEach(t => { if (t.slug && t.title) titleBySlug[t.slug] = t.title; });
+          // doubt_submissions (booking "Other topic" form) never attach to an
+          // application the way plan_doubts do — but the commission trigger's
+          // open_lead_was_worked() counts BOTH kinds. Index them by phone+slug
+          // so the Self-serve tag can never disagree with the fee actually paid.
+          // Prefer event_id (it carries the slug) and fall back to the title,
+          // trimmed on both sides because event titles carry stray whitespace.
+          const slugByTitle = new Map<string, string>();
+          Object.entries(titleBySlug).forEach(([slug, title]) => slugByTitle.set(title.trim().toLowerCase(), slug));
+          const doubtSubmissionKeys = new Set(
+            (planDoubts ?? []).map((d: any) => {
+              const slug = String(d.event_id ?? '').trim()
+                || slugByTitle.get(String(d.event_title ?? '').trim().toLowerCase())
+                || '';
+              return `${normalizePhone10(d.phone)}__${slug}`;
+            })
+          );
           // Per-event date list (sorted), so the Call tab can offer a date dropdown
           // for multi-date events (move an applicant between dates).
           const datesBySlug: Record<string, Array<{ date: string; status?: string }>> = {};
@@ -4153,6 +4236,26 @@ export default function AdminPanel() {
                     ? !a.assigned_marketer_id
                     : a.assigned_marketer_id === applicationsMarketerFilter);
             return eventMatch && dateMatch && statusMatch && searchMatch && marketerMatch;
+          }).sort((a, b) => {
+            // Keep every assigned lead visible, but float anything that needs a
+            // person above quiet self-serve rows. Stable sort preserves the
+            // existing newest-first order within each group.
+            const needsHuman = (lead: any) => {
+              // An unanswered question needs a person whatever the lead has
+              // paid — a fully-paid guest asking about the meeting spot is
+              // still work for their owner.
+              if ((lead.doubts ?? []).some((doubt: any) => String(doubt.status ?? 'new') === 'new')) return true;
+              // cart_abandoned and failed payments are historical marks that
+              // are never cleared once the person pays: cart-abandonment only
+              // ever sets the flag on 'invited'/'pending' rows, and recovery
+              // stamps recovered_at while leaving cart_abandoned true. Counting
+              // them on a paid row would pin finished customers to the top of
+              // the caller's list forever, which is the opposite of the point.
+              if (lead.status === 'advance_paid' || lead.status === 'fully_paid') return false;
+              return Boolean(lead.cart_abandoned)
+                || paymentsFor(lead.phone, lead.event_slug).all.some((payment: PayuPayment) => payment.status === 'failure');
+            };
+            return Number(needsHuman(b)) - Number(needsHuman(a));
           });
           // ── "Paid · past dates" fold (owner request 2026-08-02) ─────────────
           // Fully-paid people whose event date has already passed are done, so
@@ -4303,6 +4406,53 @@ export default function AdminPanel() {
             return '#999';
           };
 
+          // An open-event ticket that closed with nothing in the way pays the
+          // marketer half the event fee — the care fee. Mirrors the DB's
+          // open_lead_was_worked(): a doubt of either kind, a cart abandonment,
+          // or a failed payment all mean the full fee instead. Only fully-paid
+          // rows qualify, because that is the moment the fee is actually accrued.
+          const isSelfServeTicket = (a: any) =>
+            a.status === 'fully_paid'
+            && openEventSlugs.has(a.event_slug)
+            && !a.cart_abandoned
+            && (a.doubts?.length ?? 0) === 0
+            && !doubtSubmissionKeys.has(`${normalizePhone10(a.phone)}__${a.event_slug}`)
+            && !paymentsFor(a.phone, a.event_slug).all.some((payment: PayuPayment) => payment.status === 'failure');
+
+          // Outcome glyphs that sit inline with the status chip: they qualify
+          // how the ticket closed, so they belong with the status rather than
+          // in the secondary stack below it. Icon-only — each carries its own
+          // accessible name and hover tooltip in place of a text label.
+          const statusIcons = (a: any) => {
+            const recovered = !!a.recovered_at;
+            const selfServe = isSelfServeTicket(a);
+            if (!recovered && !selfServe) return null;
+            // Rendered INSIDE the status chip, so the glyphs inherit the chip's
+            // own colour via currentColor and stay muted through opacity — a
+            // fixed grey would go muddy on the tinted pill backgrounds. The
+            // chips are inline-flex, which optically centres these against the
+            // label instead of sitting them on the text baseline.
+            return (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 1, opacity: 0.7, verticalAlign: 'middle' }}>
+                {recovered && (
+                  <svg width="12" height="10" viewBox="0 0 16 14" role="img" style={{ display: 'block', flexShrink: 0, color: 'currentColor' }}>
+                    <title>Recovered — paid after abandoning the bill</title>
+                    <path d="M12.8 5.2A4.8 4.8 0 0 0 4.2 3.4L2.8 4.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M2.8 2.1v2.7h2.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M3.2 8.8a4.8 4.8 0 0 0 8.6 1.8l1.4-1.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M13.2 11.9V9.2h-2.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+                {selfServe && (
+                  <svg width="12" height="10" viewBox="0 0 16 14" role="img" style={{ display: 'block', flexShrink: 0, color: 'currentColor' }}>
+                    <title>Self-serve — booked with no help, marketer earns the half fee</title>
+                    <path d="M9.4 1 3.4 8.2h3.7l-.9 4.8 6-7.2H8.5L9.4 1z" fill="currentColor" />
+                  </svg>
+                )}
+              </span>
+            );
+          };
+
           // Secondary signals shown below the main lifecycle chip. They do not
           // replace the status or create separate status filters.
           const secondaryStatusLabels = (a: any) => {
@@ -4313,10 +4463,9 @@ export default function AdminPanel() {
               ? 'Mail'
               : null;
             const unsubscribedLabel = a.email_unsubscribed_at ? 'Unsubscribed' : null;
-            const recoveredLabel = a.recovered_at ? 'Recovered' : null;
             const detailsLabel = a.resend_details_link_clicked_at || a.resend_details_email_sent_at ? 'Details' : null;
-            if (!mailLabel && !detailsLabel && !unsubscribedLabel && !recoveredLabel) return null;
-            const labels = [mailLabel, detailsLabel, recoveredLabel, unsubscribedLabel].filter(Boolean);
+            if (!mailLabel && !detailsLabel && !unsubscribedLabel) return null;
+            const labels = [mailLabel, detailsLabel, unsubscribedLabel].filter(Boolean);
             return (
             <div style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
               {labels.map(label => (
@@ -4329,13 +4478,6 @@ export default function AdminPanel() {
                   ) : label === detailsLabel ? (
                     <svg width="15" height="10" viewBox="0 0 17 12" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#999' }}>
                       <path d="M4 6.6 6.5 9.1 11.7 3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : label === recoveredLabel ? (
-                    <svg width="11" height="9" viewBox="0 0 16 14" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#999' }}>
-                      <path d="M12.8 5.2A4.8 4.8 0 0 0 4.2 3.4L2.8 4.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M2.8 2.1v2.7h2.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M3.2 8.8a4.8 4.8 0 0 0 8.6 1.8l1.4-1.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M13.2 11.9V9.2h-2.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   ) : (
                     <span style={{ width: 15, color: '#aaa', display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>-</span>
@@ -4536,10 +4678,10 @@ export default function AdminPanel() {
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Tile label="Paid advance" value={paidAdvance} />
                     <Tile label="Fully paid" value={fullyPaid} />
-                    <Tile label="Est. earning" value={inr(paidAdvance * (currentMarketer.commission_amount || 0))} accent />
+                    <Tile label="Earned this month" value={inr(myCommissionStats.total)} accent />
                   </div>
                   <div style={{ fontSize: 11, color: '#999', paddingLeft: 2 }}>
-                    Estimated if everyone who paid the advance also pays their full balance — you're paid ₹{currentMarketer.commission_amount}/ticket only on full payment.
+                    Actual accrued fees from fully-paid tickets this month. Open-event sales pay the event&apos;s full fee when they needed help, otherwise half.
                   </div>
 
                   {/* Transparent team board */}
@@ -5155,7 +5297,7 @@ export default function AdminPanel() {
                               ) : (
                                 <>
                                   <div>
-                                    <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'none' }}>{statusLabel(displayStatus(app))}</span>
+                                    <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>{statusLabel(displayStatus(app))}{statusIcons(app)}</span>
 	                                  </div>
 	                                  {secondaryStatusLabels(app)}
 	                                </>
@@ -5183,7 +5325,7 @@ export default function AdminPanel() {
                               ) : (
                                 <>
                                   <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'none' }}>
-                                    ✓ {statusLabel(displayStatus(app))}
+                                    ✓ {statusLabel(displayStatus(app))}{statusIcons(app)}
 	                                  </span>
 	                                  {secondaryStatusLabels(app)}
 	                                </>
@@ -5198,8 +5340,8 @@ export default function AdminPanel() {
                             <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>{app.name || '—'}</td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
-                              <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'none' }}>
-                                {statusLabel(displayStatus(app) ?? 'pending')}
+                              <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                {statusLabel(displayStatus(app) ?? 'pending')}{statusIcons(app)}
 	                              </span>
 	                              {secondaryStatusLabels(app)}
 	                            </td>
@@ -5479,7 +5621,18 @@ export default function AdminPanel() {
         )}
 
         {/* ── ANALYTICS TAB ────────────────────────────────────────────────── */}
-        {tab === 'analytics' && (() => {
+        {/* ── GROWTH TAB sub-switcher ──────────────────────────────────────── */}
+        {tab === 'analytics' && (
+          <div style={s.subTabBar}>
+            {/* Named after the heading each page shows, as in the Team tab. */}
+            {([['overview', 'Analytics'], ['trends', 'Experiments']] as const).map(([mode, label]) => (
+              <button key={mode} onClick={() => setGrowthMode(mode)} style={s.subTab(growthMode === mode)}>{label}</button>
+            ))}
+          </div>
+        )}
+
+        {/* ── GROWTH ▸ OVERVIEW (the funnel snapshot) ───────────────────────── */}
+        {tab === 'analytics' && growthMode === 'overview' && (() => {
           const windowLabel = analyticsWindow === '24h' ? 'Last 24 Hours' : analyticsWindow === 'week' ? 'Last Week' : analyticsWindow === 'month' ? 'Last Month' : 'Last 90 Days';
 
           // All figures come from the get_analytics_summary RPC (server-side,
@@ -5813,7 +5966,9 @@ export default function AdminPanel() {
           return (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-                <div style={{ fontWeight: 700, fontSize: 20, flex: 1 }}>Analytics</div>
+                {/* No page title — the Analytics pill above names this page.
+                    The spacer keeps the window selector right-aligned. */}
+                <div style={{ flex: 1 }} />
                 <div style={{ position: 'relative' }}>
                   <select
                     value={analyticsWindow}
@@ -6597,35 +6752,53 @@ export default function AdminPanel() {
           // only to this person's own fully-paid leads. A dual-role event keeps
           // both calculations on one event line and the footer sums them.
           const myMkId = currentMarketer?.id ?? null;
-          const relevantSlugs = Array.from(new Set([...managerAssignedSlugs, ...(myMkId ? marketerAssignedSlugs : [])]));
+          const applicationEventById = new Map<string, string>(
+            applications.map(application => [String(application.id), String(application.event_slug)] as [string, string])
+          );
+          const marketerSalesBySlug = myMarketerSales.reduce<Record<string, { amount: number; tickets: number }>>((totals, sale) => {
+            const slug = applicationEventById.get(sale.application_id);
+            if (!slug) return totals;
+            const current = totals[slug] ?? { amount: 0, tickets: 0 };
+            current.amount += sale.amount;
+            current.tickets += 1;
+            totals[slug] = current;
+            return totals;
+          }, {});
+          const relevantSlugs = Array.from(new Set([
+            ...managerAssignedSlugs,
+            ...(myMkId ? marketerAssignedSlugs : []),
+            ...Object.keys(marketerSalesBySlug),
+          ]));
           const earningRows = relevantSlugs.flatMap(slug => {
             const t = trips.find(x => x.slug === slug);
             if (!t) return [];
             const managed = managerAssignedSlugs.includes(slug);
-            const inPool = !!myMkId && marketerAssignedSlugs.includes(slug);
+            const marketerLedger = marketerSalesBySlug[slug];
+            const hasMarketerEarnings = !!myMkId && (marketerAssignedSlugs.includes(slug) || !!marketerLedger);
             const mgrRate = managed ? Number(t.manager_commission ?? currentManager.commission_amount ?? 0) : 0;
-            const mkRate = inPool ? Number(t.marketer_commission ?? currentMarketer?.commission_amount ?? 50) : 0;
-            const calculations: Array<{ role: 'Manager' | 'Marketer'; rate: number; tickets: number }> = [];
+            const calculations: Array<{ role: 'Manager' | 'Marketer'; amount: number; rate?: number; tickets: number }> = [];
             if (managed) {
+              const tickets = fullyPaidApps.filter(a => a.event_slug === slug).length;
               calculations.push({
-                role: 'Manager', rate: mgrRate,
-                tickets: fullyPaidApps.filter(a => a.event_slug === slug).length,
+                role: 'Manager', rate: mgrRate, tickets,
+                amount: mgrRate * tickets,
               });
             }
-            if (inPool) {
+            if (hasMarketerEarnings) {
               calculations.push({
-                role: 'Marketer', rate: mkRate,
-                tickets: fullyPaidApps.filter(a => a.event_slug === slug && a.assigned_marketer_id === myMkId).length,
+                role: 'Marketer',
+                tickets: marketerLedger?.tickets ?? 0,
+                amount: marketerLedger?.amount ?? 0,
               });
             }
             return [{
               slug,
               title: t.title,
               calculations,
-              total: calculations.reduce((sum, c) => sum + c.rate * c.tickets, 0),
+              total: calculations.reduce((sum, calculation) => sum + calculation.amount, 0),
             }];
           });
-          const estimatedTotal = earningRows.reduce((sum, row) => sum + row.total, 0);
+          const earningsTotal = earningRows.reduce((sum, row) => sum + row.total, 0);
           return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
@@ -6647,15 +6820,17 @@ export default function AdminPanel() {
                   <div style={{ textAlign: 'right' }}>
                     {r.calculations.map(c => (
                       <div key={c.role} style={{ fontWeight: 750, fontSize: 14, color: '#333', whiteSpace: 'nowrap' }}>
-                        {inr(c.rate)} <span style={{ color: '#aaa', fontWeight: 600 }}>×</span> {c.tickets}
+                        {c.rate == null
+                          ? <>{inr(c.amount)} <span style={{ color: '#aaa', fontWeight: 600 }}>· {c.tickets} ticket{c.tickets === 1 ? '' : 's'}</span></>
+                          : <>{inr(c.rate)} <span style={{ color: '#aaa', fontWeight: 600 }}>×</span> {c.tickets}</>}
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, padding: '14px 16px', borderTop: '1.5px solid #e5e5e5', background: '#fafafa' }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#555' }}>Estimated Total</span>
-                <span style={{ fontSize: 20, fontWeight: 850, color: '#16a34a', whiteSpace: 'nowrap' }}>{inr(estimatedTotal)}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#555' }}>Total</span>
+                <span style={{ fontSize: 20, fontWeight: 850, color: '#16a34a', whiteSpace: 'nowrap' }}>{inr(earningsTotal)}</span>
               </div>
             </div>
 
@@ -6757,10 +6932,25 @@ export default function AdminPanel() {
           );
         })()}
 
-        {/* ── PERFORMANCE TAB (admin only) ─────────────────────────────────── */}
+        {/* ── TEAM TAB sub-switcher (admin only — managers get no sub-views) ── */}
         {tab === 'marketers' && adminRole === 'admin' && (
+          <div style={s.subTabBar}>
+            {/* Each pill is named after the heading its page actually shows —
+                a pill and a page title that disagree read as two places. */}
+            {([['money', 'Performance'], ['marketers', 'Marketers'], ['managers', 'Managers'], ['creators', 'Creators']] as const).map(([mode, label]) => (
+              <button key={mode} onClick={() => setTeamMode(mode)} style={s.subTab(teamMode === mode)}>{label}</button>
+            ))}
+          </div>
+        )}
+
+        {/* ── TEAM ▸ PERFORMANCE + MARKETERS (admin only) ──────────────────────
+            One wrapper, two sub-views: Performance (forecast, unit economics,
+            payouts, fixed costs) and Marketers (roster + hiring). Managers and
+            Creators render from their own blocks further down, so this wrapper
+            sits out those two sub-views. */}
+        {tab === 'marketers' && adminRole === 'admin' && (teamMode === 'money' || teamMode === 'marketers') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {(() => {
+            {teamMode === 'money' && (() => {
               const ps = perfSummary || {};
               const num = (x: any) => Number(x) || 0;
               const inr = (n: any) => '₹' + Math.round(num(n)).toLocaleString('en-IN');
@@ -6800,8 +6990,9 @@ export default function AdminPanel() {
               };
               return (
                 <>
+                  {/* No page title — the Performance pill above already names
+                      this page, and repeating it just costs vertical space. */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ fontWeight: 700, fontSize: 22 }}>Performance</div>
                     <div style={{ flex: 1 }} />
                     <button
                       onClick={() => { loadMarketersData(); loadAffiliatesData(); }}
@@ -6852,7 +7043,7 @@ export default function AdminPanel() {
                   {/* Per-event unit economics (editable cost per ticket) */}
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Per-Event Unit Economics</div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Type your cost to deliver one ticket. Price = full ticket (advance + balance). Profit per ticket = price − your cost − marketer commission (per-event rate, ₹50 default).</div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Type your cost to deliver one ticket. This table uses the event&apos;s full marketer fee (₹50 default), so open-event self-serve tickets that earn a half fee produce a higher actual margin.</div>
                     <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 620 }}>
                         <thead>
@@ -6993,6 +7184,8 @@ export default function AdminPanel() {
             })()}
 
             {/* ── Marketer management ── */}
+            {teamMode === 'marketers' && (<>
+            {/* No page title — the Marketers pill above names this page. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 8 }}>
               <div style={{ fontWeight: 700, fontSize: 18 }}>Marketers</div>
               <span style={{ fontSize: 13, color: '#888' }}>{marketers.length} {marketers.length === 1 ? 'marketer' : 'marketers'}</span>
@@ -7082,11 +7275,12 @@ export default function AdminPanel() {
                 </tbody>
               </table>
             </div>
+            </>)}
 
-            {/* Monthly Fixed Costs — kept last in the tab per owner. Lives outside
-                the money IIFE now, so it defines its own ₹ formatter + reads the
-                total from perfSummary. */}
-            {(() => {
+            {/* Monthly Fixed Costs — kept last, now last within Money. Lives
+                outside the money IIFE, so it defines its own ₹ formatter + reads
+                the total from perfSummary. */}
+            {teamMode === 'money' && (() => {
               const fcInr = (n: any) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
               return (
               <div>
@@ -7119,8 +7313,166 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* ── CREATORS (AFFILIATES) — a card inside the Content tab ────────── */}
-        {tab === 'content' && adminRole === 'admin' && (() => {
+        {/* ── TEAM ▸ CREATORS: videos — who is actually working ────────────── */}
+        {/* Sits ABOVE the Creators roster on purpose: the review queue is the
+            daily job, so it's the first thing on the Creators page. */}
+        {tab === 'marketers' && adminRole === 'admin' && teamMode === 'creators' && (() => {
+          const fmtDay = (iso: string) => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' }).format(d);
+          };
+          const titleFor = (slug: string) => trips.find(t => t.slug === slug)?.title?.trim() || slug;
+          const linkFor = (h: string) => `${window.location.origin}/@${h}`;
+          const copyLink = (h: string) => {
+            navigator.clipboard?.writeText(linkFor(h)).then(() => showToast(`Copied ${linkFor(h)}`), () => showToast('Copy failed'));
+          };
+          const byCreator: Record<string, CreatorVideoRow[]> = {};
+          creatorVideos.forEach(v => { (byCreator[v.affiliate_id] ??= []).push(v); });
+          // Only creators who have actually submitted a video show here — the
+          // roster of creators who've posted nothing lives in the Creators table
+          // below, so this card stays a clean review queue. Sorted by urgency:
+          // whoever has an unreviewed video most recently uploaded sits at the
+          // top (a fresh single upload beats a stale pile), and creators with
+          // nothing left to review fall below, newest submission first. `videos`
+          // arrives newest-first from the query, so [0] is the latest.
+          const rows = affiliates.map(af => {
+            const videos = byCreator[af.id] ?? [];
+            const pendingVideos = videos.filter(v => v.status === 'pending');
+            return {
+              af,
+              videos,
+              last: videos[0]?.submitted_at ?? '',
+              lastPending: pendingVideos[0]?.submitted_at ?? '',
+              pending: pendingVideos.length,
+            };
+          }).filter(r => r.videos.length > 0)
+            .sort((a, b) => {
+              // Anyone with something to review outranks anyone with nothing.
+              if (!!a.lastPending !== !!b.lastPending) return a.lastPending ? -1 : 1;
+              // Within each group, most recent upload first.
+              const aKey = a.lastPending || a.last;
+              const bKey = b.lastPending || b.last;
+              return (bKey || '').localeCompare(aKey || '');
+            });
+
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 20 }}>
+            {/* No page title — the Creators pill above names this page. Review
+                and All creators below are its two sections. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Review</div>
+            </div>
+
+            <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, overflow: 'hidden' }}>
+              {rows.length === 0 && <div style={{ padding: 18, textAlign: 'center', color: '#bbb', fontSize: 13 }}>No videos submitted yet.</div>}
+              {rows.map(({ af, videos, last }, idx) => {
+                const open = openVideoCreator === af.id;
+                const hasUnseen = videos.some(v => !v.seen_at);
+                return (
+                  <div key={af.id} style={{ borderTop: idx === 0 ? 'none' : '1px solid #f2f2ec', opacity: af.active ? 1 : 0.5, background: open ? '#faf9f5' : 'transparent' }}>
+                    {/* Row header — the whole strip toggles the dropdown open. */}
+                    <div
+                      onClick={() => setOpenVideoCreator(open ? null : af.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', cursor: 'pointer' }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 15, color: '#111' }}>{af.name}</span>
+                          <button
+                            type="button"
+                            aria-label="Copy creator link"
+                            title="Copy creator link"
+                            onClick={e => { e.stopPropagation(); copyLink(af.handle); }}
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#7c8aa5', cursor: 'pointer', padding: 0, lineHeight: 0 }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
+                          {af.phone
+                            ? <a href={`tel:${af.phone}`} onClick={e => e.stopPropagation()} style={{ fontSize: 12, color: '#999', fontWeight: 500, textDecoration: 'none' }}>{af.phone}</a>
+                            : <span style={{ fontSize: 12, color: '#c0c0c0' }}>no phone</span>}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>
+                        {last ? fmtDay(last) : ''}
+                        {hasUnseen && <span title="Unseen video" style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366f1', flexShrink: 0 }} />}
+                      </div>
+
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={open ? '#888' : '#c4c4c4'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </div>
+
+                    {/* Dropdown body — the videos + review actions. */}
+                    {open && (
+                      <div style={{ padding: '0 16px 12px' }}>
+                        {videos.length === 0 && <div style={{ fontSize: 12.5, color: '#999', padding: '8px 0' }}>No videos submitted yet.</div>}
+                        {videos.map(v => (
+                          <div key={v.id} style={{ borderTop: '1px solid #ececde', padding: '11px 0', display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1, minWidth: 200 }}>
+                              <div style={{ fontWeight: 700, color: '#111', fontSize: 12.5 }}>
+                                {titleFor(v.event_slug)} <span style={{ color: '#999', fontWeight: 500 }}>· {fmtDay(v.event_date)}</span>
+                              </div>
+                              {/* Mark seen on mousedown, not click: opening the link via
+                                  middle-click / ⌘-click / "open in new tab" fires auxclick,
+                                  not click, so an onClick handler would miss it. mousedown
+                                  fires for every button before the tab opens. */}
+                              <a href={v.video_url} target="_blank" rel="noopener noreferrer" onMouseDown={() => markVideoSeen(v)} onClick={e => e.stopPropagation()} style={{ fontSize: 12, color: '#6366f1', textDecoration: 'underline', wordBreak: 'break-all' }}>
+                                {v.video_url}
+                              </a>
+                              <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
+                                sent {fmtDay(v.submitted_at)}
+                                {v.status === 'approved' && <span style={{ color: '#16a34a', fontWeight: 700 }}> · approved</span>}
+                                {v.status === 'changes_requested' && <span style={{ color: '#b45309', fontWeight: 700 }}> · changes requested</span>}
+                                {v.review_note && <span> · “{v.review_note}”</span>}
+                              </div>
+                            </div>
+                            {v.status === 'pending' && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <input
+                                  placeholder="Note (optional)"
+                                  value={videoNotes[v.id] ?? ''}
+                                  onClick={e => e.stopPropagation()}
+                                  onChange={e => setVideoNotes(prev => ({ ...prev, [v.id]: e.target.value }))}
+                                  style={{ ...s.input, marginBottom: 0, width: 180, fontSize: 12, padding: '6px 8px' }}
+                                />
+                                <button
+                                  disabled={reviewingVideo === v.id}
+                                  onClick={e => { e.stopPropagation(); void reviewCreatorVideo(v, 'approved'); }}
+                                  style={{ ...s.btn('#16a34a'), padding: '5px 12px', fontSize: 12 }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  disabled={reviewingVideo === v.id}
+                                  onClick={e => { e.stopPropagation(); void reviewCreatorVideo(v, 'changes_requested'); }}
+                                  style={{ ...s.outlineBtn, fontSize: 12 }}
+                                >
+                                  Ask changes
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+          );
+        })()}
+
+        {/* ── TEAM ▸ CREATORS: the affiliate roster ─────────────────────────── */}
+        {tab === 'marketers' && adminRole === 'admin' && teamMode === 'creators' && (() => {
           // 2 decimals — matches the creator dashboard so small commissions
           // (e.g. 8% of a ₹1 ticket = ₹0.08) aren't hidden as ₹0 in Earned/Unpaid.
           const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -7128,15 +7480,41 @@ export default function AdminPanel() {
           const copyLink = (h: string) => {
             navigator.clipboard?.writeText(linkFor(h)).then(() => showToast(`Copied ${linkFor(h)}`), () => showToast('Copy failed'));
           };
-          const totalUnpaid = Object.keys(affiliateStats).reduce((s, k) => s + affiliateStats[k].unpaid, 0);
-          const newCount = affiliates.filter(a => !a.reviewed_at).length;
+          const creatorSearchTerm = creatorSearch.trim().toLocaleLowerCase();
+          const visibleAffiliates = creatorSearchTerm
+            ? affiliates.filter(af => [af.name, af.handle, af.email, af.phone, af.upi_id, af.gender]
+              .some(value => String(value ?? '').toLocaleLowerCase().includes(creatorSearchTerm)))
+            : affiliates;
           return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>Creators</div>
-              <span style={{ fontSize: 13, color: '#888' }}>{affiliates.length} {affiliates.length === 1 ? 'creator' : 'creators'}</span>
-              {newCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>{newCount} new</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              {/* "All creators", not "Creators" — the page is already titled
+                  Creators, and two identical headings read as a repeat. */}
+              <div style={{ fontWeight: 700, fontSize: 18 }}>All creators</div>
+              <span style={{ fontSize: 13, color: '#888' }}>
+                {creatorSearchTerm ? `${visibleAffiliates.length} of ` : ''}{affiliates.length}
+              </span>
               <div style={{ flex: 1 }} />
+              <div style={{ position: 'relative', flex: '0 1 260px', minWidth: 210 }}>
+                <input
+                  type="search"
+                  aria-label="Search creators"
+                  placeholder="Search creators…"
+                  value={creatorSearch}
+                  onChange={e => setCreatorSearch(e.target.value)}
+                  style={{ width: '100%', padding: creatorSearch ? '8px 34px 8px 12px' : '8px 12px', borderRadius: 8, border: '1.5px solid #e0e0e0', fontSize: 13, background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+                {creatorSearch && (
+                  <button
+                    type="button"
+                    aria-label="Clear creator search"
+                    onClick={() => setCreatorSearch('')}
+                    style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', width: 22, height: 22, padding: 0, border: 0, borderRadius: 99, background: '#f1f1f1', color: '#777', fontSize: 15, lineHeight: '22px', cursor: 'pointer' }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
               <button style={s.btn()} onClick={() => setAddingAffiliate(true)}>+ Add Creator</button>
             </div>
 
@@ -7148,10 +7526,6 @@ export default function AdminPanel() {
               <span><b style={{ color: '#111', fontSize: 14 }}>{signupFunnel.started}</b> entered the signup</span>
               <span><b style={{ color: '#16a34a', fontSize: 14 }}>{signupFunnel.completed}</b> became creators</span>
               <span><b style={{ color: signupFunnel.started - signupFunnel.completed > 0 ? '#dc2626' : '#999', fontSize: 14 }}>{signupFunnel.started - signupFunnel.completed}</b> didn't finish</span>
-            </div>
-
-            <div style={{ background: '#eef2ff', border: '1.5px solid #c7d2fe', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#3730a3', lineHeight: 1.55 }}>
-              <b>How this works:</b> each creator gets a link <code>{window.location.origin}/@handle</code>. When someone books through it and pays in full for an <b>affiliate-enabled</b> event, the creator earns that event's <b>creator fee</b> — a flat ₹ per ticket, or a % of the ticket price if no flat fee is set. Turn commissions on and set the fee per event from the event editor. Creators log in with the Google email you set here to see their own dashboard.
             </div>
 
             {addingAffiliate && (
@@ -7173,9 +7547,6 @@ export default function AdminPanel() {
               </div>
             )}
 
-            {totalUnpaid > 0 && (
-              <div style={{ fontSize: 13, color: '#888' }}>Outstanding to pay out across all creators: <b style={{ color: '#dc2626' }}>{inr(totalUnpaid)}</b></div>
-            )}
 
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
@@ -7192,7 +7563,8 @@ export default function AdminPanel() {
                 </thead>
                 <tbody>
                   {affiliates.length === 0 && <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No creators yet. Add your first one above.</td></tr>}
-                  {affiliates.map((af) => {
+                  {affiliates.length > 0 && visibleAffiliates.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#999' }}>No creators match “{creatorSearch.trim()}”.</td></tr>}
+                  {visibleAffiliates.map((af) => {
                     const st = affiliateStats[af.id] ?? { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 };
                     const conv = st.clicks > 0 ? Math.round((st.tickets / st.clicks) * 100) : null;
                     const isNew = !af.reviewed_at;
@@ -7231,268 +7603,146 @@ export default function AdminPanel() {
                 </tbody>
               </table>
             </div>
-
-            <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
-              Sign-ups = people who gave their details / started a booking via their link — for invite events they submitted the application form, for open events they reached checkout; neither has paid yet (conversion % = paid tickets ÷ clicks). Commission accrues only when a ticket is fully paid on an event with creator commissions enabled, and is netted from your monthly profit. "Mark paid" stamps every outstanding sale as settled — the history is kept.
-            </div>
           </div>
           );
         })()}
 
-        {/* ── CREATOR VIDEOS — who is actually working (Content tab, admin) ── */}
-        {tab === 'content' && adminRole === 'admin' && (() => {
-          const fmtDay = (iso: string) => {
-            if (!iso) return '';
-            const d = new Date(iso);
-            if (isNaN(d.getTime())) return '';
-            return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' }).format(d);
-          };
-          const titleFor = (slug: string) => trips.find(t => t.slug === slug)?.title?.trim() || slug;
-          const byCreator: Record<string, CreatorVideoRow[]> = {};
-          creatorVideos.forEach(v => { (byCreator[v.affiliate_id] ??= []).push(v); });
-          const pendingTotal = creatorVideos.filter(v => v.status === 'pending').length;
-          // Blank "last video" sorts first, then oldest — so whoever has gone
-          // quiet is at the top of the table without anyone having to look for them.
-          const rows = affiliates.map(af => {
-            const videos = byCreator[af.id] ?? [];
-            return {
-              af,
-              videos,
-              last: videos[0]?.submitted_at ?? '',
-              pending: videos.filter(v => v.status === 'pending').length,
-            };
-          }).sort((a, b) => (a.last || '').localeCompare(b.last || ''));
+        {/* ── TEAM ▸ MANAGERS ────────────────────────────────────────────────
+            The 6pm-IST rules engine used to be its own "Briefing" tab. Page
+            order is Today's brief → Managers roster → Rulebook: the brief is
+            the daily read, the roster is occasional, and the rules are tuned
+            rarest of all. The roster is handed to
+            ManagerPanel as `beforeRulebook` rather than rendered as a sibling,
+            because Today's brief and the Rulebook share state — saving a rule
+            refreshes the brief. */}
+        {tab === 'marketers' && adminRole === 'admin' && teamMode === 'managers' && (
+          <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading briefing…</div>}>
+            <ManagerPanel beforeRulebook={(() => {
+              const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const totalUnpaid = Object.keys(adminManagerStats).reduce((sum, k) => sum + adminManagerStats[k].unpaid, 0);
+              const assignableTrips = trips.filter(t => t.slug && t.is_active);
+              return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  {/* "Managers roster" — the Managers pill names the page and the
+                      Daily briefing sits above, so this labels the section. */}
+                  <div style={{ fontWeight: 700, fontSize: 18 }}>Managers roster</div>
+                  <span style={{ fontSize: 13, color: '#888' }}>{adminManagers.length} {adminManagers.length === 1 ? 'manager' : 'managers'}</span>
+                  <div style={{ flex: 1 }} />
+                  <button style={s.btn()} onClick={() => setAddingManagerRow(true)}>+ Add Manager</button>
+                </div>
 
-          return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>Creator videos</div>
-              {pendingTotal > 0
-                ? <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>{pendingTotal} to review</span>
-                : <span style={{ fontSize: 13, color: '#888' }}>nothing to review</span>}
-            </div>
+                {addingManagerRow && (
+                  <div style={{ background: '#fff', border: '1.5px solid #e0e0e0', borderRadius: 12, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 110px auto auto', gap: 10, alignItems: 'end' }}>
+                    <div>
+                      <label style={s.label}>Name</label>
+                      <input style={s.input} placeholder="Full name" value={newManagerName} onChange={e => setNewManagerName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Google email (their login)</label>
+                      <input style={s.input} placeholder="manager@gmail.com" value={newManagerEmail} onChange={e => setNewManagerEmail(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={s.label}>₹ / ticket</label>
+                      <input style={s.input} type="number" min={0} value={newManagerCommissionInput} onChange={e => setNewManagerCommissionInput(e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} />
+                    </div>
+                    <button style={s.btn()} disabled={savingManagerRow} onClick={saveNewManager}>{savingManagerRow ? 'Saving…' : 'Save'}</button>
+                    <button style={s.outlineBtn} onClick={() => { setAddingManagerRow(false); setNewManagerName(''); setNewManagerEmail(''); setNewManagerCommissionInput('35'); }}>Cancel</button>
+                  </div>
+                )}
 
-            <div style={{ background: '#fff', border: '1.5px solid #e8e8e0', borderRadius: 12, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: '#faf9f5', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                    <th style={{ textAlign: 'left', padding: '8px 16px' }}>Creator</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Videos</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Last video</th>
-                    <th style={{ textAlign: 'right', padding: '8px 16px' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 && <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No creators yet.</td></tr>}
-                  {rows.map(({ af, videos, last, pending }) => {
-                    const open = openVideoCreator === af.id;
-                    return (
-                      <React.Fragment key={af.id}>
-                        <tr
-                          onClick={() => setOpenVideoCreator(open ? null : af.id)}
-                          style={{ borderTop: '1px solid #f5f5f0', cursor: 'pointer', opacity: af.active ? 1 : 0.5, background: open ? '#faf9f5' : 'transparent' }}
-                        >
-                          <td style={{ padding: '10px 16px' }}>
-                            <div style={{ fontWeight: 700, color: '#111' }}>{af.name}</div>
-                            <div style={{ fontSize: 12, color: '#6366f1', marginTop: 2 }}>/@{af.handle}</div>
-                          </td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: videos.length === 0 ? '#c0c0c0' : '#111' }}>{videos.length}</td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right', color: last ? '#555' : '#c0c0c0' }}>{last ? fmtDay(last) : '—'}</td>
-                          <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            {pending > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999 }}>Review{pending > 1 ? ` ${pending}` : ''}</span>}
-                          </td>
-                        </tr>
+                {totalUnpaid > 0 && (
+                  <div style={{ fontSize: 13, color: '#888' }}>Outstanding to pay out across all managers: <b style={{ color: '#dc2626' }}>{inr(totalUnpaid)}</b></div>
+                )}
 
-                        {open && (
-                          <tr style={{ background: '#faf9f5' }}>
-                            <td colSpan={4} style={{ padding: '4px 16px 14px' }}>
-                              {videos.length === 0 && <div style={{ fontSize: 12.5, color: '#999', padding: '8px 0' }}>No videos submitted yet.</div>}
-                              {videos.map(v => (
-                                <div key={v.id} style={{ borderTop: '1px solid #ececde', padding: '10px 0', display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-                                  <div style={{ flex: 1, minWidth: 200 }}>
-                                    <div style={{ fontWeight: 700, color: '#111', fontSize: 12.5 }}>
-                                      {titleFor(v.event_slug)} <span style={{ color: '#999', fontWeight: 500 }}>· {fmtDay(v.event_date)}</span>
-                                    </div>
-                                    <a href={v.video_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 12, color: '#6366f1', textDecoration: 'underline', wordBreak: 'break-all' }}>
-                                      {v.video_url}
-                                    </a>
-                                    <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
-                                      sent {fmtDay(v.submitted_at)}
-                                      {v.status === 'approved' && <span style={{ color: '#16a34a', fontWeight: 700 }}> · approved</span>}
-                                      {v.status === 'changes_requested' && <span style={{ color: '#b45309', fontWeight: 700 }}> · changes requested</span>}
-                                      {v.review_note && <span> · “{v.review_note}”</span>}
-                                    </div>
-                                  </div>
-                                  {v.status === 'pending' && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                      <input
-                                        placeholder="Note (optional)"
-                                        value={videoNotes[v.id] ?? ''}
-                                        onClick={e => e.stopPropagation()}
-                                        onChange={e => setVideoNotes(prev => ({ ...prev, [v.id]: e.target.value }))}
-                                        style={{ ...s.input, marginBottom: 0, width: 180, fontSize: 12, padding: '6px 8px' }}
-                                      />
-                                      <button
-                                        disabled={reviewingVideo === v.id}
-                                        onClick={e => { e.stopPropagation(); void reviewCreatorVideo(v, 'approved'); }}
-                                        style={{ ...s.btn('#16a34a'), padding: '5px 12px', fontSize: 12 }}
-                                      >
-                                        Approve
-                                      </button>
-                                      <button
-                                        disabled={reviewingVideo === v.id}
-                                        onClick={e => { e.stopPropagation(); void reviewCreatorVideo(v, 'changes_requested'); }}
-                                        style={{ ...s.outlineBtn, fontSize: 12 }}
-                                      >
-                                        Ask changes
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
+                    <thead>
+                      <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        <th style={{ textAlign: 'left', padding: '8px 16px' }}>Manager & events</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px' }}>₹/ticket</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px' }}>Paid tickets</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px' }}>Earned</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid</th>
+                        <th style={{ textAlign: 'right', padding: '8px 16px' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminManagers.length === 0 && <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No managers yet. Add your first one above.</td></tr>}
+                      {adminManagers.map((m) => {
+                        const st = adminManagerStats[m.id] ?? { tickets: 0, earned: 0, unpaid: 0 };
+                        const assigned = adminManagerEvents[m.id] ?? [];
+                        return (
+                          <tr key={m.id} style={{ borderTop: '1px solid #f5f5f0', opacity: m.active ? 1 : 0.5 }}>
+                            <td style={{ padding: '10px 16px' }}>
+                              <div style={{ fontWeight: 700, color: '#111' }}>{m.name}{!m.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>deactivated</span>}</div>
+                              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.email}</div>
+                              {/* Event assignment chips — the whole point of a manager */}
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                {assignableTrips.map(t => {
+                                  const slug = t.slug!;
+                                  const on = assigned.includes(slug);
+                                  return (
+                                    <button key={slug} type="button" disabled={!m.active}
+                                      onClick={() => setManagerEvents(m.id, on ? assigned.filter(x => x !== slug) : [...assigned, slug])}
+                                      style={{ padding: '4px 10px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#ddd'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#777', fontWeight: 600, fontSize: 11, cursor: m.active ? 'pointer' : 'not-allowed' }}>
+                                      {on ? '✓ ' : ''}{t.title}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {/* Scorecard strip — outcome + activity metrics; chips
+                                  hide when there's no data behind them yet. */}
+                              {(() => {
+                                const sc = managerScorecards?.byId[m.id];
+                                if (!sc || assigned.length === 0) return null;
+                                const bench = managerScorecards!.benchmark;
+                                const chip = (label: string, tone?: 'good' | 'bad') => (
+                                  <span key={label} style={{ fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '2px 8px', background: tone === 'good' ? '#f0fdf4' : tone === 'bad' ? '#fef2f2' : '#f5f5f5', color: tone === 'good' ? '#15803d' : tone === 'bad' ? '#b91c1c' : '#666', border: '1px solid ' + (tone === 'good' ? '#bbf7d0' : tone === 'bad' ? '#fecaca' : '#e5e5e5') }}>
+                                    {label}
+                                  </span>
+                                );
+                                const chips: React.ReactNode[] = [];
+                                if (sc.fill_pct != null) chips.push(chip(`Fill ${sc.fill_pct}%`, Number(sc.fill_pct) >= 50 ? 'good' : undefined));
+                                if (sc.conversion_pct != null) chips.push(chip(`Conv ${sc.conversion_pct}% (avg ${bench}%)`, Number(sc.conversion_pct) >= bench ? 'good' : 'bad'));
+                                if (Number(sc.stale) > 0) chips.push(chip(`${sc.stale} stale`, 'bad'));
+                                if (sc.pending_age_h != null) chips.push(chip(`Pending age ${Math.round(Number(sc.pending_age_h))}h`));
+                                if (sc.recovery_pct != null) chips.push(chip(`Recovery ${sc.recovery_pct}%`));
+                                if (sc.doubt_closure_pct != null) chips.push(chip(`Doubts closed ${sc.doubt_closure_pct}%`));
+                                chips.push(chip(`Revenue ₹${Math.round(Number(sc.revenue)).toLocaleString('en-IN')}`));
+                                chips.push(chip(`${sc.actions_7d} actions/7d`, Number(sc.actions_7d) === 0 ? 'bad' : undefined));
+                                if (Number(sc.hires) > 0) chips.push(chip(`${sc.hires} hire${Number(sc.hires) === 1 ? '' : 's'}`));
+                                if (sc.last_active) chips.push(chip(`Seen ${new Date(sc.last_active).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`));
+                                return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>{chips}</div>;
+                              })()}
+                            </td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>₹{Number(m.commission_amount)}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{st.tickets}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>{inr(st.earned)}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', color: st.unpaid > 0 ? '#dc2626' : '#bbb', fontWeight: st.unpaid > 0 ? 700 : 400 }}>{inr(st.unpaid)}</td>
+                            <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              {st.unpaid > 0 && <button style={{ ...s.btn('#111'), padding: '4px 10px', fontSize: 12, marginRight: 6 }} onClick={() => markManagerPaid(m, st.unpaid)}>Mark paid</button>}
+                              <button style={s.outlineBtn} onClick={() => toggleManagerActive(m)}>{m.active ? 'Deactivate' : 'Reactivate'}</button>
                             </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
-              Every creator sees the same task — one per event with creator commission switched on that still has an upcoming date — and pastes a link when their video is ready. Tap a row to watch what they sent and approve it, or ask for changes with a note they'll read on their dashboard. Creators with a blank "last video" are sitting in the roster without posting; pair that with their clicks in the Creators table above, since a video nobody sees drives no bookings.
-            </div>
-          </div>
-          );
-        })()}
-
-        {/* ── MANAGERS CARD (inside Performance, admin only) ───────────────── */}
-        {tab === 'marketers' && adminRole === 'admin' && (() => {
-          const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          const totalUnpaid = Object.keys(adminManagerStats).reduce((sum, k) => sum + adminManagerStats[k].unpaid, 0);
-          const assignableTrips = trips.filter(t => t.slug && t.is_active);
-          return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>Managers</div>
-              <span style={{ fontSize: 13, color: '#888' }}>{adminManagers.length} {adminManagers.length === 1 ? 'manager' : 'managers'}</span>
-              <div style={{ flex: 1 }} />
-              <button style={s.btn()} onClick={() => setAddingManagerRow(true)}>+ Add Manager</button>
-            </div>
-
-            <div style={{ background: '#fef3c7', border: '1.5px solid #fde68a', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#92400e', lineHeight: 1.55 }}>
-              <b>How this works:</b> a manager runs their assigned events end-to-end — they see every lead, manage the marketers, hire new ones (you get a notification), and keep dates + group chats current. They earn their ₹/ticket on <b>every</b> fully-paid ticket of their events, whoever sold it, netted from your monthly profit. They log in with the Google email you set here and land on their dashboard.
-            </div>
-
-            {addingManagerRow && (
-              <div style={{ background: '#fff', border: '1.5px solid #e0e0e0', borderRadius: 12, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 110px auto auto', gap: 10, alignItems: 'end' }}>
-                <div>
-                  <label style={s.label}>Name</label>
-                  <input style={s.input} placeholder="Full name" value={newManagerName} onChange={e => setNewManagerName(e.target.value)} />
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-                <div>
-                  <label style={s.label}>Google email (their login)</label>
-                  <input style={s.input} placeholder="manager@gmail.com" value={newManagerEmail} onChange={e => setNewManagerEmail(e.target.value)} />
+
+                <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
+                  Commission accrues automatically when any ticket on their events flips to fully paid (₹/ticket set per manager; the earliest-assigned manager earns it if an event somehow has two). It's subtracted from the profit numbers above. Deactivating also removes their login — required, or they'd see every lead as a plain ops user. "Mark paid" stamps outstanding earnings as settled — the history is kept.
                 </div>
-                <div>
-                  <label style={s.label}>₹ / ticket</label>
-                  <input style={s.input} type="number" min={0} value={newManagerCommissionInput} onChange={e => setNewManagerCommissionInput(e.target.value)} onWheel={e => (e.target as HTMLInputElement).blur()} />
-                </div>
-                <button style={s.btn()} disabled={savingManagerRow} onClick={saveNewManager}>{savingManagerRow ? 'Saving…' : 'Save'}</button>
-                <button style={s.outlineBtn} onClick={() => { setAddingManagerRow(false); setNewManagerName(''); setNewManagerEmail(''); setNewManagerCommissionInput('35'); }}>Cancel</button>
               </div>
-            )}
-
-            {totalUnpaid > 0 && (
-              <div style={{ fontSize: 13, color: '#888' }}>Outstanding to pay out across all managers: <b style={{ color: '#dc2626' }}>{inr(totalUnpaid)}</b></div>
-            )}
-
-            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
-                <thead>
-                  <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    <th style={{ textAlign: 'left', padding: '8px 16px' }}>Manager & events</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>₹/ticket</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Paid tickets</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Earned</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid</th>
-                    <th style={{ textAlign: 'right', padding: '8px 16px' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminManagers.length === 0 && <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No managers yet. Add your first one above.</td></tr>}
-                  {adminManagers.map((m) => {
-                    const st = adminManagerStats[m.id] ?? { tickets: 0, earned: 0, unpaid: 0 };
-                    const assigned = adminManagerEvents[m.id] ?? [];
-                    return (
-                      <tr key={m.id} style={{ borderTop: '1px solid #f5f5f0', opacity: m.active ? 1 : 0.5 }}>
-                        <td style={{ padding: '10px 16px' }}>
-                          <div style={{ fontWeight: 700, color: '#111' }}>{m.name}{!m.active && <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>deactivated</span>}</div>
-                          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.email}</div>
-                          {/* Event assignment chips — the whole point of a manager */}
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                            {assignableTrips.map(t => {
-                              const slug = t.slug!;
-                              const on = assigned.includes(slug);
-                              return (
-                                <button key={slug} type="button" disabled={!m.active}
-                                  onClick={() => setManagerEvents(m.id, on ? assigned.filter(x => x !== slug) : [...assigned, slug])}
-                                  style={{ padding: '4px 10px', borderRadius: 99, border: '1.5px solid ' + (on ? '#111' : '#ddd'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#777', fontWeight: 600, fontSize: 11, cursor: m.active ? 'pointer' : 'not-allowed' }}>
-                                  {on ? '✓ ' : ''}{t.title}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {/* Scorecard strip — outcome + activity metrics; chips
-                              hide when there's no data behind them yet. */}
-                          {(() => {
-                            const sc = managerScorecards?.byId[m.id];
-                            if (!sc || assigned.length === 0) return null;
-                            const bench = managerScorecards!.benchmark;
-                            const chip = (label: string, tone?: 'good' | 'bad') => (
-                              <span key={label} style={{ fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '2px 8px', background: tone === 'good' ? '#f0fdf4' : tone === 'bad' ? '#fef2f2' : '#f5f5f5', color: tone === 'good' ? '#15803d' : tone === 'bad' ? '#b91c1c' : '#666', border: '1px solid ' + (tone === 'good' ? '#bbf7d0' : tone === 'bad' ? '#fecaca' : '#e5e5e5') }}>
-                                {label}
-                              </span>
-                            );
-                            const chips: React.ReactNode[] = [];
-                            if (sc.fill_pct != null) chips.push(chip(`Fill ${sc.fill_pct}%`, Number(sc.fill_pct) >= 50 ? 'good' : undefined));
-                            if (sc.conversion_pct != null) chips.push(chip(`Conv ${sc.conversion_pct}% (avg ${bench}%)`, Number(sc.conversion_pct) >= bench ? 'good' : 'bad'));
-                            if (Number(sc.stale) > 0) chips.push(chip(`${sc.stale} stale`, 'bad'));
-                            if (sc.pending_age_h != null) chips.push(chip(`Pending age ${Math.round(Number(sc.pending_age_h))}h`));
-                            if (sc.recovery_pct != null) chips.push(chip(`Recovery ${sc.recovery_pct}%`));
-                            if (sc.doubt_closure_pct != null) chips.push(chip(`Doubts closed ${sc.doubt_closure_pct}%`));
-                            chips.push(chip(`Revenue ₹${Math.round(Number(sc.revenue)).toLocaleString('en-IN')}`));
-                            chips.push(chip(`${sc.actions_7d} actions/7d`, Number(sc.actions_7d) === 0 ? 'bad' : undefined));
-                            if (Number(sc.hires) > 0) chips.push(chip(`${sc.hires} hire${Number(sc.hires) === 1 ? '' : 's'}`));
-                            if (sc.last_active) chips.push(chip(`Seen ${new Date(sc.last_active).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`));
-                            return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>{chips}</div>;
-                          })()}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>₹{Number(m.commission_amount)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{st.tickets}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>{inr(st.earned)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: st.unpaid > 0 ? '#dc2626' : '#bbb', fontWeight: st.unpaid > 0 ? 700 : 400 }}>{inr(st.unpaid)}</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {st.unpaid > 0 && <button style={{ ...s.btn('#111'), padding: '4px 10px', fontSize: 12, marginRight: 6 }} onClick={() => markManagerPaid(m, st.unpaid)}>Mark paid</button>}
-                          <button style={s.outlineBtn} onClick={() => toggleManagerActive(m)}>{m.active ? 'Deactivate' : 'Reactivate'}</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.5 }}>
-              Commission accrues automatically when any ticket on their events flips to fully paid (₹/ticket set per manager; the earliest-assigned manager earns it if an event somehow has two). It's subtracted from the profit numbers above. Deactivating also removes their login — required, or they'd see every lead as a plain ops user. "Mark paid" stamps outstanding earnings as settled — the history is kept.
-            </div>
-          </div>
-          );
-        })()}
+              );
+            })()} />
+          </React.Suspense>
+        )}
 
         {/* ── EXPERIMENTS TAB ──────────────────────────────────────────────── */}
-        {tab === 'experiments' && (() => {
+        {/* ── GROWTH ▸ TRENDS (same metrics per day, vs the release log) ────── */}
+        {tab === 'analytics' && growthMode === 'trends' && (() => {
           // Site-wide metrics, pooled across events per day by the RPC. Ratio
           // metrics recompute from summed numerator/denominator per bucket —
           // never by averaging daily percentages (small days would distort).
@@ -7652,7 +7902,8 @@ export default function AdminPanel() {
           return (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 700, fontSize: 20, flex: 1, minWidth: 140 }}>Experiments</div>
+                {/* No page title — the Experiments pill above names this page. */}
+                <div style={{ flex: 1, minWidth: 140 }} />
                 <select
                   value={expEventId}
                   onChange={e => { setExpEventId(e.target.value); loadExperiments(e.target.value); }}
@@ -8080,8 +8331,9 @@ export default function AdminPanel() {
 // Renders below the TripForm. Picking marketers writes to event_marketers;
 // the DB redistribute trigger handles fanning existing applications across
 // the new set (no client-side redistribute needed).
-function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commission, onSaveCommission, onReshuffle, reshuffling, onOpen, s }: {
+function MarketerAssignment({ eventSlug, isOpenEvent, marketers, selectedIds, onChange, commission, onSaveCommission, onReshuffle, reshuffling, onOpen, s }: {
   eventSlug: string;
+  isOpenEvent: boolean;
   marketers: Array<{ id: string; name: string; email: string; reviewed_at: string | null }>;
   selectedIds: string[];
   onChange: (ids: string[]) => void;
@@ -8151,6 +8403,11 @@ function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commi
           })}
         </div>
       )}
+      {isOpenEvent && selectedIds.length === 0 && (
+        <div role="alert" style={{ marginTop: 10, padding: '9px 11px', borderRadius: 9, border: '1px solid #fcd34d', background: '#fffbeb', color: '#92400e', fontSize: 11.5, fontWeight: 650, lineHeight: 1.45 }}>
+          This open event has no marketer. New leads will stay unowned until you select at least one.
+        </div>
+      )}
       <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
         New applications round-robin among the selected marketers. Existing unassigned/unconverted leads auto-redistribute when you change this list.
       </div>
@@ -8183,7 +8440,10 @@ function MarketerAssignment({ eventSlug, marketers, selectedIds, onChange, commi
           )}
         </div>
         <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-          Paid to the assigned marketer only when a ticket is fully paid. Leave blank to use the ₹50 default. Changing this affects future sales only — commissions already earned keep their old rate.
+          {isOpenEvent
+            ? 'This is the full fee. Fully-paid sales with a doubt, abandonment, or failed payment earn this amount; clean self-serve sales earn half, rounded to the nearest rupee.'
+            : 'Paid to the assigned marketer only when a ticket is fully paid. Leave blank to use the ₹50 default.'}
+          {' '}Changing this affects future sales only — commissions already earned keep their old rate.
         </div>
       </div>
     </div>

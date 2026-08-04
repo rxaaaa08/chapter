@@ -425,6 +425,13 @@ function JourneyMapInner({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: 
 
   return (
     <div>
+      {/* To-dos first, then the roadmap, then the map last — the two lists are
+          read far more often than the maps are edited. They stay separate
+          sections outside the canvas, so they cannot alter map state, controls,
+          dimensions or gesture handling. */}
+      {(showRoadmap || demo) && <TodoCard demo={demo} />}
+      {(showRoadmap || demo) && <ProductRoadmap demo={demo} />}
+
       {/* Map picker + actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         {maps.map(m => (
@@ -569,10 +576,6 @@ function JourneyMapInner({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: 
         )}
       </div>
 
-      {/* These are intentionally separate sections below the canvas, so they
-          cannot alter map state, controls, dimensions or gesture handling. */}
-      {(showRoadmap || demo) && <TodoCard demo={demo} />}
-      {(showRoadmap || demo) && <ProductRoadmap demo={demo} />}
     </div>
   );
 }

@@ -474,38 +474,41 @@ function BriefingToggle() {
 
   if (enabled === null) return null;
 
+  // Bare switch, no card — it is one boolean, and it sits inline next to the
+  // "Today's brief" heading. The on/off wording lives in the tooltip and the
+  // aria-label rather than a paragraph of helper text.
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: enabled ? '#f9fafb' : '#fef2f2', border: '1.5px solid ' + (enabled ? '#e5e7eb' : '#fecaca'), borderRadius: 12, marginBottom: 24 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#111827' }}>Daily 6pm briefing</div>
-        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-          {enabled ? 'On — the evening brief lands here and sends one push.' : 'Off — no evening brief and no push. Turn it back on anytime.'}
-        </div>
-      </div>
-      <button type="button" role="switch" aria-checked={enabled} aria-label="Daily 6pm briefing" disabled={saving} onClick={() => void toggle(!enabled)}
-        style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: saving ? 'wait' : 'pointer', background: enabled ? '#111827' : '#d1d5db', flexShrink: 0 }}>
-        <span style={{ position: 'absolute', top: 3, left: enabled ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
-      </button>
-    </div>
+    <button type="button" role="switch" aria-checked={enabled} disabled={saving} onClick={() => void toggle(!enabled)}
+      aria-label={enabled ? 'Daily 6pm briefing is on' : 'Daily 6pm briefing is off'}
+      title={enabled ? 'Daily 6pm briefing is on — the evening brief lands here and sends one push' : 'Daily 6pm briefing is off — no evening brief and no push'}
+      style={{ position: 'relative', width: 38, height: 21, borderRadius: 999, border: 'none', cursor: saving ? 'wait' : 'pointer', background: enabled ? '#111827' : '#d1d5db', flexShrink: 0, padding: 0 }}>
+      <span style={{ position: 'absolute', top: 3, left: enabled ? 20 : 3, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
+    </button>
   );
 }
 
-export default function ManagerPanel() {
+export default function ManagerPanel({ beforeRulebook }: { beforeRulebook?: React.ReactNode }) {
   const [rulesVersion, setRulesVersion] = useState(0);
 
   return (
     <div>
-      <div style={{ fontSize: 24, lineHeight: 1.15, fontWeight: 850, color: '#111827', marginBottom: 4 }}>Manager</div>
-      <div style={{ fontSize: 12.5, color: '#9ca3af', marginBottom: 24 }}>
-        Your read-only operations manager — checks the business every evening at 6pm and reports here + one push.
-      </div>
-
-      <BriefingToggle />
-
+      {/* No panel title or blurb — the Managers pill names the page, and
+          "Today's brief" already says what this section is. The 6pm on/off
+          switch rides in the heading row instead of owning a card. */}
       <section>
-        <div style={{ fontSize: 16, fontWeight: 850, color: '#111827', marginBottom: 12 }}>Today's brief</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 850, color: '#111827' }}>Today's brief</div>
+          <BriefingToggle />
+        </div>
         <TodaysBrief refreshKey={rulesVersion} />
       </section>
+
+      {/* The Managers roster slots in here rather than after the Rulebook: the
+          roster is read far more often than the rules are tuned, so the
+          rulebook belongs last. It comes in as a node instead of the panel
+          being split in two, because Today's brief and the Rulebook share
+          `rulesVersion` — saving a rule refreshes the brief above it. */}
+      {beforeRulebook}
 
       <section style={{ marginTop: 34, paddingTop: 28, borderTop: '2px solid #e5e7eb' }}>
         <div style={{ fontSize: 16, fontWeight: 850, color: '#111827', marginBottom: 12 }}>Rulebook</div>
