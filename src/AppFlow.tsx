@@ -180,7 +180,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
-type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'doubt-popup' | 'booking-timeline' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'tc-modal';
+type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'community-sheet' | 'doubt-popup' | 'booking-timeline' | 'application-form' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'policy-modal' | 'tc-modal';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -194,15 +194,25 @@ const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
 const GROUPCHAT_AVATAR_COLORS = ['#5B8DEF', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#F97316'];
 const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   'event-details': 1,
+  // Opens straight off the plan list for a whatsapp-flow event, short-circuiting
+  // the chat, so it is a top-level sheet like event-details rather than a step
+  // inside the booking stack.
+  'community-sheet': 1,
   'details-calendar': 2,
   'details-plan-switcher': 2,
   'post-details-chat': 3,
   'doubt-popup': 4,
   'booking-timeline': 5,
+  // The invite-flow twin of details-form: both open off the booking timeline,
+  // an event is only ever one or the other, so they share a depth.
+  'application-form': 6,
   'details-form': 6,
   'payment-checkout': 7,
   'payment-success': 8,
   'payment-failure': 8,
+  // Leaf modals — they sit on top of whatever opened them and nothing opens on
+  // top of them, so they are deeper than every stack below.
+  'policy-modal': 9,
   'tc-modal': 9,
 };
 
@@ -902,6 +912,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [detailsPlanSwitcherOpen, setDetailsPlanSwitcherOpen] = useState(false);
   const [openDetailsPlanSwitcherSignal, setOpenDetailsPlanSwitcherSignal] = useState(0);
   const [closeDetailsPlanSwitcherSignal, setCloseDetailsPlanSwitcherSignal] = useState(0);
+  // The footer policy sheets (About / Contact / Privacy / Refund / T&C) live
+  // inside EventDetailsOverlay, but their open state is mirrored up here for the
+  // same reason the calendar's and the plan switcher's are: only this component
+  // owns the history stack, so only it can give a sheet a back-button entry.
+  const [detailsPolicyOpen, setDetailsPolicyOpen] = useState(false);
+  const [closeDetailsPolicySignal, setCloseDetailsPolicySignal] = useState(0);
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1001,14 +1017,22 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     !showDetailsForm &&
     paymentView === 'idle' &&
     !showTcModal;
+  // Ordered deepest-first: whatever is visually on top is the layer the back
+  // button acts on. The three sheets that don't exclude each other in state --
+  // application-form, community-sheet and policy-modal -- therefore have to sit
+  // above the broader conditions they can overlap with (isPostDetailsChatLayer
+  // ignores all three, and policy-modal is only ever open over event-details).
   const activeHistoryLayer: HistoryLayer | null =
     showTcModal ? 'tc-modal'
+    : detailsPolicyOpen ? 'policy-modal'
     : showDoubtPopup ? 'doubt-popup'
     : paymentView === 'failure' ? 'payment-failure'
     : paymentView === 'success' ? 'payment-success'
     : paymentView === 'checkout' ? 'payment-checkout'
     : showDetailsForm ? 'details-form'
+    : showApplicationForm ? 'application-form'
     : showBookingTimeline ? 'booking-timeline'
+    : communityEvent ? 'community-sheet'
     : isPostDetailsChatLayer ? 'post-details-chat'
     : (showDetails && detailsPlanSwitcherOpen) ? 'details-plan-switcher'
     : (showDetails && detailsCalendarOpen) ? 'details-calendar'
@@ -1319,10 +1343,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setShowDoubtPopup(false);
         setPaymentView('idle');
         setShowDetailsForm(false);
+        setShowApplicationForm(false);
         setShowBookingTimeline(false);
         setShowWaitlistForm(false);
         setDetailsPlanSwitcherOpen(false);
         setDetailsCalendarOpen(false);
+        setCloseDetailsPolicySignal(prev => prev + 1);
+        setDetailsPolicyOpen(false);
         setShowChat(false);
         setShowTransition(false);
         setDetailsReady(true);
@@ -1338,6 +1365,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       }
       if (activeHistoryLayer === 'tc-modal') {
         setShowTcModal(false);
+      } else if (activeHistoryLayer === 'policy-modal') {
+        setCloseDetailsPolicySignal(prev => prev + 1);
+        setDetailsPolicyOpen(false);
       } else if (activeHistoryLayer === 'doubt-popup') {
         setShowDoubtPopup(false);
       } else if (activeHistoryLayer === 'payment-failure' || activeHistoryLayer === 'payment-success') {
@@ -1348,6 +1378,15 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       } else if (activeHistoryLayer === 'details-form') {
         setShowDetailsForm(false);
         setShowBookingTimeline(true);
+      } else if (activeHistoryLayer === 'application-form') {
+        // Same landing as tapping the form's own backdrop — back out to the
+        // timeline they opened it from, not out of the booking entirely.
+        setShowApplicationForm(false);
+        setShowBookingTimeline(true);
+      } else if (activeHistoryLayer === 'community-sheet') {
+        // Nothing underneath to restore: the sheet short-circuits straight off
+        // the plan list, so closing it just puts them back on the list.
+        setCommunityEvent(null);
       } else if (activeHistoryLayer === 'booking-timeline') {
         setShowBookingTimeline(false);
         setShowChat(true);
@@ -2373,6 +2412,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
             closePlanSwitcherSignal={closeDetailsPlanSwitcherSignal}
             onPlanSwitcherVisibilityChange={setDetailsPlanSwitcherOpen}
+            closePolicySignal={closeDetailsPolicySignal}
+            onPolicyVisibilityChange={setDetailsPolicyOpen}
             onSwitchEvent={(e, city) => {
               setSelectedEvent(e);
               setSelectedCategory(e.category);
@@ -3940,7 +3981,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -4110,6 +4151,22 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   useEffect(() => {
     return () => onPlanSwitcherVisibilityChange?.(false);
   }, [onPlanSwitcherVisibilityChange]);
+
+  // Policy sheets — same three-effect contract as the calendar above: report
+  // open/closed upward, close on the parent's signal, and report closed on
+  // unmount so a layer can't be left stranded if details closes underneath.
+  useEffect(() => {
+    onPolicyVisibilityChange?.(!!showPolicyModal);
+  }, [showPolicyModal, onPolicyVisibilityChange]);
+
+  useEffect(() => {
+    if (!showPolicyModal) return;
+    setShowPolicyModal(null);
+  }, [closePolicySignal]);
+
+  useEffect(() => {
+    return () => onPolicyVisibilityChange?.(false);
+  }, [onPolicyVisibilityChange]);
 
   // Full staggered animation only on initial calendar open
   useEffect(() => {
