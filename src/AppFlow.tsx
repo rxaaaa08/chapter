@@ -2335,6 +2335,33 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           }}
         >
           {`path=${typeof window === 'undefined' ? '?' : window.location.pathname}  armed=${isDetailsHistoryManaged ? 'YES' : 'NO'}${isPreviewMode ? ' (preview)' : ''}\nlayer=${activeHistoryLayer ?? 'none'}  len=${hudLen}  push=${hudPushes}  POPS=${hudPops}`}
+          {/* Two probes for the same question: what does it take to make the
+              Instagram chevron light up? It stays greyed out through any number
+              of pushState entries, which is why back can never fire there.
+                REAL NAV — a genuine document load (distinct URL, so it cannot be
+                  collapsed into a reload). If the chevron wakes after this, the
+                  in-app browser is tracking committed navigations only, and the
+                  flow needs one real navigation in it.
+                HASH — a same-document hash entry. Cheaper than a real load and
+                  keeps the SPA intact, so if THIS wakes the chevron it is the
+                  better fix and sheets should push hashes instead.
+              pointerEvents are re-enabled just for these, since the strip itself
+              is inert so it cannot swallow taps meant for the page. */}
+          <div style={{ pointerEvents: 'auto', display: 'flex', gap: 6, marginTop: 5 }}>
+            <a
+              href={`${window.location.pathname}?dbg=1&n=${hudPushes}${hudPops}${hudLen}`}
+              style={{ background: '#4ade80', color: '#000', padding: '3px 8px', borderRadius: 4, textDecoration: 'none', fontWeight: 700 }}
+            >
+              REAL NAV
+            </a>
+            <button
+              type="button"
+              onClick={() => { window.location.hash = `h${Date.now().toString().slice(-4)}`; }}
+              style={{ background: '#fbbf24', color: '#000', padding: '3px 8px', borderRadius: 4, border: 0, font: 'inherit', fontWeight: 700 }}
+            >
+              HASH
+            </button>
+          </div>
         </div>
       )}
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
