@@ -2386,6 +2386,33 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             >
               PUSH-URL
             </button>
+            {/* PUSH+REPL — push a DIFFERENT url, then immediately restore the
+                original with replaceState.
+                  Reconciles the two facts that otherwise contradict each other:
+                  BookMyShow lights the chevron by opening a same-document
+                  sheet, yet the URL copied with the sheet open is identical to
+                  the one copied with it closed (verified by diffing two real
+                  copies — same path, no hash, only inbound tracking params
+                  differ). If the webview decides on chevron state at push time,
+                  an entry created with a distinct URL would light it, and
+                  replacing the URL back afterwards would leave nothing visible
+                  or copyable behind.
+                  Their Branch params being stripped between the two copies
+                  proves they do call replaceState on themselves already.
+                If this lights the chevron and PUSH-URL alone also does, prefer
+                this one — it keeps our URLs clean. */}
+            <button
+              type="button"
+              onClick={() => {
+                const original = `${window.location.pathname}${window.location.search}`;
+                const n = Date.now().toString().slice(-4);
+                window.history.pushState({ chapteraProbe: n }, '', `${window.location.pathname}?dbg=1&r=${n}`);
+                window.history.replaceState({ chapteraProbe: n }, '', original);
+              }}
+              style={{ background: '#f472b6', color: '#000', padding: '3px 8px', borderRadius: 4, border: 0, font: 'inherit', fontWeight: 700 }}
+            >
+              PUSH+REPL
+            </button>
           </div>
         </div>
       )}

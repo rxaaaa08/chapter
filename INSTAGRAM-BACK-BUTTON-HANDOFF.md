@@ -87,7 +87,25 @@ Tested two ways.
 - **Open the bottom sheet → the back chevron becomes ACTIVE.**
 - Close the bottom sheet → forward chevron active, back chevron inactive.
 
-**URL behaviour:** the user copied the link with the sheet open and with it closed, opened both in an external browser, and both loaded with the sheet **closed**. (Caveat, see §6: this tests paste *behaviour*, not string equality — the two copied strings were not compared character by character.)
+**URL behaviour — the two copied URLs have now been diffed directly:**
+
+```
+1: …/movies/mumbai/the-odyssey/ET00452034?utm_source=Meta&…&_branch_referrer=…&_branch_match_id=…&utm_content=link_in_bio&fbclid=…
+2: …/movies/mumbai/the-odyssey/ET00452034?utm_source=Meta&…&utm_content=link_in_bio&fbclid=…
+```
+
+| | Result |
+|---|---|
+| Path | **identical** — `/movies/mumbai/the-odyssey/ET00452034` |
+| Fragment / hash | **none in either** |
+| Only in URL 1 | `_branch_referrer`, `_branch_match_id` |
+| Differing value | `fbclid` |
+
+Everything that differs is *inbound* tracking (Branch.io deep-link params, a Facebook click id) — nothing a sheet-open would add. **Sheet state is definitively not encoded in the URL.**
+
+Two inferences worth carrying forward:
+- The differing `fbclid` means these came from two separate link clicks, so it is not a perfect same-session capture. The conclusion holds anyway because neither URL contains anything sheet-shaped.
+- `_branch_*` present in one and absent in the other proves **BookMyShow rewrites its own URL after load** (standard Branch SDK cleanup). So they demonstrably call `replaceState` on themselves. See §6.
 
 **Inspected from a desktop harness:** BookMyShow's `history.state` is `{"idx":0}` — the shape of a router-managed history (React Router-like). Could not drive their sheets programmatically; their site blocks the automation tooling used.
 
@@ -114,25 +132,35 @@ Tested two ways.
 | Theory | How it died |
 |---|---|
 | "Instagram ignores same-document `pushState` entirely; it's a platform ceiling" | BookMyShow does exactly this and works. |
-| "Sheets need unique URLs per step" | BookMyShow's pasted URL is the same in both states (but see §6 caveat). |
+| "Sheets need unique URLs per step — that's how BookMyShow does it" | Dead **as a description of BookMyShow**: the two copied URLs were diffed and the sheet state is not in the URL at all (§3.2). Still open as a *fix for us* — see §6, because whether a distinct URL lights **our** chevron is a separate question from whether BMS uses one. |
 | "WebKit requires `pushState` inside the user gesture" — our pushes happen in a React passive effect, after paint, outside the gesture | **Built and shipped** (moved the calendar's push into its tap handler, commit `584abe5`). No change on device. Reverted in `035ff7b`. Also never explained why Safari works, since both are WebKit. |
 | "Instagram only enables the chevron on committed document loads, so put one real navigation in the flow" | BookMyShow activates it with **no** committed load, first page in a fresh tab. |
 | "Our page blocks the navigation with a `beforeunload` handler" | Grepped — no `beforeunload`/`unload`/`pagehide` listener is registered anywhere (only stale comments referencing a removed one). |
 
 ---
 
-## 6. The single most suspicious remaining lead
+## 6. The remaining lead, and the two live probes
 
-**Our `pushState` passes a URL identical to the current one. A router (which BookMyShow uses) normally pushes a different one.**
+Every `pushState` we make passes `window.location.href` — an entry whose URL is **identical** to the current one. Those never light the chevron. A committed load lights it; a hash change does not; BookMyShow lights it with a same-document, same-URL sheet-open. Nobody has yet established what the webview actually keys on.
 
-This has never been tested, and it is the only structural difference left between our sheet-open and theirs. Note it is *not* contradicted by the paste test: if BookMyShow pushes e.g. `?sheet=x` but does not restore that state on load, pasting the copied link would still open with the sheet closed — exactly what was observed. The two copied strings were never compared directly.
+There is a mechanism that fits **every** observation simultaneously:
 
-A probe for this is now live: **`PUSH-URL`** in the `?dbg=1` readout (commit `3e12bba`) performs a same-document `pushState` with a genuinely distinct URL, from inside the tap, with no reload. **This has not been run yet.** Its result should be the first thing a researcher asks for:
+> Push an entry carrying a **different** URL (which may be what lights the chevron), then immediately `replaceState` back to the original URL. The entry keeps whatever property the webview decided at push time, while the visible and copyable URL never changes.
 
-- **Chevron lights up** → sheets must push distinct URLs; problem solved.
-- **Chevron stays grey** → the History API is not the mechanism, and the answer lies in whatever else BookMyShow does.
+This reconciles the two facts that otherwise contradict each other — the chevron lights on sheet-open, yet the copied URL is unchanged — and BookMyShow is already known to call `replaceState` on itself (their Branch params vanish between the two captures, §3.2).
 
-Two supporting facts also point at a router: BookMyShow's `history.state` is `{"idx":0}`, and their sheet-close leaves a **forward** entry (pressing forward re-opens the sheet), which means they close via `history.back()` rather than by setting component state. Our sheets close by setting state directly, leaving the history pointer stranded above a dead entry.
+**Two probes are live in the `?dbg=1` readout and NEITHER HAS BEEN RUN ON THE DEVICE YET.** These results are the first thing to ask for:
+
+| Probe | What it does | Verified locally |
+|---|---|---|
+| `PUSH-URL` (`3e12bba`) | same-document `pushState` with a genuinely distinct URL, from inside the tap, no reload | URL changes, `len` +1, no reload |
+| `PUSH+REPL` | pushes a distinct URL then instantly `replaceState`s back to the original | `len` +1, **URL visibly unchanged**, entry still traversable (`POPS=1` on back) |
+
+Interpretation:
+- **Either lights the chevron** → that is the fix; apply the same call at every sheet open. Prefer `PUSH+REPL` if both work, since it keeps our URLs clean.
+- **Neither lights it** → the History API is not the mechanism at all, and the answer is in whatever else BookMyShow's page does.
+
+One more asymmetry worth investigating: BookMyShow's sheet-close leaves a **forward** entry (pressing forward re-opens the sheet), so they close via `history.back()`. Our sheets close by setting component state directly, which strands the history pointer above a dead entry. That is a real difference in how the stack is maintained, independent of how entries are created.
 
 ---
 
