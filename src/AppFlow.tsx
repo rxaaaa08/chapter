@@ -192,6 +192,27 @@ const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
 ];
 
 const GROUPCHAT_AVATAR_COLORS = ['#5B8DEF', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#F97316'];
+// The URL that should be showing while `layer` is the visible sheet.
+//
+// Instagram's in-app browser on iOS only registers a history entry with its
+// back chevron when that entry carries a URL DISTINCT from the current one.
+// Measured on device: entries pushed with window.location.href (what we used to
+// do) leave the chevron greyed out no matter how many are pushed, while an
+// otherwise identical pushState carrying a different URL activates it. A hash
+// is not enough — it has to be a real URL difference.
+//
+// So each sheet now owns a ?sheet= value. Everything else in the query string
+// is preserved, which matters for ?ref= (creator attribution), ?preview_event
+// and ?dbg. Payment return URLs are built server-side, so this never reaches
+// PayU.
+function sheetUrl(layer: HistoryLayer | null): string {
+  const params = new URLSearchParams(window.location.search);
+  if (layer) params.set('sheet', layer);
+  else params.delete('sheet');
+  const query = params.toString();
+  return `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+}
+
 const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   'event-details': 1,
   // Opens straight off the plan list for a whatsapp-flow event, short-circuiting
@@ -1325,6 +1346,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const nextLayer = activeHistoryLayer;
 
     if (!nextLayer) {
+      // Everything closed. Drop ?sheet= so the URL keeps matching what is on
+      // screen — replace, never push: closing must not add an entry.
+      if (previousLayer && !handlingPopStateRef.current) {
+        window.history.replaceState(window.history.state, '', sheetUrl(null));
+      }
       historyLayerRef.current = null;
       return;
     }
@@ -1336,7 +1362,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
     const shouldPush = !previousLayer || HISTORY_LAYER_DEPTH[nextLayer] >= HISTORY_LAYER_DEPTH[previousLayer];
     if (shouldPush) {
-      window.history.pushState({ chapteraLayer: nextLayer }, '', window.location.href);
+      // sheetUrl(), not window.location.href — an entry whose URL matches the
+      // current one is invisible to Instagram's back chevron. See sheetUrl().
+      window.history.pushState({ chapteraLayer: nextLayer }, '', sheetUrl(nextLayer));
+    } else {
+      // Going shallower without a traversal (a sheet closed by its own X rather
+      // than by back). No new entry, but the URL still has to follow the layer,
+      // or it would keep naming a sheet that is no longer open.
+      window.history.replaceState(window.history.state, '', sheetUrl(nextLayer));
     }
     historyLayerRef.current = nextLayer;
   }, [activeHistoryLayer, isDetailsHistoryManaged]);

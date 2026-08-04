@@ -70,8 +70,24 @@ An opt-in debug readout was shipped behind `?dbg=1` to get ground truth. It disp
 | Open plan details + calendar (2 × `pushState`, same URL) | `len=3, push=2, POPS=0`, chevron **still greyed** |
 | Press the greyed chevron | nothing |
 | Press **HASH** probe (`location.hash = 'hNNNN'`) | chevron **still greyed** — but the sheet **closes correctly** |
+| Press **PUSH-URL** probe (same-document `pushState`, **distinct** URL, inside the tap) | chevron **BECOMES ACTIVE** |
+| Press **PUSH+REPL** probe (`pushState` distinct URL → `replaceState` back to the original) | chevron **BECOMES ACTIVE** |
 | Press **REAL NAV** probe (`<a href>` to a distinct URL, full document load) | chevron **becomes active** |
-| With chevron active, open calendar, press chevron | **nothing happens** — sheet stays open, and `len`, `push`, `POPS` do not move at all |
+| With the chevron active by any of the three, open the calendar, press the chevron | **nothing happens** — the sheet stays open |
+
+**The decisive pattern — it is the URL, not the navigation type:**
+
+| Entry created | URL vs current | Chevron |
+|---|---|---|
+| our sheet `pushState` | **identical** (`window.location.href`) | stays grey |
+| hash change | fragment only | stays grey |
+| `pushState` | **distinct** | **activates** |
+| `pushState` distinct → `replaceState` back | **distinct at push time** | **activates** |
+| committed document load | distinct | activates |
+
+A same-document `pushState` *does* register with the Instagram chevron — but only when the entry carries a **URL distinct from the current one**. Our sheets pass `window.location.href`, so every entry they create is invisible to it. This also explains BookMyShow exactly: `PUSH+REPL` shows you can create a qualifying entry and then restore the visible URL, which is consistent with their unchanged copied URLs and with the `replaceState` they are already known to perform (§3.2).
+
+**Still unexplained:** with the chevron active, pressing it while the calendar is open does nothing. The likely reason is that the *calendar's own* entry was pushed with an identical URL, so it is not a traversable item for the chevron — but that has not been tested. Testing it means making a sheet push a distinct URL, which is the obvious next experiment (§6).
 
 ### 3.2 BookMyShow (the working comparison)
 
