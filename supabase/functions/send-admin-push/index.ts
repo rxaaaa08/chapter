@@ -184,6 +184,17 @@ function buildNotification(type: string, record: any): { title: string; body: st
         tag:   'new-booking-doubt',
       };
     }
+    case 'new_creator_video': {
+      const creator = record.creator_name ?? 'A creator';
+      const vidDate = formatEventDate(record.event_date);
+      const vidPart = vidDate ? ` · ${vidDate}` : '';
+      return {
+        title: '🎬 New Creator Video',
+        body:  `${creator} — ${eventLabel}${vidPart}`,
+        url:   adminUrl,
+        tag:   'new-creator-video',
+      };
+    }
     case 'manager_brief':
       return {
         title: String(record.title ?? '🗞️ Daily brief'),

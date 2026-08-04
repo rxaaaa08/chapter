@@ -115,6 +115,8 @@ export function DemoExitProvider({ onExit, children }: { onExit: () => void; chi
         .creator-guide-why-right::after { right: 18px; }
         .creator-guide-why-center-right { left: 50%; transform: translateX(-50%); max-width: calc(100% - 16px); }
         .creator-guide-why-center-right::after { right: 18px; }
+        .creator-guide-why-center { left: 50%; transform: translateX(-50%); max-width: calc(100% - 16px); }
+        .creator-guide-why-center::after { left: 60%; margin-left: -5px; }
         .creator-guide-why-below { top: auto; bottom: 4px; }
         .creator-guide-why-below::after { top: -5px; bottom: auto; }
         .creator-guide-why-tile { left: 0; right: 0; width: auto; max-width: none; }
@@ -190,7 +192,7 @@ const guideTopSpace = (active: boolean, text: string) => active
 
 type GuideTileAnchor = 'first' | 'second' | 'third';
 
-function GuideWhy({ text, align = 'left', placement = 'above', tileAnchor, flow = false, onNext, actionLabel = 'Next' }: { text: string; align?: 'left' | 'right' | 'center-right'; placement?: 'above' | 'below'; tileAnchor?: GuideTileAnchor; flow?: boolean; onNext?: () => void; actionLabel?: string }) {
+function GuideWhy({ text, align = 'left', placement = 'above', tileAnchor, flow = false, onNext, actionLabel = 'Next' }: { text: string; align?: 'left' | 'right' | 'center-right' | 'center'; placement?: 'above' | 'below'; tileAnchor?: GuideTileAnchor; flow?: boolean; onNext?: () => void; actionLabel?: string }) {
   const positionClass = tileAnchor ? `creator-guide-why-tile creator-guide-why-tile-${tileAnchor}` : `creator-guide-why-${align}`;
   return (
     <div role="note" className={`creator-guide-why ${positionClass}${placement === 'below' ? ' creator-guide-why-below' : ''}${flow ? ' creator-guide-why-flow' : ''}${onNext ? ' creator-guide-why-actionable' : ''}`}>
@@ -486,8 +488,8 @@ function DemoEssentialResourceTile({ kind }: { kind: 'drive' | 'whatsapp' }) {
 // tour tells the real story in order: read the event details → make and submit
 // your video → copy your link and post. This array position is what drives the
 // dim/gold ordering and the progression, so the sequence lives in one place.
-type L3Stage = 'hero' | 'range' | 'clicks' | 'signups' | 'paid' | 'conversion' | 'resources' | 'events' | 'closeSheet' | 'submit' | 'copy' | 'team';
-const L3_STAGE_ORDER: L3Stage[] = ['hero', 'range', 'clicks', 'signups', 'paid', 'conversion', 'resources', 'events', 'closeSheet', 'submit', 'copy', 'team'];
+type L3Stage = 'hero' | 'range' | 'clicks' | 'signups' | 'paid' | 'conversion' | 'resources' | 'events' | 'closeSheet' | 'submit' | 'inspiration' | 'copy' | 'team';
+const L3_STAGE_ORDER: L3Stage[] = ['hero', 'range', 'clicks', 'signups', 'paid', 'conversion', 'resources', 'events', 'closeSheet', 'submit', 'inspiration', 'copy', 'team'];
 
 export function DemoL3({ demoHandle, onDone }: DemoProps) {
   // Default range is 'week' so the range stop can grow the numbers by switching
@@ -506,6 +508,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const [openedSheet, setOpenedSheet] = useState(false);
   const [closedSheet, setClosedSheet] = useState(false);
   const [submitTapped, setSubmitTapped] = useState(false);
+  const [inspirationTapped, setInspirationTapped] = useState(false);
   const [copyTapped, setCopyTapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const [teamTapped, setTeamTapped] = useState(false);
@@ -518,7 +521,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
   const rangeEarned = lineEarned(rangeLines);
 
   const complete = heroTapped && rangeComplete && clicksTapped && signupsTapped && paidTapped
-    && conversionTapped && resourcesTapped && openedSheet && closedSheet && submitTapped && copyTapped && teamTapped;
+    && conversionTapped && resourcesTapped && openedSheet && closedSheet && submitTapped && inspirationTapped && copyTapped && teamTapped;
   useCompleteWhen(complete, onDone);
 
   // Twelve stops, in order. While a sheet is open, no body target is active.
@@ -533,6 +536,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
     : !openedSheet ? 'events'
     : !closedSheet ? 'closeSheet'
     : !submitTapped ? 'submit'
+    : !inspirationTapped ? 'inspiration'
     : !copyTapped ? 'copy'
     : !teamTapped ? 'team'
     : null;
@@ -560,6 +564,7 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
     events: 'Always read event details before creating promotions. Videos with proper details will get you more commissions. Press Open Details to continue...',
     closeSheet: '',
     submit: 'Upload your reel to your Google Drive or Youtube and submit link here. We will review it & approve it. Press Submit to continue...',
+    inspiration: 'Not sure how to promote our events? Tap here to watch our best-performing videos & copy our styles. Press Next to continue.',
     copy: 'Use this button to copy your custom link.',
     team: "We show every creator's performance and earnings as we strongly support transparency. Tap Finish to end the tour.",
   };
@@ -855,6 +860,25 @@ export function DemoL3({ demoHandle, onDone }: DemoProps) {
                 </button>
               </div>
             )}
+
+            {/* Watch-our-videos deeplink — the 'inspiration' tour stop. A static
+                replica of the live footer (CreatorVideoTasks.tsx); in the demo
+                the tooltip's Next button advances the tour. */}
+            <div
+              className={guideClass(isFocused('inspiration'), isFocused('submit'))}
+              style={{ position: 'relative', paddingTop: guideTopSpace(isFocused('inspiration'), focusText('inspiration')), marginTop: 12, color: '#57534e', fontSize: 13.5, lineHeight: 1.6, textAlign: 'center' }}
+            >
+              {isFocused('inspiration') && <GuideWhy text={focusText('inspiration')} align="center" onNext={isActive('inspiration') ? () => tapTarget('inspiration', () => setInspirationTapped(true)) : undefined} />}
+              Need inspiration?{' '}
+              <button
+                type="button"
+                disabled={!(isActive('inspiration') || complete)}
+                onClick={() => tapTarget('inspiration', () => setInspirationTapped(true))}
+                style={{ padding: 0, border: 'none', background: 'none', color: '#2563eb', fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2, cursor: (isActive('inspiration') || complete) ? 'pointer' : 'default' }}
+              >
+                Watch our videos
+              </button>
+            </div>
           </div>
         </div>
 
