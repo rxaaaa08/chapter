@@ -1,8 +1,26 @@
 # Instagram in-app browser: back chevron does not close our bottom sheets
 
-**Status: UNSOLVED.** Written 2026-08-04. Self-contained — everything below was measured, not assumed. Where something is a guess it says so.
+**Status: SOLVED 2026-08-04** — fix shipped in commit `73810f2`, confirmed working on device. No outside research needed; this is kept as the record of how it was found and what was ruled out.
 
-This document is a research brief. The goal is to find out **what a web page must do so that the Instagram in-app browser's back chevron (iOS) becomes active and closes an in-page bottom sheet**, given that a competitor site (BookMyShow) demonstrably achieves it.
+## The answer
+
+**Instagram's iOS in-app browser only registers a history entry with its back chevron when that entry carries a URL DISTINCT from the current one.**
+
+Every `pushState` in the app passed `window.location.href` — an identical URL — so every entry our bottom sheets created was invisible to the chevron. It stayed greyed out for the entire booking flow, and a greyed chevron does nothing when tapped. Nothing was ever wrong with our sheet-closing logic: the `popstate` handler and the whole layer stack worked correctly in Instagram the whole time (proved by the HASH probe, which fires `popstate` and closed sheets every time).
+
+**The fix:** each layer owns a `?sheet=<layer>` value (`sheetUrl()` in `src/AppFlow.tsx`). The push effect pushes that instead of `window.location.href`, and *replaces* rather than pushes when a sheet closes without a traversal, so the URL always names the visible sheet. The rest of the query string is preserved (`ref` for creator attribution, `preview_event`, `dbg`), and payment return URLs are built server-side so they never see it.
+
+**Rules that follow, for any future history entry in this codebase:**
+- Never `pushState(state, '', window.location.href)` — an entry must carry a distinct URL or Instagram cannot see it.
+- A hash is not enough; `location.hash = x` never activated the chevron.
+- `pushState` with a distinct URL followed by `replaceState` back also activates it, if the visible URL must stay unchanged. (This is what BookMyShow does.)
+- **Not yet fixed:** the invite flow in `src/App.tsx` still uses the old same-URL pattern at ~15 call sites, so its back button remains dead in Instagram.
+
+---
+
+## Original brief (kept for the record)
+
+The goal was to find out **what a web page must do so that the Instagram in-app browser's back chevron (iOS) becomes active and closes an in-page bottom sheet**, given that a competitor site (BookMyShow) demonstrably achieves it. Everything below was measured, not assumed.
 
 ---
 
