@@ -736,6 +736,44 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const historyLayerRef = useRef<HistoryLayer | null>(null);
   const handlingPopStateRef = useRef(false);
 
+  // ─── DEBUG HUD (opt-in: /plans?dbg=1) ──────────────────────────────────────
+  // Exists because the Instagram in-app browser on iOS is the one place the back
+  // button does nothing, and it is the one browser none of our tooling can
+  // drive — two theories were built and falsified guessing at it. This reports
+  // what actually happens on the device instead of what we assume.
+  //
+  // Read once at mount, not per render: some flows strip the query string with
+  // replaceState, and the readout has to survive that.
+  const [isDebugHud] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('dbg') === '1';
+  });
+  const [hudPops, setHudPops] = useState(0);
+  const [hudPushes, setHudPushes] = useState(0);
+  const [hudLen, setHudLen] = useState(() => (typeof window === 'undefined' ? 0 : window.history.length));
+
+  useEffect(() => {
+    if (!isDebugHud || typeof window === 'undefined') return;
+    // Deliberately a SECOND popstate listener, independent of the layer stack's
+    // own. When the stack is disarmed (wrong pathname) its listener never
+    // attaches at all, so a zero from it would be ambiguous — did the browser
+    // not fire, or did we not listen? This one always listens, so pops=0 means
+    // the event genuinely never reached the page.
+    const onPop = () => { setHudPops(n => n + 1); setHudLen(window.history.length); };
+    window.addEventListener('popstate', onPop);
+    const originalPush = window.history.pushState;
+    window.history.pushState = function patchedPushState(...args: Parameters<History['pushState']>) {
+      setHudPushes(n => n + 1);
+      const result = originalPush.apply(window.history, args);
+      setHudLen(window.history.length);
+      return result;
+    };
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.history.pushState = originalPush;
+    };
+  }, [isDebugHud]);
+
   useEffect(() => {
     // After 5s without events, show a "connection slow" retry screen instead of
     // unblocking with stale fallback data. msgsReady CAN timeout safely since
@@ -2283,6 +2321,22 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4 font-sans">
+      {/* Debug readout — only ever rendered with ?dbg=1, so customers never see
+          it. pointerEvents:none so it can't swallow a tap on the UI underneath,
+          and the highest possible z-index so sheets don't cover it. Inline
+          styles rather than Tailwind so nothing here depends on the build. */}
+      {isDebugHud && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2147483647,
+            pointerEvents: 'none', background: 'rgba(0,0,0,0.88)', color: '#4ade80',
+            font: '11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace',
+            padding: '5px 7px', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          }}
+        >
+          {`path=${typeof window === 'undefined' ? '?' : window.location.pathname}  armed=${isDetailsHistoryManaged ? 'YES' : 'NO'}${isPreviewMode ? ' (preview)' : ''}\nlayer=${activeHistoryLayer ?? 'none'}  len=${hudLen}  push=${hudPushes}  POPS=${hudPops}`}
+        </div>
+      )}
       <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
 
         {/* Header — not rendered under the event-details overlay, so it doesn't
