@@ -1,11 +1,68 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts } from './supabase';
 import { getAffiliateRef } from './affiliate';
+import { isInAppBrowser, openExternalUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
 import { NativePaymentOverlay } from './PaymentOverlay';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, ShieldCheck, Plus, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
+
+// ─── OPEN-EVENT BOOKING RESUME ────────────────────────────────────────────────
+// Open-event booking sends a six-digit code over WhatsApp, so every single
+// booker has to leave us, switch apps, and come back. Instagram's in-app
+// browser frequently tears the page down while they're gone — and until now
+// the filled-in form and the OTP token lived only in React memory, so they'd
+// return to an empty chat with no idea their booking had evaporated.
+//
+// We snapshot just enough to put them back on the code screen. localStorage,
+// not sessionStorage: a destroyed webview takes the whole session store with
+// it, which is precisely the case this exists to survive.
+//
+// 10 minutes = the 8-minute OTP life plus slack. Kept deliberately tight: a
+// restore reopens the booking form over the chat, so a snapshot that outlived
+// its purpose would ambush someone who came back to /plans just to browse.
+// Restoring a just-expired token costs nothing — the server re-checks it and
+// says the code expired, with their details still typed in.
+const OPEN_BOOKING_RESUME_KEY = 'ca_open_booking_resume';
+const OPEN_BOOKING_RESUME_TTL_MS = 10 * 60 * 1000;
+
+type OpenBookingResume = {
+  ts: number;
+  eventSlug: string;
+  city: string;
+  date: string;
+  meetingPoint: string;
+  form: { name: string; phone: string; gender: string; email: string };
+  otpSession: string;
+  otpDelivery: 'whatsapp' | 'email';
+};
+
+function saveOpenBookingResume(snapshot: Omit<OpenBookingResume, 'ts'>): void {
+  try {
+    localStorage.setItem(OPEN_BOOKING_RESUME_KEY, JSON.stringify({ ...snapshot, ts: Date.now() }));
+  } catch { /* private mode / quota — resuming is a bonus, never a requirement */ }
+}
+
+function clearOpenBookingResume(): void {
+  try { localStorage.removeItem(OPEN_BOOKING_RESUME_KEY); } catch { /* ignore */ }
+}
+
+// Returns the snapshot only if it's fresh; a stale one is cleared on read so a
+// long-abandoned booking can never resurrect itself days later.
+function readOpenBookingResume(): OpenBookingResume | null {
+  try {
+    const raw = localStorage.getItem(OPEN_BOOKING_RESUME_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as OpenBookingResume;
+    if (!parsed?.eventSlug || typeof parsed.ts !== 'number') { clearOpenBookingResume(); return null; }
+    if (Date.now() - parsed.ts > OPEN_BOOKING_RESUME_TTL_MS) { clearOpenBookingResume(); return null; }
+    return parsed;
+  } catch {
+    clearOpenBookingResume();
+    return null;
+  }
+}
 
 // Types
 type Message = {
@@ -422,6 +479,11 @@ function ApplicationForm({
   const [error, setError] = useState('');
   const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // The wa.me link built at submit time. Rendered as a real <a> on the success
+  // screen so the WhatsApp hop never depends on window.open succeeding —
+  // Instagram's in-app browser swallows it, and iOS Safari blocks it whenever
+  // the popup slips outside the tap gesture.
+  const [waLink, setWaLink] = useState('');
   const [step1Attempted, setStep1Attempted] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
 
@@ -449,7 +511,12 @@ function ApplicationForm({
     };
     const waMessage = encodeURIComponent(`I have registered for ${event.title} on ${formatEventDate(selectedDate)}.`);
     const waUrl = `https://wa.me/919940111564?text=${waMessage}`;
-    const waWindow = window.open('', '_blank');
+    setWaLink(waUrl);
+    // Instagram's in-app browser either returns null here or hands back a tab
+    // it then refuses to navigate, and closing that dud tab on an error path
+    // can take the whole page with it. Don't reach for a popup there at all —
+    // the success screen's WhatsApp button carries those visitors instead.
+    const waWindow = isInAppBrowser() ? null : window.open('', '_blank');
 
     try {
       const chosenPoint = selectedPickupId
@@ -485,9 +552,11 @@ function ApplicationForm({
       trackEvent('application_submitted', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
       setSubmitted(true);
       onSubmitted();
-      // Navigate the already-opened window to WhatsApp
+      // Navigate the already-opened window to WhatsApp. If there wasn't one
+      // (in-app browser, or a popup blocker), we deliberately don't retry with
+      // another window.open — that second call is outside the tap gesture and
+      // gets blocked too. The success screen's WhatsApp button is the fallback.
       if (waWindow) waWindow.location.href = waUrl;
-      else window.open(waUrl, '_blank'); // fallback if open was blocked
     } catch (err: any) {
       waWindow?.close();
       setError('Something went wrong. Please try again.');
@@ -502,9 +571,20 @@ function ApplicationForm({
       <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center text-3xl">🎉</div>
       <p className="text-[20px] font-black text-gray-900">Application sent!</p>
       <p className="text-[14px] text-gray-500 leading-relaxed w-full">We'll review your application.<br/>If selected, you'll get an invitation via WhatsApp.</p>
+      {/* A plain <a>, not a scripted popup: a top-level tap on a wa.me link is
+          the one handoff every browser performs, Instagram's included. */}
+      {waLink && (
+        <a
+          href={waLink}
+          className="mt-2 w-full py-5 rounded-2xl bg-[#25D366] text-white font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.297-.497.1-.198.05-.371-.025-.52-.074-.149-.668-1.612-.916-2.207-.241-.579-.486-.5-.668-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.064 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Message us on WhatsApp
+        </a>
+      )}
       <button
         onClick={() => { onClose(); window.location.href = '/plans'; }}
-        className="mt-2 w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
+        className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
       >
         <motion.div
           className="absolute inset-0 -skew-x-12"
@@ -729,6 +809,53 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setSelectedCity(event.cities?.[0] || 'Chennai');
       }
     });
+  }, []);
+
+  // Put a booker back on the OTP screen after the WhatsApp round-trip killed
+  // the page. Mirrors the gauth restore above: re-fetch the event by slug, put
+  // the flow state back, then open the details form with the code step live.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // preview_event owns the screen (effect above), and a PayU return is
+    // rendered by App.tsx before AppFlow ever mounts — but the snapshot is
+    // cleared on the way to the bill anyway, so this is just belt-and-braces.
+    if (params.get('preview_event') || params.get('payment_status')) return;
+
+    const resume = readOpenBookingResume();
+    if (!resume) return;
+
+    let cancelled = false;
+    fetchEventByIdOrSlug(resume.eventSlug).then((event) => {
+      // A superseded run must leave the snapshot alone — folding this into the
+      // not-found branch let React's double-invoked effect delete the very
+      // booking it was restoring (its own first run resolves as cancelled).
+      if (cancelled) return;
+      // Event pulled down or renamed while they were away — drop the snapshot
+      // and let them start over rather than restoring into a broken booking.
+      if (!event) { clearOpenBookingResume(); return; }
+      setSelectedEvent(event);
+      setSelectedCategory(event.category || 'Trips');
+      setSelectedCity(resume.city || event.cities?.[0] || 'Chennai');
+      if (resume.date) setBookingDate(resume.date);
+      if (resume.date || resume.meetingPoint) {
+        setJourneyCardData({
+          event,
+          city: resume.city || event.cities?.[0] || 'Chennai',
+          startDate: resume.date || event.dates?.[0]?.date || '',
+          meetingPoint: resume.meetingPoint,
+        });
+      }
+      setDetailsForm(resume.form);
+      setOpenOtpSession(resume.otpSession);
+      setOpenOtpDelivery(resume.otpDelivery);
+      setTcAccepted(true); // they'd already ticked it to get this far
+      setStep('EVENT_SELECTED');
+      setShowTransition(false);
+      setShowDetails(false);
+      setShowBookingTimeline(false);
+      setShowDetailsForm(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Google login was removed from the open-event details form — the form now
@@ -1603,6 +1730,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 409 && data?.error === 'already paid for this open event') {
         setOpenAlreadyPaid(true);
+        clearOpenBookingResume(); // nothing left to resume — they're already in
         return false;
       }
       if (!res.ok) {
@@ -1648,6 +1776,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       setOpenOtpDigits(Array(6).fill(''));
       setOpenOtpDelivery(delivery);
       setOpenOtpAttemptsExhausted(false);
+      // The code has just gone out, so this is the exact moment they leave for
+      // WhatsApp — snapshot now so the page can rebuild itself if Instagram
+      // discards it while they're away.
+      saveOpenBookingResume({
+        eventSlug: selectedEvent.id,
+        city: selectedCity,
+        date: bookingDate || selectedEvent.dates?.[0]?.date || '',
+        meetingPoint: journeyCardData?.meetingPoint || '',
+        form: detailsForm,
+        otpSession: data.verification_token,
+        otpDelivery: delivery,
+      });
       if (delivery === 'whatsapp') setOpenOtpEmailWaitSeconds(30);
       window.setTimeout(() => openOtpInputsRef.current[0]?.focus(), 0);
     } catch (err) {
@@ -1691,6 +1831,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setOpenBookingCheckError(data?.error || 'We could not verify that code. Please try again.');
         return;
       }
+      // Code accepted — the WhatsApp round-trip is over, so the resume
+      // snapshot has done its job and shouldn't outlive it on their device.
+      clearOpenBookingResume();
       await handleProceedToPhonePe(data.verification_token || openOtpSession);
     } catch (err) {
       console.error('open event OTP verification failed:', err);
@@ -2512,9 +2655,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-                          // noopener,noreferrer: bookingUrl is admin-configurable; treat it
-                          // like any third-party link to prevent tabnabbing.
-                          window.open(selectedEvent.bookingUrl, '_blank', 'noopener,noreferrer');
+                          // New tab (no opener — bookingUrl is admin-configurable, so treat
+                          // it like any third-party link and prevent tabnabbing) in a real
+                          // browser; same-tab hop inside Instagram, where window.open is
+                          // routinely swallowed and the button would do nothing.
+                          openExternalUrl(selectedEvent.bookingUrl);
                         }}
                         className="w-full py-[17px] rounded-2xl bg-black text-white font-black text-[17px] flex items-center justify-center gap-2 active:opacity-80 transition-all"
                       >
@@ -2550,8 +2695,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         onClick={() => {
                           setShowBookingTimeline(false);
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
-                          // noopener,noreferrer: see comment above on the invite-only path.
-                          if (selectedEvent.bookingUrl) window.open(selectedEvent.bookingUrl, '_blank', 'noopener,noreferrer');
+                          // See comment above on the invite-only path.
+                          if (selectedEvent.bookingUrl) openExternalUrl(selectedEvent.bookingUrl);
                         }}
                         className="w-full py-[17px] rounded-2xl bg-[#FFD700] text-black font-black text-[17px] flex items-center justify-center gap-2.5 active:scale-95 transition-all relative overflow-hidden"
                       >
@@ -3017,7 +3162,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <button
                     onClick={() => {
                       trackEvent('community_whatsapp_clicked', { event_id: communityEvent.id, event_title: communityEvent.title });
-                      window.open(communityEvent.bookingUrl, '_blank', 'noopener,noreferrer');
+                      openExternalUrl(communityEvent.bookingUrl);
                     }}
                     className="mt-6 w-full bg-[#25D366] text-white font-black text-[16px] rounded-2xl py-4 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-transform shadow-lg shadow-[#25D366]/25"
                   >

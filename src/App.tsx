@@ -9,7 +9,8 @@ import CreatorDashboard from './CreatorDashboard';
 import TeamOnboarding from './TeamOnboarding';
 import { NativePaymentOverlay } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
-import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug, isInAppBrowserBlocked } from './supabase';
+import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
+import { isInAppBrowser } from './inAppBrowser';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
 
@@ -4506,11 +4507,15 @@ function TermsScreen() {
 
 
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
+// Only the two Google-login surfaces (/creator and /team) still render this.
+// Every customer route — homepage, /plans, /lifestyle, /galcode, /invite —
+// dropped the wall in 2026-08 and now works inside Instagram end to end.
+// The reason it survives here is Google's, not ours: Google's OAuth endpoint
+// returns 403 disallowed_useragent inside any embedded webview, so "Continue
+// with Google" cannot be made to work in the Instagram browser at all.
 function InAppBrowserNudge() {
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-  // Shared detection (supabase.ts) so tracking suppression and this wall can
-  // never disagree about what counts as a blocked in-app browser.
-  const isInApp = isInAppBrowserBlocked();
+  const isInApp = isInAppBrowser();
 
   useEffect(() => {
     if (!isInApp) return;
@@ -4834,7 +4839,6 @@ export default function App() {
   if (isSharedInvitePage) {
     return (
       <>
-        <InAppBrowserNudge />
         <LandscapeBlocker />
         <SharedInviteFlow onNavigateToLifestyle={() => { window.location.href = '/plans'; }} />
       </>
@@ -4844,7 +4848,6 @@ export default function App() {
   if (isInvitePage && inviteSlug) {
     return (
       <>
-        <InAppBrowserNudge />
         <LandscapeBlocker />
         <InviteFlow slug={inviteSlug} />
       </>
@@ -4854,7 +4857,6 @@ export default function App() {
   if (isLifestylePage && !hasPreviewParam) {
     return (
       <>
-        <InAppBrowserNudge />
         <LandscapeBlocker />
         <JoinLetterPage
           onContinue={continueFromJoin}
@@ -4866,7 +4868,6 @@ export default function App() {
   if (isGalcodePage && !hasPreviewParam) {
     return (
       <>
-        <InAppBrowserNudge />
         <LandscapeBlocker />
         <JoinLetterPage
           onContinue={continueFromJoin}
@@ -4880,7 +4881,6 @@ export default function App() {
   if (showHomepage) {
     return (
       <>
-        <InAppBrowserNudge />
         <LandscapeBlocker />
         <AnimatePresence>
           <motion.div
@@ -4898,7 +4898,6 @@ export default function App() {
 
   return (
     <>
-      <InAppBrowserNudge />
       <LandscapeBlocker />
       <AppFlow />
       {/* Vercel Speed Insights — ships real-user Core Web Vitals (LCP / INP / CLS)

@@ -7,7 +7,7 @@
 // in the URL, no creator is credited (it's treated as the founder's own/official
 // link). Attribution is stamped onto the application at the decisive moment:
 // application submit for invite events, the details-form step for open events.
-import { supabase, getSessionId, isInAppBrowserBlocked } from './supabase';
+import { supabase, getSessionId } from './supabase';
 
 const REF_KEY = 'ca_affiliate_ref';
 
@@ -42,10 +42,11 @@ export function captureAffiliateRef(): void {
 
     // Log a click only when the active handle changes this session — avoids
     // re-counting every route change / re-render under the same link.
-    // The ref itself is still stored above even inside the blocked IG/FB
-    // browser (harmless), but the click is only logged from a real browser —
-    // the blocked landing is a duplicate of the external one that follows.
-    if (prev !== handle && !isInAppBrowserBlocked()) {
+    // Clicks from the Instagram/Facebook in-app browser used to be skipped
+    // (the wall made that landing a duplicate of the external-browser one).
+    // Those visitors now stay put and book in place, so their click is the
+    // real one — skipping it under-counted creators on their biggest channel.
+    if (prev !== handle) {
       // getSessionId() CREATES the id if absent. captureAffiliateRef runs before
       // the first trackEvent on a fresh visit — reading sessionStorage directly
       // here logged NULL session_ids for exactly the clicks that matter most

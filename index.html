@@ -69,18 +69,18 @@
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
-      // Instagram/Facebook in-app browsers are blocked by the full-screen
-      // "open in external browser" wall, so that landing is a duplicate of
-      // the external-browser one — don't send it to GA. Must match
-      // isInAppBrowserBlocked() in src/supabase.ts.
-      if (!/Instagram|FBAN|FBAV/i.test(navigator.userAgent)) {
-        gtag('js', new Date());
-        gtag('config', 'G-3MLZ9S6M2S', {
-          anonymize_ip: true,
-          allow_google_signals: false,
-          allow_ad_personalization_signals: false,
-        });
-      }
+      // Instagram/Facebook in-app browsers used to be skipped here: the
+      // full-screen "open in external browser" wall made their landing a
+      // duplicate of the external-browser one that followed. The wall is gone
+      // from every customer route (see src/inAppBrowser.ts) — they now browse
+      // and pay in place, and since practically all our traffic arrives from
+      // Instagram, dropping them left GA blind to the real funnel.
+      gtag('js', new Date());
+      gtag('config', 'G-3MLZ9S6M2S', {
+        anonymize_ip: true,
+        allow_google_signals: false,
+        allow_ad_personalization_signals: false,
+      });
     </script>
     <style>
       @keyframes ca-glow {

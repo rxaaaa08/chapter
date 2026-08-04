@@ -46,21 +46,14 @@ export function getSessionId(): string {
   return id;
 }
 
-// Instagram's / Facebook's in-app browsers are fully blocked by the
-// InAppBrowserNudge wall (App.tsx) — the visitor can't browse, only re-open
-// the same URL in a real browser. That in-app landing is therefore a
-// duplicate of the external-browser landing that follows, so page views,
-// funnel events, and affiliate-click logging must all skip it. Keep this
-// regex in sync with the nudge's own detection.
-export function isInAppBrowserBlocked(): boolean {
-  return typeof navigator !== 'undefined' && /Instagram|FBAN|FBAV/i.test(navigator.userAgent);
-}
-
 export async function trackEvent(
   event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated' | 'application_started' | 'application_submitted' | 'details_form_opened' | 'community_sheet_opened' | 'community_whatsapp_clicked',
   meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
 ) {
-  if (isInAppBrowserBlocked()) return; // duplicate landing — the real one arrives in the external browser
+  // Instagram / Facebook in-app browsers used to be dropped here: the wall
+  // meant their landing was a duplicate of the external-browser one that
+  // followed. They're now first-class visitors who browse and pay in place, so
+  // their funnel has to be counted like everyone else's.
   try {
     await supabase.from('flow_analytics').insert({
       event_type,
