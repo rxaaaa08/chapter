@@ -1388,7 +1388,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setDetailsPlanSwitcherOpen(true);
         setShowDetails(true);
         setStep('EVENT_SELECTED');
-        window.history.pushState({ chapteraLayer: 'details-plan-switcher' }, '', window.location.href);
+        // sheetUrl(), not window.location.href. The trap replaces the entry the
+        // user just consumed, so it has to be as visible to Instagram's chevron
+        // as any other. Pushed at the current URL it was invisible, which is why
+        // the trap only ever worked once: the first back landed here, the
+        // replacement entry didn't register, and the chevron went dead.
+        window.history.pushState({ chapteraLayer: 'details-plan-switcher' }, '', sheetUrl('details-plan-switcher'));
         historyLayerRef.current = 'details-plan-switcher';
         setTimeout(() => { handlingPopStateRef.current = false; }, 0);
         return;
