@@ -72,7 +72,7 @@ const FAQS = [
   },
   {
     question: 'How much can I earn?',
-    answer: 'A fixed amount for every fully-paid ticket you close (usually ₹50 — your dashboard shows the exact rate per event). The more events you\'re on and the more leads you close, the more you earn.',
+    answer: 'Commission is earned only when a ticket becomes fully paid. Invite events pay the full event fee. On open events, a sale that involved a doubt, cart abandonment, or failed payment pays the full fee; a clean self-serve sale pays half. Your dashboard shows the exact amount actually earned.',
   },
   {
     question: 'How much time does this take?',

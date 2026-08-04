@@ -103,7 +103,7 @@ export const TEAM_LEVELS: TeamLevel[] = [
     content: (
       <Copy>
         <P>This is <strong>My Leads</strong> — your side of the admin panel. Your application from Act 1 is sitting right there.</P>
-        <P>How did it become <em>yours</em>? Automatically. Every new application is dealt to one of the event&apos;s marketers in strict rotation — an even split, no favourites, no grabbing. The system did it the second the application came in.</P>
+        <P>How did it become <em>yours</em>? Automatically. Every new application — invite event or open event — is dealt to one of the event&apos;s marketers in strict rotation. It happens the second the application row arrives, before anyone asks a question or pays.</P>
         <P>And the other side of that coin: <strong>you only ever see your own leads.</strong> Other marketers can&apos;t see yours, and you can&apos;t see theirs. Your leads, your calls, your commission.</P>
       </Copy>
     ),
@@ -313,7 +313,8 @@ export const TEAM_LEVELS: TeamLevel[] = [
     whyLater: 'Commission per ticket, tickets per event — this is the unit economics of the business, seen from the inside.',
     content: (
       <Copy>
-        <P>Every fully-paid ticket earns you a <strong>fixed amount per ticket</strong>. The default is ₹50 — some events set their own rate — and your dashboard always shows your exact number, so there&apos;s never a surprise.</P>
+        <P>Commission starts only when a ticket becomes <code>Fully paid</code>. On an <strong>invite event</strong>, that means the event&apos;s full fee. On an <strong>open event</strong>, a clean self-serve sale pays half; if the person asked a doubt, abandoned their cart, or had a failed payment, it pays the full fee.</P>
+        <P>The signals never stack, and nobody has to claim they rescued the sale. If any friction happened, it is one full fee. If none happened, it is one half fee. A lead who never fully pays earns ₹0.</P>
         <P>Your <strong>earnings banner</strong> sits right on top of My Leads: how much you&apos;ve earned this month and how many tickets you&apos;ve sold. It updates the moment a lead hits <code>Fully paid</code>.</P>
         <P>When does it reach your account? <strong>A few days after the event happens</strong> — not instantly at booking. The event runs, then you&apos;re paid for it. And your earnings history never changes after the fact: what you see is what you get.</P>
       </Copy>

@@ -256,6 +256,7 @@ function LevelThreeMock({ demoLead, onReadyChange }: MockProps) {
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ ...card, padding: 13 }}>
         <div style={{ color: MUTED, fontSize: 10.5, fontWeight: 850, textTransform: 'uppercase', letterSpacing: 1 }}>Round-robin dealing</div>
+        <div style={{ color: MUTED, fontSize: 10.5, marginTop: 4 }}>Invite and open-event applications are assigned the moment their row arrives.</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7, marginTop: 12 }}>
           {['Maya', 'You', 'Kiran'].map((name, i) => <div key={name} style={{ borderRadius: 12, border: `1px solid ${i === 1 ? INK : HAIR}`, padding: '10px 6px', textAlign: 'center', background: i === 1 ? '#f7f7f8' : '#fff' }}><div style={{ width: 28, height: 28, borderRadius: '50%', background: i === 1 ? GOLD : '#e4e4e7', margin: '0 auto 6px', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 900 }}>{i + 1}</div><div style={{ fontSize: 11.5, fontWeight: 800 }}>{name}</div>{i === 1 && <div style={{ color: GREEN, fontSize: 9.5, fontWeight: 800, marginTop: 3 }}>New lead ↓</div>}</div>)}
         </div>
@@ -409,8 +410,8 @@ function LevelTwelveMock({ onReadyChange }: MockProps) {
     <div style={{ display: 'grid', gap: 12 }}>
       <button type="button" onClick={() => setCaption(true)} style={{ ...card, width: '100%', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}>
         <div style={{ color: MUTED, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase' }}>Your earnings</div>
-        <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}><strong style={{ fontSize: 26, letterSpacing: -0.7 }}>₹350</strong><span style={{ color: GREEN, fontSize: 12, fontWeight: 850 }}>7 tickets</span></div>
-        {caption && <div style={{ color: MUTED, fontSize: 10.5, marginTop: 8 }}>Updates the moment a lead hits Fully paid.</div>}
+        <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}><strong style={{ fontSize: 26, letterSpacing: -0.7 }}>₹75</strong><span style={{ color: GREEN, fontSize: 12, fontWeight: 850 }}>2 tickets</span></div>
+        {caption && <div style={{ display: 'grid', gap: 5, color: MUTED, fontSize: 10.5, marginTop: 8 }}><span>Clean open-event sale · ₹25 half fee</span><span>Doubt before payment · ₹50 full fee</span></div>}
       </button>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: 5, alignItems: 'center', fontSize: 10.5, fontWeight: 800, textAlign: 'center' }}>
         <span>Booking</span><span>→</span><span>Event happens</span><span>→</span><span style={{ borderRadius: 999, background: GOLD, padding: '7px 5px' }}>Payout</span>
