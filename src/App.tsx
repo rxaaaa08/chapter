@@ -10,7 +10,7 @@ import TeamOnboarding from './TeamOnboarding';
 import { NativePaymentOverlay } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
-import { isInAppBrowser } from './inAppBrowser';
+import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
 
@@ -59,7 +59,11 @@ type InviteHistoryStep = 'revealed' | 'chat' | 'retry-chat' | 'timeline' | 'life
 function inviteStepUrl(step: InviteHistoryStep): string {
   const params = new URLSearchParams(window.location.search);
   params.set('step', step);
-  return `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+  // ensureDistinctUrl because this flow does NOT reset the URL when a step is
+  // closed by its own X. Open timeline → close → reopen would otherwise push
+  // ?step=timeline while already at ?step=timeline: an identical URL, an entry
+  // Instagram cannot see, and a dead back button from that point on.
+  return ensureDistinctUrl(`${window.location.pathname}?${params.toString()}${window.location.hash}`);
 }
 
 // ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────

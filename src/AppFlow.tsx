@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts } from './supabase';
 import { getAffiliateRef } from './affiliate';
-import { isInAppBrowser, openExternalUrl } from './inAppBrowser';
+import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
 import { NativePaymentOverlay } from './PaymentOverlay';
 import { motion, AnimatePresence } from 'motion/react';
@@ -210,7 +210,16 @@ function sheetUrl(layer: HistoryLayer | null): string {
   if (layer) params.set('sheet', layer);
   else params.delete('sheet');
   const query = params.toString();
-  return `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+  const next = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+  // /plans keeps the URL in step with the visible layer on close, so a same-URL
+  // push should not arise here — this is belt-and-braces so one future missed
+  // close path cannot silently kill the chevron the way it did in the invite
+  // flow. Only used for pushes; replaceState callers pass through unchanged.
+  return next;
+}
+
+function sheetPushUrl(layer: HistoryLayer): string {
+  return ensureDistinctUrl(sheetUrl(layer));
 }
 
 const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
@@ -1364,7 +1373,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     if (shouldPush) {
       // sheetUrl(), not window.location.href — an entry whose URL matches the
       // current one is invisible to Instagram's back chevron. See sheetUrl().
-      window.history.pushState({ chapteraLayer: nextLayer }, '', sheetUrl(nextLayer));
+      window.history.pushState({ chapteraLayer: nextLayer }, '', sheetPushUrl(nextLayer));
     } else {
       // Going shallower without a traversal (a sheet closed by its own X rather
       // than by back). No new entry, but the URL still has to follow the layer,
@@ -1393,7 +1402,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         // as any other. Pushed at the current URL it was invisible, which is why
         // the trap only ever worked once: the first back landed here, the
         // replacement entry didn't register, and the chevron went dead.
-        window.history.pushState({ chapteraLayer: 'details-plan-switcher' }, '', sheetUrl('details-plan-switcher'));
+        window.history.pushState({ chapteraLayer: 'details-plan-switcher' }, '', sheetPushUrl('details-plan-switcher'));
         historyLayerRef.current = 'details-plan-switcher';
         setTimeout(() => { handlingPopStateRef.current = false; }, 0);
         return;

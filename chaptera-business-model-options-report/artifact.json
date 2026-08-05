@@ -1,0 +1,297 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Business Models That Fit Chaptera",
+    "description": "A source-backed ranking of business models for Chaptera, grounded in the current product, comparable companies, unit economics, and execution risk.",
+    "generatedAt": "2026-08-05T12:00:00+05:30",
+    "charts": [
+      {
+        "id": "business_model_fit",
+        "title": "Business-model fit for Chaptera's current product",
+        "subtitle": "Models that reuse Chaptera's operated-event stack rank above multi-tenant platform bets.",
+        "type": "bar",
+        "dataset": "model_scores",
+        "sourceId": "decision_model",
+        "encodings": {
+          "x": { "field": "model", "type": "nominal", "label": "Business model" },
+          "y": { "field": "score", "type": "quantitative", "label": "Fit score", "format": "number" }
+        },
+        "xAxisTitle": "Business model",
+        "yAxisTitle": "Fit score (0–100)",
+        "valueFormat": "number",
+        "options": { "orientation": "horizontal", "grouping": "grouped" },
+        "layout": "full"
+      }
+    ],
+    "tables": [
+      {
+        "id": "model_scorecard",
+        "title": "Model scorecard and timing",
+        "subtitle": "The score ranks structural fit; the recommended role shows how each model should enter the portfolio.",
+        "showDescription": true,
+        "dataset": "model_scores",
+        "defaultSort": { "field": "score", "direction": "desc" },
+        "density": "spacious",
+        "sourceId": "decision_model",
+        "layout": "full",
+        "columns": [
+          { "field": "model", "label": "Model" },
+          { "field": "score", "label": "Fit score", "format": "number" },
+          { "field": "timing", "label": "Timing" },
+          { "field": "role", "label": "Recommended role" },
+          { "field": "revenue", "label": "Revenue mechanism" },
+          { "field": "gate", "label": "Critical gate" }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "chaptera_repo",
+        "label": "Chaptera repository, main at b08e130",
+        "path": "source-notes.md",
+        "href": "https://github.com/rxaaaa08/chapter/tree/b08e130",
+        "query": {
+          "description": "Feature and operating-model audit of the live application, Supabase schema and migrations, admin workflows, payment flow, creator attribution, and proposal-only capabilities.",
+          "executed_at": "2026-08-05T12:00:00+05:30"
+        }
+      },
+      {
+        "id": "decision_model",
+        "label": "Chaptera business-model fit rubric",
+        "path": "source-notes.md",
+        "query": {
+          "engine": "postgresql",
+          "language": "sql",
+          "sql": "SELECT * FROM (VALUES ('Owned recurring formats', 84, 'Core now', 'Trust and margin engine', 'Ticket/package contribution plus add-ons', 'Three repeat runs with positive fully loaded contribution'), ('Venue performance partnerships', 80, 'Pilot now', 'Margin and acquisition overlay', 'Per check-in, fixed support, in-kind value, or spend share', 'Verified attendance and venue renewal'), ('Certified captain co-productions', 80, 'Next, controlled', 'Supply-scaling layer', 'Managed take rate or residual event contribution', 'Non-founder events match owned quality and contribution'), ('Corporate/private experiences', 78, 'Sell now', 'High-AOV cash-flow adjacency', 'Project price and production margin', 'Deposit covers commitments; labor-inclusive contribution is positive'), ('Sponsorship and brand activations', 78, 'Selective', 'Supplemental revenue or cost offset', 'Campaign fee, content fee, or in-kind offset', 'Verified attendance and measurable delivery'), ('Membership or access pass', 68, 'Conditional later', 'Retention and prepaid demand layer', 'Pass fee, credits, priority, or member pricing', 'Dense inventory, repeat proof, and high-usage stress test'), ('Open third-party marketplace', 58, 'Defer', 'Potential long-term distribution layer', 'Host take rate and optional discovery fee', 'Partner pull plus payout, refund, tax, safety, and quality systems'), ('Organizer SaaS or white-label', 52, 'Do not prioritize', 'Only after independent software demand', 'Subscription and usage fees', 'Organizers pay without Chaptera demand or operations')) AS model_scores(model, score, timing, role, revenue, gate) ORDER BY score DESC, model ASC",
+          "description": "Manual weighted assessment: current product/team leverage 25%, customer and brand fit 20%, economics and cash quality 20%, repeatability 15%, speed to test 10%, and lower execution/regulatory risk 10%. Each factor was scored from 1 to 5 and normalized to 100.",
+          "executed_at": "2026-08-05T12:00:00+05:30",
+          "filters": [
+            "Models evaluated against Chaptera main at b08e130 and cited primary sources as of 2026-08-05",
+            "Scores are structural judgments rather than observed financial outcomes"
+          ],
+          "tables_used": [
+            "Manual VALUES scorecard derived from repository audit and cited primary sources"
+          ],
+          "metric_definitions": [
+            "Fit score is a transparent strategic judgment, not observed ROI or a revenue forecast.",
+            "Scores should be updated when Chaptera has event-date contribution, repeat cohorts, acquisition incrementality, and team-time data."
+          ]
+        }
+      },
+      { "id": "timeleft", "label": "Timeleft subscription mechanics", "href": "https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available" },
+      { "id": "partners_222", "label": "222 partner and curator model", "href": "https://partners.222.place/" },
+      { "id": "misfits", "label": "Misfits India club-leader model", "href": "https://www.misfits.net.in/club-leader" },
+      { "id": "trovatrip", "label": "TrovaTrip business model", "href": "https://trovatrip.com/blog/how-trovatrip-works-our-business-model" },
+      { "id": "fever_private", "label": "Fever private and corporate events", "href": "https://business.feverup.com/en/corporate-services/private-events/" },
+      { "id": "fever_brands", "label": "Fever brand partnerships", "href": "https://business.feverup.com/brand-partnerships/" },
+      { "id": "airbnb", "label": "Airbnb Experiences host service fee", "href": "https://www.airbnb.com/help/article/3164" },
+      { "id": "sweatpals", "label": "SweatPals platform and discovery pricing", "href": "https://help.sweatpals.com/19-understanding-sweatpals-pricing" },
+      { "id": "luma", "label": "Luma organizer pricing", "href": "https://luma.com/pricing?locale=en-GB" },
+      { "id": "eventbrite", "label": "Eventbrite organizer pricing", "href": "https://www.eventbrite.com/organizer/pricing/" },
+      { "id": "eventbrite_sec", "label": "Eventbrite 2025 Form 10-K", "href": "https://www.sec.gov/Archives/edgar/data/1475115/000147511526000005/eb-20251231.htm" },
+      { "id": "bookmyshow", "label": "BookMyShow organizer platform", "href": "https://in.bookmyshow.com/event-management/" },
+      { "id": "bcg_creators", "label": "BCG India creator-economy research", "href": "https://www.bcg.com/publications/2025/india-from-content-to-commerce-mapping-indias-creator-economy" },
+      { "id": "payu_split", "label": "PayU split settlements documentation", "href": "https://docs.payu.in/docs/split-settlments" },
+      { "id": "rbi_ppi", "label": "RBI prepaid payment instrument directions", "href": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11142" }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Business Models That Fit Chaptera"
+      },
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "sourceId": "decision_model",
+        "body": "## Executive Summary\n\n- **Keep Chaptera-owned and managed experiences as the core engine.** The current product is already unusually strong at curated discovery, applications, approvals, ticketing, staged payments, trip logistics, customer recovery, and variable-cost distribution. It is built to operate the experience—not merely list somebody else's event.\n\n- **Add three monetization layers before attempting a marketplace:** high-margin ancillaries on relevant trips, venue-funded economics for recurring local formats, and corporate/private versions of formats Chaptera already knows how to deliver. These reuse the existing stack and can be piloted manually.\n\n- **Use creators and managers to become a managed network, not an open marketplace.** Start with three to five vetted captains running standardized Chaptera formats under Chaptera-controlled payments, service standards, safety, and support. This is the most credible path to supply-side scale.\n\n- **Treat membership and sponsorship as gated overlays.** A pass becomes attractive only after one city has frequent low-variable-cost inventory and demonstrated repeat behavior. Sponsorship works after verified attendance and content delivery are measurable.\n\n- **Defer organizer SaaS, generic listings, and a self-serve marketplace.** Those models require multi-tenancy, host KYC, settlement, refunds, tax operations, service enforcement, and supplier demand that the current code does not yet prove.\n\nThe recommended architecture is: **owned experiences as the trust and margin engine → venues, B2B, ancillaries, and sponsors as monetization layers → certified captains as the supply-scaling layer → membership as a retention layer → curated marketplace only after the operational evidence exists.**"
+      },
+      {
+        "id": "current_product",
+        "type": "markdown",
+        "sourceId": "chaptera_repo",
+        "body": "## Chaptera is already an experience operator with a commerce and operations system\n\nThe repository supports three live offer modes: premium invite/application experiences, open paid PayU experiences, and free WhatsApp-led community events. The paid journey includes city/date/pickup choice, itinerary and accommodation content, eligibility, approvals, advance or full payment, balance collection, waitlists, and group entry. The open journey adds OTP-based identity, server-validated pricing, hosted payment, and capacity-aware sales.\n\nThe admin side goes beyond ticketing: event configuration, application and payment operations, manager and team assignments, marketer commissions, creator attribution and dashboards, content tasks, cart-abandon and payment-recovery messaging, and funnel reporting. This means Chaptera's present advantage is **curation plus managed fulfillment plus demand orchestration**.\n\nThe gaps matter just as much. The current system does not yet show a true host/supplier portal, automated third-party payouts, tenant isolation, host-level KYC and tax records, a complete refund/cancellation ledger, atomic capacity reservation, or recurring membership billing and entitlements. The retired customer account surface also means there is not yet a durable member wallet or loyalty home. Those gaps are why operator-led models rank above platform models today."
+      },
+      {
+        "id": "portfolio_logic",
+        "type": "markdown",
+        "body": "## The best answer is a sequence, not one pure model\n\nA single-model choice would hide how the existing system can compound. Owned events generate the trust, content, customer insight, and operating playbooks. Venue and corporate revenue improve the economics of those same capabilities. Certified captains expand supply once the playbooks are reproducible. Membership monetizes repeat only after frequency exists. A marketplace becomes rational only when Chaptera can let third parties fulfill without weakening the guest promise.\n\nThis is an **operator-first, managed-network-second, platform-only-after-pull** strategy. It preserves brand control while making every later layer earn its complexity. Ancillaries are included as a high-fit revenue lever, but they are not a standalone business model. Affiliates and marketers are distribution costs and capabilities, not separate models."
+      },
+      {
+        "id": "ranking_intro",
+        "type": "markdown",
+        "sourceId": "decision_model",
+        "body": "## The ranking favors models that reuse today's operating system\n\nThe score below is a decision rubric, not a financial forecast. It weights present product/team leverage, customer and brand fit, economics and cash quality, repeatability, speed to test, and lower execution/regulatory risk. A model can be strategically attractive and still rank lower if Chaptera must build several missing systems before learning whether customers or suppliers want it."
+      },
+      {
+        "id": "ranking_chart",
+        "type": "chart",
+        "chartId": "business_model_fit",
+        "layout": "full"
+      },
+      {
+        "id": "ranking_table_intro",
+        "type": "markdown",
+        "body": "The table translates the score into timing and a concrete gate. Models marked conditional should not receive major product investment until the stated evidence exists."
+      },
+      {
+        "id": "ranking_table",
+        "type": "table",
+        "tableId": "model_scorecard",
+        "layout": "full"
+      },
+      {
+        "id": "owned_core",
+        "type": "markdown",
+        "sourceId": "chaptera_repo",
+        "body": "## 1. Core model: owned recurring formats plus selective higher-ticket trips\n\nThis is the highest-fit engine because Chaptera already owns the customer promise and most of the operating workflow. The portfolio should contain two complementary products:\n\n- **Frequent, standardized, relatively asset-light local formats** for acquisition, content, repeat, and community density. Think dinners, mixers, activity circles, short outings, or a repeatable city ritual.\n- **Selective trips and special experiences** for larger rupee contribution, stronger storytelling, and premium invite positioning.\n\nEach recurring format should become a runbook: minimum and target capacity, venue and transport rules, host-to-guest ratio, cancellation threshold, supplier terms, check-in, safety steps, message schedule, and post-event rebooking. Free events should have an explicit job—community acquisition, venue value, sponsor value, or conversion—not merely attendance.\n\nAdd-ons such as Chaptera transport, room upgrades, meals, flexibility, photo packs, or private group upgrades can increase contribution when they are operationally simple. Measure **incremental gross profit after supplier cost, extra commissions, refunds, and coordination**, not attach rate alone."
+      },
+      {
+        "id": "near_term_layers",
+        "type": "markdown",
+        "body": "## 2. Add venue-funded and corporate/private revenue now\n\n### Venue performance partnerships\n\nFor recurring local formats, the venue can become a second payer through a fee per verified attendee, a fixed minimum plus attendance payment, discounted space, included food/drink credits, or a share of verified incremental spend. [222 says it charges venues $5 per checked-in member and restaurants $3 per diner](https://partners.222.place/); these are US reference points, not Indian price recommendations. The useful lesson is the outcome-based mechanism. A Chennai pilot should be priced from expected guest spend and the venue's acquisition value, with check-in verification and a renewal decision after two or three events.\n\nMisfits' India model is also relevant: club leaders create local supply while the platform supports venue, payments, logistics, and marketing. Its scale and venue case studies are company-reported, but they show a plausible city-by-city operating pattern. [Misfits club-leader model](https://www.misfits.net.in/club-leader)\n\n### Corporate and private experiences\n\nPackage proven Chaptera formats for team dinners, social offsites, curated day trips, alumni groups, birthdays, and customer communities. This reuses the same itinerary, vendor, transport, invite, and support capabilities without a marketplace build. Use a proposal, contract, milestone payments, and a deposit that covers every non-refundable supplier commitment.\n\nFever demonstrates how consumer discovery and production capabilities can extend into [private/corporate events](https://business.feverup.com/en/corporate-services/private-events/) and [brand partnerships](https://business.feverup.com/brand-partnerships/). The important warning is to include founder sales time and custom production labor; a large contract is not high margin if bespoke work is invisible."
+      },
+      {
+        "id": "creator_network",
+        "type": "markdown",
+        "body": "## 3. Scale supply through certified captain co-productions\n\nChaptera already has creator onboarding, attribution, commission logic, tasks, dashboards, manager assignments, and payment operations. The next supply-side step is therefore not a self-serve organizer portal. It is to convert a small group of trusted creators or managers into **certified Chaptera captains**.\n\nStart with three to five people and one or two standardized formats. Chaptera controls the listing, price, payment, guest support, cancellation policy, safety checklist, content rights, and quality review. The captain follows the runbook and earns either a fixed hosting fee, a share of contribution, or a managed co-production split. Payout should occur only after completion and reconciliation.\n\nTrovaTrip offers a useful pattern: it pre-validates a creator's audience before trip launch and separates creator demand, local fulfillment, and platform services. [TrovaTrip's published business model](https://trovatrip.com/blog/how-trovatrip-works-our-business-model) is not a margin guarantee, but the audience-validation gate is directly transferable. Airbnb's typical [20% Experiences host service fee](https://www.airbnb.com/help/article/3164) is a benchmark for a platform that supplies demand, payment, support, and trust—not a justification for charging 20% for bare ticketing.\n\nTwo fee bands are useful only as hypotheses: roughly **10–15% for distribution/ticketing** and **15–25% for demand plus brand, payment, support, and co-production**. Chaptera should price from the actual cost-to-serve and contribution created. Do not stack full creator, marketer, and manager commissions on a low take rate; the commission stack can consume the platform fee before support and refunds."
+      },
+      {
+        "id": "conditional_layers",
+        "type": "markdown",
+        "body": "## 4. Membership and sponsorship are useful only with gates\n\n### Membership or access pass\n\nTimeleft's subscription grants access to book experiences while members pay restaurants separately for food and drink. That design protects the membership from high variable fulfilment cost. [Timeleft subscription mechanics](https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available)\n\nFor Chaptera, test a three-event prepaid pass, monthly credits with expiry, early access, member pricing, or included low-variable-cost community formats. Do **not** promise unlimited trips or unlimited expensive inventory. Run the first test in one city only after Chaptera has weekly or biweekly eligible formats, capacity slack, and at least two cohorts showing meaningful 60–90-day repeat. Keep any initial credits closed-loop to Chaptera-operated services; expanding a stored-value balance to third-party merchants can introduce additional payment-regulatory questions under [RBI's PPI framework](https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11142).\n\n### Sponsorship and brand activations\n\nPackage verified attendance, on-ground integration, creator content, social distribution, and post-event reporting. Accept cash or in-kind offsets only when they improve event contribution without degrading the guest experience. Sponsorship should remain supplemental until Chaptera can prove delivery, consented audience reporting, and repeatable results."
+      },
+      {
+        "id": "comparables",
+        "type": "markdown",
+        "body": "## What the closest comparable models actually teach\n\n- **Timeleft:** subscription can work when the core format is frequent and standardized and major consumption costs sit outside the subscription. The lesson is density before membership.\n- **222 and Misfits:** venues and local leaders can fund or supply recurring social formats. The lesson is verified outcomes and city-level playbooks. Company-published case metrics are directional, not audited proof.\n- **TrovaTrip:** validate demand before exposing Chaptera to trip commitments; creators can evolve from affiliates into hosts only with a fulfillment partner and clear economics.\n- **SweatPals:** infrastructure and discovery can be priced separately—its published model distinguishes platform fees from a higher discovery commission. That only works because the host product includes community, payments, refunds, and operating tools. [SweatPals pricing](https://help.sweatpals.com/19-understanding-sweatpals-pricing)\n- **Fever:** owned experiences, marketplace distribution, corporate production, and brand activation can coexist. That is a scale destination, not a launch configuration.\n- **Luma and Eventbrite:** generic organizer software competes at low or transparent platform fees. Luma publishes a 5% free-plan platform fee and a paid plan with 0% platform fee; Eventbrite publishes success-based ticket and payment fees. [Luma pricing](https://luma.com/pricing?locale=en-GB) [Eventbrite pricing](https://www.eventbrite.com/organizer/pricing/)\n- **BookMyShow:** India already has a dominant, self-serve organizer channel with large audience reach. Its presence makes generic listing/ticketing a weak differentiation strategy for Chaptera. [BookMyShow for organizers](https://in.bookmyshow.com/event-management/)\n\nThe pattern across these examples is consistent: high take rates are earned through demand, trust, service, or co-production; low-touch ticketing is a scale and efficiency game. Chaptera's better wedge is the first category."
+      },
+      {
+        "id": "defer",
+        "type": "markdown",
+        "body": "## What to defer—and the evidence that would reverse the decision\n\n### Open marketplace\n\nDo not open self-serve supply yet. A real marketplace adds host KYC and contracts, tenant permissions, split settlement, payout holds, refunds and chargebacks, seller-level inventory and reconciliation, tax operations, reviews, safety enforcement, incident response, and brand controls. If Chaptera later proceeds, use a licensed payment provider's marketplace mechanisms such as [PayU split settlements](https://docs.payu.in/docs/split-settlments) rather than pooling third-party host money in an ordinary merchant flow.\n\nReconsider only after 10–20 vetted non-founder hosts repeatedly deliver Chaptera-level quality and positive contribution, and after the refund, payout, reconciliation, safety, and tax operating systems exist.\n\n### Organizer SaaS or white-label software\n\nThe current admin is powerful but single-brand and operations-coupled. SaaS would require organization workspaces, tenant isolation, configurable branding and policies, organizer billing, exports/APIs, onboarding, support, and migration. Reconsider only when at least 10 external organizers ask for the tools and at least three will pay for software **without** Chaptera supplying audience or operations.\n\n### Generic listings or lead generation\n\nA listings product weakens control of the customer promise and competes with scaled discovery platforms. Use outcome-based venue or partner economics instead. If a supplier only wants leads, charge on a verified booking or check-in—not for undifferentiated exposure."
+      },
+      {
+        "id": "economics",
+        "type": "markdown",
+        "sourceId": "chaptera_repo",
+        "body": "## The economics must be rebuilt around event-date contribution\n\nThe repository's current performance logic is useful for sales operations, but planned ticket price minus configured per-ticket cost and commissions is not a complete P&L. It can miss fixed event-date supplier commitments, refunds, chargebacks, comps, variable labor, taxes, founder time, and the risk that an advance-paid booking never completes its balance. Before allocating heavily to any model, create one economic row per event date.\n\n**Owned event contribution**\n\n`net ticket receipts + venue income + sponsor income + ancillary gross profit − direct fulfilment − creator/marketer/manager commissions − variable labor − refunds and chargebacks − event fixed costs`\n\n**B2B project contribution**\n\n`contract revenue − supplier pass-throughs − sales and production labor − commissions − credits/refunds`\n\n**Managed-host contribution**\n\n`GMV × take rate − payment cost − demand cost − host incentives − support/refund/safety cost`\n\nFor every model, separate revenue from cash risk. Track deposits versus non-refundable commitments, final settlement, refund liability, and days spent carrying vendor or customer balances. Eventbrite's 2025 filing illustrates why scale alone is insufficient: it reports hundreds of millions of tickets and more than $3 billion in gross ticket sales while also discussing organizer payables, refunds, chargebacks, and a history of losses. [Eventbrite 2025 Form 10-K](https://www.sec.gov/Archives/edgar/data/1475115/000147511526000005/eb-20251231.htm)"
+      },
+      {
+        "id": "rollout",
+        "type": "markdown",
+        "body": "## A practical 12-month rollout\n\n### Days 0–45: establish economic truth\n\n1. Build an event-date P&L and cash-risk view: actual receipts, advances, balances, settlement, refunds, fixed commitments, variable fulfilment, labor, commissions, tax, and founder/team hours.\n2. Add 60/90/180-day repeat cohorts and distinguish direct, repeat, referral, creator, and marketer acquisition.\n3. Pick two or three formats worth repeating; define runbooks, minimum capacity, break-even occupancy, quality standard, and cancellation rule.\n4. Add verified attendance/check-in because venue deals, host quality, sponsors, and retention all depend on it.\n\n### Months 1–3: monetize the existing engine\n\n1. Run the standardized formats repeatedly and keep selective premium trips.\n2. Test two or three operationally simple add-ons and retain only those with positive incremental gross profit.\n3. Pilot one venue performance or in-kind deal for a recurring local format.\n4. Sell and deliver one corporate/private package manually, with a deposit covering all non-refundable supplier commitments.\n\n### Months 3–6: controlled supply expansion\n\n1. Recruit three to five captains from the creator/manager pool.\n2. Let each run only an approved format under a host agreement, safety process, completion-based payout, and Chaptera quality review.\n3. Compare captain-led and founder-led events on contribution, guest rating, refunds, support contacts, incidents, and repeat.\n4. Package one sponsor/in-kind tier only after attendance and content reporting are reliable.\n\n### Months 6–12: gated retention and network decisions\n\n1. Test a capped pass or credits in one dense city only if repeat and inventory frequency are proven.\n2. Expand captain supply only when non-founder events meet the owned baseline.\n3. Begin marketplace infrastructure only if partner pull is real and payout/refund/tax/safety workflows are funded.\n4. Keep SaaS in discovery until organizers are willing to pay for software alone."
+      },
+      {
+        "id": "gates",
+        "type": "markdown",
+        "body": "## Decision gates for the next investment round\n\n- **Owned format:** positive fully loaded contribution for three consecutive runs; occupancy reliably above break-even; acceptable founder/team hours per guest; quality and safety stable.\n- **Venue partnership:** cash or in-kind value exceeds added sales and operating cost; attendance is verified; the venue renews after two or three runs.\n- **Corporate/private:** deposit covers 100% of non-refundable commitments; project contribution includes sales and production labor; sales cycle and collection period are acceptable.\n- **Captain network:** captain-led contribution remains positive after support; guest rating, refunds, complaints, cancellations, and incidents stay within an agreed tolerance of founder-led events.\n- **Membership/pass:** weekly or biweekly eligible supply, spare capacity, demonstrated 60–90-day repeat, and positive economics under a high-utilization stress test.\n- **Marketplace:** at least 10–20 credible partners show repeat demand; Chaptera can reconcile seller money, refunds, taxes, and payouts; host quality enforcement is operational.\n- **Organizer SaaS:** at least 10 organizers request the product and at least three agree to pay without demand generation or managed operations.\n\nThe metrics that matter most are fully loaded contribution, break-even occupancy, deposits versus commitments, refund/chargeback/no-show rate, team hours, 60/90/180-day repeat contribution, acquisition incrementality, venue value per verified guest, B2B deposit coverage, host quality failures, and membership utilization distribution."
+      },
+      {
+        "id": "questions",
+        "type": "markdown",
+        "body": "## Further questions that would change the ranking\n\n- What is contribution by event date after every fixed cost, refund, commission, and team hour?\n- Which formats have repeatable demand, and what percentage of guests return within 90 and 180 days?\n- How much of creator and marketer attribution is incremental rather than last-touch credit for an existing buyer?\n- Which Chennai venues will pay or waive cost for verified footfall, and what is their renewal behavior?\n- What is the current corporate/private inbound pipeline, average sales cycle, and deposit willingness?\n- Can a non-founder captain deliver the same guest rating and incident rate with materially fewer founder hours?\n- How many external organizers have asked to use Chaptera's tools without asking Chaptera to market or operate the event?"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "sourceId": "decision_model",
+        "body": "## Caveats and assumptions\n\nNo live booking-level revenue, event cost, refund, repeat-cohort, acquisition-incrementality, or founder-time dataset was analyzed. The scores are structural priors based on the repository and published business mechanics; they are not ROI forecasts. Company case-study numbers from 222, Misfits, TrovaTrip, Fever, and similar operators are self-reported and should be treated as directional. Pricing pages describe current mechanics in their own markets and are anchors, not Chaptera price recommendations.\n\nThird-party hosting, stored-value credits, travel packaging, seller payouts, GST/TCS/TDS, insurance, consumer disclosures, privacy, and creator endorsements can change the economics and legal role. Chaptera should obtain qualified Indian legal, tax, insurance, and payment advice before launching a third-party marketplace or broadly redeemable balance."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-05T12:00:00+05:30",
+    "status": "ready",
+    "datasets": {
+      "model_scores": [
+        {
+          "model": "Owned recurring formats",
+          "score": 84,
+          "timing": "Core now",
+          "role": "Trust and margin engine",
+          "revenue": "Ticket/package contribution plus add-ons",
+          "gate": "Three repeat runs with positive fully loaded contribution"
+        },
+        {
+          "model": "Venue performance partnerships",
+          "score": 80,
+          "timing": "Pilot now",
+          "role": "Margin and acquisition overlay",
+          "revenue": "Per check-in, fixed support, in-kind value, or spend share",
+          "gate": "Verified attendance and venue renewal"
+        },
+        {
+          "model": "Certified captain co-productions",
+          "score": 80,
+          "timing": "Next, controlled",
+          "role": "Supply-scaling layer",
+          "revenue": "Managed take rate or residual event contribution",
+          "gate": "Non-founder events match owned quality and contribution"
+        },
+        {
+          "model": "Corporate/private experiences",
+          "score": 78,
+          "timing": "Sell now",
+          "role": "High-AOV cash-flow adjacency",
+          "revenue": "Project price and production margin",
+          "gate": "Deposit covers commitments; labor-inclusive contribution is positive"
+        },
+        {
+          "model": "Sponsorship and brand activations",
+          "score": 78,
+          "timing": "Selective",
+          "role": "Supplemental revenue or cost offset",
+          "revenue": "Campaign fee, content fee, or in-kind offset",
+          "gate": "Verified attendance and measurable delivery"
+        },
+        {
+          "model": "Membership or access pass",
+          "score": 68,
+          "timing": "Conditional later",
+          "role": "Retention and prepaid demand layer",
+          "revenue": "Pass fee, credits, priority, or member pricing",
+          "gate": "Dense inventory, repeat proof, and high-usage stress test"
+        },
+        {
+          "model": "Open third-party marketplace",
+          "score": 58,
+          "timing": "Defer",
+          "role": "Potential long-term distribution layer",
+          "revenue": "Host take rate and optional discovery fee",
+          "gate": "Partner pull plus payout, refund, tax, safety, and quality systems"
+        },
+        {
+          "model": "Organizer SaaS or white-label",
+          "score": 52,
+          "timing": "Do not prioritize",
+          "role": "Only after independent software demand",
+          "revenue": "Subscription and usage fees",
+          "gate": "Organizers pay without Chaptera demand or operations"
+        }
+      ]
+    }
+  },
+  "sources": [
+    { "id": "chaptera_repo", "label": "Chaptera repository, main at b08e130", "path": "source-notes.md", "href": "https://github.com/rxaaaa08/chapter/tree/b08e130" },
+    { "id": "decision_model", "label": "Chaptera business-model fit rubric", "path": "source-notes.md" },
+    { "id": "timeleft", "label": "Timeleft subscription mechanics", "href": "https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available" },
+    { "id": "partners_222", "label": "222 partner and curator model", "href": "https://partners.222.place/" },
+    { "id": "misfits", "label": "Misfits India club-leader model", "href": "https://www.misfits.net.in/club-leader" },
+    { "id": "trovatrip", "label": "TrovaTrip business model", "href": "https://trovatrip.com/blog/how-trovatrip-works-our-business-model" },
+    { "id": "fever_private", "label": "Fever private and corporate events", "href": "https://business.feverup.com/en/corporate-services/private-events/" },
+    { "id": "fever_brands", "label": "Fever brand partnerships", "href": "https://business.feverup.com/brand-partnerships/" },
+    { "id": "airbnb", "label": "Airbnb Experiences host service fee", "href": "https://www.airbnb.com/help/article/3164" },
+    { "id": "sweatpals", "label": "SweatPals platform and discovery pricing", "href": "https://help.sweatpals.com/19-understanding-sweatpals-pricing" },
+    { "id": "luma", "label": "Luma organizer pricing", "href": "https://luma.com/pricing?locale=en-GB" },
+    { "id": "eventbrite", "label": "Eventbrite organizer pricing", "href": "https://www.eventbrite.com/organizer/pricing/" },
+    { "id": "eventbrite_sec", "label": "Eventbrite 2025 Form 10-K", "href": "https://www.sec.gov/Archives/edgar/data/1475115/000147511526000005/eb-20251231.htm" },
+    { "id": "bookmyshow", "label": "BookMyShow organizer platform", "href": "https://in.bookmyshow.com/event-management/" },
+    { "id": "bcg_creators", "label": "BCG India creator-economy research", "href": "https://www.bcg.com/publications/2025/india-from-content-to-commerce-mapping-indias-creator-economy" },
+    { "id": "payu_split", "label": "PayU split settlements documentation", "href": "https://docs.payu.in/docs/split-settlments" },
+    { "id": "rbi_ppi", "label": "RBI prepaid payment instrument directions", "href": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11142" }
+  ]
+}

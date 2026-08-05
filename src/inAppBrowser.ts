@@ -25,6 +25,30 @@ export function isInAppBrowser(): boolean {
 // browsers get a same-tab navigation: it costs the back-stack entry but it is
 // the only handoff Instagram performs consistently, and for universal links
 // like wa.me it is what triggers the jump into the WhatsApp app.
+// Guarantee a URL that differs from the one currently showing.
+//
+// Instagram's iOS in-app browser only registers a history entry with its back
+// chevron when that entry's URL differs from the current one (measured on
+// device — see INSTAGRAM-BACK-BUTTON-HANDOFF.md). Pushing the same URL twice
+// produces an entry the chevron cannot see, and back goes dead from there on.
+//
+// That happens whenever a view is closed WITHOUT resetting the URL and then
+// reopened: the second push targets the URL already showing. /plans avoids it
+// by replacing the URL on close, but relying on every close path everywhere to
+// stay correct is exactly how this broke once already.
+//
+// So callers still name their destination properly (?sheet=, ?step=) and this
+// is the last-resort guarantee that a single missed close path cannot silently
+// kill the back button. The nonce is only added when it would otherwise be a
+// same-URL push, so it stays out of the way in the normal case.
+export function ensureDistinctUrl(url: string): string {
+  if (typeof window === 'undefined') return url;
+  const next = new URL(url, window.location.href);
+  if (next.href !== window.location.href) return `${next.pathname}${next.search}${next.hash}`;
+  next.searchParams.set('_n', String(Date.now() % 100000));
+  return `${next.pathname}${next.search}${next.hash}`;
+}
+
 export function openExternalUrl(url: string): void {
   if (!url) return;
   if (isInAppBrowser()) {
