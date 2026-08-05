@@ -982,6 +982,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
   const [detailsPlanSwitcherOpen, setDetailsPlanSwitcherOpen] = useState(false);
+  // Nothing increments this any more: the details trap was its only caller and
+  // was removed 2026-08-05. The plumbing down to EventDetailsOverlay is kept
+  // because opening the switcher programmatically is a plausible future need,
+  // but treat it as dormant — the switcher is currently opened only by tapping
+  // it. Safe to delete along with its prop and the child's signal effect.
   const [openDetailsPlanSwitcherSignal, setOpenDetailsPlanSwitcherSignal] = useState(0);
   const [closeDetailsPlanSwitcherSignal, setCloseDetailsPlanSwitcherSignal] = useState(0);
   // The footer policy sheets (About / Contact / Privacy / Refund / T&C) live
@@ -1398,25 +1403,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     const onPopState = () => {
       if (!activeHistoryLayer) return;
       handlingPopStateRef.current = true;
-      if (
-        isPlansHistoryManaged &&
-        (activeHistoryLayer === 'event-details' || activeHistoryLayer === 'details-plan-switcher')
-      ) {
-        // Keep browser back trapped inside details: always surface the plan switcher.
-        setOpenDetailsPlanSwitcherSignal(prev => prev + 1);
-        setDetailsPlanSwitcherOpen(true);
-        setShowDetails(true);
-        setStep('EVENT_SELECTED');
-        // sheetUrl(), not window.location.href. The trap replaces the entry the
-        // user just consumed, so it has to be as visible to Instagram's chevron
-        // as any other. Pushed at the current URL it was invisible, which is why
-        // the trap only ever worked once: the first back landed here, the
-        // replacement entry didn't register, and the chevron went dead.
-        window.history.pushState({ chapteraLayer: 'details-plan-switcher' }, '', sheetPushUrl('details-plan-switcher'));
-        historyLayerRef.current = 'details-plan-switcher';
-        setTimeout(() => { handlingPopStateRef.current = false; }, 0);
-        return;
-      }
+      // There used to be a trap here: back from the details sheet force-opened
+      // the plan switcher and pushed a replacement entry, so back could never
+      // leave the details screen. It was a deliberate retention choice, made
+      // when Instagram's chevron was dead and it therefore only affected Safari.
+      // Once back started working in Instagram it applied to most of our
+      // traffic, and a back button that refuses to go back reads as broken.
+      // Removed 2026-08-05 on the owner's call: back now closes details and
+      // returns to the plan list, and no push happens inside popstate at all.
       if (isPreviewMode && activeHistoryLayer === 'details-calendar') {
         setCloseDetailsCalendarSignal(prev => prev + 1);
         setDetailsCalendarOpen(false);
@@ -1499,8 +1493,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setCloseDetailsCalendarSignal(prev => prev + 1);
         setDetailsCalendarOpen(false);
       } else if (activeHistoryLayer === 'event-details') {
-        setOpenDetailsPlanSwitcherSignal(prev => prev + 1);
-        setDetailsPlanSwitcherOpen(true);
+        // The other half of the old trap lived here — it opened the plan
+        // switcher instead of closing. Back now does the same thing the sheet's
+        // own X does. viaHistory=true because the traversal already happened;
+        // closeEventDetails must not call history.back() a second time.
+        closeEventDetails(true);
       }
       setTimeout(() => { handlingPopStateRef.current = false; }, 0);
     };
