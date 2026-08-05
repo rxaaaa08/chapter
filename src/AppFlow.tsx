@@ -3,7 +3,7 @@ import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg
 import { getAffiliateRef } from './affiliate';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
-import { NativePaymentOverlay } from './PaymentOverlay';
+import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, ShieldCheck, Plus, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
@@ -180,7 +180,7 @@ interface Event {
 }
 
 type GroupChatMessage = { name: string; text: string };
-type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'community-sheet' | 'doubt-popup' | 'booking-timeline' | 'application-form' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'policy-modal' | 'tc-modal';
+type HistoryLayer = 'event-details' | 'details-calendar' | 'details-plan-switcher' | 'post-details-chat' | 'community-sheet' | 'doubt-popup' | 'booking-timeline' | 'application-form' | 'details-form' | 'payment-checkout' | 'payment-success' | 'payment-failure' | 'policy-modal' | 'tc-modal' | 'payment-method-picker' | 'payment-fee-info';
 
 const GROUPCHAT_MESSAGES: GroupChatMessage[] = [
   { name: 'Harish', text: 'Had such a fun time guys, do lemme know when we plan another beach trip.' },
@@ -244,6 +244,10 @@ const HISTORY_LAYER_DEPTH: Record<HistoryLayer, number> = {
   // top of them, so they are deeper than every stack below.
   'policy-modal': 9,
   'tc-modal': 9,
+  // The bill's own nested sheets. Deeper than everything: they render on top of
+  // the checkout overlay, so back must close them before it closes the bill.
+  'payment-method-picker': 10,
+  'payment-fee-info': 10,
 };
 
 const getGroupchatColor = (name: string) => {
@@ -1044,6 +1048,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     }
   }, [showDetailsForm, googleUser, selectedEvent?.id]);
   const [showTcModal, setShowTcModal] = useState(false);
+  // Which of the bill's nested sheets is open. Held here rather than inside
+  // NativePaymentOverlay because only this component owns history, and without
+  // an entry of its own, back closed the bill under the open sheet.
+  const [paymentSubsheet, setPaymentSubsheet] = useState<PaymentSubsheet | null>(null);
   const [paymentView, setPaymentView] = useState<'idle' | 'checkout' | 'success' | 'failure'>('idle');
   const [paymentContext, setPaymentContext] = useState<{
     eventId: string;
@@ -1091,7 +1099,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   // above the broader conditions they can overlap with (isPostDetailsChatLayer
   // ignores all three, and policy-modal is only ever open over event-details).
   const activeHistoryLayer: HistoryLayer | null =
-    showTcModal ? 'tc-modal'
+    paymentSubsheet === 'method-picker' ? 'payment-method-picker'
+    : paymentSubsheet === 'fee-info' ? 'payment-fee-info'
+    : showTcModal ? 'tc-modal'
     : detailsPolicyOpen ? 'policy-modal'
     : showDoubtPopup ? 'doubt-popup'
     : paymentView === 'failure' ? 'payment-failure'
@@ -1448,7 +1458,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setTimeout(() => { handlingPopStateRef.current = false; }, 0);
         return;
       }
-      if (activeHistoryLayer === 'tc-modal') {
+      if (activeHistoryLayer === 'payment-method-picker' || activeHistoryLayer === 'payment-fee-info') {
+        setPaymentSubsheet(null);
+      } else if (activeHistoryLayer === 'tc-modal') {
         setShowTcModal(false);
       } else if (activeHistoryLayer === 'policy-modal') {
         setCloseDetailsPolicySignal(prev => prev + 1);
@@ -3513,6 +3525,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   setPaymentView('idle');
                   setShowDetailsForm(true);
                 }}
+                // The bill's nested sheets get real history entries via the
+                // layer stack, so back closes the sheet the customer is looking
+                // at instead of the bill underneath it. Dismiss goes through
+                // history.back() so the entry is consumed rather than stranded.
+                activeSubsheet={paymentSubsheet}
+                onOpenSubsheet={setPaymentSubsheet}
+                onDismissSubsheet={() => window.history.back()}
               />
             );
           })()}

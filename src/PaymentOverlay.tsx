@@ -247,6 +247,10 @@ function PaymentMethodSheet({
   );
 }
 
+// The bill's two nested bottom sheets. Named here so the routes that own
+// history can talk about them without importing internals.
+export type PaymentSubsheet = 'method-picker' | 'fee-info';
+
 export function NativePaymentOverlay({
   eventTitle,
   eventDate,
@@ -262,6 +266,9 @@ export function NativePaymentOverlay({
   skipEntrance = false,
   onBeforePayU,
   onClose,
+  activeSubsheet = null,
+  onOpenSubsheet,
+  onDismissSubsheet,
 }: {
   eventTitle: string;
   eventDate: string;
@@ -280,6 +287,18 @@ export function NativePaymentOverlay({
   skipEntrance?: boolean;
   onBeforePayU?: () => void;
   onClose: () => void;
+  // The two nested sheets (method picker, fee breakdown) can be driven by the
+  // route that mounts this overlay instead of by local state. That route is the
+  // only thing that owns history, and without an entry of their own the browser
+  // back button closed the bill UNDERNEATH an open nested sheet rather than the
+  // sheet the customer was looking at.
+  //
+  // Optional on purpose: pass onOpenSubsheet to take control, omit it and the
+  // overlay falls back to its original local state. That keeps any mount that
+  // has not been migrated working exactly as before.
+  activeSubsheet?: PaymentSubsheet | null;
+  onOpenSubsheet?: (sheet: PaymentSubsheet) => void;
+  onDismissSubsheet?: () => void;
 }) {
   const [name, setName] = useState(prefillName);
   const [phone, setPhone] = useState(prefillPhone);
@@ -344,6 +363,22 @@ export function NativePaymentOverlay({
   const totalPayNow = priceAdvance + platformFee;
   const fmtFee = (n: number) => n % 1 === 0 ? `₹${n.toLocaleString('en-IN')}` : `₹${n.toFixed(2)}`;
   const [showFeeInfo, setShowFeeInfo] = useState(false);
+
+  // Controlled when the mounting route supplies onOpenSubsheet, otherwise the
+  // original local-state behaviour. Everything below reads these three, never
+  // the raw setters, so both modes stay in step.
+  const subsheetControlled = !!onOpenSubsheet;
+  const methodPickerOpen = subsheetControlled ? activeSubsheet === 'method-picker' : showMethodPicker;
+  const feeInfoOpen = subsheetControlled ? activeSubsheet === 'fee-info' : showFeeInfo;
+  const openSubsheet = (sheet: PaymentSubsheet) => {
+    if (subsheetControlled) { onOpenSubsheet!(sheet); return; }
+    if (sheet === 'method-picker') setShowMethodPicker(true); else setShowFeeInfo(true);
+  };
+  const dismissSubsheet = () => {
+    if (subsheetControlled) { onDismissSubsheet?.(); return; }
+    setShowMethodPicker(false);
+    setShowFeeInfo(false);
+  };
   // Fee sub-breakdown: base 2% + 18% GST on that
   const basePFF = selectedMethod ? priceAdvance * 0.02 : 0;
   const gstOnFee = selectedMethod ? basePFF * 0.18 : 0;
@@ -523,7 +558,7 @@ export function NativePaymentOverlay({
           <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-200">
             <button
               type="button"
-              onClick={() => selectedMethod && setShowFeeInfo(true)}
+              onClick={() => selectedMethod && openSubsheet('fee-info')}
               className="flex items-center gap-1 active:opacity-60 transition-opacity"
             >
               <span className="text-[14px] text-gray-700 border-b border-dashed border-gray-400">
@@ -552,7 +587,7 @@ export function NativePaymentOverlay({
             <p className="text-[12px] font-bold text-gray-500 uppercase tracking-[1px]">Payment Method</p>
             <button
               type="button"
-              onClick={() => setShowMethodPicker(true)}
+              onClick={() => openSubsheet('method-picker')}
               className="flex items-center gap-0.5 active:opacity-60 transition-opacity"
             >
               <span className="text-[13px] font-semibold text-green-500">Change</span>
@@ -563,7 +598,7 @@ export function NativePaymentOverlay({
           {/* Method row */}
           <button
             type="button"
-            onClick={() => setShowMethodPicker(true)}
+            onClick={() => openSubsheet('method-picker')}
             className="w-full flex items-center gap-3 px-4 py-3.5 active:bg-gray-50 transition-colors"
           >
             {selectedMethod ? (
@@ -642,7 +677,7 @@ export function NativePaymentOverlay({
           {/* Left: paying via */}
           <button
             type="button"
-            onClick={() => setShowMethodPicker(true)}
+            onClick={() => openSubsheet('method-picker')}
             className="flex items-center gap-2.5 active:opacity-70 transition-opacity flex-shrink-0"
           >
             {selectedMethod ? (
@@ -702,11 +737,11 @@ export function NativePaymentOverlay({
 
       {/* Payment method picker (slides up over this page) */}
       <AnimatePresence>
-        {showMethodPicker && (
+        {methodPickerOpen && (
           <PaymentMethodSheet
             selected={selectedMethod}
             onSelect={m => setSelectedMethod(m)}
-            onClose={() => setShowMethodPicker(false)}
+            onClose={() => dismissSubsheet()}
             feeRates={feeRates}
           />
         )}
@@ -714,13 +749,13 @@ export function NativePaymentOverlay({
 
       {/* Fee breakdown sheet */}
       <AnimatePresence>
-        {showFeeInfo && selectedMethod && (
+        {feeInfoOpen && selectedMethod && (
           <>
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.18 }}
               className="absolute inset-0 bg-black/40 z-[90]"
-              onClick={() => setShowFeeInfo(false)}
+              onClick={() => dismissSubsheet()}
             />
             <motion.div
               initial={{ y: '100%' }} animate={{ y: 0 }}
@@ -732,7 +767,7 @@ export function NativePaymentOverlay({
               {/* Close button */}
               <button
                 type="button"
-                onClick={() => setShowFeeInfo(false)}
+                onClick={() => dismissSubsheet()}
                 className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 aria-label="Close"
               >

@@ -7,7 +7,7 @@ import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
 import CreatorDashboard from './CreatorDashboard';
 import TeamOnboarding from './TeamOnboarding';
-import { NativePaymentOverlay } from './PaymentOverlay';
+import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
@@ -54,7 +54,7 @@ function MobileShell({ children, scroll = false }: { children: React.ReactNode; 
 // is preserved (?ref= creator attribution, ?dbg=, PayU return params).
 // Named ...HistoryStep, not InviteStep — that name is already taken further down
 // by the unrelated 'card' | 'timeline' | 'bill' screen enum.
-type InviteHistoryStep = 'revealed' | 'chat' | 'retry-chat' | 'timeline' | 'lifestyle' | 'planDetails' | 'bill' | 'retry-bill';
+type InviteHistoryStep = 'revealed' | 'chat' | 'retry-chat' | 'timeline' | 'lifestyle' | 'planDetails' | 'bill' | 'retry-bill' | 'terms' | 'payment-method' | 'payment-fee';
 
 function inviteStepUrl(step: InviteHistoryStep): string {
   const params = new URLSearchParams(window.location.search);
@@ -64,6 +64,45 @@ function inviteStepUrl(step: InviteHistoryStep): string {
   // ?step=timeline while already at ?step=timeline: an identical URL, an entry
   // Instagram cannot see, and a dead back button from that point on.
   return ensureDistinctUrl(`${window.location.pathname}?${params.toString()}${window.location.hash}`);
+}
+
+// History ownership for the bill's two nested sheets, shared by all three
+// invite-side mounts (shared invite, direct invite, PayU retry).
+//
+// NativePaymentOverlay used to hide these with local setters and no history
+// entry, so browser back closed the bill UNDERNEATH an open sheet instead of
+// the sheet the customer was looking at. The route owns history, so the route
+// owns these too.
+//
+// dismiss() traverses rather than just clearing state: that consumes the entry
+// it pushed, so X, backdrop and native back all land in the same place and the
+// stack cannot drift. Each component wires handlePop() as the FIRST check in
+// its popstate handler, since these sheets sit on top of everything else.
+function usePaymentSubsheetHistory() {
+  const [activeSubsheet, setActiveSubsheet] = useState<PaymentSubsheet | null>(null);
+
+  const openSubsheet = (sheet: PaymentSubsheet) => {
+    window.history.pushState(
+      { chapteraInviteStep: sheet === 'method-picker' ? 'payment-method' : 'payment-fee' },
+      '',
+      inviteStepUrl(sheet === 'method-picker' ? 'payment-method' : 'payment-fee'),
+    );
+    setActiveSubsheet(sheet);
+  };
+
+  const dismissSubsheet = () => {
+    if (activeSubsheet) window.history.back();
+    else setActiveSubsheet(null);
+  };
+
+  // Returns true when it consumed the traversal, so the caller stops.
+  const handleSubsheetPop = () => {
+    if (!activeSubsheet) return false;
+    setActiveSubsheet(null);
+    return true;
+  };
+
+  return { activeSubsheet, openSubsheet, dismissSubsheet, handleSubsheetPop };
 }
 
 // ─── HOMEPAGE COMPONENT ────────────────────────────────────────────────────────
@@ -1095,6 +1134,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [wipingToLifestyle, setWipingToLifestyle] = useState(false);
   const [tcAccepted, setTcAccepted] = useState(false);
   const [showTcModal, setShowTcModal] = useState(false);
+  const { activeSubsheet, openSubsheet, dismissSubsheet, handleSubsheetPop } = usePaymentSubsheetHistory();
   // Native-application payment overlay
   const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; girlsOnly?: boolean; isOpenEvent?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
@@ -2022,6 +2062,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
       if (event.state?.chapteraLayer) return;
+      // Nested payment sheets sit on top of the bill, so they close first.
+      if (handleSubsheetPop()) return;
+      // The terms sheet owns an entry too; without this, back skipped past it
+      // and closed the screen underneath while terms stayed on screen.
+      if (showTcModal) {
+        setShowTcModal(false);
+        return;
+      }
       if (showPlanDetailsSheet) {
         setShowPlanDetailsSheet(false);
         return;
@@ -2248,7 +2296,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             {/* Tappable overlay on "Terms & Conditions" text (cols 39.8–69.9%, rows 64.5–67.5%) */}
             <motion.button
               type="button"
-              onClick={() => setShowTcModal(true)}
+              onClick={() => {
+                window.history.pushState({ chapteraInviteStep: 'terms' }, '', inviteStepUrl('terms'));
+                setShowTcModal(true);
+              }}
               animate={{ opacity: 0 }}
               style={{ position: 'absolute', top: '67.5%', left: '39.5%', width: '31%', height: '3.5%', zIndex: 12, background: 'transparent', border: 'none', cursor: 'pointer', pointerEvents: wipePhase === 'idle' ? 'auto' : 'none' }}
             />
@@ -2990,6 +3041,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                 setShowNativeBill(false);
                 setShowNativeTimeline(true);
               }}
+              // Nested sheets get their own history entry (usePaymentSubsheetHistory),
+              // so back closes the visible sheet instead of the bill beneath it.
+              activeSubsheet={activeSubsheet}
+              onOpenSubsheet={openSubsheet}
+              onDismissSubsheet={dismissSubsheet}
             />
           )}
         </AnimatePresence>
@@ -3012,7 +3068,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                 animate={{ opacity: 0.5 }}
                 exit={{ opacity: 0 }}
                 className="absolute inset-0 z-[75] bg-black"
-                onClick={() => setShowTcModal(false)}
+                onClick={() => window.history.back()}
               />
               <motion.div
                 initial={{ y: 40, opacity: 0 }}
@@ -3029,7 +3085,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                 </div>
                 <div className="px-6 pb-8 pt-3 flex-shrink-0">
                   <button
-                    onClick={() => { setTcAccepted(true); setShowTcModal(false); }}
+                    onClick={() => { setTcAccepted(true); window.history.back(); }}
                     className="w-full py-[15px] rounded-2xl bg-black text-white text-[16px] font-semibold active:opacity-80 transition-all"
                   >
                     I Agree
@@ -3478,6 +3534,7 @@ function NativeBookingTimeline({
 
 function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initialPosterLoaded?: boolean }) {
   const [step, setStep] = useState<InviteStep>('card');
+  const { activeSubsheet, openSubsheet, dismissSubsheet, handleSubsheetPop } = usePaymentSubsheetHistory();
   const [posterLoaded, setPosterLoaded] = useState(initialPosterLoaded);
   const [eventInfo, setEventInfo] = useState<{
     bookingUrl: string;
@@ -3556,6 +3613,8 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
   useEffect(() => {
     const handleInviteBack = (event: PopStateEvent) => {
       if (event.state?.chapteraLayer) return;
+      // Nested payment sheets render above the bill, so they close first.
+      if (handleSubsheetPop()) return;
       setStep(prev => {
         if (prev === 'bill') return 'timeline';
         if (prev === 'timeline') return 'card';
@@ -3730,6 +3789,11 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
                 setBillPrefill(null);
                 setStep('timeline');
               }}
+              // Nested sheets get their own history entry (usePaymentSubsheetHistory),
+              // so back closes the visible sheet instead of the bill beneath it.
+              activeSubsheet={activeSubsheet}
+              onOpenSubsheet={openSubsheet}
+              onDismissSubsheet={dismissSubsheet}
             />
           )}
         </AnimatePresence>
@@ -3773,6 +3837,7 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // Open-event returns route back to /plans (the open flow) instead of /invite,
   // and skip the invite-chat-restore on retry (open has no invite chat to re-enter).
   const returnPath = isOpen ? '/plans' : '/invite';
+  const { activeSubsheet, openSubsheet, dismissSubsheet, handleSubsheetPop } = usePaymentSubsheetHistory();
   const [payment, setPayment] = React.useState<any>(null);
   // 4th step in the invite-only booking timeline is always the "Meeting Spot
   // Details" step — its date is when the customer gets added to the WhatsApp
@@ -3912,6 +3977,8 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   React.useEffect(() => {
     if (!showRetryBill) return;
     const onPop = () => {
+      // Nested payment sheets render above the retry bill, so they close first.
+      if (handleSubsheetPop()) return;
       if (isOpen) { setShowRetryBill(false); return; }
       if (payment?.event_slug && payment?.name && payment?.phone) {
         try {
@@ -4040,6 +4107,11 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
                 setShowRetryBill(false);
               }
             }}
+            // Nested sheets get their own history entry (usePaymentSubsheetHistory),
+            // so back closes the visible sheet instead of the bill beneath it.
+            activeSubsheet={activeSubsheet}
+            onOpenSubsheet={openSubsheet}
+            onDismissSubsheet={dismissSubsheet}
           />
         </div>
       </div>
