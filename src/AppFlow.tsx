@@ -982,12 +982,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [detailsCalendarOpen, setDetailsCalendarOpen] = useState(false);
   const [closeDetailsCalendarSignal, setCloseDetailsCalendarSignal] = useState(0);
   const [detailsPlanSwitcherOpen, setDetailsPlanSwitcherOpen] = useState(false);
-  // Nothing increments this any more: the details trap was its only caller and
-  // was removed 2026-08-05. The plumbing down to EventDetailsOverlay is kept
-  // because opening the switcher programmatically is a plausible future need,
-  // but treat it as dormant — the switcher is currently opened only by tapping
-  // it. Safe to delete along with its prop and the child's signal effect.
-  const [openDetailsPlanSwitcherSignal, setOpenDetailsPlanSwitcherSignal] = useState(0);
   const [closeDetailsPlanSwitcherSignal, setCloseDetailsPlanSwitcherSignal] = useState(0);
   // The footer policy sheets (About / Contact / Privacy / Refund / T&C) live
   // inside EventDetailsOverlay, but their open state is mirrored up here for the
@@ -2598,7 +2592,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             dateCounts={dateCounts}
             closeCalendarSignal={closeDetailsCalendarSignal}
             onCalendarVisibilityChange={setDetailsCalendarOpen}
-            openPlanSwitcherSignal={openDetailsPlanSwitcherSignal}
             closePlanSwitcherSignal={closeDetailsPlanSwitcherSignal}
             onPlanSwitcherVisibilityChange={setDetailsPlanSwitcherOpen}
             closePolicySignal={closeDetailsPolicySignal}
@@ -4177,7 +4170,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, openPlanSwitcherSignal, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, openPlanSwitcherSignal?: number, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -4226,7 +4219,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const [videoReady, setVideoReady] = useState(false);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const headerTouchStartXRef = useRef<number | null>(null);
-  const lastHandledOpenPlanSwitcherSignalRef = useRef(openPlanSwitcherSignal ?? 0);
   const meetingPointSwitchBorderTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cityDateOffset = React.useMemo(() => {
     // Pickup points carry per-city departure offsets — use them first
@@ -4335,14 +4327,6 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     if (!showPlanSwitcher) return;
     setShowPlanSwitcher(false);
   }, [closePlanSwitcherSignal]);
-
-  useEffect(() => {
-    if (!openPlanSwitcherSignal) return;
-    if (openPlanSwitcherSignal <= lastHandledOpenPlanSwitcherSignalRef.current) return;
-    lastHandledOpenPlanSwitcherSignalRef.current = openPlanSwitcherSignal;
-    setSwitcherCity(selectedCity);
-    setShowPlanSwitcher(true);
-  }, [openPlanSwitcherSignal, selectedCity]);
 
   useEffect(() => {
     return () => onPlanSwitcherVisibilityChange?.(false);

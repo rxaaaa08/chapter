@@ -80,6 +80,18 @@ function inviteStepUrl(step: InviteHistoryStep): string {
 // its popstate handler, since these sheets sit on top of everything else.
 function usePaymentSubsheetHistory() {
   const [activeSubsheet, setActiveSubsheet] = useState<PaymentSubsheet | null>(null);
+  // Mirrored in a ref because the three popstate handlers that call
+  // handleSubsheetPop live in effects with hand-maintained dependency arrays
+  // that do not list this state. Reading the state variable there captured a
+  // stale closure — it was always null, the check never fired, and back closed
+  // the bill underneath the sheet exactly as before the fix. The ref is always
+  // current no matter when the listener was attached.
+  const activeSubsheetRef = useRef<PaymentSubsheet | null>(null);
+
+  const setActive = (sheet: PaymentSubsheet | null) => {
+    activeSubsheetRef.current = sheet;
+    setActiveSubsheet(sheet);
+  };
 
   const openSubsheet = (sheet: PaymentSubsheet) => {
     window.history.pushState(
@@ -87,18 +99,19 @@ function usePaymentSubsheetHistory() {
       '',
       inviteStepUrl(sheet === 'method-picker' ? 'payment-method' : 'payment-fee'),
     );
-    setActiveSubsheet(sheet);
+    setActive(sheet);
   };
 
   const dismissSubsheet = () => {
-    if (activeSubsheet) window.history.back();
-    else setActiveSubsheet(null);
+    // Traverse so the entry this sheet pushed is consumed; handleSubsheetPop
+    // below clears the state when the popstate lands.
+    if (activeSubsheetRef.current) window.history.back();
   };
 
   // Returns true when it consumed the traversal, so the caller stops.
   const handleSubsheetPop = () => {
-    if (!activeSubsheet) return false;
-    setActiveSubsheet(null);
+    if (!activeSubsheetRef.current) return false;
+    setActive(null);
     return true;
   };
 
@@ -2133,7 +2146,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [wipePhase, showNativeBill, showNativeTimeline, showNativeConfirmation, chatOpen, showPlanDetailsSheet]);
+  // showTcModal MUST be here: the handler reads it to close the terms sheet, and
+  // without it the listener kept a closure where it was still false, so "I Agree"
+  // and back both fell through to the wrong branch.
+  }, [wipePhase, showNativeBill, showNativeTimeline, showNativeConfirmation, chatOpen, showPlanDetailsSheet, showTcModal]);
 
   // Bill restore / payment retry: show the branded loader from frame 0 — must come
   // before the posterLoaded check so the poster never flashes behind the overlay.
