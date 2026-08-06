@@ -769,6 +769,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [previewLoading, setPreviewLoading] = useState(isPreviewMode);
   const historyLayerRef = useRef<HistoryLayer | null>(null);
   const handlingPopStateRef = useRef(false);
+  // Transcript length before the customer picked a plan, so closing the details
+  // sheet can restore the chat to exactly that point. null = no pick to undo.
+  const preSelectMessageCountRef = useRef<number | null>(null);
 
   // ─── DEBUG HUD (opt-in: /plans?dbg=1) ──────────────────────────────────────
   // Exists because the Instagram in-app browser on iOS is the one place the back
@@ -1123,6 +1126,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setShowDetails(false);
     setShowTransition(false);
     setDetailsReady(false);
+    // Undo the pick, don't just close the sheet. Trim the transcript back to
+    // where it was before they chose this plan and drop the event-scoped state,
+    // so the chat — and the header, whose announcement is per-event — look
+    // untouched. Leaving them set showed a thread where they had already
+    // answered both questions, under a bot asking the first one again.
+    if (preSelectMessageCountRef.current !== null) {
+      const trimTo = preSelectMessageCountRef.current;
+      preSelectMessageCountRef.current = null;
+      setMessages(prev => (prev.length > trimTo ? prev.slice(0, trimTo) : prev));
+      setSelectedEvent(null);
+      setJourneyCardData(null);
+      setBookingDate('');
+    }
     setStep('SELECT_EVENT');
   }, [isPlansHistoryManaged, activeHistoryLayer]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
@@ -1563,6 +1579,16 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       return;
     }
     setStep('PROCESSING');
+    // Remember how long the transcript was BEFORE this pick, so closing the
+    // details sheet can put the chat back exactly as it was. Without this, back
+    // left their plan and city sitting in the transcript and then asked which
+    // plan they wanted again, which reads like the bot forgot.
+    // Only set when it's null: picking a different plan from the switcher runs
+    // through here again, and the trim point must stay at the FIRST pick so
+    // back still lands on a clean chooser rather than a half-trimmed thread.
+    if (preSelectMessageCountRef.current === null) {
+      preSelectMessageCountRef.current = messages.length;
+    }
     addUserMessage(event.oneLiner || event.title);
     setSelectedEvent(event);
     trackEvent('event_selected', { city: formatCityLabel(selectedCity), category: selectedCategory || event.category, event_id: event.id, event_title: event.title });
