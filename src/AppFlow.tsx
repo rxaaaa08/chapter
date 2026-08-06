@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement } from './supabase';
 import { getAffiliateRef } from './affiliate';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
@@ -1175,40 +1175,15 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     Promise.all(
       slugs.map(async (slug: string) => {
         const event = events.find(e => e.id === slug);
-        const capacity = (event as any)?.totalCapacity ?? null;
-        if (!event || !capacity) return null;
-        const title = (event.title ?? slug).toLowerCase();
-
-        // Recurring events: capacity applies to EACH date independently (same
-        // rule the booking calendar uses). Summing bookings across all dates and
-        // comparing to a single capacity wrongly reported "1 spot left" when each
-        // date still had spots. Instead, announce the EARLIEST date that isn't
-        // sold out; only when EVERY date is sold out do we say "sold out".
-        const tripDates = (event.dates ?? [])
-          .filter(d => d.date)
-          .slice()
-          .sort((a, b) => a.date.localeCompare(b.date));
-
-        let registered: number;
-        let reserved: number;
-        if (tripDates.length > 0) {
-          const perDate = await fetchEventDateCounts(slug);
-          const earliest = tripDates.find(d => {
-            const r = perDate[d.date]?.reserved ?? 0;
-            return d.status !== 'sold_out' && capacity - r > 0;
-          });
-          if (!earliest) return `${title} - sold out`;
-          reserved   = perDate[earliest.date]?.reserved   ?? 0;
-          registered = perDate[earliest.date]?.registered ?? 0;
-        } else {
-          // No per-date structure → fall back to event-level counts.
-          ({ registered, reserved } = await fetchEventCounts(slug));
-          if (reserved >= capacity) return `${title} - sold out`;
-        }
-
-        if (reserved / capacity >= 0.5) return `${title} - ${capacity - reserved} spots left`;
-        const displayed = (capacity * 3) + registered;
-        return `${title} - ${displayed} people have registered`;
+        if (!event) return null;
+        // Shared with the AdminPanel preview so the two can't drift — see
+        // buildEventAnnouncement in supabase.ts for the per-date rules.
+        return buildEventAnnouncement(
+          slug,
+          event.title ?? slug,
+          (event as any)?.totalCapacity ?? null,
+          event.dates ?? [],
+        );
       })
     ).then(lines => {
       const valid = lines.filter(Boolean) as string[];

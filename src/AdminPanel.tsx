@@ -1,6 +1,6 @@
 // chaptera admin panel
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, parseHeroImages, fetchEventCounts, fetchEventDateCounts } from './supabase';
+import { supabase, parseHeroImages, fetchEventDateCounts, buildEventAnnouncement } from './supabase';
 import { dateKeyInTimeZone, isoDateKey, payuTripDateKey } from './dateKeys';
 
 // Journey Map tab (React Flow) — lazy so the map library only downloads when
@@ -327,8 +327,8 @@ export default function AdminPanel() {
   // ── Dynamic announcements ──────────────────────────────────────────────────
   const [announcementEventSlugs, setAnnouncementEventSlugs] = useState<string[]>([]);
   const [announcementStaticText, setAnnouncementStaticText] = useState('plans we dream');
-  // counts keyed by event slug: { registered, reserved }
-  const [announcementCounts, setAnnouncementCounts] = useState<Record<string, { registered: number; reserved: number }>>({});
+  // preview line keyed by event slug — null = this event won't be announced
+  const [announcementPreviews, setAnnouncementPreviews] = useState<Record<string, string | null>>({});
   const [savingDoubtSettings, setSavingDoubtSettings] = useState(false);
   // ── NOTIFICATIONS (admin push) ────────────────────────────────────────────
   const VAPID_PUBLIC_KEY = 'BKXd5KDV_vL6P19fk10d2STjZSkGHSXz_zHHBg53RxwKIRCDSEn0lHPfCBwDvphRbjnvX0Th-99GHh-cs6yEHpU';
@@ -2767,32 +2767,43 @@ export default function AdminPanel() {
     });
   };
 
-  // Compute the announcement string for a given event (same logic as AppFlow)
-  const computeAnnouncementText = (slug: string): string => {
+  // The preview line for a selected event. This deliberately does NOT recompute
+  // the text itself — it calls the same buildEventAnnouncement the live rail
+  // uses, so the preview can never disagree with what guests actually see.
+  const announcementPreviewText = (slug: string): string => {
     const event = trips.find(t => t.slug === slug);
     if (!event) return slug;
-    const capacity = event.total_capacity ?? null;
-    if (!capacity) return `⚠ ${event.title} — no Group Size set (announcement won't show)`;
-    const counts = announcementCounts[slug];
-    const reserved = counts?.reserved ?? 0;
-    const registered = counts?.registered ?? 0;
-    const title = (event.title ?? slug).toLowerCase();
-    if (reserved >= capacity) return `${title} - sold out`;
-    if (reserved / capacity >= 0.5) return `${title} - ${capacity - reserved} spots left`;
-    const displayed = (capacity * 3) + registered;
-    return `${title} - ${displayed} people have registered`;
+    if (!event.total_capacity) return `⚠ ${event.title} — no Group Size set (announcement won't show)`;
+    const preview = announcementPreviews[slug];
+    if (preview === undefined) return 'loading…';
+    if (preview === null) return `⚠ ${event.title} — every date has passed (announcement won't show)`;
+    return preview;
   };
 
-  // Fetch counts for all selected announcement event slugs
+  // Build the preview line for each selected announcement event. Keyed on trips
+  // too, so editing an event's dates or group size refreshes the preview.
   React.useEffect(() => {
-    if (announcementEventSlugs.length === 0) return;
-    announcementEventSlugs.forEach(slug => {
-      if (!slug || announcementCounts[slug]) return;
-      fetchEventCounts(slug).then(counts => {
-        setAnnouncementCounts(prev => ({ ...prev, [slug]: counts }));
-      });
+    const slugs = announcementEventSlugs.filter(Boolean);
+    if (slugs.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      slugs.map(async slug => {
+        const event = trips.find(t => t.slug === slug);
+        if (!event) return [slug, null] as const;
+        const text = await buildEventAnnouncement(
+          slug,
+          event.title ?? slug,
+          event.total_capacity ?? null,
+          (event.event_dates ?? []).map(d => ({ date: d.start_date, status: d.status })),
+        );
+        return [slug, text] as const;
+      })
+    ).then(entries => {
+      if (cancelled) return;
+      setAnnouncementPreviews(prev => ({ ...prev, ...Object.fromEntries(entries) }));
     });
-  }, [announcementEventSlugs]);
+    return () => { cancelled = true; };
+  }, [announcementEventSlugs, trips]);
 
   const saveAnnouncementConfig = async () => {
     setSavingGeneralAnnouncements(true);
@@ -5400,7 +5411,7 @@ export default function AdminPanel() {
               <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
                 {announcementEventSlugs.map((slug, idx) => {
                   const inviteOnlyEvents = trips.filter(t => t.invite_only || t.booking_url === 'native-application');
-                  const preview = slug ? computeAnnouncementText(slug) : null;
+                  const preview = slug ? announcementPreviewText(slug) : null;
                   return (
                     <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
@@ -5408,14 +5419,8 @@ export default function AdminPanel() {
                           style={{ ...s.input, marginBottom: 4 }}
                           value={slug}
                           onChange={e => {
-                            const newSlug = e.target.value;
-                            setAnnouncementEventSlugs(prev => prev.map((s, i) => i === idx ? newSlug : s));
-                            // fetch counts for newly selected event
-                            if (newSlug && !announcementCounts[newSlug]) {
-                              fetchEventCounts(newSlug).then(counts =>
-                                setAnnouncementCounts(prev => ({ ...prev, [newSlug]: counts }))
-                              );
-                            }
+                            // The preview effect picks up the new slug on its own.
+                            setAnnouncementEventSlugs(prev => prev.map((s, i) => i === idx ? e.target.value : s));
                           }}
                         >
                           <option value="">— select an event —</option>

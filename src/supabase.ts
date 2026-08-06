@@ -256,6 +256,72 @@ export async function fetchEventDateCounts(
   return map;
 }
 
+// ─── GLOBAL ANNOUNCEMENT TEXT ────────────────────────────────────────────────
+// One source of truth for the rotating announcement line ("<title> - N spots
+// left"). Both the live rail in AppFlow and the preview in AdminPanel call this,
+// because they used to compute it differently: the rail used per-date counts
+// while the admin preview compared ALL dates' bookings against a single
+// capacity, so a recurring event previewed as "sold out" while the site said
+// "3 spots left".
+export type AnnouncementDate = { date?: string | null; status?: string | null };
+
+// A date strictly before today (local midnight) has elapsed. Same rule the
+// booking calendar uses, so the announcement can never advertise a date nobody
+// can book. Without this the rail stayed pinned to the oldest date that never
+// filled — a meetup a month in the past kept announcing its 3 unsold seats.
+export function isElapsedDate(date?: string | null): boolean {
+  if (!date) return false;
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  return new Date(date + 'T00:00:00') < todayStart;
+}
+
+// Returns the announcement line, or null when the event should not be announced
+// at all (no capacity set, or every date has already happened). Recurring
+// events: capacity applies to EACH date independently, so we announce the
+// earliest UPCOMING date that still has spots.
+export async function buildEventAnnouncement(
+  slug: string,
+  title: string,
+  capacity: number | null | undefined,
+  dates: AnnouncementDate[] = [],
+): Promise<string | null> {
+  if (!slug || !capacity) return null;
+  // trim() because event titles are hand-typed in admin and often carry a
+  // trailing space, which showed up as "chill sunday meetup  - 3 spots left".
+  const label = (title || slug).trim().toLowerCase();
+
+  const allDates = dates.filter(d => d.date);
+  const upcoming = allDates
+    .filter(d => !isElapsedDate(d.date))
+    .slice()
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  let registered: number;
+  let reserved: number;
+
+  if (upcoming.length > 0) {
+    const perDate = await fetchEventDateCounts(slug);
+    const earliest = upcoming.find(d => {
+      const r = perDate[d.date as string]?.reserved ?? 0;
+      return d.status !== 'sold_out' && capacity - r > 0;
+    });
+    if (!earliest) return `${label} - sold out`;
+    reserved   = perDate[earliest.date as string]?.reserved   ?? 0;
+    registered = perDate[earliest.date as string]?.registered ?? 0;
+  } else if (allDates.length > 0) {
+    // Every date has elapsed → there is nothing left to announce.
+    return null;
+  } else {
+    // No per-date structure → fall back to event-level counts.
+    ({ registered, reserved } = await fetchEventCounts(slug));
+    if (reserved >= capacity) return `${label} - sold out`;
+  }
+
+  if (reserved / capacity >= 0.5) return `${label} - ${capacity - reserved} spots left`;
+  const displayed = (capacity * 3) + registered;
+  return `${label} - ${displayed} people have registered`;
+}
+
 export async function fetchEvents(): Promise<any[]> {
   const { data, error } = await supabase
     .from('events')
