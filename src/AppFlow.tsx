@@ -936,9 +936,24 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       setTcAccepted(true); // they'd already ticked it to get this far
       setStep('EVENT_SELECTED');
       setShowTransition(false);
-      setShowDetails(false);
+      // showDetails TRUE so the restored session has the same shape as one
+      // that got here by hand: the details overlay sits under the timeline,
+      // which sits under the form. Restoring the form on its own left nothing
+      // beneath it, so backing out ran off the end of the stack without ever
+      // reaching closeEventDetails — and that's the one place that drops the
+      // snapshot, so the booking could ambush them a second time.
+      setDetailsReady(true);
+      setShowDetails(true);
       setShowBookingTimeline(false);
       setShowDetailsForm(true);
+      // Spend the snapshot on this restore. It exists to survive ONE teardown
+      // during the WhatsApp code trip, and it has now done that — the booking
+      // is back on screen and in React state. Leaving it armed is what let it
+      // ambush people later: a restored session's history stack is shallower
+      // than a hand-navigated one, so there's no reliable "they left" moment
+      // to clear it on. Anyone still going resends the code, which writes a
+      // fresh snapshot, so a second teardown stays covered.
+      clearOpenBookingResume();
     });
     return () => { cancelled = true; };
   }, []);
@@ -1013,19 +1028,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [verifyingOpenOtp, setVerifyingOpenOtp] = useState(false);
   const openOtpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
-  // Backing out of the details form — back button, backdrop tap, or the X —
-  // is someone abandoning this booking, so the resume snapshot has to die with
-  // it. Without this, walking back out to /lifestyle and tapping "Tap to
-  // Enter" dropped them straight back into the form they'd just left, skipping
-  // the plans chat entirely: the snapshot is only supposed to survive an
-  // INVOLUNTARY teardown (Instagram discarding the page during the WhatsApp
-  // code round-trip), never a deliberate exit.
+  // Back button, backdrop tap and the X all land on the booking timeline —
+  // the step before the form, still inside the same booking. Deliberately does
+  // NOT clear the resume snapshot: someone stepping back to re-read the
+  // meeting spot is still booking, and if Instagram kills the page while they
+  // then fetch their code, they should come back to it. The snapshot is
+  // dropped only when they leave the booking outright — see closeEventDetails
+  // and onSwitchEvent.
   //
   // Declared up here, above the popstate effect that lists it as a dependency
   // — a const referenced by a dep array evaluated earlier in the render would
   // throw on first paint.
-  const abandonDetailsForm = useCallback(() => {
-    clearOpenBookingResume();
+  const backToBookingTimeline = useCallback(() => {
     setShowDetailsForm(false);
     setShowBookingTimeline(true);
   }, []);
@@ -1140,6 +1154,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       window.history.back();
       return;
     }
+    // Leaving the plan entirely — this is the real abandon, so the resume
+    // snapshot goes with it. Placed after the early return above so it runs
+    // once on the actual close, not again when popstate re-enters with
+    // viaHistory. Without this, backing out to /lifestyle and tapping "Tap to
+    // Enter" dropped them straight back into the form they'd just left,
+    // skipping the plans chat.
+    clearOpenBookingResume();
     setShowDetails(false);
     setShowTransition(false);
     setDetailsReady(false);
@@ -1469,7 +1490,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setPaymentView('idle');
         setShowDetailsForm(true);
       } else if (activeHistoryLayer === 'details-form') {
-        abandonDetailsForm();
+        backToBookingTimeline();
       } else if (activeHistoryLayer === 'application-form') {
         // Same landing as tapping the form's own backdrop — back out to the
         // timeline they opened it from, not out of the booking entirely.
@@ -1504,7 +1525,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails, abandonDetailsForm]);
+  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails, backToBookingTimeline]);
 
 
   const scrollToBottom = () => {
@@ -2616,6 +2637,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             closePolicySignal={closeDetailsPolicySignal}
             onPolicyVisibilityChange={setDetailsPolicyOpen}
             onSwitchEvent={(e, city) => {
+              // Moving to a different plan abandons the one being booked, so
+              // its resume snapshot must not outlive the switch and drag them
+              // back into the old plan's form.
+              clearOpenBookingResume();
               setSelectedEvent(e);
               setSelectedCategory(e.category);
               setSelectedCity(city);
@@ -2640,7 +2665,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
               onClick={() => {
                 if (showDetailsForm) {
-                  abandonDetailsForm();
+                  backToBookingTimeline();
                   return;
                 }
                 if (paymentView === 'checkout') {
@@ -2970,7 +2995,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               >
                 <button
                   type="button"
-                  onClick={abandonDetailsForm}
+                  onClick={backToBookingTimeline}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 >
                   <X size={14} strokeWidth={2.5} />
