@@ -256,23 +256,50 @@ export async function fetchEventDateCounts(
   return map;
 }
 
-// ─── GLOBAL ANNOUNCEMENT TEXT ────────────────────────────────────────────────
-// One source of truth for the rotating announcement line ("<title> - N spots
-// left"). Both the live rail in AppFlow and the preview in AdminPanel call this,
-// because they used to compute it differently: the rail used per-date counts
-// while the admin preview compared ALL dates' bookings against a single
-// capacity, so a recurring event previewed as "sold out" while the site said
-// "3 spots left".
+// ─── DATE AVAILABILITY ───────────────────────────────────────────────────────
+// Whether a given event date is still bookable is asked in six different places
+// (calendar cells, which month the calendar opens on, the WhatsApp {eventdate}
+// variable, the marketer spots card, the announcement rail, and the admin
+// preview). Each used to answer it with its own hand-written copy of the same
+// three-part rule, which is exactly how the announcement rail ended up missing
+// the past-date half of it and advertised "3 spots left" for a meetup that had
+// already happened. These two functions are the single answer — call them
+// rather than re-deriving.
+//
+// IMPORTANT: none of this is stored. `event_dates.status` is the MANUAL field an
+// admin sets by hand and means only "what the founder declared"; it is never
+// written back from these rules. Availability is derived fresh on every read, so
+// it can never go stale the way a nightly-cron flag would at midnight.
 export type AnnouncementDate = { date?: string | null; status?: string | null };
 
-// A date strictly before today (local midnight) has elapsed. Same rule the
-// booking calendar uses, so the announcement can never advertise a date nobody
-// can book. Without this the rail stayed pinned to the oldest date that never
-// filled — a meetup a month in the past kept announcing its 3 unsold seats.
+// A date strictly before today (local midnight) has elapsed. A past date is
+// NEVER bookable regardless of capacity or DB status — without this, raising an
+// event's capacity would re-open already-elapsed dates whose "sold out" was only
+// implied by reserved >= capacity (recurring events share one capacity across
+// every date).
 export function isElapsedDate(date?: string | null): boolean {
   if (!date) return false;
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   return new Date(date + 'T00:00:00') < todayStart;
+}
+
+// A date is sold out when ANY of three things is true: the admin declared it
+// sold out, its spots are gone, or it has already happened. `capacity` is null
+// for events with no per-date capacity (community/whatsapp flows), in which case
+// only the declared status and the calendar matter.
+export function isDateSoldOut(opts: {
+  status?: string | null;
+  date?: string | null;
+  capacity?: number | null;
+  reserved?: number | null;
+}): boolean {
+  if (opts.status === 'sold_out') return true;
+  if (isElapsedDate(opts.date)) return true;
+  const capacity = opts.capacity;
+  if (typeof capacity === 'number' && capacity > 0) {
+    return capacity - (opts.reserved ?? 0) <= 0;
+  }
+  return false;
 }
 
 // Returns the announcement line, or null when the event should not be announced
@@ -301,10 +328,12 @@ export async function buildEventAnnouncement(
 
   if (upcoming.length > 0) {
     const perDate = await fetchEventDateCounts(slug);
-    const earliest = upcoming.find(d => {
-      const r = perDate[d.date as string]?.reserved ?? 0;
-      return d.status !== 'sold_out' && capacity - r > 0;
-    });
+    const earliest = upcoming.find(d => !isDateSoldOut({
+      status: d.status,
+      date: d.date,
+      capacity,
+      reserved: perDate[d.date as string]?.reserved ?? 0,
+    }));
     if (!earliest) return `${label} - sold out`;
     reserved   = perDate[earliest.date as string]?.reserved   ?? 0;
     registered = perDate[earliest.date as string]?.registered ?? 0;

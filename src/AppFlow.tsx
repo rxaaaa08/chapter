@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { getAffiliateRef } from './affiliate';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
@@ -1599,11 +1599,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
       // eventdate: nearest upcoming non-sold-out date (1-city variant only)
       const eventdate = (() => {
-        const today = new Date(); today.setHours(0, 0, 0, 0);
         const active = (event.dates ?? []).filter(d => d.status !== 'sold_out');
         const upcoming = active
+          .filter(d => !isElapsedDate(d.date))
           .map(d => new Date(d.date + 'T00:00:00'))
-          .filter(d => d >= today)
           .sort((a, b) => a.getTime() - b.getTime());
         const d = upcoming[0]
           ?? active.map(d2 => new Date(d2.date + 'T00:00:00')).sort((a, b) => b.getTime() - a.getTime())[0];
@@ -4178,23 +4177,18 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
   const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<string>('');
   const [showMeetingPointSwitchBorder, setShowMeetingPointSwitchBorder] = useState(false);
   const nearestEventMonth = () => {
-    const today = new Date(); today.setHours(0,0,0,0);
-    // Mirror the calendar's own sold-out rule: a date is sold out if its DB
-    // status says so, OR (for capacity-limited events) every spot is reserved.
+    // Same sold-out rule as the calendar cells — see isDateSoldOut in supabase.ts.
     const capEligible = event.bookingUrl === 'native-application' || event.bookingUrl === 'payu-hosted';
     const nativeCapacity = (event as any).totalCapacity as number | null;
     const cap = capEligible && typeof nativeCapacity === 'number' && nativeCapacity > 0 ? nativeCapacity : null;
-    const isSoldOut = (d: any) => {
-      if (d.status === 'sold_out') return true;
-      if (cap) return cap - (dateCounts?.[d.date]?.reserved ?? 0) <= 0;
-      return false;
-    };
     const upcoming = (event.dates ?? [])
-      .filter(d => d.date && new Date(d.date + 'T00:00:00') >= today)
+      .filter(d => d.date && !isElapsedDate(d.date))
       .sort((a, b) => a.date.localeCompare(b.date));
     // Open on the earliest date that's still bookable (available or filling
     // fast); if every upcoming date is sold out, fall back to the earliest one.
-    const target = upcoming.find(d => !isSoldOut(d)) ?? upcoming[0];
+    const target = upcoming.find(d => !isDateSoldOut({
+      status: d.status, date: d.date, capacity: cap, reserved: dateCounts?.[d.date]?.reserved ?? 0,
+    })) ?? upcoming[0];
     const targetDate = target ? new Date(target.date + 'T00:00:00') : new Date();
     return new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
   };
@@ -4402,12 +4396,8 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 
 	  const renderCalendar = () => {
 	    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-	    // A date in the past is NEVER bookable — regardless of capacity or DB status.
-	    // Without this, raising an event's capacity would re-open already-elapsed
-	    // dates whose "sold out" was only implied by reserved >= capacity (recurring
-	    // events share one capacity across every date). Elapsed = strictly before today.
-	    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-	    const isPastDate = (baseDate?: string) => !!baseDate && new Date(baseDate + 'T00:00:00') < todayStart;
+	    // Sold-out / elapsed rules live in supabase.ts (isDateSoldOut) so every
+	    // surface answers "is this date bookable?" identically.
 	    // Shift so Monday = 0, Sunday = 6 (common in India)
 	    const firstDay = ((new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay() + 6) % 7);
 	    // ── Per-date spots-left (native application events) ──────────────────────
@@ -4431,7 +4421,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      for (const d of sortedTripDates) {
 	        const reserved = reservedForDate(d.date);
 	        const avail = cap - reserved;
-	        if (d.status === 'sold_out' || avail <= 0 || isPastDate(d.date)) continue;      // sold out → skip
+	        if (isDateSoldOut({ status: d.status, date: d.date, capacity: cap, reserved })) continue;  // sold out → skip
 	        if (reserved / cap >= 0.5) { earliestFillingFastDate = d.date; earliestFillingFastLeft = avail; break; }
 	      }
 	    }
@@ -4440,8 +4430,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 	      // (dbStatus undefined); without this guard they have 0 reservations →
 	      // available = capacity > 0 → wrongly painted green across the whole month.
 	      if (!capEligible || !cap || !baseDate || !dbStatus) return null;
-	      const avail = cap - reservedForDate(baseDate);
-	      if (dbStatus === 'sold_out' || avail <= 0 || isPastDate(baseDate)) return 'sold';
+	      if (isDateSoldOut({ status: dbStatus, date: baseDate, capacity: cap, reserved: reservedForDate(baseDate) })) return 'sold';
 	      if (baseDate === earliestFillingFastDate) return 'amber';
 	      return 'green';
 	    };

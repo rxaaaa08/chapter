@@ -1,6 +1,6 @@
 // chaptera admin panel
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, parseHeroImages, fetchEventDateCounts, buildEventAnnouncement } from './supabase';
+import { supabase, parseHeroImages, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { dateKeyInTimeZone, isoDateKey, payuTripDateKey } from './dateKeys';
 
 // Journey Map tab (React Flow) — lazy so the map library only downloads when
@@ -4732,11 +4732,10 @@ export default function AdminPanel() {
                 const marketerSlugs = new Set(marketerAssignedSlugs);
                 const managerSlugs = new Set(managerAssignedSlugs);
                 const assignedSlugs = new Set([...marketerAssignedSlugs, ...managerAssignedSlugs]);
-                const today = new Date().toISOString().slice(0, 10);
                 const assigned = trips.filter(t =>
                   t.is_active &&
                   assignedSlugs.has(t.slug ?? '') &&
-                  (t.event_dates ?? []).some(d => d.start_date && d.start_date >= today)
+                  (t.event_dates ?? []).some(d => d.start_date && !isElapsedDate(d.start_date))
                 );
                 if (assigned.length === 0) return null;
                 return (
@@ -4751,7 +4750,7 @@ export default function AdminPanel() {
                         const capacity = (t.total_capacity ?? t.invite_spots) ?? null;
                         const dateCounts = managerEventDateCounts[slug] ?? marketerEventDateCounts[slug] ?? {};
                         const dates = (t.event_dates ?? [])
-                          .filter(d => d.start_date && d.start_date >= today)
+                          .filter(d => d.start_date && !isElapsedDate(d.start_date))
                           .slice()
                           .sort((a, b) => a.start_date.localeCompare(b.start_date));
                         return (
@@ -4764,7 +4763,7 @@ export default function AdminPanel() {
                               {dates.map(d => {
                                 const reserved = dateCounts[d.start_date]?.reserved ?? 0;
                                 const spotsLeft = capacity != null ? Math.max(0, capacity - reserved) : null;
-                                const soldOut = d.status === 'sold_out' || (spotsLeft !== null && spotsLeft <= 0);
+                                const soldOut = isDateSoldOut({ status: d.status, date: d.start_date, capacity, reserved });
                                 const dateLabel = new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                                 const text = soldOut ? 'Sold out' : spotsLeft != null ? `${spotsLeft} left` : statusLabel[d.status];
                                 // Balance due = this date's "remaining balance" step date.
