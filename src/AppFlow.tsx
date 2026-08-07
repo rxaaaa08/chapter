@@ -1013,6 +1013,23 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [verifyingOpenOtp, setVerifyingOpenOtp] = useState(false);
   const openOtpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
+  // Backing out of the details form — back button, backdrop tap, or the X —
+  // is someone abandoning this booking, so the resume snapshot has to die with
+  // it. Without this, walking back out to /lifestyle and tapping "Tap to
+  // Enter" dropped them straight back into the form they'd just left, skipping
+  // the plans chat entirely: the snapshot is only supposed to survive an
+  // INVOLUNTARY teardown (Instagram discarding the page during the WhatsApp
+  // code round-trip), never a deliberate exit.
+  //
+  // Declared up here, above the popstate effect that lists it as a dependency
+  // — a const referenced by a dep array evaluated earlier in the render would
+  // throw on first paint.
+  const abandonDetailsForm = useCallback(() => {
+    clearOpenBookingResume();
+    setShowDetailsForm(false);
+    setShowBookingTimeline(true);
+  }, []);
+
   useEffect(() => {
     if (openOtpEmailWaitSeconds <= 0) return;
     const timer = window.setTimeout(() => {
@@ -1452,8 +1469,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setPaymentView('idle');
         setShowDetailsForm(true);
       } else if (activeHistoryLayer === 'details-form') {
-        setShowDetailsForm(false);
-        setShowBookingTimeline(true);
+        abandonDetailsForm();
       } else if (activeHistoryLayer === 'application-form') {
         // Same landing as tapping the form's own backdrop — back out to the
         // timeline they opened it from, not out of the booking entirely.
@@ -1488,7 +1504,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails]);
+  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails, abandonDetailsForm]);
 
 
   const scrollToBottom = () => {
@@ -2621,8 +2637,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
               onClick={() => {
                 if (showDetailsForm) {
-                  setShowDetailsForm(false);
-                  setShowBookingTimeline(true);
+                  abandonDetailsForm();
                   return;
                 }
                 if (paymentView === 'checkout') {
@@ -2952,10 +2967,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               >
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowDetailsForm(false);
-                    setShowBookingTimeline(true);
-                  }}
+                  onClick={abandonDetailsForm}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 >
                   <X size={14} strokeWidth={2.5} />
