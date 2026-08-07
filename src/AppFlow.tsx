@@ -2610,6 +2610,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             onCalendarVisibilityChange={setDetailsCalendarOpen}
             closePlanSwitcherSignal={closeDetailsPlanSwitcherSignal}
             onPlanSwitcherVisibilityChange={setDetailsPlanSwitcherOpen}
+            // Only hand over history control when we're actually managing it;
+            // otherwise the overlay closes the switcher directly.
+            onDismissPlanSwitcher={isDetailsHistoryManaged ? () => window.history.back() : undefined}
             closePolicySignal={closeDetailsPolicySignal}
             onPolicyVisibilityChange={setDetailsPolicyOpen}
             onSwitchEvent={(e, city) => {
@@ -4182,7 +4185,7 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
-const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
+const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onDismissPlanSwitcher, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onDismissPlanSwitcher?: () => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -4334,6 +4337,23 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
     if (!showPlanSwitcher) return;
     setShowPlanSwitcher(false);
   }, [closePlanSwitcherSignal]);
+
+  // Closing the switcher with its own X / backdrop must UNWIND the history
+  // entry it pushed, not just flip state. Flipping state left the entry behind
+  // and merely rewrote its URL back to ?sheet=event-details — the same URL as
+  // the entry beneath it. Instagram's chevron then lit up but did nothing,
+  // because a same-URL pair has nothing traversable between them (this is the
+  // "sheets close by setting state, not history.back()" gap flagged in
+  // INSTAGRAM-BACK-BUTTON-HANDOFF.md, now hit for real).
+  //
+  // Going through history makes the X behave exactly like the back button:
+  // popstate fires, the parent sends closePlanSwitcherSignal, and the effect
+  // above does the closing. onDismissPlanSwitcher is absent when the parent
+  // isn't managing history (preview links), so fall back to a plain close.
+  const dismissPlanSwitcher = () => {
+    if (onDismissPlanSwitcher) onDismissPlanSwitcher();
+    else setShowPlanSwitcher(false);
+  };
 
   useEffect(() => {
     return () => onPlanSwitcherVisibilityChange?.(false);
@@ -5582,7 +5602,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-[200] bg-black/50"
-              onClick={() => setShowPlanSwitcher(false)}
+              onClick={dismissPlanSwitcher}
             />
             <motion.div
               key="switcher-sheet"
@@ -5594,7 +5614,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
             >
               <button
                 type="button"
-                onClick={() => setShowPlanSwitcher(false)}
+                onClick={dismissPlanSwitcher}
                 className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 aria-label="Close plan switcher"
               >
@@ -5659,7 +5679,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                           return (
                             <button
                               key={e.id}
-                              onClick={() => { if (!isActive) onSwitchEvent(e, switcherCity); setShowPlanSwitcher(false); }}
+                              // Same unwind as the X: picking a plan closes the
+                              // switcher, so its history entry has to go too.
+                              onClick={() => { if (!isActive) onSwitchEvent(e, switcherCity); dismissPlanSwitcher(); }}
                               className={`w-full text-left px-4 py-4 rounded-2xl mb-3 flex items-center justify-between gap-3 transition-all active:scale-[0.98] ${isActive ? activePlanClass : 'bg-gray-50 border border-gray-100'}`}
                             >
                               <div className="flex min-w-0 flex-1 items-center gap-2">
