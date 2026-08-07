@@ -8,62 +8,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, MapPin, MessageCircle, Ticket, Send, CheckCircle2, XCircle, ChevronDown, ChevronUp, Play, Pause, ChevronLeft, ChevronRight, Users, Bus, ShieldCheck, Plus, Heart, ArrowRight } from 'lucide-react';
 import chatProfile from './assets/chat-profile.jpg';
 
-// ─── OPEN-EVENT BOOKING RESUME ────────────────────────────────────────────────
-// Open-event booking sends a six-digit code over WhatsApp, so every single
-// booker has to leave us, switch apps, and come back. Instagram's in-app
-// browser frequently tears the page down while they're gone — and until now
-// the filled-in form and the OTP token lived only in React memory, so they'd
-// return to an empty chat with no idea their booking had evaporated.
-//
-// We snapshot just enough to put them back on the code screen. localStorage,
-// not sessionStorage: a destroyed webview takes the whole session store with
-// it, which is precisely the case this exists to survive.
-//
-// 10 minutes = the 8-minute OTP life plus slack. Kept deliberately tight: a
-// restore reopens the booking form over the chat, so a snapshot that outlived
-// its purpose would ambush someone who came back to /plans just to browse.
-// Restoring a just-expired token costs nothing — the server re-checks it and
-// says the code expired, with their details still typed in.
-const OPEN_BOOKING_RESUME_KEY = 'ca_open_booking_resume';
-const OPEN_BOOKING_RESUME_TTL_MS = 10 * 60 * 1000;
-
-type OpenBookingResume = {
-  ts: number;
-  eventSlug: string;
-  city: string;
-  date: string;
-  meetingPoint: string;
-  form: { name: string; phone: string; gender: string; email: string };
-  otpSession: string;
-  otpDelivery: 'whatsapp' | 'email';
-};
-
-function saveOpenBookingResume(snapshot: Omit<OpenBookingResume, 'ts'>): void {
-  try {
-    localStorage.setItem(OPEN_BOOKING_RESUME_KEY, JSON.stringify({ ...snapshot, ts: Date.now() }));
-  } catch { /* private mode / quota — resuming is a bonus, never a requirement */ }
-}
-
-function clearOpenBookingResume(): void {
-  try { localStorage.removeItem(OPEN_BOOKING_RESUME_KEY); } catch { /* ignore */ }
-}
-
-// Returns the snapshot only if it's fresh; a stale one is cleared on read so a
-// long-abandoned booking can never resurrect itself days later.
-function readOpenBookingResume(): OpenBookingResume | null {
-  try {
-    const raw = localStorage.getItem(OPEN_BOOKING_RESUME_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as OpenBookingResume;
-    if (!parsed?.eventSlug || typeof parsed.ts !== 'number') { clearOpenBookingResume(); return null; }
-    if (Date.now() - parsed.ts > OPEN_BOOKING_RESUME_TTL_MS) { clearOpenBookingResume(); return null; }
-    return parsed;
-  } catch {
-    clearOpenBookingResume();
-    return null;
-  }
-}
-
 // Types
 type Message = {
   id: string;
@@ -896,67 +840,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     });
   }, []);
 
-  // Put a booker back on the OTP screen after the WhatsApp round-trip killed
-  // the page. Mirrors the gauth restore above: re-fetch the event by slug, put
-  // the flow state back, then open the details form with the code step live.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    // preview_event owns the screen (effect above), and a PayU return is
-    // rendered by App.tsx before AppFlow ever mounts — but the snapshot is
-    // cleared on the way to the bill anyway, so this is just belt-and-braces.
-    if (params.get('preview_event') || params.get('payment_status')) return;
-
-    const resume = readOpenBookingResume();
-    if (!resume) return;
-
-    let cancelled = false;
-    fetchEventByIdOrSlug(resume.eventSlug).then((event) => {
-      // A superseded run must leave the snapshot alone — folding this into the
-      // not-found branch let React's double-invoked effect delete the very
-      // booking it was restoring (its own first run resolves as cancelled).
-      if (cancelled) return;
-      // Event pulled down or renamed while they were away — drop the snapshot
-      // and let them start over rather than restoring into a broken booking.
-      if (!event) { clearOpenBookingResume(); return; }
-      setSelectedEvent(event);
-      setSelectedCategory(event.category || 'Trips');
-      setSelectedCity(resume.city || event.cities?.[0] || 'Chennai');
-      if (resume.date) setBookingDate(resume.date);
-      if (resume.date || resume.meetingPoint) {
-        setJourneyCardData({
-          event,
-          city: resume.city || event.cities?.[0] || 'Chennai',
-          startDate: resume.date || event.dates?.[0]?.date || '',
-          meetingPoint: resume.meetingPoint,
-        });
-      }
-      setDetailsForm(resume.form);
-      setOpenOtpSession(resume.otpSession);
-      setOpenOtpDelivery(resume.otpDelivery);
-      setTcAccepted(true); // they'd already ticked it to get this far
-      setStep('EVENT_SELECTED');
-      setShowTransition(false);
-      // showDetails TRUE so the restored session has the same shape as one
-      // that got here by hand: the details overlay sits under the timeline,
-      // which sits under the form. Restoring the form on its own left nothing
-      // beneath it, so backing out ran off the end of the stack without ever
-      // reaching closeEventDetails — and that's the one place that drops the
-      // snapshot, so the booking could ambush them a second time.
-      setDetailsReady(true);
-      setShowDetails(true);
-      setShowBookingTimeline(false);
-      setShowDetailsForm(true);
-      // Spend the snapshot on this restore. It exists to survive ONE teardown
-      // during the WhatsApp code trip, and it has now done that — the booking
-      // is back on screen and in React state. Leaving it armed is what let it
-      // ambush people later: a restored session's history stack is shallower
-      // than a hand-navigated one, so there's no reliable "they left" moment
-      // to clear it on. Anyone still going resends the code, which writes a
-      // fresh snapshot, so a second teardown stays covered.
-      clearOpenBookingResume();
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   // Google login was removed from the open-event details form — the form now
   // collects name/phone/gender/email manually. We intentionally no longer hydrate
@@ -1027,22 +910,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const [sendingOpenOtp, setSendingOpenOtp] = useState(false);
   const [verifyingOpenOtp, setVerifyingOpenOtp] = useState(false);
   const openOtpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
-
-  // Back button, backdrop tap and the X all land on the booking timeline —
-  // the step before the form, still inside the same booking. Deliberately does
-  // NOT clear the resume snapshot: someone stepping back to re-read the
-  // meeting spot is still booking, and if Instagram kills the page while they
-  // then fetch their code, they should come back to it. The snapshot is
-  // dropped only when they leave the booking outright — see closeEventDetails
-  // and onSwitchEvent.
-  //
-  // Declared up here, above the popstate effect that lists it as a dependency
-  // — a const referenced by a dep array evaluated earlier in the render would
-  // throw on first paint.
-  const backToBookingTimeline = useCallback(() => {
-    setShowDetailsForm(false);
-    setShowBookingTimeline(true);
-  }, []);
 
   useEffect(() => {
     if (openOtpEmailWaitSeconds <= 0) return;
@@ -1154,13 +1021,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       window.history.back();
       return;
     }
-    // Leaving the plan entirely — this is the real abandon, so the resume
-    // snapshot goes with it. Placed after the early return above so it runs
-    // once on the actual close, not again when popstate re-enters with
-    // viaHistory. Without this, backing out to /lifestyle and tapping "Tap to
-    // Enter" dropped them straight back into the form they'd just left,
-    // skipping the plans chat.
-    clearOpenBookingResume();
     setShowDetails(false);
     setShowTransition(false);
     setDetailsReady(false);
@@ -1490,7 +1350,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setPaymentView('idle');
         setShowDetailsForm(true);
       } else if (activeHistoryLayer === 'details-form') {
-        backToBookingTimeline();
+        setShowDetailsForm(false);
+        setShowBookingTimeline(true);
       } else if (activeHistoryLayer === 'application-form') {
         // Same landing as tapping the form's own backdrop — back out to the
         // timeline they opened it from, not out of the booking entirely.
@@ -1525,7 +1386,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails, backToBookingTimeline]);
+  }, [activeHistoryLayer, isDetailsHistoryManaged, isPreviewMode, isPlansHistoryManaged, closeEventDetails]);
 
 
   const scrollToBottom = () => {
@@ -1894,7 +1755,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 409 && data?.error === 'already paid for this open event') {
         setOpenAlreadyPaid(true);
-        clearOpenBookingResume(); // nothing left to resume — they're already in
         return false;
       }
       if (!res.ok) {
@@ -1940,18 +1800,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       setOpenOtpDigits(Array(6).fill(''));
       setOpenOtpDelivery(delivery);
       setOpenOtpAttemptsExhausted(false);
-      // The code has just gone out, so this is the exact moment they leave for
-      // WhatsApp — snapshot now so the page can rebuild itself if Instagram
-      // discards it while they're away.
-      saveOpenBookingResume({
-        eventSlug: selectedEvent.id,
-        city: selectedCity,
-        date: bookingDate || selectedEvent.dates?.[0]?.date || '',
-        meetingPoint: journeyCardData?.meetingPoint || '',
-        form: detailsForm,
-        otpSession: data.verification_token,
-        otpDelivery: delivery,
-      });
       if (delivery === 'whatsapp') setOpenOtpEmailWaitSeconds(30);
       window.setTimeout(() => openOtpInputsRef.current[0]?.focus(), 0);
     } catch (err) {
@@ -1995,9 +1843,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setOpenBookingCheckError(data?.error || 'We could not verify that code. Please try again.');
         return;
       }
-      // Code accepted — the WhatsApp round-trip is over, so the resume
-      // snapshot has done its job and shouldn't outlive it on their device.
-      clearOpenBookingResume();
       await handleProceedToPhonePe(data.verification_token || openOtpSession);
     } catch (err) {
       console.error('open event OTP verification failed:', err);
@@ -2637,10 +2482,6 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             closePolicySignal={closeDetailsPolicySignal}
             onPolicyVisibilityChange={setDetailsPolicyOpen}
             onSwitchEvent={(e, city) => {
-              // Moving to a different plan abandons the one being booked, so
-              // its resume snapshot must not outlive the switch and drag them
-              // back into the old plan's form.
-              clearOpenBookingResume();
               setSelectedEvent(e);
               setSelectedCategory(e.category);
               setSelectedCity(city);
@@ -2665,7 +2506,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               className="absolute inset-0 bg-black/40 backdrop-blur-md z-40"
               onClick={() => {
                 if (showDetailsForm) {
-                  backToBookingTimeline();
+                  setShowDetailsForm(false);
+                  setShowBookingTimeline(true);
                   return;
                 }
                 if (paymentView === 'checkout') {
@@ -2995,7 +2837,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
               >
                 <button
                   type="button"
-                  onClick={backToBookingTimeline}
+                  onClick={() => {
+                    setShowDetailsForm(false);
+                    setShowBookingTimeline(true);
+                  }}
                   className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
                 >
                   <X size={14} strokeWidth={2.5} />
