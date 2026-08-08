@@ -5719,12 +5719,41 @@ export default function AdminPanel() {
           // row) → clicked Pay (a payu_payments row) → paid, plus the two rates
           // the founder tracks — cart abandonment and recovery. Keyed by the
           // canonical event id so it joins with tripById + the event filter.
-          type OpenRow = { event_id: string; details_submitted: number; pay_clicked: number; paid: number; abandoned: number; recovered: number; messaged: number; recovered_messaged: number };
+          // A client-side stage only has data from the day its ping shipped. If
+          // the window reaches back before that, its rate is meaningless — the
+          // denominator is full of history the numerator could never match, and
+          // it renders as a confident 0% rather than "no data". (Form Completion
+          // did exactly this: 0 of 41.) Compare each stage's first-ever row
+          // against the window start and treat anything older as not-yet-measured.
+          const stageFirstSeen: Record<string, string> = summary?.stage_first_seen ?? {};
+          const windowStart = summary?.since ? new Date(summary.since).getTime() : null;
+          const stageCoversWindow = (stage: string): boolean => {
+            const first = stageFirstSeen[stage];
+            if (!first) return false;                 // ping never fired at all
+            if (windowStart == null) return true;
+            return new Date(first).getTime() <= windowStart;
+          };
+          const stageLiveFrom = (stage: string): string | null => {
+            const first = stageFirstSeen[stage];
+            return first ? new Date(first).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+          };
+          const notMeasuredYet = (stage: string): string => {
+            const from = stageLiveFrom(stage);
+            return from
+              ? `not measured for this whole window — tracked from ${from}, pick a shorter window`
+              : 'collecting data — nothing tracked yet';
+          };
+
+          type OpenRow = { event_id: string; details_submitted: number; pay_clicked: number; paid: number; abandoned: number; recovered: number; messaged: number; recovered_messaged: number; otp_requested: number; otp_verified: number; verified_no_row: number };
           const openFunnelByEvent: Record<string, OpenRow> = {};
           ((summary?.open_funnel ?? []) as OpenRow[]).forEach((r) => { openFunnelByEvent[r.event_id] = r; });
-          // Open details-form opens (client ping 'details_form_opened'); powers
-          // the open Form Completion rate. Empty until the ping starts landing.
+          // Open form opens/submits — both client pings, both counted as distinct
+          // SESSIONS server-side, so Form Completion divides like units. It used
+          // to divide applications rows (one per event+phone, forever) by
+          // sessions, which under-read the rate every time an abandoner came
+          // back: new session, no new row.
           const detailsFormOpenedByEvent = stageMap('details_form_opened');
+          const detailsFormSubmittedByEvent = stageMap('details_form_submitted');
 
           // Cities pie (count of city_selected rows per city). The tracked
           // value is often a pickup-point phrasing — "I'll join in Chennai",
@@ -5844,8 +5873,9 @@ export default function AdminPanel() {
           const allAppFunnelEvents = Array.from(new Set([
             ...Object.keys(appStartedByEvent), ...Object.keys(appSubmittedByEvent),
             ...Object.keys(appsApprovedByEvent), ...Object.keys(appsAdvancePaidByEvent),
-            // Open events (funnel + form-open pings) so they're filterable too.
+            // Open events (funnel + form pings) so they're filterable too.
             ...Object.keys(openFunnelByEvent), ...Object.keys(detailsFormOpenedByEvent),
+            ...Object.keys(detailsFormSubmittedByEvent),
           ]));
           const allFunnelEventOptions = Array.from(
             new Set([...allJoinPlanEvents, ...allCalendarEvents, ...allDropoffEvents, ...allAppFunnelEvents])
@@ -5893,16 +5923,35 @@ export default function AdminPanel() {
             acc.details += r.details_submitted; acc.payClicked += r.pay_clicked; acc.paid += r.paid;
             acc.abandoned += r.abandoned; acc.recovered += r.recovered;
             acc.messaged += r.messaged; acc.recoveredMessaged += r.recovered_messaged;
+            acc.otpRequested += r.otp_requested || 0; acc.otpVerified += r.otp_verified || 0;
+            acc.verifiedNoRow += r.verified_no_row || 0;
             return acc;
-          }, { details: 0, payClicked: 0, paid: 0, abandoned: 0, recovered: 0, messaged: 0, recoveredMessaged: 0 });
-          // Form opens for open events (client ping), summed across open events.
-          const openFormOpened = Object.entries(detailsFormOpenedByEvent).reduce(
+          }, { details: 0, payClicked: 0, paid: 0, abandoned: 0, recovered: 0, messaged: 0, recoveredMessaged: 0, otpRequested: 0, otpVerified: 0, verifiedNoRow: 0 });
+          // Form opens/submits for open events (client pings), summed across them.
+          const sumOpenStage = (m: Record<string, number>) => Object.entries(m).reduce(
             (s, [id, n]) => s + (tripById.get(id)?.booking_url === 'payu-hosted' ? n : 0), 0);
+          const openFormOpened    = sumOpenStage(detailsFormOpenedByEvent);
+          const openFormSubmitted = sumOpenStage(detailsFormSubmittedByEvent);
           // Whether to render the open branch at all — based on the CLIENT's
           // knowledge that an open event exists, so the fork structure appears
           // immediately (the branch fills once the open_funnel migration is
           // applied + analytics refreshed). Pure-invite setups never see it.
           const hasOpenEvents = trips.some(t => (t as any).booking_url === 'payu-hosted');
+          // Which open events this pooled branch is actually made of. Global
+          // pooling is deliberate (open events get deactivated the moment they
+          // run, so an active-only filter would hide all open data) — but it
+          // used to be invisible, and a stale unlaunched open event sitting in
+          // the pool with price views and zero bookings quietly dragged every
+          // rate down with no way to tell. Now the branch names its inputs.
+          const pooledOpenEventIds = Array.from(new Set([
+            ...Object.keys(openFunnelByEvent),
+            ...Object.keys(detailsFormOpenedByEvent),
+            ...Object.keys(detailsFormSubmittedByEvent),
+            ...Object.keys(reachedByEvent),
+          ])).filter(id => tripById.get(id)?.booking_url === 'payu-hosted'
+                        && ((reachedByEvent[id] || 0) > 0
+                          || (detailsFormOpenedByEvent[id] || 0) > 0
+                          || (openFunnelByEvent[id]?.details_submitted || 0) > 0));
 
           const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
@@ -5912,7 +5961,7 @@ export default function AdminPanel() {
             </div>
           );
 
-          type OpenEventRateValues = { numerator: number; denominator: number; detail: string; emptyText: string };
+          type OpenEventRateValues = { numerator: number; denominator: number; detail: string; emptyText: string; unmeasured?: boolean };
           const OpenEventRateCard = ({
             title, description, valuesForEvent, greenAt = 50, yellowAt = 25,
           }: {
@@ -5928,8 +5977,10 @@ export default function AdminPanel() {
               <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
                 {visibleOpenEvents.length === 0 && <div style={{ color: '#bbb', fontSize: 13 }}>No open events selected</div>}
                 {visibleOpenEvents.map((eventId, idx) => {
-                  const { numerator, denominator, detail, emptyText } = valuesForEvent(eventId);
-                  const hasData = denominator > 0;
+                  const { numerator, denominator, detail, emptyText, unmeasured } = valuesForEvent(eventId);
+                  // A stage whose ping post-dates the window can't be scored —
+                  // its 0 would read as real drop-off against a full denominator.
+                  const hasData = denominator > 0 && !unmeasured;
                   const pct = hasData ? Math.round((numerator / denominator) * 100) : null;
                   const last = idx === visibleOpenEvents.length - 1;
                   const color = !hasData ? '#bbb' : pct! >= greenAt ? '#4ade80' : pct! >= yellowAt ? '#fcd34d' : '#fca5a5';
@@ -6036,27 +6087,50 @@ export default function AdminPanel() {
                     ];
                     // Invite branch — Apply Now → application → approval → payment.
                     const inviteSteps: Step[] = [
-                      { label: 'Pricing Conversion',     pct: pooledPct(inviteConverted, inviteReached), num: inviteConverted,   den: inviteReached,   descr: 'who saw the price tapped Apply Now' },
+                      { label: 'Pricing Conversion',     pct: pooledPct(inviteConverted, inviteReached), num: inviteConverted,   den: inviteReached,   descr: 'who saw the price tapped a CTA (Apply Now or Contact Us)' },
                       { label: 'Application Completion', pct: pooledAppComplPct,    num: totalAppSubmitted, den: totalAppStarted, descr: 'who opened the form submitted', emptyText: 'collecting data — form opens tracked from now' },
                       { label: 'Payment Conversion',     pct: pooledPaymentConvPct, num: totalAdvancePaid,  den: totalApproved,   descr: 'approved paid the advance', extra: ttpLabel ? ` · median ${ttpLabel} (n=${ttpN})` : '' },
                     ];
-                    // Open branch — Book Now → open form → submit → pay. Each step
-                    // is "of the people at the previous step, how many moved on":
-                    //   Pricing Conversion  saw the price → tapped Book Now
-                    //   Form Open Rate      tapped Book Now → the details form opened
-                    //   Form Completion     opened the form → submitted (Continue to Payment)
-                    //   Payment Rate        submitted → paid
-                    // ("Continue to Payment" is the form submit — it creates the
-                    // booking row, then the bill page opens; there is no separate
-                    // clicked-Pay vs paid split worth showing.)
+                    // Open branch — CTA → open form → submit → OTP → pay. Each step
+                    // is "of the people at the previous step, how many moved on",
+                    // and each one now divides like units:
+                    //   Pricing Conversion  saw the price → tapped a CTA   [sessions]
+                    //   Form Open Rate      tapped a CTA → form opened     [sessions]
+                    //   Form Completion     opened the form → submitted it [sessions]
+                    //   Verification Rate   asked for a code → verified it [phones]
+                    //   Payment Rate        booking row created → paid     [bookings]
+                    // Contact Us is in the CTA denominators on purpose: that path
+                    // runs through the FAQ chat and lands on the very same booking
+                    // timeline and details form, so excluding it counted people in
+                    // the numerator who weren't in the denominator — which is how
+                    // Form Open Rate could read over 100%.
+                    // Each bar says which unit it counts, because the funnel
+                    // switches units as it goes: browser sessions while the
+                    // customer is anonymous, phone numbers once they identify
+                    // themselves, booking rows once one exists. Every RATE
+                    // divides like-for-like; the step-to-step COUNTS are not a
+                    // strict waterfall and shouldn't be read as one.
+                    const formOpenMeasured   = stageCoversWindow('details_form_opened');
+                    const formSubmitMeasured = stageCoversWindow('details_form_submitted');
                     const openSteps: Step[] = [
-                      { label: 'Pricing Conversion', pct: pooledPct(openConverted, openReached),      num: openConverted,   den: openReached,     descr: 'who saw the price tapped Book Now' },
-                      { label: 'Form Open Rate',     pct: pooledPct(openFormOpened, openConverted),  num: openFormOpened,  den: openConverted,   descr: 'who tapped Book Now reached the form', emptyText: 'collecting data — form opens tracked from now' },
-                      { label: 'Form Completion',    pct: pooledPct(openAgg.details, openFormOpened),num: openAgg.details, den: openFormOpened,  descr: 'who opened the form submitted (Continue to Payment)', emptyText: 'collecting data — form opens tracked from now' },
-                      { label: 'Payment Rate',       pct: pooledPct(openAgg.paid, openAgg.details),  num: openAgg.paid,    den: openAgg.details, descr: 'who submitted the form paid' },
+                      { label: 'Pricing Conversion', pct: pooledPct(openConverted, openReached),           num: openConverted,      den: openReached,        descr: 'sessions that saw the price tapped a CTA (Book Now or Contact Us)' },
+                      { label: 'Form Open Rate',     pct: formOpenMeasured ? pooledPct(openFormOpened, openConverted) : null,     num: openFormOpened,     den: openConverted,      descr: 'sessions that tapped a CTA reached the details form', emptyText: notMeasuredYet('details_form_opened') },
+                      { label: 'Form Completion',    pct: formSubmitMeasured ? pooledPct(openFormSubmitted, openFormOpened) : null, num: openFormSubmitted,  den: openFormOpened,     descr: 'sessions that opened the form filled it in and submitted', emptyText: notMeasuredYet('details_form_submitted') },
+                      { label: 'Verification Rate',  pct: pooledPct(openAgg.otpVerified, openAgg.otpRequested), num: openAgg.otpVerified, den: openAgg.otpRequested, descr: 'phone numbers sent a WhatsApp code entered it correctly', emptyText: 'no verification codes requested in this window' },
+                      { label: 'Payment Rate',       pct: pooledPct(openAgg.paid, openAgg.details),        num: openAgg.paid,       den: openAgg.details,    descr: 'bookings created went on to pay' },
                     ];
                     const openAbandon  = pooledPct(openAgg.abandoned, openAgg.details);
                     const openRecovery = pooledPct(openAgg.recovered, openAgg.abandoned);
+                    // Recovery among leads we actually re-engaged, as opposed to
+                    // raw recovery (which includes people who came back on their
+                    // own). This is the only number that says whether the
+                    // cart-abandonment WhatsApp is doing anything — it was
+                    // computed by the RPC from day one and never rendered.
+                    const openRetargeted = pooledPct(openAgg.recoveredMessaged, openAgg.messaged);
+                    // Abandoned INCLUDES people who later came back and paid (the
+                    // flag is never cleared), so "never paid" was wrong on the
+                    // face of it. Show the ones who truly never paid.
+                    const openNeverPaid = openAgg.abandoned - openAgg.recovered;
 
                     const csvLine = (label: string, s: Step) => [label, s.pct === null ? '' : `${s.pct}%`, s.pct === null ? '' : fmt(s.num), s.pct === null ? '' : fmt(s.den), s.pct === null ? (s.emptyText || 'no data yet') : `${s.descr}${s.extra ?? ''}`];
                     const downloadJourneyCsv = () => {
@@ -6067,10 +6141,12 @@ export default function AdminPanel() {
                         ...inviteSteps.map(s => csvLine(`Invite · ${s.label}`, s)),
                       ];
                       if (hasOpenEvents) {
-                        rows.push(['Open · Details Submitted', '', fmt(openAgg.details), '', 'entered details & reached the bill page']);
+                        rows.push(['Open · Pooled events', '', pooledOpenEventIds.length, '', pooledOpenEventIds.map(id => eventLabelById(id)).join(' | ') || 'none with data in this window']);
+                        rows.push(['Open · Bookings Created', '', fmt(openAgg.details), '', 'verified and got a booking row + bill page']);
                         openSteps.forEach(s => rows.push(csvLine(`Open · ${s.label}`, s)));
-                        rows.push(['Open · Cart Abandonment', openAbandon === null ? '' : `${openAbandon}%`, fmt(openAgg.abandoned), fmt(openAgg.details), 'submitted the form but never paid']);
+                        rows.push(['Open · Cart Abandonment', openAbandon === null ? '' : `${openAbandon}%`, fmt(openAgg.abandoned), fmt(openAgg.details), `flagged cart-abandoned (${fmt(openAgg.recovered)} of them later paid)`]);
                         rows.push(['Open · Recovery Rate', openRecovery === null ? '' : `${openRecovery}%`, fmt(openAgg.recovered), fmt(openAgg.abandoned), 'paid after being flagged cart-abandoned']);
+                        rows.push(['Open · Retargeted Recovery', openRetargeted === null ? '' : `${openRetargeted}%`, fmt(openAgg.recoveredMessaged), fmt(openAgg.messaged), 'paid after we actually sent them the abandonment WhatsApp']);
                       }
                       downloadCsv(`journey-${analyticsWindow}-${new Date().toISOString().slice(0, 10)}.csv`, ['Step', 'Rate', 'Numerator', 'Denominator', 'Description'], rows);
                     };
@@ -6154,11 +6230,42 @@ export default function AdminPanel() {
                           {hasOpenEvents && (
                             <div style={{ flex: 1, minWidth: 300, background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '18px 20px' }}>
                               <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 800, color: '#0369a1', background: '#e0f2fe', borderRadius: 999, padding: '3px 10px', marginBottom: 6 }}>OPEN · Book Now</div>
-                              {openSteps.map(renderBar)}
-                              <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                {miniStat('Cart Abandonment', openAbandon === null ? '—' : `${openAbandon}%`, `${fmt(openAgg.abandoned)} of ${fmt(openAgg.details)} never paid`)}
-                                {miniStat('Recovery Rate', openRecovery === null ? '—' : `${openRecovery}%`, `${fmt(openAgg.recovered)} of ${fmt(openAgg.abandoned)} paid after`)}
+                              {/* Name the pool. A stale open event with price
+                                  views and no bookings drags every rate here
+                                  down, and this is the only place it shows. */}
+                              <div style={{ fontSize: 10.5, color: '#bbb', marginBottom: 2 }}>
+                                {pooledOpenEventIds.length === 0
+                                  ? 'no open events with data in this window'
+                                  : <>pooling {pooledOpenEventIds.length} open event{pooledOpenEventIds.length === 1 ? '' : 's'}: {pooledOpenEventIds.map(id => eventLabelById(id)).join(' · ')}</>}
                               </div>
+                              {openSteps.map(renderBar)}
+                              <div style={{ paddingTop: 16, borderTop: '1px solid #f0f0ea' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>Bookings Created</span>
+                                  <span style={{ fontSize: 22, fontWeight: 800, color: '#111' }}>{fmt(openAgg.details)}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#bbb' }}>verified and reached the bill page</div>
+                              </div>
+                              <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {miniStat('Cart Abandonment', openAbandon === null ? '—' : `${openAbandon}%`, `${fmt(openAgg.abandoned)} of ${fmt(openAgg.details)} flagged · ${fmt(openNeverPaid)} never paid`)}
+                                {miniStat('Recovery Rate', openRecovery === null ? '—' : `${openRecovery}%`, `${fmt(openAgg.recovered)} of ${fmt(openAgg.abandoned)} paid after`)}
+                                {miniStat('Retargeted Recovery', openRetargeted === null ? '—' : `${openRetargeted}%`, `${fmt(openAgg.recoveredMessaged)} of ${fmt(openAgg.messaged)} we WhatsApped came back`)}
+                              </div>
+                              {/* Verified, then no booking row was written. Anyone
+                                  who PAYS gets a row back-filled by payu-callback,
+                                  so these are unpaid leads that fell out of the CRM
+                                  entirely — no People row, no abandonment WhatsApp,
+                                  no marketer. Worth chasing by hand. */}
+                              {openAgg.verifiedNoRow > 0 && (
+                                <div style={{ marginTop: 10, padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 800, color: '#9a3412' }}>
+                                    {fmt(openAgg.verifiedNoRow)} verified but never became a booking
+                                  </div>
+                                  <div style={{ fontSize: 10.5, color: '#c2410c', marginTop: 2 }}>
+                                    They passed the WhatsApp code, so the number is real — but no booking row was created, so they're invisible in People and got no abandonment nudge.
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -6288,8 +6395,9 @@ export default function AdminPanel() {
                         'Date Picked', 'Date Pick Rate',
                         'Reached Pricing', 'Tapped Book Now', 'Tapped Contact Us', 'Total CTA', 'Pricing Conversion Rate',
                         'Open Form Opened', 'Open Form Open Rate',
-                        'Open Details Submitted', 'Open Form Completion Rate',
-                        'Open Paid', 'Open Payment Rate',
+                        'Open Form Submitted', 'Open Form Completion Rate',
+                        'Open OTP Requested', 'Open OTP Verified', 'Open Verification Rate',
+                        'Open Bookings Created', 'Open Paid', 'Open Payment Rate',
                         'Application Started', 'Application Submitted', 'Application Completion Rate',
                         'Approved', 'Advance Paid', 'Payment Conversion Rate',
                         'Doubt-Askers', 'Doubts → Applied', 'Doubt Solved Rate',
@@ -6304,6 +6412,9 @@ export default function AdminPanel() {
                         const totalCta = booked + contact;
                         const isOpen   = tripById.get(id)?.booking_url === 'payu-hosted';
                         const openFormOpened = detailsFormOpenedByEvent[id] || 0;
+                        const openFormSubmittedEv = detailsFormSubmittedByEvent[id] || 0;
+                        const openOtpReq = openFunnelByEvent[id]?.otp_requested || 0;
+                        const openOtpVer = openFunnelByEvent[id]?.otp_verified || 0;
                         const openDetails = openFunnelByEvent[id]?.details_submitted || 0;
                         const openPaid = openFunnelByEvent[id]?.paid || 0;
                         const started  = appStartedByEvent[id]      || 0;
@@ -6317,9 +6428,13 @@ export default function AdminPanel() {
                           viewed, opened, pct(opened, viewed),
                           picked, pct(picked, opened),
                           reached, booked, contact, totalCta, pct(totalCta, reached),
-                          isOpen ? openFormOpened : '', isOpen ? pct(openFormOpened, booked) : '',
-                          isOpen ? openDetails : '', isOpen ? pct(openDetails, openFormOpened) : '',
-                          isOpen ? openPaid : '', isOpen ? pct(openPaid, openDetails) : '',
+                          // Denominator is total CTA, not Book Now alone — Contact Us
+                          // reaches the same form, so dividing by Book Now could push
+                          // this past 100%.
+                          isOpen ? openFormOpened : '', isOpen && stageCoversWindow('details_form_opened') ? pct(openFormOpened, totalCta) : '',
+                          isOpen ? openFormSubmittedEv : '', isOpen && stageCoversWindow('details_form_submitted') ? pct(openFormSubmittedEv, openFormOpened) : '',
+                          isOpen ? openOtpReq : '', isOpen ? openOtpVer : '', isOpen ? pct(openOtpVer, openOtpReq) : '',
+                          isOpen ? openDetails : '', isOpen ? openPaid : '', isOpen ? pct(openPaid, openDetails) : '',
                           started, submitted, pct(submitted, started),
                           approved, paid, pct(paid, approved),
                           doubts, solved, pct(solved, doubts),
@@ -6531,39 +6646,67 @@ export default function AdminPanel() {
                     })}
                   </div>
 
+                  {/* These three mirror the Journey open branch exactly — same
+                      numerators, same denominators. They used to disagree with
+                      it: Form Open Rate divided by Book Now taps alone while the
+                      Journey divided by all CTA taps, so the same metric showed
+                      two numbers on one screen, and this one could exceed 100%
+                      (Contact Us → FAQ → the same booking form puts people in
+                      the numerator who were never in the denominator). */}
                   <OpenEventRateCard
                     title="Open Form Open Rate"
-                    description="For open events, of users who tapped Book Now, how many reached the details form. A low rate means people are dropping between the pricing CTA and the form opening."
+                    description="For open events, of users who tapped a CTA under the price (Book Now or Contact Us — both paths lead to the same booking form), how many reached the details form. A low rate means people are dropping between the pricing CTA and the form opening."
                     valuesForEvent={(eventId) => {
-                      const tappedBook = (bookCtaByEvent[eventId] || 0) + (legacyCtaByEvent[eventId] || 0);
+                      const tappedCta = convertedByEvent[eventId] || 0;
                       const formOpened = detailsFormOpenedByEvent[eventId] || 0;
                       return {
                         numerator: formOpened,
-                        denominator: tappedBook,
-                        detail: `${formOpened} of ${tappedBook} who tapped Book Now reached the form`,
-                        emptyText: 'no Book Now taps in this window',
+                        denominator: tappedCta,
+                        detail: `${formOpened} of ${tappedCta} who tapped a CTA reached the form`,
+                        unmeasured: !stageCoversWindow('details_form_opened'),
+                        emptyText: stageCoversWindow('details_form_opened') ? 'no CTA taps in this window' : notMeasuredYet('details_form_opened'),
                       };
                     }}
                   />
 
                   <OpenEventRateCard
                     title="Open Form Completion Rate"
-                    description="For open events, of users who opened the details form, how many submitted it and continued to payment. A low rate means the form is losing people before the bill page."
+                    description="For open events, of users who opened the details form, how many filled it in and submitted. Both sides count browser sessions, so someone who comes back a second time is counted the same way on both. A low rate means the form itself is losing people."
                     valuesForEvent={(eventId) => {
                       const formOpened = detailsFormOpenedByEvent[eventId] || 0;
-                      const detailsSubmitted = openFunnelByEvent[eventId]?.details_submitted || 0;
+                      const formSubmitted = detailsFormSubmittedByEvent[eventId] || 0;
                       return {
-                        numerator: detailsSubmitted,
+                        numerator: formSubmitted,
                         denominator: formOpened,
-                        detail: `${detailsSubmitted} of ${formOpened} who opened the form submitted`,
-                        emptyText: 'no tracked form opens in this window',
+                        detail: `${formSubmitted} of ${formOpened} who opened the form submitted`,
+                        unmeasured: !stageCoversWindow('details_form_submitted'),
+                        emptyText: stageCoversWindow('details_form_submitted') ? 'no tracked form opens in this window' : notMeasuredYet('details_form_submitted'),
+                      };
+                    }}
+                  />
+
+                  <OpenEventRateCard
+                    title="Open Verification Rate"
+                    description="For open events, of users who were sent a WhatsApp verification code after submitting the form, how many entered it correctly. This step sits between the form and the booking, and used to be hidden inside Form Completion. A low rate means codes aren't arriving — check the AiSensy WhatsApp sends."
+                    greenAt={70}
+                    yellowAt={40}
+                    valuesForEvent={(eventId) => {
+                      const requested = openFunnelByEvent[eventId]?.otp_requested || 0;
+                      const verified = openFunnelByEvent[eventId]?.otp_verified || 0;
+                      const lost = openFunnelByEvent[eventId]?.verified_no_row || 0;
+                      return {
+                        numerator: verified,
+                        denominator: requested,
+                        detail: `${verified} of ${requested} who got a code entered it correctly`
+                          + (lost > 0 ? ` · ⚠ ${lost} verified but never became a booking` : ''),
+                        emptyText: 'no verification codes requested in this window',
                       };
                     }}
                   />
 
                   <OpenEventRateCard
                     title="Open Payment Rate"
-                    description="For open events, of users who submitted the details form, how many completed payment. A low rate means people are dropping after reaching the bill page."
+                    description="For open events, of bookings created (they verified and reached the bill page), how many completed payment. A low rate means people are dropping at the bill itself."
                     greenAt={70}
                     yellowAt={40}
                     valuesForEvent={(eventId) => {
@@ -6572,8 +6715,8 @@ export default function AdminPanel() {
                       return {
                         numerator: paid,
                         denominator: detailsSubmitted,
-                        detail: `${paid} of ${detailsSubmitted} who submitted the form paid`,
-                        emptyText: 'no form submissions in this window',
+                        detail: `${paid} of ${detailsSubmitted} whose booking was created paid`,
+                        emptyText: 'no bookings created in this window',
                       };
                     }}
                   />

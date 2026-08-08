@@ -1043,20 +1043,31 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
   const isNativeApplicationFlow = selectedEvent?.bookingUrl === 'native-application';
 
-  // Open-event funnel: ping when the open details form becomes visible, so the
-  // admin Analytics tab can measure form-open → details-submitted completion —
-  // the one open-funnel step not derivable from DB rows. Server counts distinct
-  // sessions, so re-opens (e.g. back navigation) don't inflate it. Fires only
-  // for the open (payU) flow; invite/PhonePe/community flows are untouched.
+  // Open-event funnel pings. The server counts DISTINCT sessions per stage, so
+  // repeats were always harmless to the numbers — but the form-open effect
+  // re-fired every time the customer backed out of the bill onto the form
+  // (roughly 2.6 writes per session in practice), which is pure noise in a
+  // table we purge at 90 days. Latch each (stage, event) once per session so
+  // one visitor writes one row per stage.
+  const openFunnelPingedRef = React.useRef<Set<string>>(new Set());
+  const pingOpenFunnel = React.useCallback((stage: 'details_form_opened' | 'details_form_submitted') => {
+    if (!isPayUFlow || !selectedEvent) return;
+    const key = `${stage}:${selectedEvent.id}`;
+    if (openFunnelPingedRef.current.has(key)) return;
+    openFunnelPingedRef.current.add(key);
+    trackEvent(stage, {
+      city: formatCityLabel(selectedCity),
+      category: selectedCategory || selectedEvent.category,
+      event_id: selectedEvent.id,
+      event_title: selectedEvent.title,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPayUFlow, selectedEvent, selectedCity, selectedCategory]);
+
+  // Fires when the open details form becomes visible. Invite/PhonePe/community
+  // flows are untouched.
   useEffect(() => {
-    if (showDetailsForm && isPayUFlow && selectedEvent) {
-      trackEvent('details_form_opened', {
-        city: formatCityLabel(selectedCity),
-        category: selectedCategory || selectedEvent.category,
-        event_id: selectedEvent.id,
-        event_title: selectedEvent.title,
-      });
-    }
+    if (showDetailsForm) pingOpenFunnel('details_form_opened');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDetailsForm, isPayUFlow]);
 
@@ -1796,6 +1807,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         setOpenBookingCheckError(data?.error || `We could not send your ${delivery === 'email' ? 'verification email' : 'WhatsApp code'}. Please try again.`);
         return;
       }
+      // The form is now genuinely submitted: it passed validation, the booking
+      // was found eligible, and we've sent a code. This is the honest "form
+      // completed" moment — the applications row only lands AFTER the OTP is
+      // verified, so counting rows was really counting form-fill AND OTP pass
+      // as one step. Session-scoped, matching the form-open ping's units.
+      pingOpenFunnel('details_form_submitted');
       setOpenOtpSession(data.verification_token);
       setOpenOtpDigits(Array(6).fill(''));
       setOpenOtpDelivery(delivery);
