@@ -4247,27 +4247,17 @@ export default function AdminPanel() {
                     ? !a.assigned_marketer_id
                     : a.assigned_marketer_id === applicationsMarketerFilter);
             return eventMatch && dateMatch && statusMatch && searchMatch && marketerMatch;
-          }).sort((a, b) => {
-            // Keep every assigned lead visible, but float anything that needs a
-            // person above quiet self-serve rows. Stable sort preserves the
-            // existing newest-first order within each group.
-            const needsHuman = (lead: any) => {
-              // An unanswered question needs a person whatever the lead has
-              // paid — a fully-paid guest asking about the meeting spot is
-              // still work for their owner.
-              if ((lead.doubts ?? []).some((doubt: any) => String(doubt.status ?? 'new') === 'new')) return true;
-              // cart_abandoned and failed payments are historical marks that
-              // are never cleared once the person pays: cart-abandonment only
-              // ever sets the flag on 'invited'/'pending' rows, and recovery
-              // stamps recovered_at while leaving cart_abandoned true. Counting
-              // them on a paid row would pin finished customers to the top of
-              // the caller's list forever, which is the opposite of the point.
-              if (lead.status === 'advance_paid' || lead.status === 'fully_paid') return false;
-              return Boolean(lead.cart_abandoned)
-                || paymentsFor(lead.phone, lead.event_slug).all.some((payment: PayuPayment) => payment.status === 'failure');
-            };
-            return Number(needsHuman(b)) - Number(needsHuman(a));
           });
+          // Newest lead first, full stop — the order the rows arrive in from
+          // loadApplications (created_at descending). There used to be a
+          // "needs a human" float here that lifted unanswered doubts, cart
+          // abandons and failed payments to the top, but neither signal is
+          // ever cleared (no doubt is ever marked answered, and cart_abandoned
+          // sticks for life), so the float turned into a permanent archive:
+          // on 2026-08-09 it buried a lead created that morning under 21 older
+          // rows, the oldest from 10 June. Callers who want that cohort can
+          // pick it from the status filter chips instead, which is a choice
+          // rather than a default nobody can turn off.
           // ── "Paid · past dates" fold (owner request 2026-08-02) ─────────────
           // Fully-paid people whose event date has already passed are done, so
           // they get collapsed under a dropdown at the bottom of the list —
