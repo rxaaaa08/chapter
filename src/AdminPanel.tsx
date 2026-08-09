@@ -5737,11 +5737,22 @@ export default function AdminPanel() {
             const first = stageFirstSeen[stage];
             return first ? new Date(first).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
           };
+          // "Pick a shorter window" is only useful advice when a shorter window
+          // would actually cover the stage. For a ping that shipped in the last
+          // 24h no window does, and telling the founder to keep shrinking it
+          // sends them in circles — say when it starts scoring instead.
           const notMeasuredYet = (stage: string): string => {
+            const first = stageFirstSeen[stage];
+            if (!first) return 'collecting data — nothing tracked yet';
             const from = stageLiveFrom(stage);
-            return from
-              ? `not measured for this whole window — tracked from ${from}, pick a shorter window`
-              : 'collecting data — nothing tracked yet';
+            const firstMs = new Date(first).getTime();
+            const shortestWindowStart = Date.now() - 24 * 60 * 60 * 1000;
+            if (firstMs <= shortestWindowStart) {
+              return `tracked from ${from} — switch to Last 24 Hours to see this one`;
+            }
+            const scoresFrom = new Date(firstMs + 24 * 60 * 60 * 1000)
+              .toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+            return `tracked from ${from} — needs a full day of data, scores from ${scoresFrom}`;
           };
 
           type OpenRow = { event_id: string; details_submitted: number; pay_clicked: number; paid: number; abandoned: number; recovered: number; messaged: number; recovered_messaged: number; otp_requested: number; otp_verified: number; verified_no_row: number };
