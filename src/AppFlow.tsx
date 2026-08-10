@@ -38,6 +38,15 @@ const hasGirlsOnlyQuickInfo = (quickInfo?: { label?: string; value?: string }[])
     String(item.value ?? '').trim().toLowerCase() !== 'false'
   );
 
+// lucide-react dropped brand marks, so the WhatsApp glyph is inlined. Used on the
+// pay-at-venue timeline's group-chat row, where the point is that the guest is
+// joining a real WhatsApp group — a generic speech bubble doesn't carry that.
+const WhatsAppGlyph = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#25D366" aria-hidden="true" className="flex-shrink-0">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488" />
+  </svg>
+);
+
 const sortGirlsOnlyLast = (events: Event[]) =>
   [...events].sort((a, b) => Number(Boolean(a.girlsOnly || hasGirlsOnlyQuickInfo(a.quickInfo))) - Number(Boolean(b.girlsOnly || hasGirlsOnlyQuickInfo(b.quickInfo))));
 
@@ -113,6 +122,8 @@ interface Event {
   bookingFlow?: string;
   // 'full' = single payment (one "Single Entry" amount, no advance/balance split).
   paymentMode?: string;
+  // Split events only: balance paid online at the venue rather than before the event.
+  payAtVenue?: boolean;
   ctaLabel?: string;
   announcements?: string[];
   inviteOnly?: boolean;
@@ -2602,8 +2613,12 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           isNativeApplicationFlow && typeof capacity === 'number' && capacity > 0 && perDateRegistered !== null
                             ? (capacity * 3) + perDateRegistered
                             : null;
+                        // Joined-count social proof for open events. This used to require
+                        // payment_mode='full' because open events were only ever single
+                        // payment — which left open SPLIT events (pay at venue) with a
+                        // bare event-date card and no "N going" line at all.
                         const openJoinedCount =
-                          isPayUFlow && selectedEvent.paymentMode === 'full' && typeof capacity === 'number' && capacity > 0 && perDateReserved !== null
+                          isPayUFlow && typeof capacity === 'number' && capacity > 0 && perDateReserved !== null
                             ? perDateReserved
                             : null;
                         const showOpenJoinedLabel =
@@ -2716,11 +2731,31 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                 && !isPayUFlow
                                 && /\{advance\}|\{price\}/i.test(step.value || '')
                                 && (selectedEvent.paymentMode === 'full' || selectedEvent.inviteOnly);
+                              // Pay at venue: the balance has no deadline — it's settled in person
+                              // at the event. Same pill slot as "After Invitation", so the row never
+                              // renders bare. Checked before dateLabel so a date left over from
+                              // before the toggle was switched on can't win.
+                              const isVenueBalanceRow = !isNowRow
+                                && !!selectedEvent.payAtVenue
+                                && selectedEvent.paymentMode !== 'full'
+                                && /\{balance\}/i.test(step.value || '');
+                              // Pay-at-venue timelines promise the group chat right after the
+                              // advance — that's the trust step that makes paying the rest in
+                              // person feel safe. It has no date, so it needs its own pill.
+                              // Hyphen is optional in the matcher: the row reads "plan group-chat
+                              // link", and a plain /group\s?chat/ would silently miss it, dropping
+                              // both the WhatsApp icon and the "After Advance" pill.
+                              const isGroupChatRow = !isNowRow
+                                && !!selectedEvent.payAtVenue
+                                && /group[\s-]?chat/i.test(`${step.label} ${step.value}`);
                               return (
                                 <div key={si} className="px-5 py-3 flex items-center justify-between border-b border-black/5">
                                   <div>
                                     <p className="text-[11px] text-gray-400 font-medium mb-0.5">{step.label}</p>
-                                    <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
+                                    <p className="text-[15px] font-black text-gray-900 leading-none flex items-center gap-1.5">
+                                      {stepValue}
+                                      {isGroupChatRow && <WhatsAppGlyph />}
+                                    </p>
                                   </div>
                                   {isNowRow ? (
                                     <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -2729,6 +2764,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                   ) : isAfterInviteRow ? (
                                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                                       After Invitation
+                                    </span>
+                                  ) : isGroupChatRow ? (
+                                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                      After Advance
+                                    </span>
+                                  ) : isVenueBalanceRow ? (
+                                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                                      At the Venue
                                     </span>
                                   ) : dateLabel ? (
                                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -5257,6 +5300,28 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                               <div className="flex flex-col items-center text-center gap-1 text-[11px] font-semibold text-gray-700">
                                 <p>Entry Ticket</p>
                                 <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
+                              </div>
+                                ) : event.payAtVenue ? (
+                              // Pay at venue: two tiles that visibly SUM rather than reading as
+                              // "price, then debt". Emphasis comes only from tile width (1.5:1)
+                              // and number size — same fill on both, nothing greyed out. The full
+                              // ticket price is deliberately never shown: the guest sees only the
+                              // two parts, and the "+" signals they add up rather than stack.
+                              <div className="grid items-stretch" style={{ gridTemplateColumns: '1.5fr 30px 1fr' }}>
+                                <div className="bg-white rounded-[16px] flex flex-col justify-center" style={{ padding: '10px 15px 12px', gap: 2 }}>
+                                  <p className="text-[11px] font-semibold text-gray-700">Advance</p>
+                                  <p className="text-[28px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.03em' }}>{formatINR(displayAdvance)}</p>
+                                </div>
+                                {/* Bare "+" in the seam — no pill or circle behind it. */}
+                                <div className="flex flex-col items-center justify-center" style={{ gap: 6 }}>
+                                  <span className="w-px bg-[#e4e6e9]" style={{ height: 10 }} />
+                                  <span className="text-[11px] font-semibold text-gray-700 leading-none">+</span>
+                                  <span className="w-px bg-[#e4e6e9]" style={{ height: 10 }} />
+                                </div>
+                                <div className="bg-white rounded-[16px] flex flex-col justify-center items-end text-right" style={{ padding: '10px 13px 12px', gap: 2 }}>
+                                  <p className="text-[11px] font-semibold text-gray-700">Pay at Venue</p>
+                                  <p className="text-[20px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.02em' }}>{formatINR(displayRemaining)}</p>
+                                </div>
                               </div>
                                 ) : (
                               <div className="flex items-start justify-between gap-3">
