@@ -3939,6 +3939,10 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // "balance". Used in the advance-paid receipt warm note ("settle balance
   // anytime before X"). Same find-by-regex pattern as payu-callback.
   const [balanceDate, setBalanceDate] = React.useState<string>('');
+  // Pay-at-venue events settle the balance in person, so the warm note must not
+  // promise a deadline (there isn't one) or offer to add them to the group chat
+  // later (the advance already did).
+  const [warmPayAtVenue, setWarmPayAtVenue] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [dlLoading, setDlLoading] = React.useState(false);
   const [showRetryBill, setShowRetryBill] = React.useState(false);
@@ -4030,7 +4034,7 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // clause gracefully.
   React.useEffect(() => {
     const slug = payment?.event_slug;
-    if (!slug) { setDetailsDate(''); setBalanceDate(''); return; }
+    if (!slug) { setDetailsDate(''); setBalanceDate(''); setWarmPayAtVenue(false); return; }
     let cancelled = false;
     const fmt = (raw: any): string => {
       if (typeof raw !== 'string' || !raw) return '';
@@ -4050,6 +4054,12 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
         : (Array.isArray(ev?.bookingSteps) ? ev.bookingSteps : []);
       const isOpen = ev?.bookingUrl === 'payu-hosted';
       const isFull = (ev?.paymentMode ?? 'split') === 'full';
+      // Pay at venue reshapes the timeline (group-chat row replaces meeting-spot,
+      // balance moves to index 2) and carries no dates at all, so these fixed
+      // indexes don't apply — they'd read the wrong rows. The copy needs neither.
+      const isPayAtVenue = !!(ev as any)?.payAtVenue && !isFull;
+      setWarmPayAtVenue(isPayAtVenue);
+      if (isPayAtVenue) { setBalanceDate(''); setDetailsDate(''); return; }
       const balanceIdx = isFull ? -1 : (isOpen ? 1 : 2);          // full-pay flows have no balance step
       const detailsIdx = isOpen ? (isFull ? 1 : 2) : (isFull ? 2 : 3);
       setBalanceDate(balanceIdx >= 0 ? fmt(steps[balanceIdx]?.date) : '');
@@ -4402,16 +4412,26 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
         {/* Warm note — copy varies by payment type:
             - advance: settle-balance reminder ("anytime before X")
             - balance / full: groupchat-add promise (Meeting Spot Details date)
-            Both gracefully drop the date clause if it isn't available. */}
+            Both gracefully drop the date clause if it isn't available.
+            Pay at venue overrides both: there is no balance deadline to name,
+            and the guest joined the group chat back when they paid the advance,
+            so promising to add them later would be a downgrade. */}
         {payment?.event_title && (
           <div className="bg-[#FAF7F2] border border-[#E8E0D5] rounded-2xl px-4 py-3.5">
             {payment?.payment_type === 'advance' ? (
               <p className="text-[13px] text-gray-500 leading-relaxed">
                 We're working to give you the best <span className="font-semibold text-gray-600">{payment.event_title}</span> experience!
-                {balanceDate
+                {warmPayAtVenue
+                  ? <> You can settle the balance at the venue.</>
+                  : balanceDate
                   ? <> You can settle balance anytime before <span className="font-semibold text-gray-600">{balanceDate}</span>.</>
                   : <> You can settle the balance anytime before due.</>}
                 {' '}See you soon 💛
+              </p>
+            ) : warmPayAtVenue ? (
+              <p className="text-[13px] text-gray-500 leading-relaxed">
+                That's everything settled for <span className="font-semibold text-gray-600">{payment.event_title}</span>.
+                Enjoy the plan 💛
               </p>
             ) : (
               <p className="text-[13px] text-gray-500 leading-relaxed">
