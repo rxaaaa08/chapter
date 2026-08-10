@@ -47,6 +47,23 @@ async function resolveCanonicalSlug(supabase: any, inputSlug: string): Promise<s
 // false→true atomically and reports whether THIS caller won; releaseSendFlag
 // rolls it back on send failure so a retry can re-send. Prevents the
 // callback + webhook from both sending the same WhatsApp.
+// True when the event collects its balance in person — those events send no
+// balance-paid WhatsApp (the bill's success page is the confirmation). Fails
+// OPEN on a lookup error so a DB blip can never silently swallow a real send.
+async function isPayAtVenue(supabase: any, eventSlug: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('events')
+      .select('pay_at_venue')
+      .eq('slug', eventSlug)
+      .maybeSingle();
+    if (error) return false;
+    return !!data?.pay_at_venue;
+  } catch (_e) {
+    return false;
+  }
+}
+
 async function claimSendFlag(supabase: any, appId: string, col: string): Promise<boolean> {
   const { data } = await supabase
     .from('applications')
@@ -336,6 +353,9 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
     .eq('event_slug', args.eventSlug)
     .maybeSingle();
   if (!app || app.aisensy_balance_paid_sent) return;
+  // Pay at venue: balance settled in person — the bill page is the confirmation.
+  // Checked BEFORE claimSendFlag so a skipped send never burns the claim.
+  if (await isPayAtVenue(supabase, args.eventSlug)) return;
   if (!(await claimSendFlag(supabase, app.id, 'aisensy_balance_paid_sent'))) return;
 
   try {
