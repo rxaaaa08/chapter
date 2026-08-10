@@ -1,0 +1,313 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Business Models That Fit Chaptera",
+    "description": "A corrected, source-backed ranking centered on youth and community group-travel operators, grounded in Chaptera's product, comparable companies, unit economics, and execution risk.",
+    "generatedAt": "2026-08-05T12:18:03+05:30",
+    "charts": [
+      {
+        "id": "business_model_fit",
+        "title": "Business-model fit for Chaptera's current product",
+        "subtitle": "Directly operated departures and feeder formats reuse the present stack; marketplace and SaaS bets require a different operating system.",
+        "type": "bar",
+        "dataset": "model_scores",
+        "sourceId": "decision_model",
+        "encodings": {
+          "x": { "field": "model", "type": "nominal", "label": "Business model" },
+          "y": { "field": "score", "type": "quantitative", "label": "Fit score", "format": "number" }
+        },
+        "xAxisTitle": "Business model",
+        "yAxisTitle": "Fit score (0–100)",
+        "valueFormat": "number",
+        "options": { "orientation": "horizontal", "grouping": "grouped" },
+        "layout": "full"
+      }
+    ],
+    "tables": [
+      {
+        "id": "peer_model_map",
+        "title": "Closest operating-model comparables",
+        "subtitle": "The closest peers own the customer promise and fulfillment; software, community, captains, and creators make that operator model more efficient.",
+        "showDescription": true,
+        "dataset": "peer_models",
+        "defaultSort": { "field": "rank", "direction": "asc" },
+        "density": "spacious",
+        "sourceId": "peer_research",
+        "layout": "full",
+        "columns": [
+          { "field": "rank", "label": "Fit rank", "format": "number" },
+          { "field": "company", "label": "Company" },
+          { "field": "operating_model", "label": "Operating model" },
+          { "field": "money", "label": "How it makes money" },
+          { "field": "demand_engine", "label": "Demand engine" },
+          { "field": "chaptera_lesson", "label": "Lesson for Chaptera" },
+          { "field": "evidence", "label": "Evidence quality" }
+        ]
+      },
+      {
+        "id": "model_scorecard",
+        "title": "Model scorecard and timing",
+        "subtitle": "The score ranks structural fit; each recommendation has an explicit evidence gate.",
+        "showDescription": true,
+        "dataset": "model_scores",
+        "defaultSort": { "field": "score", "direction": "desc" },
+        "density": "spacious",
+        "sourceId": "decision_model",
+        "layout": "full",
+        "columns": [
+          { "field": "model", "label": "Model" },
+          { "field": "score", "label": "Fit score", "format": "number" },
+          { "field": "timing", "label": "Timing" },
+          { "field": "role", "label": "Recommended role" },
+          { "field": "revenue", "label": "Revenue mechanism" },
+          { "field": "gate", "label": "Critical gate" }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "chaptera_repo",
+        "label": "Chaptera repository, main at f5bfca2",
+        "path": "source-notes.md",
+        "href": "https://github.com/rxaaaa08/chapter/tree/f5bfca2",
+        "query": {
+          "description": "Feature and operating-model audit of the live application, Supabase schema and migrations, admin workflows, payment flow, creator attribution, and proposal-only capabilities.",
+          "executed_at": "2026-08-05T12:18:03+05:30"
+        }
+      },
+      {
+        "id": "peer_research",
+        "label": "Scheduled-departure peer model map",
+        "path": "source-notes.md",
+        "query": {
+          "engine": "postgresql",
+          "language": "sql",
+          "sql": "SELECT * FROM (VALUES (1, 'WanderOn', 'In-house community group-tour operator', 'Package margin; custom and corporate trips', 'Social, search, repeat and referral', 'Own fulfillment, train captains, and use fixed departures as the core', 'Official pages plus independent founder interview'), (2, 'Contiki', '18–35 scheduled-departure tour operator', 'Package margin; upgrades and optional experiences', 'Brand, affiliates and trip representatives', 'Combine deposits and installments with a Trip Manager and controlled fulfillment', 'Official product, payment and representative pages'), (3, 'Capture A Trip', 'Youth group-tour operator', 'Package margin; custom and corporate trips', 'Social content, flexibility and community', 'Use a low deposit, clear balance schedule, trained captains and cohort design', 'Official company, product and policy pages'), (4, 'TrekPanda', 'Community-first group travel operator', 'B2C, B2B and B2B2C package margin', 'Organic social and community', 'Treat community and creators as demand advantages while retaining operating control', 'Company and founder pages; limited public economics'), (5, 'G Adventures', 'Global small-group tour operator', 'Package margin; add-ons and upgrades', 'Brand, agents, referrals and loyalty', 'Reusable deposits and loyalty can precede a subscription', 'Official booking, loyalty and company pages'), (6, 'Intrepid Travel', 'Vertically managed small-group tour operator', 'Package margin across route portfolio', 'Global brand, agents and repeat', 'Route-level operations, local leaders and supplier systems are the scale moat', 'Official annual results and company pages'), (7, 'EF Ultimate Break', '18–35 group-tour operator', 'Package margin', 'Campus and group coordinators', 'Let coordinators recruit cohorts without transferring fulfillment control', 'Official coordinator and product pages'), (8, 'JustWravel', 'Indian social-travel operator', 'Package margin; custom and corporate travel', 'Content, community and referrals', 'Build a portfolio ladder from short trips to premium and private travel', 'Official company page plus self-reported profile')) AS peer_models(rank, company, operating_model, money, demand_engine, chaptera_lesson, evidence) ORDER BY rank ASC",
+          "description": "Curated comparison of the closest operating archetypes. Rank reflects similarity to Chaptera's present product, not company quality or financial performance.",
+          "executed_at": "2026-08-05T12:18:03+05:30",
+          "tables_used": ["Manual VALUES peer map derived from cited current sources"],
+          "metric_definitions": ["Fit rank is a qualitative similarity ordering, not an investment ranking or market-share estimate."]
+        }
+      },
+      {
+        "id": "decision_model",
+        "label": "Chaptera business-model fit rubric",
+        "path": "source-notes.md",
+        "query": {
+          "engine": "postgresql",
+          "language": "sql",
+          "sql": "SELECT * FROM (VALUES ('Fixed-departure community trips', 92, 'Core now', 'Primary revenue and brand engine', 'Package contribution plus upgrades', 'Three profitable repeat departures per route after full cost and labor'), ('Recurring local and weekend formats', 87, 'Feeder now', 'Acquisition, repeat and trip-conversion engine', 'Ticket or package contribution plus venue support', 'Positive contribution and measured conversion into higher-value trips'), ('Private, custom and corporate travel', 82, 'Sell now', 'Second demand and cash-flow channel', 'Quoted package or project margin', 'Deposit covers commitments and labor-inclusive contribution is positive'), ('Venue-supported local experiences', 78, 'Pilot now', 'Feeder-margin overlay', 'Per check-in, fixed support, in-kind value or spend share', 'Verified attendance and venue renewal'), ('Creator or coordinator-led departures', 76, 'Controlled next', 'Distribution channel around company-operated trips', 'Package margin less referral or coordinator commission', 'Demand is incremental and Chaptera retains fulfillment control'), ('Loyalty and rebooking credit', 72, 'Build next', 'Retention mechanism, not the core P&L', 'Repeat package contribution and retained reusable deposits', 'Accurate credit ledger and improved repeat without refund disputes'), ('Sponsorship and brand trips', 69, 'Selective', 'Supplemental revenue or cost offset', 'Campaign fee, content fee or in-kind offset', 'Verified delivery and positive incremental contribution'), ('Membership or access pass', 59, 'Conditional later', 'Possible dense-city retention layer', 'Pass fee, credits, priority or member pricing', 'Frequent low-variable-cost inventory and high-usage stress test'), ('Curated third-party marketplace', 50, 'Defer', 'Potential later distribution layer', 'Partner take rate and optional discovery fee', 'Partner pull plus payout, refund, tax, safety and quality systems'), ('Organizer SaaS or white-label', 43, 'Do not prioritize', 'Only after independent software demand', 'Subscription and usage fees', 'Organizers pay without Chaptera demand or operations')) AS model_scores(model, score, timing, role, revenue, gate) ORDER BY score DESC, model ASC",
+          "description": "Manual weighted assessment: current product/team leverage 25%, customer and brand fit 20%, economics and cash quality 20%, repeatability 15%, speed to test 10%, and lower execution/regulatory risk 10%. Each factor was scored from 1 to 5 and normalized to 100.",
+          "executed_at": "2026-08-05T12:18:03+05:30",
+          "filters": [
+            "Models evaluated against Chaptera main at f5bfca2 and cited sources as of 2026-08-05",
+            "Scores are structural judgments rather than observed financial outcomes"
+          ],
+          "tables_used": ["Manual VALUES scorecard derived from repository audit and cited sources"],
+          "metric_definitions": [
+            "Fit score is a transparent strategic judgment, not observed ROI or a revenue forecast.",
+            "Scores should be updated when Chaptera has departure-level contribution, repeat cohorts, acquisition incrementality, and team-time data."
+          ]
+        }
+      },
+      { "id": "contiki_about", "label": "Contiki model and inclusions", "href": "https://www.contiki.com/en-eu/about" },
+      { "id": "contiki_partpay", "label": "Contiki deposits and installments", "href": "https://www.contiki.com/en-eu/resources/part-pay" },
+      { "id": "contiki_reps", "label": "Contiki representative program", "href": "https://www.contiki.com/en-gb/activity/rep-program" },
+      { "id": "wanderon_about", "label": "WanderOn in-house operating model", "href": "https://wanderon.in/about-us" },
+      { "id": "wanderon_interview", "label": "Financial Express interview with WanderOn founder", "href": "https://www.financialexpress.com/business/brandwagon-inside-wanderon-how-govind-gaur-is-tapping-gen-zs-demand-for-community-travel-3807707/lite/" },
+      { "id": "wanderon_revenue", "label": "WanderOn FY25 company-reported revenue", "href": "https://travel.economictimes.indiatimes.com/news/research-and-statistics/figures/wanderon-closes-fy25-with-100-cr-revenue/119979541" },
+      { "id": "trekpanda", "label": "TrekPanda company profile", "href": "https://in.linkedin.com/company/trek-panda" },
+      { "id": "trekpanda_profile", "label": "TrekPanda business-model profile", "href": "https://yourstory.com/companies/trekpanda" },
+      { "id": "capture_about", "label": "Capture A Trip operating model", "href": "https://www.captureatrip.com/about-us" },
+      { "id": "capture_home", "label": "Capture A Trip payment and captain mechanics", "href": "https://www.captureatrip.com/" },
+      { "id": "gadventures", "label": "G Adventures booking confidence and deposits", "href": "https://www.gadventures.com/why-travel-with-gadventures/book-with-confidence/" },
+      { "id": "gadventures_loyalty", "label": "G Adventures loyalty program", "href": "https://www.gadventures.com/loyalty-program/" },
+      { "id": "intrepid_results", "label": "Intrepid FY2025 results", "href": "https://www.intrepidtravel.com/au/newsroom/releases/reveals-record-fy2025-financial-impact-and-customer-results" },
+      { "id": "ef_coordinator", "label": "EF Ultimate Break group coordinator model", "href": "https://www.efultimatebreak.com/traveling-with-us/group-coordinator-campus" },
+      { "id": "justwravel", "label": "JustWravel portfolio", "href": "https://www.justwravel.com/about" },
+      { "id": "timeleft", "label": "Timeleft subscription mechanics", "href": "https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available" },
+      { "id": "partners_222", "label": "222 venue partner model", "href": "https://partners.222.place/" },
+      { "id": "fever_private", "label": "Fever private and corporate events", "href": "https://business.feverup.com/en/corporate-services/private-events/" },
+      { "id": "payu_split", "label": "PayU split settlements documentation", "href": "https://docs.payu.in/docs/split-settlments" },
+      { "id": "rbi_ppi", "label": "RBI prepaid payment instrument directions", "href": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11142" }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Business Models That Fit Chaptera"
+      },
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "sourceId": "decision_model",
+        "body": "## Executive Summary\n\n- **The closest model is not Eventbrite, Luma, or an open marketplace. It is a digitally native, community-led scheduled-departure tour operator:** structurally closer to WanderOn, Contiki, Capture A Trip, TrekPanda, G Adventures, and Intrepid. Chaptera should earn package margin by owning the customer promise and fulfillment.\n\n- **Use a portfolio ladder:** frequent local and weekend formats for low-friction acquisition and repeat; fixed-departure domestic trips as the principal revenue engine; selective premium or international departures after route economics mature; private, custom, and corporate groups as a second demand channel.\n\n- **Separate captains from creators.** Captains are a trained operating workforce responsible for group management, safety, and service under Chaptera SOPs. Creators and group coordinators are primarily distribution partners who recruit cohorts. Chaptera should keep supplier contracts, pricing, payment, support, and fulfillment control.\n\n- **Build loyalty before membership and a managed operator before a marketplace.** Reusable deposits, rebooking credit, referrals, status, and priority access fit this category better than an early subscription. A third-party marketplace or organizer SaaS should wait for partner pull and complete payout, refund, tax, safety, and quality systems.\n\nThe corrected sequence is: **fixed departures first → captain operating system second → creator distribution third → marketplace last.**"
+      },
+      {
+        "id": "current_product",
+        "type": "markdown",
+        "sourceId": "chaptera_repo",
+        "body": "## Chaptera already looks more like a tour operator than a ticketing marketplace\n\nThe live product supports invite/application experiences, open paid PayU bookings, and free WhatsApp-led events. Its trip journey already handles city, date and pickup selection; itinerary, accommodation, inclusions and reviews; approvals and waitlists; advance or full payment; balance collection; capacity; group entry; and customer recovery. The admin system adds event operations, managers, marketers, creators, commissions, messaging, and funnel reporting.\n\nThat combination is unusually well aligned with fixed-departure group travel: curate a cohort, collect a deposit, commit suppliers, manage the departure, collect the balance, and keep the group supported. The missing systems—multi-tenant host workspaces, KYC and tax onboarding, split payouts, complete refund and settlement ledgers, membership entitlements, and a durable customer wallet—are mainly requirements for marketplace or subscription models, not reasons to abandon the direct-operator advantage."
+      },
+      {
+        "id": "closest_peers_intro",
+        "type": "markdown",
+        "sourceId": "peer_research",
+        "body": "## The closest peers are scheduled-departure operators\n\nThe corrected peer set changes the conclusion. These businesses sell a designed trip at a package price, organize a cohort around fixed departures, use trained trip leaders or captains, coordinate local suppliers, and acquire customers through community, content, affiliates, referrals, or group coordinators. Their software supports the operation; it is not usually the product sold to organizers."
+      },
+      {
+        "id": "peer_table",
+        "type": "table",
+        "tableId": "peer_model_map",
+        "layout": "full"
+      },
+      {
+        "id": "peer_takeaway",
+        "type": "markdown",
+        "body": "WanderOn is the closest Indian blueprint because it explicitly describes in-house operations, trained captains, local vendor coordination, social/search acquisition, and repeat/referral demand. Contiki shows the mature global version: an 18–35 package with accommodation, transport, a Trip Manager, deposits or installments, upgrades, and rep/affiliate distribution. G Adventures adds reusable deposits and loyalty; EF shows how coordinators can recruit a group without becoming the tour operator. TrekPanda and Capture A Trip reinforce the community/content-led Indian pattern, although their public economics are less verifiable."
+      },
+      {
+        "id": "portfolio_logic",
+        "type": "markdown",
+        "body": "## The right architecture is a portfolio of trip products around one operating core\n\nThe core is a Chaptera-operated departure, not a generic event listing. Local experiences and short weekend trips lower the first-purchase barrier and generate repeat, content, and trip leads. Domestic fixed departures monetize the full itinerary and operating stack. Premium or international trips expand average order value only after supplier, visa, cancellation, and support processes are mature. Private and corporate groups reuse the same route knowledge with a known buyer and stronger deposit coverage.\n\nAncillaries—room upgrades, single occupancy, transport, meals, activities, flexibility, insurance referral, or photo products—are high-fit monetization levers, but not separate business models. Venue support and sponsorship can improve selected departures; neither should determine the brand."
+      },
+      {
+        "id": "ranking_intro",
+        "type": "markdown",
+        "sourceId": "decision_model",
+        "body": "## The revised ranking puts fixed departures at the center\n\nThe score is a decision rubric, not a financial forecast. It weights current product and team leverage, customer and brand fit, economics and cash quality, repeatability, speed to test, and lower execution or regulatory risk. The new peer evidence raises direct group travel and loyalty mechanics, lowers membership, and reframes creator-led supply as controlled distribution around Chaptera-operated departures."
+      },
+      {
+        "id": "ranking_chart",
+        "type": "chart",
+        "chartId": "business_model_fit",
+        "layout": "full"
+      },
+      {
+        "id": "ranking_table_intro",
+        "type": "markdown",
+        "body": "The ranking says where management attention should go, while the critical gate prevents a structurally attractive model from scaling before its economics or controls are proven."
+      },
+      {
+        "id": "ranking_table",
+        "type": "table",
+        "tableId": "model_scorecard",
+        "layout": "full"
+      },
+      {
+        "id": "owned_core",
+        "type": "markdown",
+        "sourceId": "chaptera_repo",
+        "body": "## 1. Core model: fixed-departure community group travel\n\nChaptera should publish a limited route calendar, set minimum and target group sizes, collect a meaningful booking amount, and retain the package contribution after hotels, transport, meals, activities, captains, commissions, support, refunds, and fixed departure costs. Each route needs a repeatable runbook: supplier commitments, rooming and pickup manifests, captain ratio, emergency process, minimum viable group, balance deadline, cancellation decision, guest communications, and post-trip rebooking.\n\nDo not imitate guaranteed departures before route density can absorb the downside. First prove three profitable repeat departures on the same route or format. Then Chaptera can gradually move from minimum-to-go departures toward a stronger guarantee. A portfolio of routes also matters: one departure can have attractive gross margin while the calendar loses money through cancellations, unused allocations, or heavy support."
+      },
+      {
+        "id": "near_term_layers",
+        "type": "markdown",
+        "body": "## 2. Use local formats as the feeder and private groups as the second payer\n\n### Local and weekend feeder products\n\nRepeatable dinners, activity formats, day outings, and weekend breaks give Chaptera a lower-cost entry product, keep community active between major trips, and reveal who converts into higher-value departures. Every format needs a job: positive contribution, venue support, qualified trip conversion, referral, or reactivation. Track 60- and 90-day conversion from local experience to trip, not attendance alone.\n\nA venue can contribute through a fee per verified attendee, discounted space, included food or beverage, or a share of incremental spend. The mechanism is useful only if verified venue value exceeds the sales and operating effort.\n\n### Private, custom, and corporate groups\n\nPackage proven routes for companies, alumni communities, birthdays, colleges, creator communities, and friend groups. This is common across WanderOn, Capture A Trip, TrekPanda, JustWravel, and larger operators because it monetizes the same suppliers and trip design through a different demand channel. Require a deposit that covers all non-refundable commitments and count sales and customization labor in project contribution."
+      },
+      {
+        "id": "creator_network",
+        "type": "markdown",
+        "body": "## 3. Build a captain operating system and a creator distribution network\n\nA captain is not a marketplace seller. Captains should be trained, scheduled, evaluated, and supported like an operating workforce—whether employed or contracted. Chaptera owns the itinerary, supplier contracts, price, booking, group communication, safety standard, escalation, and refund decision. Captain performance should be measured on guest rating, support contacts, incidents, on-time execution, refunds, and repeat, with a maximum guest-to-captain ratio.\n\nCreators, campus reps, and group coordinators belong on the demand side. Contiki publishes tiered rep commissions and EF lets coordinators recruit a group; those models show how Chaptera can pay for incremental cohort recruitment while retaining fulfillment control. Start with a fixed referral or 5–10% hypothesis only as a test, then price from measured incremental contribution. Avoid stacking full creator, marketer, and manager commissions on the same booking without an explicit commission budget.\n\nOnly after non-founder captains repeatedly match the owned baseline should Chaptera consider co-produced routes. Even then, Chaptera should remain merchant and operator until partner quality, settlement, and liability systems justify a different role."
+      },
+      {
+        "id": "conditional_layers",
+        "type": "markdown",
+        "body": "## 4. Build loyalty before membership; keep sponsorship selective\n\nContiki's deposits and installment plan reduce booking friction, while G Adventures makes deposits reusable and layers loyalty after repeat. That pattern fits trip purchase frequency better than an early monthly subscription. Chaptera should first build an accurate customer account and credit ledger, then test transferable booking amounts, rebooking credit, referral credit, priority access, repeat status, or a capped bundle.\n\nA subscription becomes plausible only when one city has frequent, low-variable-cost inventory that members can actually use. Do not include unlimited travel or expensive supplier inventory. Stress-test high utilization, breakage assumptions, refund liability, and whether credits remain closed-loop; broadly redeemable balances can raise additional payment-regulatory questions.\n\nSponsorship and brand trips are supplemental. Package verified attendance, content, on-ground integration, and post-trip reporting only when delivery is measurable and the sponsor does not weaken the guest promise."
+      },
+      {
+        "id": "comparables",
+        "type": "markdown",
+        "body": "## Event and community platforms remain useful secondary comparables\n\nTimeleft helps with dense-city membership design; 222 with venue-funded local formats; Fever with corporate and brand extensions; TrovaTrip with creator demand validation; and Eventbrite, Luma, Airbnb Experiences, SweatPals, and BookMyShow with platform fees and organizer tooling. Those examples teach overlays, pricing anchors, or future infrastructure—not Chaptera's present core model.\n\nThe primary category lesson is different: operators earn package contribution by coordinating demand, suppliers, leaders, and risk. Intrepid's reported FY2025 results—317,880 travellers, US$809.3 million revenue, and US$53.9 million underlying EBITDA—also show that scaled group travel remains an operational business with materially lower margins than software. The moat is route density, supplier terms, leader quality, brand trust, repeat, and operating discipline."
+      },
+      {
+        "id": "defer",
+        "type": "markdown",
+        "body": "## What to defer—and the evidence that would reverse the decision\n\n### Open marketplace\n\nDo not open self-serve supply yet. A real marketplace adds host KYC and contracts, tenant permissions, split settlement, payout holds, refunds and chargebacks, seller inventory and reconciliation, tax operations, reviews, safety enforcement, incident response, and brand controls. If Chaptera later proceeds, use a licensed payment provider's marketplace mechanisms such as PayU split settlements rather than pooling third-party seller money in an ordinary merchant flow.\n\nReconsider when credible partners are asking for access, Chaptera can reconcile seller money and liabilities, and 10–20 non-founder operators repeatedly meet the guest-quality and contribution baseline.\n\n### Organizer SaaS or white-label software\n\nThe current admin is powerful but single-brand and operations-coupled. SaaS would require organization workspaces, tenant isolation, configurable policies, organizer billing, onboarding, exports and APIs, and a support motion. Reconsider only when at least ten organizers request the tools and at least three will pay without Chaptera supplying demand or fulfillment."
+      },
+      {
+        "id": "economics",
+        "type": "markdown",
+        "sourceId": "chaptera_repo",
+        "body": "## The economics must be measured by departure, route, and customer cohort\n\nThe current performance logic is useful for sales operations, but planned ticket price minus configured per-ticket cost and commissions is not a complete travel P&L. It can miss fixed supplier commitments, refunds, chargebacks, complimentary seats, variable labor, taxes, founder time, and unpaid balances.\n\n**Departure contribution** = net package receipts + ancillary gross profit + venue or sponsor income − hotels, transport, meals and activities − captain and local-guide cost − creator, marketer and manager commissions − payment, refund and chargeback leakage − departure fixed operations and safety reserve.\n\n**Break-even paid seats** = committed departure cost ÷ contribution per paid seat before committed cost.\n\n**Route contribution** must then include cancelled departures, inspection trips, content production, supplier advances, support overhead, and route-specific acquisition. **Customer contribution** should connect the first local format, trip purchases, referrals, credits, refunds, and 60-, 90-, and 180-day repeat. Cash coverage is separate from profit: track deposits collected against every non-refundable commitment and the date at which the go or cancel decision becomes irreversible."
+      },
+      {
+        "id": "rollout",
+        "type": "markdown",
+        "body": "## A practical 12-month rollout\n\n### Days 0–45: establish the departure operating system\n\n1. Create one P&L and cash-risk row per departure, plus route and customer-cohort views.\n2. Define minimum and target seats, supplier commitment dates, go or cancel thresholds, captain ratio, emergency steps, rooming and pickup manifests, balance deadline, and guest communication schedule.\n3. Select two domestic routes or repeatable trip formats and one local feeder format.\n4. Build verified attendance, cancellation, refund, credit, and captain-performance records.\n\n### Months 1–3: prove repeat departures and the portfolio ladder\n\n1. Run each selected route or format enough times to distinguish a good departure from a repeatable route.\n2. Test a small set of upgrades and retain only those with positive incremental contribution.\n3. Measure conversion from local or weekend products into trips.\n4. Sell one private or corporate version with deposits covering commitments.\n\n### Months 3–6: scale demand and captains under control\n\n1. Train three to five captains on Chaptera SOPs; compare their departures with founder-led baselines.\n2. Pilot creators or group coordinators as cohort recruiters, with incrementality and commission caps.\n3. Add a second private or corporate buyer and one selective venue or brand partnership.\n4. Launch rebooking credit only after the ledger, expiry, transfer, refund, and accounting rules are explicit.\n\n### Months 6–12: expand routes only through evidence\n\n1. Add a route when existing routes meet contribution, quality, and founder-hour gates—not merely when demand looks exciting.\n2. Test premium or international departures only after supplier, visa, insurance, cancellation, and emergency processes are ready.\n3. Test a capped pass only if dense low-variable-cost inventory and repeat are proven.\n4. Keep marketplace and SaaS discovery-only until external pull and the missing financial-control systems exist."
+      },
+      {
+        "id": "gates",
+        "type": "markdown",
+        "body": "## Decision gates for the next investment round\n\n- **Fixed departure:** three profitable repeat departures per route after all direct cost and labor; occupancy reliably above break-even; deposits cover commitments; quality and safety stable.\n- **Route expansion:** positive route contribution after cancellations, content, inspection, acquisition, and support; repeatable supplier capacity; acceptable founder hours per traveller.\n- **Local feeder:** positive direct contribution or measured conversion into profitable trips; venue support renews where relevant.\n- **Private or corporate:** deposit covers 100% of non-refundable commitments; customization and sales labor are included; collection period is acceptable.\n- **Captain system:** captain-led guest rating, refunds, support load, incidents, and repeat stay within an agreed tolerance of the founder-led baseline.\n- **Creator or coordinator channel:** bookings are incremental, net contribution remains positive after all stacked commissions, and the creator does not control customer money or fulfillment.\n- **Loyalty credit:** every liability reconciles; rebooking and repeat improve without refund disputes or adverse cash leakage.\n- **Membership:** frequent eligible inventory, spare capacity, demonstrated repeat, and positive economics under a high-utilization stress test.\n- **Marketplace:** partner pull, payout and refund reconciliation, tax and contract readiness, safety enforcement, and 10–20 non-founder operators meeting the baseline."
+      },
+      {
+        "id": "questions",
+        "type": "markdown",
+        "body": "## Further questions that would change the ranking\n\n- Which routes or formats already have positive fully loaded contribution, and how many times have they repeated?\n- What is the break-even paid-seat count and final go or cancel date for each departure?\n- What percentage of advances become full balances, cancellations, credits, refunds, or write-offs?\n- Which first product—free event, local paid experience, weekend trip, or major trip—creates the best 90- and 180-day customer contribution?\n- How much creator and marketer attribution is incremental rather than last-touch credit?\n- Can a trained non-founder captain match the guest and safety baseline with materially fewer founder hours?\n- What private, college, corporate, or creator-group demand already exists without paid acquisition?\n- Which suppliers offer allocation, release dates, or credit terms that reduce Chaptera's cash risk?"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "sourceId": "decision_model",
+        "body": "## Caveats and assumptions\n\nNo live booking-level revenue, supplier cost, refund, repeat-cohort, acquisition-incrementality, or founder-time dataset was analyzed. The scores are structural priors based on the repository and published mechanics; they are not ROI forecasts. WanderOn, TrekPanda, Capture A Trip, JustWravel, Contiki, and other company pages contain self-reported marketing or scale claims. Independent articles that repeat company disclosures are still not audited evidence. Intrepid's public results are stronger financial evidence but describe a much larger global operator.\n\nPricing and deposit pages describe mechanics in their own markets and are anchors, not Chaptera price recommendations. Travel packaging, third-party hosting, stored-value credits, seller payouts, GST, TCS or TDS, insurance, consumer disclosures, privacy, creator endorsements, and transport or tour-operator obligations can alter the legal role and economics. Obtain qualified Indian legal, tax, insurance, and payment advice before expanding internationally, holding third-party seller funds, or launching broadly redeemable credit."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-05T12:18:03+05:30",
+    "status": "ready",
+    "datasets": {
+      "peer_models": [
+        { "rank": 1, "company": "WanderOn", "operating_model": "In-house community group-tour operator", "money": "Package margin; custom and corporate trips", "demand_engine": "Social, search, repeat and referral", "chaptera_lesson": "Own fulfillment, train captains, and use fixed departures as the core", "evidence": "Official pages plus independent founder interview" },
+        { "rank": 2, "company": "Contiki", "operating_model": "18–35 scheduled-departure tour operator", "money": "Package margin; upgrades and optional experiences", "demand_engine": "Brand, affiliates and trip representatives", "chaptera_lesson": "Combine deposits and installments with a Trip Manager and controlled fulfillment", "evidence": "Official product, payment and representative pages" },
+        { "rank": 3, "company": "Capture A Trip", "operating_model": "Youth group-tour operator", "money": "Package margin; custom and corporate trips", "demand_engine": "Social content, flexibility and community", "chaptera_lesson": "Use a low deposit, clear balance schedule, trained captains and cohort design", "evidence": "Official company, product and policy pages" },
+        { "rank": 4, "company": "TrekPanda", "operating_model": "Community-first group travel operator", "money": "B2C, B2B and B2B2C package margin", "demand_engine": "Organic social and community", "chaptera_lesson": "Treat community and creators as demand advantages while retaining operating control", "evidence": "Company and founder pages; limited public economics" },
+        { "rank": 5, "company": "G Adventures", "operating_model": "Global small-group tour operator", "money": "Package margin; add-ons and upgrades", "demand_engine": "Brand, agents, referrals and loyalty", "chaptera_lesson": "Reusable deposits and loyalty can precede a subscription", "evidence": "Official booking, loyalty and company pages" },
+        { "rank": 6, "company": "Intrepid Travel", "operating_model": "Vertically managed small-group tour operator", "money": "Package margin across route portfolio", "demand_engine": "Global brand, agents and repeat", "chaptera_lesson": "Route-level operations, local leaders and supplier systems are the scale moat", "evidence": "Official annual results and company pages" },
+        { "rank": 7, "company": "EF Ultimate Break", "operating_model": "18–35 group-tour operator", "money": "Package margin", "demand_engine": "Campus and group coordinators", "chaptera_lesson": "Let coordinators recruit cohorts without transferring fulfillment control", "evidence": "Official coordinator and product pages" },
+        { "rank": 8, "company": "JustWravel", "operating_model": "Indian social-travel operator", "money": "Package margin; custom and corporate travel", "demand_engine": "Content, community and referrals", "chaptera_lesson": "Build a portfolio ladder from short trips to premium and private travel", "evidence": "Official company page plus self-reported profile" }
+      ],
+      "model_scores": [
+        { "model": "Fixed-departure community trips", "score": 92, "timing": "Core now", "role": "Primary revenue and brand engine", "revenue": "Package contribution plus upgrades", "gate": "Three profitable repeat departures per route after full cost and labor" },
+        { "model": "Recurring local and weekend formats", "score": 87, "timing": "Feeder now", "role": "Acquisition, repeat and trip-conversion engine", "revenue": "Ticket or package contribution plus venue support", "gate": "Positive contribution and measured conversion into higher-value trips" },
+        { "model": "Private, custom and corporate travel", "score": 82, "timing": "Sell now", "role": "Second demand and cash-flow channel", "revenue": "Quoted package or project margin", "gate": "Deposit covers commitments and labor-inclusive contribution is positive" },
+        { "model": "Venue-supported local experiences", "score": 78, "timing": "Pilot now", "role": "Feeder-margin overlay", "revenue": "Per check-in, fixed support, in-kind value or spend share", "gate": "Verified attendance and venue renewal" },
+        { "model": "Creator or coordinator-led departures", "score": 76, "timing": "Controlled next", "role": "Distribution channel around company-operated trips", "revenue": "Package margin less referral or coordinator commission", "gate": "Demand is incremental and Chaptera retains fulfillment control" },
+        { "model": "Loyalty and rebooking credit", "score": 72, "timing": "Build next", "role": "Retention mechanism, not the core P&L", "revenue": "Repeat package contribution and retained reusable deposits", "gate": "Accurate credit ledger and improved repeat without refund disputes" },
+        { "model": "Sponsorship and brand trips", "score": 69, "timing": "Selective", "role": "Supplemental revenue or cost offset", "revenue": "Campaign fee, content fee or in-kind offset", "gate": "Verified delivery and positive incremental contribution" },
+        { "model": "Membership or access pass", "score": 59, "timing": "Conditional later", "role": "Possible dense-city retention layer", "revenue": "Pass fee, credits, priority or member pricing", "gate": "Frequent low-variable-cost inventory and high-usage stress test" },
+        { "model": "Curated third-party marketplace", "score": 50, "timing": "Defer", "role": "Potential later distribution layer", "revenue": "Partner take rate and optional discovery fee", "gate": "Partner pull plus payout, refund, tax, safety and quality systems" },
+        { "model": "Organizer SaaS or white-label", "score": 43, "timing": "Do not prioritize", "role": "Only after independent software demand", "revenue": "Subscription and usage fees", "gate": "Organizers pay without Chaptera demand or operations" }
+      ]
+    }
+  },
+  "sources": [
+    { "id": "chaptera_repo", "label": "Chaptera repository, main at f5bfca2", "path": "source-notes.md", "href": "https://github.com/rxaaaa08/chapter/tree/f5bfca2" },
+    { "id": "peer_research", "label": "Scheduled-departure peer model map", "path": "source-notes.md" },
+    { "id": "decision_model", "label": "Chaptera business-model fit rubric", "path": "source-notes.md" },
+    { "id": "contiki_about", "label": "Contiki model and inclusions", "href": "https://www.contiki.com/en-eu/about" },
+    { "id": "contiki_partpay", "label": "Contiki deposits and installments", "href": "https://www.contiki.com/en-eu/resources/part-pay" },
+    { "id": "contiki_reps", "label": "Contiki representative program", "href": "https://www.contiki.com/en-gb/activity/rep-program" },
+    { "id": "wanderon_about", "label": "WanderOn in-house operating model", "href": "https://wanderon.in/about-us" },
+    { "id": "wanderon_interview", "label": "Financial Express interview with WanderOn founder", "href": "https://www.financialexpress.com/business/brandwagon-inside-wanderon-how-govind-gaur-is-tapping-gen-zs-demand-for-community-travel-3807707/lite/" },
+    { "id": "wanderon_revenue", "label": "WanderOn FY25 company-reported revenue", "href": "https://travel.economictimes.indiatimes.com/news/research-and-statistics/figures/wanderon-closes-fy25-with-100-cr-revenue/119979541" },
+    { "id": "trekpanda", "label": "TrekPanda company profile", "href": "https://in.linkedin.com/company/trek-panda" },
+    { "id": "trekpanda_profile", "label": "TrekPanda business-model profile", "href": "https://yourstory.com/companies/trekpanda" },
+    { "id": "capture_about", "label": "Capture A Trip operating model", "href": "https://www.captureatrip.com/about-us" },
+    { "id": "capture_home", "label": "Capture A Trip payment and captain mechanics", "href": "https://www.captureatrip.com/" },
+    { "id": "gadventures", "label": "G Adventures booking confidence and deposits", "href": "https://www.gadventures.com/why-travel-with-gadventures/book-with-confidence/" },
+    { "id": "gadventures_loyalty", "label": "G Adventures loyalty program", "href": "https://www.gadventures.com/loyalty-program/" },
+    { "id": "intrepid_results", "label": "Intrepid FY2025 results", "href": "https://www.intrepidtravel.com/au/newsroom/releases/reveals-record-fy2025-financial-impact-and-customer-results" },
+    { "id": "ef_coordinator", "label": "EF Ultimate Break group coordinator model", "href": "https://www.efultimatebreak.com/traveling-with-us/group-coordinator-campus" },
+    { "id": "justwravel", "label": "JustWravel portfolio", "href": "https://www.justwravel.com/about" },
+    { "id": "timeleft", "label": "Timeleft subscription mechanics", "href": "https://help.timeleft.com/hc/en-150/articles/27963865308060-What-Subscription-Plans-Are-Available" },
+    { "id": "partners_222", "label": "222 venue partner model", "href": "https://partners.222.place/" },
+    { "id": "fever_private", "label": "Fever private and corporate events", "href": "https://business.feverup.com/en/corporate-services/private-events/" },
+    { "id": "payu_split", "label": "PayU split settlements documentation", "href": "https://docs.payu.in/docs/split-settlments" },
+    { "id": "rbi_ppi", "label": "RBI prepaid payment instrument directions", "href": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11142" }
+  ]
+}
