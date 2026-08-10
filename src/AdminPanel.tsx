@@ -65,6 +65,9 @@ type Trip = {
   // 'split' = advance + remaining balance (default). 'full' = single payment
   // for the full price (advance is ignored; status jumps straight to paid).
   payment_mode?: string;
+  // Split events only: the guest pays the balance online at the venue instead of
+  // before the event. Ignored when payment_mode = 'full'.
+  pay_at_venue?: boolean;
   // Creator affiliate commissions: off by default. When on, a fully-paid ticket
   // booked via a creator's link pays the creator. `affiliate_commission` is a
   // flat ₹ per ticket and wins when set; otherwise affiliate_commission_pct%
@@ -3641,6 +3644,19 @@ export default function AdminPanel() {
                             { label: "you'll receive exact", value: 'Meeting Spot Details 📍',   date: '' },
                             { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
                           ]
+                        : trip.pay_at_venue
+                        // Pay at venue tells a simpler story, so it gets its own four rows:
+                        // pay a small advance → you're in the group chat immediately → the rest
+                        // is settled in person → event day. The meeting-spot row is dropped
+                        // deliberately: details now arrive via the group chat the guest just
+                        // joined, so promising them separately is a step the guest doesn't need.
+                        // Balance stays third so booking_steps[2] still means "balance".
+                        ? [
+                            { label: 'pay advance',          value: '{advance}',                date: '' },
+                            { label: "you'll receive",       value: 'plan group-chat link',     date: '' },
+                            { label: 'remaining balance',    value: '{balance}',                date: '' },
+                            { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
+                          ]
                         : [
                             { label: 'Advance',              value: '{advance}',                date: '' },
                             { label: 'remaining balance',    value: '{balance}',                date: '' },
@@ -3734,7 +3750,13 @@ export default function AdminPanel() {
                                   disabled={savingTimeline === trip.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    saveTimeline(trip, currentSteps, saveTimelineForDate ? selectedDate : undefined, ctaEdits[trip.id!]);
+                                    // Pay at venue: strip any date left on the balance row so a
+                                    // value set before the toggle was switched on can't survive
+                                    // and feed a "pay by ..." date into the advance WhatsApp.
+                                    const stepsToSave = trip.pay_at_venue && !isFullPay
+                                      ? currentSteps.map(s => /\{balance\}/i.test(`${s.label} ${s.value}`) ? { ...s, date: '' } : s)
+                                      : currentSteps;
+                                    saveTimeline(trip, stepsToSave, saveTimelineForDate ? selectedDate : undefined, ctaEdits[trip.id!]);
                                   }}
                                 >
                                   {savingTimeline === trip.id ? 'Saving…' : 'Save'}
@@ -3753,6 +3775,13 @@ export default function AdminPanel() {
                             // Fixed-timeline (invite/open): first row (pay now / vibe check)
                             // and last row (Event Date card) have no free date input.
                             const nativeNoDate = isFixedTimeline && (i === 0 || (!isOpenSingleTimeline && i === currentSteps.length - 1));
+                            // Pay-at-venue collects the balance at the door, so the balance row
+                            // has no due date to set. Leaving the input here isn't just noise —
+                            // this date is what pickBalanceDueStep feeds into the "pay by ..."
+                            // parameter of the advance WhatsApp, so a stale value would tell the
+                            // guest to pay before the event. Show a static pill instead.
+                            const isVenueBalanceRow = !!trip.pay_at_venue && !isFullPay
+                              && /\{balance\}/i.test(`${step.label} ${step.value}`);
                             return (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isFixedTimeline ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
                                 {/* Left: label + value stacked */}
@@ -3789,6 +3818,8 @@ export default function AdminPanel() {
                                         </select>
                                     : isNowRow && !isFixedTimeline
                                     ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
+                                    : isVenueBalanceRow
+                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>At the Venue</span>
                                     : <input
                                         type="date"
                                         style={{ border: '1px solid #ddd', borderRadius: 8, padding: '5px 8px', fontSize: 12, color: '#111', background: '#fff', outline: 'none', cursor: 'pointer', fontWeight: 600 }}
@@ -4538,6 +4569,7 @@ export default function AdminPanel() {
             'Had Safety/Trust Doubts',
             'Wanted Friend Confirmation',
             'Website/Payment Issue',
+            'Not Interested',
             'Test',
             'Other',
           ];
@@ -9089,14 +9121,20 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                   <button
                     key={option.mode}
                     type="button"
-                    onClick={() => onChange(
-                      trip.booking_url === 'native-application'
-                        // Switching payment mode rebuilds the timeline to the new
-                        // mode's structure (single = entry payment; split = advance +
-                        // balance) so it can't keep stale rows from the old mode.
-                        ? { ...trip, payment_mode: option.mode, booking_steps: regenNativeBookingSteps(trip.booking_steps, option.mode === 'full', trip.title ?? '') }
-                        : { ...trip, payment_mode: option.mode }
-                    )}
+                    onClick={() => {
+                      // Pay at venue is a split-only modifier. Clear it when the
+                      // event switches to single payment so a hidden `true` can't
+                      // linger and surprise us if the mode is switched back later.
+                      const payAtVenue = option.mode === 'split' ? (trip.pay_at_venue ?? false) : false;
+                      onChange(
+                        trip.booking_url === 'native-application'
+                          // Switching payment mode rebuilds the timeline to the new
+                          // mode's structure (single = entry payment; split = advance +
+                          // balance) so it can't keep stale rows from the old mode.
+                          ? { ...trip, payment_mode: option.mode, pay_at_venue: payAtVenue, booking_steps: regenNativeBookingSteps(trip.booking_steps, option.mode === 'full', trip.title ?? '') }
+                          : { ...trip, payment_mode: option.mode, pay_at_venue: payAtVenue }
+                      );
+                    }}
                     style={{ flex: 1, padding: '9px 14px', border: 'none', background: active ? '#111' : '#fafafa', color: active ? '#fff' : '#666', fontWeight: 700, fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
                   >
                     {option.label}
@@ -9109,6 +9147,32 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                 ? 'Customers pay the full price in one payment. The Advance amount is ignored.'
                 : 'Customers pay an advance now and the remaining balance later.'}
             </p>
+
+            {/* Pay at venue — a modifier on Split only. The balance is still an
+                online PayU payment; it's just made at the event, on the guest's
+                phone, instead of days beforehand. Nested inside the Payment Mode
+                block so the dependency on Split is visually obvious. */}
+            {(trip.payment_mode ?? 'split') === 'split' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 14px', border: '1.5px solid #e0e0e0', borderRadius: 10, background: trip.pay_at_venue ? '#eef2ff' : '#fafafa' }}>
+                <button
+                  type="button"
+                  onClick={() => set('pay_at_venue', !trip.pay_at_venue)}
+                  style={{ position: 'relative', width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: trip.pay_at_venue ? '#6366f1' : '#ccc', transition: 'background 0.15s', flexShrink: 0 }}
+                  aria-pressed={!!trip.pay_at_venue}
+                  aria-label="Pay at Venue"
+                >
+                  <span style={{ position: 'absolute', top: 3, left: trip.pay_at_venue ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
+                </button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#111' }}>
+                    {trip.pay_at_venue ? 'Pay at Venue — on' : 'Pay at Venue — off'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#888' }}>
+                    Guests pay the balance on their phone at the event instead of before it. The balance due date is ignored.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Creator commissions: pay affiliates for tickets booked via their link */}
