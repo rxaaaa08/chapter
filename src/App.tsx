@@ -2825,11 +2825,17 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                       const payLast = (nativeEventData?.payAtVenue ?? false) && isPaid && !isFullyPaid;
                       const payButton = !isFullyPaid && !isSoldOut ? (
                         <button
-                          className="px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
-                          style={{ backgroundColor: payLast ? '#111' : '#22C55E' }}
+                          // Demoted (pay at venue, advance settled): the standard yellow
+                          // reply chip, same as Re-check / I Have a Doubt. Green is the
+                          // pay colour everywhere else, so leaving it green here would
+                          // read as a second primary action beside Join Groupchat.
+                          className={payLast
+                            ? btnClass
+                            : "px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"}
+                          style={payLast ? undefined : { backgroundColor: '#22C55E' }}
                           onClick={() => { void openInvitePaymentTimeline(); }}
                         >
-                          <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
+                          <motion.div className="absolute inset-0 -skew-x-12" style={{ background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,${payLast ? 0.5 : 0.4}) 50%, transparent 100%)`, width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
                           <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
                           <Send size={16} />
                         </button>
