@@ -5308,9 +5308,14 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                               // ticket price is deliberately never shown: the guest sees only the
                               // two parts, and the "+" signals they add up rather than stack.
                               <div className="grid items-stretch" style={{ gridTemplateColumns: '1.5fr 30px 1fr' }}>
-                                <div className="bg-white rounded-[14px] flex flex-col justify-center" style={{ padding: '7px 13px 9px', gap: 1 }}>
-                                  <p className="text-[11px] font-semibold text-gray-700 whitespace-nowrap">Advance</p>
-                                  <p className="text-[24px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.03em' }}>{formatINR(displayAdvance)}</p>
+                                {/* Amount typography is deliberately identical to the normal
+                                    split card below (24px/900 and 16px/600, pure black, default
+                                    tracking) so the two variants read as one system. The advance
+                                    label is the one thing allowed to wrap — it's long enough to
+                                    overflow a narrow tile, and wrapping beats spilling out. */}
+                                <div className="bg-white rounded-[14px] flex flex-col justify-center" style={{ padding: '5px 13px 7px', gap: 4 }}>
+                                  <p className="text-[11px] font-semibold text-gray-700">Advance (lock your spot)</p>
+                                  <p className="text-2xl font-black text-black leading-tight">{formatINR(displayAdvance)}</p>
                                 </div>
                                 {/* Bare "+" in the seam — no pill or circle behind it. */}
                                 <div className="flex flex-col items-center justify-center" style={{ gap: 6 }}>
@@ -5318,9 +5323,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                   <span className="text-[11px] font-semibold text-gray-700 leading-none">+</span>
                                   <span className="w-px bg-[#e4e6e9]" style={{ height: 10 }} />
                                 </div>
-                                <div className="bg-white rounded-[14px] flex flex-col justify-center items-end text-right" style={{ padding: '7px 11px 9px', gap: 1 }}>
+                                <div className="bg-white rounded-[14px] flex flex-col justify-center items-end text-right" style={{ padding: '5px 11px 7px', gap: 4 }}>
                                   <p className="text-[11px] font-semibold text-gray-700 whitespace-nowrap">Pay at Venue</p>
-                                  <p className="text-[17px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.02em' }}>{formatINR(displayRemaining)}</p>
+                                  <p className="text-base font-semibold text-black">{formatINR(displayRemaining)}</p>
                                 </div>
                               </div>
                                 ) : (
