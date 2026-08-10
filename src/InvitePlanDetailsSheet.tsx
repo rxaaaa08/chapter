@@ -34,6 +34,7 @@ export function InvitePlanDetailsSheet({
   isFullyPaid = false,
   isBalancePayment = false,
   isFullPay = false,
+  payAtVenue = false,
   whatsappGroupUrl,
   closeButtonClassName,
   closeDetailsLabel,
@@ -49,6 +50,10 @@ export function InvitePlanDetailsSheet({
   isFullyPaid?: boolean;
   isBalancePayment?: boolean;
   isFullPay?: boolean;
+  // Pay-at-venue events unlock the group chat on the ADVANCE, not on full
+  // payment — being in a group with real people is what makes a first-time
+  // guest comfortable paying the rest at the door.
+  payAtVenue?: boolean;
   whatsappGroupUrl?: string;
   closeButtonClassName?: string;
   closeDetailsLabel?: string;
@@ -57,6 +62,11 @@ export function InvitePlanDetailsSheet({
   chrome?: 'invite' | 'calendar';
 }) {
   const useCalendarChrome = chrome === 'calendar';
+  // Normally the group chat is a fully-paid perk. On a pay-at-venue event the
+  // advance unlocks it instead: the guest paid a deposit to reserve, and the
+  // group chat is the proof-of-real that gets them to pay the balance at the
+  // door. `isBalancePayment` is true exactly when their status is advance_paid.
+  const groupChatUnlocked = isFullyPaid || (payAtVenue && isBalancePayment);
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(0);
   const [stayImageIndexes, setStayImageIndexes] = useState<Record<number, number>>({});
   const quickInfo = details?.quickInfo ?? [];
@@ -361,8 +371,11 @@ export function InvitePlanDetailsSheet({
               {/* Fully-paid users see the Join Groupchat CTA in place of Pay.
                   AiSensy template buttons can't link to chat.whatsapp.com
                   directly (Meta blocks it) — this is the workaround: the
-                  template links here and we relay the real group URL. */}
-              {isFullyPaid && whatsappGroupUrl && (
+                  template links here and we relay the real group URL.
+                  On pay-at-venue events this sits BELOW the Pay Balance button
+                  rather than replacing it: the guest is in the group but still
+                  owes the balance, which they settle at the venue. */}
+              {groupChatUnlocked && whatsappGroupUrl && (
                 <div className="px-5 pb-8">
                   <a
                     href={whatsappGroupUrl}
@@ -384,9 +397,9 @@ export function InvitePlanDetailsSheet({
                   </a>
                 </div>
               )}
-              {/* Fully paid but no group URL configured on the event_dates row
+              {/* Unlocked but no group URL configured on the event_dates row
                   → keep the spacer (no message, per the design decision). */}
-              {isFullyPaid && !whatsappGroupUrl && <div className="h-8" />}
+              {groupChatUnlocked && !whatsappGroupUrl && <div className="h-8" />}
               </div>
             </div>
           </motion.div>

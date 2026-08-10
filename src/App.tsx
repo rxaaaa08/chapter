@@ -1149,7 +1149,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [showTcModal, setShowTcModal] = useState(false);
   const { activeSubsheet, openSubsheet, dismissSubsheet, handleSubsheetPop } = usePaymentSubsheetHistory();
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; girlsOnly?: boolean; isOpenEvent?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; payAtVenue?: boolean; girlsOnly?: boolean; isOpenEvent?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
@@ -1256,14 +1256,14 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     if (lookupPhone.length !== 10) return null;
     const { data: eventRow } = await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, booking_url, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, pay_at_venue, booking_url, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .eq('invite_slug', slug)
       .maybeSingle();
 
     // Fall back to slug match if invite_slug didn't find it
     const event = eventRow ?? (await supabase
       .from('events')
-      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, booking_url, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
+      .select('slug, title, invite_slug, invite_spots, price_advance, price_full, payment_mode, pay_at_venue, booking_url, city_details, cities, booking_steps, quick_info, pickup_points, transport_plan, announcements, included, itinerary, accommodation, show_accommodation, invite_faqs, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .eq('slug', slug)
       .maybeSingle()).data;
     if (!event) return null;
@@ -1411,6 +1411,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       priceAdvance: isFullPay ? priceFull : (isBalancePayment ? balanceAmount : priceAdvance),
       priceFull,
       paymentMode: event.payment_mode ?? 'split',
+      // Split-only modifier: the balance is paid online at the venue. Also
+      // unlocks the group chat on the advance instead of on full payment.
+      payAtVenue: event.pay_at_venue ?? false,
       // Open events (booking_url = 'payu-hosted') have no invitation step. Leads
       // reach this invite chat only via cart-abandon / recovery deep-links, so the
       // greeting copy must drop invite framing ("your vibe matched our club", etc.).
@@ -2575,6 +2578,10 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             const isFullyPaid = nativeEventData?.isFullyPaid ?? false;
             const isPaid = nativeEventData?.isBalancePayment ?? false;
             const isFullPay = (nativeEventData?.paymentMode ?? 'split') === 'full';
+            // Pay-at-venue events unlock the group chat on the advance (isPaid =
+            // advance_paid), not on full payment. The Pay Balance chip stays —
+            // they're in the group AND still owe the balance, settled at the door.
+            const groupChatUnlocked = isFullyPaid || ((nativeEventData?.payAtVenue ?? false) && isPaid);
             const eventTitle = nativeEventData?.title ?? '';
             const headerAnnouncements = (nativeEventData?.announcements ?? []).filter(Boolean);
             const headerText = headerAnnouncements.length > 0
@@ -2610,6 +2617,19 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             // by {date}" line an open-event advance-paid lead sees.
             const balanceDate = nativeEventData?.bookingSteps?.[2]?.date ?? null;
             const balanceDateFormatted = balanceDate ? formatMeetingDate(balanceDate) : null;
+            // The plan's own date — pay-at-venue copy anchors "details a few days
+            // before ..." to the event itself rather than to a balance deadline,
+            // because a pay-at-venue event has no balance deadline to point at.
+            const eventDateFormatted = nativeEventData?.firstDate ? formatMeetingDate(nativeEventData.firstDate) : '';
+            // The advance exactly as checkout will charge it — priceAdvance is already
+            // city/pickup-resolved upstream. Only read on the UNPAID branch: once the
+            // lead is advance_paid this same field holds the balance instead.
+            // Phrased as a fragment ("advance ₹8,000" / "the advance") so the sentence
+            // reads correctly either way — a bare amount would leave "Pay the advance
+            // the advance" on the fallback.
+            const advanceAmountLabel = Number(nativeEventData?.priceAdvance ?? 0) > 0
+              ? `advance ₹${Number(nativeEventData?.priceAdvance).toLocaleString('en-IN')}`
+              : 'the advance';
             const greetTitle = nativeEventData?.title ?? 'this plan';
 
             // Open events have no invitation step (leads arrive here only via a
@@ -2621,8 +2641,28 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               ? `Hi ${firstName}! You're all set for ${greetTitle} 🎉 We're sorting out the final logistics now.\n\nJust join the group chat & we'll share all the details there${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' soon'}.`
               : isSoldOut
               ? `Hey ${firstName}, all ${totalSpots} spots for ${greetTitle} are taken 😔\n\nSpots here are first come, first served — and a spot is only confirmed once payment's done.\n\nJoin the waitlist & we'll remind you about our next plan!`
+              : isPaid && (nativeEventData?.payAtVenue ?? false)
+              // Pay at venue: the balance isn't owed on a deadline, and the group
+              // chat is already open to them (see the advance_paid unlock). Promising
+              // to add them "closer to the day" would be both wrong and a downgrade —
+              // the whole point is that they're already in.
+              ? `Hi ${firstName}, your spot for ${greetTitle} is reserved.\n\nJust join the plan group chat now! Meeting-point details will be sent there few days before ${eventDateFormatted || 'the plan'}. You can pay the rest at the venue when you arrive.\n\nWhat would you like to do now?`
               : isPaid
               ? `Hi ${firstName}, your spot for ${greetTitle} is locked in 🙌\n\nSettle balance${balanceDateFormatted ? ` by ${balanceDateFormatted}` : ' a few days before the plan'} to complete your booking. We'll add you to the plan group chat & share meeting-point details closer to the day.\n\nWhat would you like to do now?`
+              : (nativeEventData?.payAtVenue ?? false)
+              // Unpaid pay-at-venue lead — very often a returning cart-abandoner.
+              // The reason they left is usually the size of the number, so lead with
+              // how little it takes to hold the spot and say plainly that the rest
+              // isn't due online at all. Scarcity is appended only when we actually
+              // know the counts, exactly like the standard copy below.
+              // Last line escalates to a spots-taken count once the event is more than
+              // half reserved — same > 0.50 threshold and wording as the two standard
+              // branches below, so all three greetings turn urgent at the same moment.
+              ? `Hi ${firstName}! You're 1-step away from reserving your spot for ${greetTitle}.\n\nPay ${advanceAmountLabel} to reserve your spot. You can settle the remaining balance at the venue.\n\n${
+                  inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50
+                    ? `${inviteReservedCount} of ${totalSpots} spots are already taken, so grab yours before it's gone!`
+                    : 'Spots here are first come, first served.'
+                } What would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50)
               ? `Hi ${firstName}! You're 1 step away from confirming your spot for ${greetTitle}!\n\nSpots here are first come, first served — and your spot is only confirmed once payment's done.\n\n${inviteReservedCount} of ${totalSpots} spots are already taken, so grab yours before it's gone! What would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null)
@@ -2778,26 +2818,32 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
                     // prompt — initial reply buttons
                     if (inviteChatStep === 'prompt') {
+                      // Pay-at-venue, advance already settled: the balance isn't urgent
+                      // (it's paid in person), so the Pay chip drops to the bottom and
+                      // Join Groupchat leads instead. Every other state keeps Pay first —
+                      // for an unpaid lead it's the conversion action.
+                      const payLast = (nativeEventData?.payAtVenue ?? false) && isPaid && !isFullyPaid;
+                      const payButton = !isFullyPaid && !isSoldOut ? (
+                        <button
+                          className="px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
+                          style={{ backgroundColor: payLast ? '#111' : '#22C55E' }}
+                          onClick={() => { void openInvitePaymentTimeline(); }}
+                        >
+                          <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
+                          <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
+                          <Send size={16} />
+                        </button>
+                      ) : null;
                       return (
                         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl border border-gray-200 p-3 mb-4">
                           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider px-1 mb-2">Choose your reply</p>
                           <div className="flex flex-col items-end gap-2">
-                            {!isFullyPaid && !isSoldOut && (
-                              <button
-                                className="px-5 py-3 text-white rounded-2xl text-sm font-semibold transition-all shadow-sm active:scale-95 flex items-center gap-3 justify-between min-w-[160px] relative overflow-hidden"
-                                style={{ backgroundColor: '#22C55E' }}
-                                onClick={() => { void openInvitePaymentTimeline(); }}
-                              >
-                                <motion.div className="absolute inset-0 -skew-x-12" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)', width: '50%' }} animate={{ x: ['-100%', '300%'] }} transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 2.5, delay: 0, ease: 'easeInOut' }} />
-                                <span>{isFullPay ? 'Pay Now' : isPaid ? 'Pay Balance' : 'Pay Advance'}</span>
-                                <Send size={16} />
-                              </button>
-                            )}
+                            {!payLast && payButton}
                             {/* Join Groupchat — replaces Pay chip for fully-paid users.
                                 Same green styling so it reads as the primary action.
                                 Only shown when the event_dates row has a group URL set;
                                 otherwise the reply set quietly drops to plan details + doubt. */}
-                            {isFullyPaid && nativeEventData?.whatsappGroupUrl && (
+                            {groupChatUnlocked && nativeEventData?.whatsappGroupUrl && (
                               <a
                                 href={nativeEventData.whatsappGroupUrl}
                                 target="_blank"
@@ -2860,6 +2906,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                                 <Send size={16} />
                               </button>
                             )}
+                            {payLast && payButton}
                           </div>
                         </motion.div>
                       );
@@ -2964,6 +3011,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                   isFullyPaid={nativeEventData?.isFullyPaid ?? false}
                   isBalancePayment={nativeEventData?.isBalancePayment ?? false}
                   isFullPay={(nativeEventData?.paymentMode ?? 'split') === 'full'}
+                  payAtVenue={nativeEventData?.payAtVenue ?? false}
                   whatsappGroupUrl={nativeEventData?.whatsappGroupUrl}
                   onPayAdvance={() => {
                     setShowPlanDetailsSheet(false);
@@ -2985,6 +3033,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               bookingSteps={nativeEventData.bookingSteps}
               isBalancePayment={nativeEventData.isBalancePayment}
               isFullPay={nativeEventData.paymentMode === 'full'}
+              payAtVenue={nativeEventData.payAtVenue ?? false}
               inviteSlug={nativeEventData.inviteSlug}
               eventSlug={nativeEventData.eventSlug}
               inviteSpots={nativeEventData.inviteSpots}
@@ -3233,6 +3282,7 @@ function NativeBookingTimeline({
   bookingSteps,
   isBalancePayment = false,
   isFullPay = false,
+  payAtVenue = false,
   inviteSlug,
   eventSlug,
   inviteSpots,
@@ -3248,6 +3298,8 @@ function NativeBookingTimeline({
   bookingSteps?: Array<{ label: string; value: string; date?: string }>;
   isBalancePayment?: boolean;
   isFullPay?: boolean;
+  // Balance is settled in person at the event: no due date, no countdown.
+  payAtVenue?: boolean;
   inviteSlug?: string;
   eventSlug?: string;
   inviteSpots?: number | null;
@@ -3330,8 +3382,10 @@ function NativeBookingTimeline({
     return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
   };
 
-  // Find the balance due date from booking steps (if configured)
-  const balanceDueDate = isBalancePayment
+  // Find the balance due date from booking steps (if configured). Pay-at-venue
+  // events have no deadline at all — the balance is settled in person — so any
+  // date still stored on that row is ignored rather than shown as a countdown.
+  const balanceDueDate = isBalancePayment && !payAtVenue
     ? (bookingSteps ?? []).find(s => /balance/i.test(`${s.label} ${s.value}`))?.date ?? ''
     : '';
 
@@ -3353,15 +3407,17 @@ function NativeBookingTimeline({
         { label: 'remaining balance', value: `₹${Math.max(balanceToPay, 0).toLocaleString('en-IN')}`, date: balanceDueDate },
         // Any extra non-advance/non-balance/non-application steps (e.g. "Receive" with a date)
         // The user has already been invited so the vibe-check/application step is skipped.
+        // The group-chat row is dropped too: this timeline sits beside a live
+        // "Join Groupchat" button, so repeating it as a future promise is noise.
         ...(bookingSteps ?? []).filter(s =>
-          !isTimelineMetaStep(s) && !/advance|balance|vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
+          !isTimelineMetaStep(s) && !/advance|balance|vibe.?check|request.?invitation|apply|application|group[\s-]?chat/i.test(`${s.label} ${s.value}`)
         ),
       ]
     : bookingSteps && bookingSteps.length > 0
       ? (() => {
           // User is invited but advance unpaid — skip application-phase steps too
           const filteredSteps = bookingSteps.filter(s =>
-            !isTimelineMetaStep(s) && !/vibe.?check|request.?invitation|apply|application/i.test(`${s.label} ${s.value}`)
+            !isTimelineMetaStep(s) && !/vibe.?check|request.?invitation|apply|application|group[\s-]?chat/i.test(`${s.label} ${s.value}`)
           );
           const advIdx = filteredSteps.findIndex(s => /advance/i.test(`${s.label} ${s.value}`));
           const src = filteredSteps[advIdx] ?? filteredSteps[0];
@@ -3447,12 +3503,19 @@ function NativeBookingTimeline({
               // has arrived or passed. Prefixing it with "due by" reads as
               // "due by Due soon", so in that case show the status bare ("Due Now").
               const balanceCountdown = isBalanceDueRow && balanceDueDate ? buildCountdown(balanceDueDate) : '';
-              const balanceBadgeLabel = !balanceDueDate
+              const balanceBadgeLabel = payAtVenue
+                ? 'At the Venue'
+                : !balanceDueDate
                 ? 'Now'
                 : balanceCountdown === 'Due soon'
                   ? 'Due Now'
                   : `due by ${balanceCountdown}`;
-              const stepDateLabel = !isNowRow && step.date && !isBalanceDueRow
+              // Balance row before the advance is paid (the isBalanceDueRow branch
+              // above only covers the post-advance bill). Without this the row
+              // renders bare, since pay-at-venue rows carry no date.
+              const isVenueBalanceRow = !isNowRow && payAtVenue && !isFullPay
+                && /balance/i.test(`${step.label} ${step.value}`);
+              const stepDateLabel = !isNowRow && step.date && !isBalanceDueRow && !isVenueBalanceRow
                 ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                 : null;
               return (
@@ -3472,6 +3535,10 @@ function NativeBookingTimeline({
                   ) : isNowRow ? (
                     <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                       Now
+                    </span>
+                  ) : isVenueBalanceRow ? (
+                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                      At the Venue
                     </span>
                   ) : stepDateLabel ? (
                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -3557,6 +3624,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
     priceAdvance: number;
     priceFull: number;
     paymentMode: 'split' | 'full';
+    payAtVenue?: boolean;
     title: string;
     firstDate: string;
     bookingSteps?: Array<{ label: string; value: string; date?: string }>;
@@ -3571,7 +3639,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
     if (!slug) return;
     supabase
       .from('events')
-      .select('slug, invite_slug, booking_url, price_advance, price_full, payment_mode, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url, booking_steps)')
+      .select('slug, invite_slug, booking_url, price_advance, price_full, payment_mode, pay_at_venue, title, booking_steps, invite_spots, event_dates(start_date, whatsapp_group_url, booking_steps)')
       .or(`slug.eq.${slug},invite_slug.eq.${slug}`)
       .eq('is_active', true)
       .maybeSingle()
@@ -3596,6 +3664,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
             priceAdvance: Number(data.price_advance ?? 0),
             priceFull: Number(data.price_full ?? 0),
             paymentMode: data.payment_mode === 'full' ? 'full' : 'split',
+            payAtVenue: data.pay_at_venue ?? false,
             title: data.title ?? '',
             firstDate,
             bookingSteps: dateBookingSteps.length > 0
@@ -3777,6 +3846,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
               priceFull={eventInfo.priceFull}
               bookingSteps={eventInfo.bookingSteps}
               isFullPay={eventInfo.paymentMode === 'full'}
+              payAtVenue={eventInfo.payAtVenue ?? false}
               inviteSlug={eventInfo.inviteSlug}
               eventSlug={eventInfo.eventSlug}
               inviteSpots={eventInfo.inviteSpots ?? null}
