@@ -178,10 +178,23 @@ function nativeDefaultBookingSteps(isFullPay: boolean, title: string): Array<{ l
 // True when stored steps structurally match the payment mode: split must have a
 // {balance} row; single must NOT. Used to auto-heal steps left over from a mode
 // switch (e.g. a single-pay event flipped to split keeps its old {price}-only rows).
-function bookingStepsMatchMode(steps: Array<{ label: string; value: string }> | undefined | null, isFullPay: boolean): boolean {
+//
+// Pay at venue is checked too, and it has to be. Its timeline swaps the
+// meeting-spot row for a group-chat one, but steps saved BEFORE the toggle was
+// switched on still satisfy the {balance} test — so without this they'd be
+// reused verbatim and the guest would keep seeing a meeting-spot row with a
+// date that a pay-at-venue event doesn't have.
+function bookingStepsMatchMode(
+  steps: Array<{ label: string; value: string }> | undefined | null,
+  isFullPay: boolean,
+  payAtVenue = false,
+): boolean {
   if (!steps?.length) return false;
   const hasBalance = steps.some(s => /\{balance\}/i.test(`${s.label} ${s.value}`));
-  return isFullPay ? !hasBalance : hasBalance;
+  if (isFullPay) return !hasBalance;
+  if (!hasBalance) return false;
+  if (payAtVenue) return steps.some(s => /group[\s-]?chat/i.test(`${s.label} ${s.value}`));
+  return true;
 }
 
 // Rebuild steps for a new payment mode, preserving dates on the rows whose role
@@ -3669,13 +3682,13 @@ export default function AdminPanel() {
                       const defaultSteps = isNativeApp
                         ? (bookingStepsMatchMode(trip.booking_steps, isFullPay) ? trip.booking_steps! : nativeDefaultSteps)
                         : isOpenApp
-                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay) ? trip.booking_steps! : openDefaultSteps)
+                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay, !!trip.pay_at_venue) ? trip.booking_steps! : openDefaultSteps)
                         : trip.booking_steps ?? [
                           { label: 'Advance', value: '{advance}', date: '' },
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
-                      const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay) ? undefined : perDateSteps;
+                      const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay, !!trip.pay_at_venue) ? undefined : perDateSteps;
                       const rawStepsAll: Array<{ label: string; value: string; date: string }> =
                         timelineEdits[editKey] ?? (saveTimelineForDate ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
                       // Single-payment events drop the remaining-balance step in the editor too,
