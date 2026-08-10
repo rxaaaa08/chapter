@@ -392,9 +392,20 @@ Deno.serve(async (req) => {
         .maybeSingle();
       const storedCity = String((appCityRow as any)?.selected_city ?? '').trim();
       if (storedCity) {
-        trustedCity = cityList.find(c => c.toLowerCase() === storedCity.toLowerCase()) ?? storedCity;
+        // MUST stay validated against event.cities, exactly like body.selected_city
+        // above. applications.selected_city is anon-writable — the
+        // applications_anon_insert policy constrains only phone/name/event_slug/
+        // why_join/status — so accepting it unvalidated let a customer name ANY key
+        // in city_details (retired cities, leftover test entries) and be charged
+        // that price instead of the live one.
+        trustedCity = cityList.find(c => c.toLowerCase() === storedCity.toLowerCase()) ?? null;
       }
     }
+    // A single-city event has exactly one correct price: the one the UI showed.
+    // Without this, an untrusted city falls through to the plan-level price_full,
+    // which on several events is a stale legacy value the customer never saw
+    // (Kovalam's is 900 against a real Kovalam price of 299).
+    if (!trustedCity && cityList.length === 1) trustedCity = cityList[0];
     const prices = cityPrices(event, trustedCity);
 
     // ── 4. Compute amount from DB based on payment_type ──
