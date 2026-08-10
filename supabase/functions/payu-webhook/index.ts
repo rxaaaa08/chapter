@@ -88,6 +88,10 @@ const AISENSY_CAMPAIGN_FAILED   = 'payment_failure_dpl';
 // MUST match payu-callback's constant — the two race via claimSendFlag, and the
 // race winner sends, so a name mismatch makes delivery a coin flip.
 const AISENSY_CAMPAIGN_FULL     = 'single_payment_sucess_dpl';
+// Pay-at-venue advances reuse the single-payment template; its {{2}} is a
+// "you'll get details ..." line, filled with a phrase since these events carry
+// no meeting-spot row to read a date from.
+const PAY_AT_VENUE_DETAILS_WHEN = 'one week before the event';
 
 // The event-level timeline owns the step labels; per-date timelines often only
 // override dates and intentionally leave label/value blank. Find the meeting
@@ -310,20 +314,22 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
     const displayName = capitalizeFirstChar(app.name || 'there');
     const buttonParam = buildInviteButtonParam(args.phone, displayName);
     const formattedAmount = formatRupeesTwoDecimals(args.amount);
+    // Pay at venue has no balance deadline — advance_success_dpl's {{2}} would be
+    // empty on a template that tells the guest to pay before it. Swap to the
+    // approved single-payment template with a phrase for its details line.
+    const payAtVenue = await isPayAtVenue(supabase, args.eventSlug);
 
     const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         apiKey: AISENSY_API_KEY,
-        campaignName: AISENSY_CAMPAIGN,
+        campaignName: payAtVenue ? AISENSY_CAMPAIGN_FULL : AISENSY_CAMPAIGN,
         destination: '91' + args.phone,
         userName: displayName || 'chapter A 3063',
-        templateParams: [
-          formattedAmount,
-          dueFinal,
-          args.txnid,
-        ],
+        templateParams: payAtVenue
+          ? [formattedAmount, PAY_AT_VENUE_DETAILS_WHEN]
+          : [formattedAmount, dueFinal, args.txnid],
         source: 'payu-webhook',
         media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
         attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
