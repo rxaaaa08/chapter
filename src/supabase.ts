@@ -110,6 +110,10 @@ export function mapDbEventToEvent(row: any): any {
     bookingFlow: row.booking_flow ?? undefined,
     // 'full' = single payment (one amount, no advance/balance split); 'split' default.
     paymentMode: row.payment_mode ?? 'split',
+    // Split events only: the balance is paid online AT THE VENUE (same PayU bill,
+    // on the guest's phone, in front of the host) instead of days beforehand.
+    // Presentation + group-chat access modifier — the payment plumbing is unchanged.
+    payAtVenue: row.pay_at_venue ?? false,
     ctaLabel: row.cta_label ?? '',
     // Creator (affiliate) economics — used by the creator dashboard's upcoming-
     // events card to show "you'd earn ₹X per booking". Commission only pays when
