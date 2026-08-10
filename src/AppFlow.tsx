@@ -5308,9 +5308,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                               // ticket price is deliberately never shown: the guest sees only the
                               // two parts, and the "+" signals they add up rather than stack.
                               <div className="grid items-stretch" style={{ gridTemplateColumns: '1.5fr 30px 1fr' }}>
-                                <div className="bg-white rounded-[16px] flex flex-col justify-center" style={{ padding: '10px 15px 12px', gap: 2 }}>
-                                  <p className="text-[11px] font-semibold text-gray-700">Advance</p>
-                                  <p className="text-[28px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.03em' }}>{formatINR(displayAdvance)}</p>
+                                <div className="bg-white rounded-[14px] flex flex-col justify-center" style={{ padding: '7px 13px 9px', gap: 1 }}>
+                                  <p className="text-[11px] font-semibold text-gray-700 whitespace-nowrap">Advance</p>
+                                  <p className="text-[24px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.03em' }}>{formatINR(displayAdvance)}</p>
                                 </div>
                                 {/* Bare "+" in the seam — no pill or circle behind it. */}
                                 <div className="flex flex-col items-center justify-center" style={{ gap: 6 }}>
@@ -5318,9 +5318,9 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                   <span className="text-[11px] font-semibold text-gray-700 leading-none">+</span>
                                   <span className="w-px bg-[#e4e6e9]" style={{ height: 10 }} />
                                 </div>
-                                <div className="bg-white rounded-[16px] flex flex-col justify-center items-end text-right" style={{ padding: '10px 13px 12px', gap: 2 }}>
-                                  <p className="text-[11px] font-semibold text-gray-700">Pay at Venue</p>
-                                  <p className="text-[20px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.02em' }}>{formatINR(displayRemaining)}</p>
+                                <div className="bg-white rounded-[14px] flex flex-col justify-center items-end text-right" style={{ padding: '7px 11px 9px', gap: 1 }}>
+                                  <p className="text-[11px] font-semibold text-gray-700 whitespace-nowrap">Pay at Venue</p>
+                                  <p className="text-[17px] font-extrabold text-[#12151b] leading-none" style={{ letterSpacing: '-0.02em' }}>{formatINR(displayRemaining)}</p>
                                 </div>
                               </div>
                                 ) : (
