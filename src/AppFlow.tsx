@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { getAffiliateRef } from './affiliate';
+import { getAttribution } from './attribution';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
 import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
@@ -540,6 +541,9 @@ function ApplicationForm({
         // time (invite events attribute at apply). A BEFORE INSERT trigger
         // resolves it to affiliate_id; null/unknown = founder's own link.
         affiliate_code: getAffiliateRef(),
+        // Traffic source (utm/fbclid) captured on the landing URL. This is what
+        // makes cost-per-ticket knowable from our own data instead of Meta's.
+        attribution: getAttribution(),
       });
 
       if (sbError) {
@@ -1994,6 +1998,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           // Creator affiliate attribution on first insert (BEFORE INSERT trigger
           // resolves affiliate_code → affiliate_id).
           affiliate_code: affRef,
+          // Traffic source (utm/fbclid) captured on the landing URL. Only set on
+          // the FIRST insert — a returning lead hits the (event_slug, phone)
+          // unique key and keeps whatever source first brought them in, which is
+          // the honest answer for who earned the booking.
+          attribution: getAttribution(),
         });
       // 23505 = returning lead already has a row (expected, fine). Never block the
       // payment on tracking — log anything else and continue to checkout.

@@ -12,6 +12,7 @@ import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDeta
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
 import { trackPurchaseOnce } from './metaPixel';
+import { captureAttribution } from './attribution';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
 
@@ -4929,6 +4930,10 @@ export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     captureAffiliateRef();
+    // Must run BEFORE the first trackEvent: attribution can only ever be read
+    // off the landing URL, and a visitor whose source isn't captured here can
+    // never be attributed afterwards — the information is simply gone.
+    captureAttribution();
     if (!isAdmin && !isCreatorPage && !isTeamPage) trackEvent('page_view');
   }, []);
 
