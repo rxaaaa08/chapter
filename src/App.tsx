@@ -11,6 +11,7 @@ import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
+import { trackPurchaseOnce } from './metaPixel';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
 
@@ -4153,6 +4154,30 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // Effective status: a 'pending' payment that the poll above confirms flips
   // `resolved`, advancing the customer to the receipt (success) or failed view.
   const view = resolved ?? status;
+
+  // The one conversion Meta cannot infer for itself. Everything else in the
+  // funnel happens on our own pages; the payment happens on PayU's, so without
+  // this the ad platform never learns which click became a ticket.
+  //
+  // Fires as soon as the outcome is success, whether or not the receipt has
+  // loaded — `payment` needs the booking phone from sessionStorage and may
+  // never arrive (returning visitor, cleared storage). A Purchase with no value
+  // still counts as a conversion, and a missed conversion is far worse than a
+  // missing amount. When the receipt is present the real figure rides along.
+  //
+  // NOTE: payment.amount is what PayU charged, i.e. INCLUDING the gateway fee
+  // (₹102.42 on a ₹100 advance) — not net revenue. Kept as-is so this number
+  // always reconciles against payu_payments.
+  React.useEffect(() => {
+    if (view !== 'success') return;
+    trackPurchaseOnce(txnid || payment?.txnid || '', {
+      value: payment?.amount != null ? Number(payment.amount) : undefined,
+      currency: 'INR',
+      content_name: payment?.event_title,
+      content_ids: payment?.event_slug ? [payment.event_slug] : undefined,
+      content_type: 'product',
+    });
+  }, [view, txnid, payment]);
 
   // Payment is still being confirmed (e.g. a slow UPI collect). We deliberately
   // do NOT show the failed screen or a retry CTA here — the payment may still

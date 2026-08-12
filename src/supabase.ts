@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
+import { trackPixel } from './metaPixel';
 
 // Fail loudly if env vars aren't wired up. We used to fall back to the
 // production URL + anon key on a misconfigured preview deploy, which
@@ -46,10 +47,58 @@ export function getSessionId(): string {
   return id;
 }
 
+// Which of our funnel steps also gets reported to Meta, and under what name.
+//
+// The names look wrong for a meetup business ("AddToCart" for opening a date
+// calendar) and that is deliberate: Meta's delivery model is trained on its own
+// standard event names, and only standard events can be optimised toward
+// without extra setup in Events Manager. Read the mapping, not the label.
+//
+// Only the _cta_ variants of book/contact are mapped. book_clicked and
+// contact_clicked fire a moment later on the same journey, via onAction — using
+// both would double-count every InitiateCheckout.
+//
+// Both invite (application_submitted) and open (details_form_submitted) flows
+// map to Lead so the funnel reads the same shape whichever booking style an
+// event uses.
+const PIXEL_EVENTS: Partial<Record<string, { name: string; custom?: boolean; cta?: 'book' | 'contact' }>> = {
+  page_view: { name: 'PageView' },
+  event_selected: { name: 'ViewContent' },
+  // "Join our plan" — the bottom CTA that opens the date calendar. The first
+  // real sign the reel landed: they read the whole page and wanted the dates.
+  calendar_opened: { name: 'AddToCart' },
+  // Price becomes visible on picking a meeting point (not on picking a date).
+  reached_pricing: { name: 'ReachedPricing', custom: true },
+  // Price seen, then acted on. One shared event so Meta optimises on the
+  // combined pool; cta_type keeps the two buttons distinguishable in the data.
+  book_cta_clicked: { name: 'InitiateCheckout', cta: 'book' },
+  contact_cta_clicked: { name: 'InitiateCheckout', cta: 'contact' },
+  application_submitted: { name: 'Lead' },
+  details_form_submitted: { name: 'Lead' },
+};
+
 export async function trackEvent(
   event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated' | 'application_started' | 'application_submitted' | 'details_form_opened' | 'details_form_submitted' | 'community_sheet_opened' | 'community_whatsapp_clicked',
   meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
 ) {
+  // Mirror to Meta first, and without awaiting: the Supabase insert below is a
+  // network round-trip, and a visitor who taps through fast (or leaves) must
+  // not lose the ad signal to it.
+  const pixel = PIXEL_EVENTS[event_type];
+  if (pixel) {
+    trackPixel(
+      pixel.name,
+      {
+        content_name: meta.event_title,
+        content_ids: meta.event_id ? [meta.event_id] : undefined,
+        content_category: meta.category,
+        content_type: 'product',
+        city: meta.city,
+        cta_type: pixel.cta,
+      },
+      { custom: pixel.custom },
+    );
+  }
   // Instagram / Facebook in-app browsers used to be dropped here: the wall
   // meant their landing was a duplicate of the external-browser one that
   // followed. They're now first-class visitors who browse and pay in place, so
