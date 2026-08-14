@@ -522,6 +522,19 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
   }
 }
 
+// ── Replay safety ────────────────────────────────────────────────────────────
+//
+// This cron, the browser callback and the webhook can all resolve the same
+// booking. Re-applying the CURRENT result is harmless; applying a STALE one is
+// not — an old advance result resolved after the balance was paid computes
+// 'advance_paid' and walks a fully_paid booking backwards. Rank the paid
+// statuses so a booking only ever moves forward. Mirrors payu-callback.
+const PAID_RANK: Record<string, number> = { advance_paid: 1, fully_paid: 2 };
+
+function isStaleStatus(current: string | null | undefined, incoming: string): boolean {
+  return (PAID_RANK[current ?? ''] ?? 0) > (PAID_RANK[incoming] ?? 0);
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   try {
@@ -564,7 +577,7 @@ Deno.serve(async (req) => {
     // run = any age, optionally a single txnid.
     let q = supabase
       .from('payu_payments')
-      .select('txnid, event_slug, phone, payment_type, event_title, amount')
+      .select('txnid, event_slug, phone, payment_type, event_title, amount, name')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(100);
@@ -642,32 +655,65 @@ Deno.serve(async (req) => {
           const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
           const newStatus = (paymentType === 'balance' || paymentType === 'full') ? 'fully_paid' : 'advance_paid';
 
-          await supabase.from('applications')
-            .update({ status: newStatus })
-            .eq('event_slug', eventSlug).eq('phone', phone);
+          // This cron re-checks rows up to 24 h old, so it is the likeliest path
+          // to resolve a STALE advance long after the balance was paid. Ranking
+          // the paid statuses stops it walking a fully_paid booking backwards.
+          const { data: appRow } = await supabase
+            .from('applications')
+            .select('status')
+            .eq('event_slug', eventSlug).eq('phone', phone)
+            .maybeSingle();
 
-          await supabase.from('invite_payment_submissions').upsert({
-            invite_slug: eventSlug,
-            event_slug:  eventSlug,
-            phone,
-            status:      newStatus,
-            amount:      row.amount ?? 0,
-            event_title: row.event_title ?? '',
-            submitted_at: new Date().toISOString(),
-          }, { onConflict: 'invite_slug,phone', ignoreDuplicates: false });
-
-          if (paymentType === 'balance') {
-            await fireBalancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
-          } else if (paymentType === 'full') {
-            await fireFullPaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+          if (isStaleStatus((appRow as any)?.status, newStatus)) {
+            console.warn('[verify-pending-payments] stale result ignored — booking is already further ahead', {
+              txnid, current: (appRow as any)?.status, incoming: newStatus,
+            });
           } else {
-            await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+            await supabase.from('applications')
+              .update({ status: newStatus })
+              .eq('event_slug', eventSlug).eq('phone', phone);
+
+            // name is NOT NULL with no default here; omitting it failed every one
+            // of these upserts with an unchecked 400. Mirrors payu-callback.
+            const { error: submissionError } = await supabase.from('invite_payment_submissions').upsert({
+              invite_slug: eventSlug,
+              event_slug:  eventSlug,
+              phone,
+              name:        row.name ?? '',
+              status:      newStatus,
+              amount:      row.amount ?? 0,
+              event_title: row.event_title ?? '',
+              submitted_at: new Date().toISOString(),
+            }, { onConflict: 'event_slug,phone', ignoreDuplicates: false });
+            if (submissionError) {
+              console.error('[verify-pending-payments] invite_payment_submissions upsert failed:', submissionError);
+            }
+
+            if (paymentType === 'balance') {
+              await fireBalancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+            } else if (paymentType === 'full') {
+              await fireFullPaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+            } else {
+              await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+            }
           }
           resolvedSuccess++;
           console.log('[verify-pending-payments] resolved -> success', txnid);
         } else if (isFailure && rawSlug && phone) {
+          // Never tell a guest who has since paid that their payment failed.
           const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
-          await firePaymentFailedWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+          const { data: failRow } = await supabase
+            .from('applications')
+            .select('status')
+            .eq('event_slug', eventSlug).eq('phone', phone)
+            .maybeSingle();
+          if (PAID_RANK[(failRow as any)?.status ?? '']) {
+            console.warn('[verify-pending-payments] failure result ignored — booking is already paid', {
+              txnid, current: (failRow as any)?.status,
+            });
+          } else {
+            await firePaymentFailedWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
+          }
           resolvedFailed++;
           console.log('[verify-pending-payments] resolved -> failure', txnid);
         }

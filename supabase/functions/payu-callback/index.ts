@@ -580,6 +580,26 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
   }
 }
 
+// ── Replay safety ────────────────────────────────────────────────────────────
+//
+// The same payment result can reach us more than once for one booking: PayU's
+// result page re-submits its form, the customer's browser replays the POST out
+// of history, this path and payu-webhook both fire, or verify-pending-payments
+// re-resolves the row. Observed live on 2026-08-14 — a single ₹367.69 ticket
+// delivered the identical callback twice, three minutes apart.
+//
+// Replaying the CURRENT result is harmless: every write below either sets the
+// value it already holds or is claim-flag guarded. The damage case is a STALE
+// result — an old advance callback arriving after the balance was paid computes
+// 'advance_paid' and walks a fully_paid booking backwards, un-paying a customer
+// who has settled in full. Rank the paid statuses so a booking only ever moves
+// forward; anything at or behind where we already are is ignored.
+const PAID_RANK: Record<string, number> = { advance_paid: 1, fully_paid: 2 };
+
+function isStaleStatus(current: string | null | undefined, incoming: string): boolean {
+  return (PAID_RANK[current ?? ''] ?? 0) > (PAID_RANK[incoming] ?? 0);
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -696,11 +716,12 @@ Deno.serve(async (req) => {
         // Set once (don't overwrite an earlier recovery on a later balance pay).
         const { data: appRow } = await supabase
           .from('applications')
-          .select('cart_abandoned, recovered_at')
+          .select('status, cart_abandoned, recovered_at')
           .eq('event_slug', eventSlug)
           .eq('phone', phone)
           .maybeSingle();
         const isRecovery = !!(appRow as any)?.cart_abandoned && !(appRow as any)?.recovered_at;
+        const isStale = isStaleStatus((appRow as any)?.status, newStatus);
 
         // Guarantee the paid buyer has a backing application row. The open flow
         // creates a 'pending' row client-side before PayU, but that best-effort
@@ -729,42 +750,62 @@ Deno.serve(async (req) => {
             }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
         }
 
-        await supabase
-          .from('applications')
-          .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
-          .eq('event_slug', eventSlug)
-          .eq('phone', phone);
+        // A stale replay must not touch the booking at all: not the status, not
+        // the submission mirror, not the WhatsApp. The redirect below still runs
+        // so the customer lands on their receipt either way.
+        if (isStale) {
+          console.warn('[payu-callback] stale result ignored — booking is already further ahead', {
+            txnid, current: (appRow as any)?.status, incoming: newStatus,
+          });
+        } else {
+          await supabase
+            .from('applications')
+            .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
+            .eq('event_slug', eventSlug)
+            .eq('phone', phone);
 
-        await supabase
-          .from('invite_payment_submissions')
-          .upsert({
-            invite_slug: eventSlug,
-            event_slug: eventSlug,
-            phone,
-            status: newStatus,
-            amount: stored.amount ?? 0,
-            event_title: stored.event_title ?? '',
-            submitted_at: new Date().toISOString(),
-          }, { onConflict: 'invite_slug,phone', ignoreDuplicates: false });
+          // Two separate defects kept this write failing since the table was
+          // created, both silent because the error was never read: `name` is NOT
+          // NULL with no default and was not being sent, and the conflict target
+          // named invite_slug when the actual unique constraint is
+          // (event_slug, phone). Either one alone returns a 400, so the table sat
+          // permanently empty while get-user-context read it for the
+          // returning-customer view. Both are fixed here; keep them in step.
+          const { error: submissionError } = await supabase
+            .from('invite_payment_submissions')
+            .upsert({
+              invite_slug: eventSlug,
+              event_slug: eventSlug,
+              phone,
+              name: stored.name ?? '',
+              status: newStatus,
+              amount: stored.amount ?? 0,
+              event_title: stored.event_title ?? '',
+              submitted_at: new Date().toISOString(),
+            }, { onConflict: 'event_slug,phone', ignoreDuplicates: false });
+          if (submissionError) {
+            console.error('[payu-callback] invite_payment_submissions upsert failed:', submissionError);
+          }
 
-        if (paymentType === 'advance') {
-          await fireAdvancePaidWhatsApp(supabase, {
-            phone, eventSlug,
-            amount: stored.amount ?? amount,
-            txnid,
-          });
-        } else if (paymentType === 'balance') {
-          await fireBalancePaidWhatsApp(supabase, {
-            phone, eventSlug,
-            amount: stored.amount ?? amount,
-            txnid,
-          });
-        } else if (paymentType === 'full') {
-          await fireFullPaidWhatsApp(supabase, {
-            phone, eventSlug,
-            amount: stored.amount ?? amount,
-            txnid,
-          });
+          if (paymentType === 'advance') {
+            await fireAdvancePaidWhatsApp(supabase, {
+              phone, eventSlug,
+              amount: stored.amount ?? amount,
+              txnid,
+            });
+          } else if (paymentType === 'balance') {
+            await fireBalancePaidWhatsApp(supabase, {
+              phone, eventSlug,
+              amount: stored.amount ?? amount,
+              txnid,
+            });
+          } else if (paymentType === 'full') {
+            await fireFullPaidWhatsApp(supabase, {
+              phone, eventSlug,
+              amount: stored.amount ?? amount,
+              txnid,
+            });
+          }
         }
 
         return Response.redirect(
@@ -780,14 +821,29 @@ Deno.serve(async (req) => {
         302,
       );
     } else {
-      // Failure path — fire WhatsApp template if we can
+      // Failure path — fire WhatsApp template if we can. A replayed failure from
+      // an ABANDONED earlier attempt must never reach someone who has since paid
+      // (they retried and succeeded on a different txnid): telling a paid guest
+      // their payment failed would send them to pay a second time.
       if (stored?.phone && stored?.event_slug) {
         const eventSlug = await resolveCanonicalSlug(supabase, stored.event_slug);
-        await firePaymentFailedWhatsApp(supabase, {
-          phone: stored.phone, eventSlug,
-          amount: stored.amount ?? 0,
-          txnid,
-        });
+        const { data: failRow } = await supabase
+          .from('applications')
+          .select('status')
+          .eq('event_slug', eventSlug)
+          .eq('phone', stored.phone)
+          .maybeSingle();
+        if (PAID_RANK[(failRow as any)?.status ?? '']) {
+          console.warn('[payu-callback] failure result ignored — booking is already paid', {
+            txnid, current: (failRow as any)?.status,
+          });
+        } else {
+          await firePaymentFailedWhatsApp(supabase, {
+            phone: stored.phone, eventSlug,
+            amount: stored.amount ?? 0,
+            txnid,
+          });
+        }
       }
       return Response.redirect(
         isOpenEvent

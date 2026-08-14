@@ -529,6 +529,20 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
   }
 }
 
+// ── Replay safety ────────────────────────────────────────────────────────────
+//
+// PayU re-delivers a webhook until it is acknowledged, and this path, the
+// browser callback and verify-pending-payments can all resolve the same
+// booking. Re-applying the CURRENT result is harmless; applying a STALE one is
+// not — an old advance result landing after the balance was paid computes
+// 'advance_paid' and walks a fully_paid booking backwards. Rank the paid
+// statuses so a booking only ever moves forward. Mirrors payu-callback.
+const PAID_RANK: Record<string, number> = { advance_paid: 1, fully_paid: 2 };
+
+function isStaleStatus(current: string | null | undefined, incoming: string): boolean {
+  return (PAID_RANK[current ?? ''] ?? 0) > (PAID_RANK[incoming] ?? 0);
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -638,11 +652,12 @@ Deno.serve(async (req) => {
         // so without this the Recovered badge would be missed for those.
         const { data: appRow } = await supabase
           .from('applications')
-          .select('cart_abandoned, recovered_at')
+          .select('status, cart_abandoned, recovered_at')
           .eq('event_slug', eventSlug)
           .eq('phone', phone)
           .maybeSingle();
         const isRecovery = !!(appRow as any)?.cart_abandoned && !(appRow as any)?.recovered_at;
+        const isStale = isStaleStatus((appRow as any)?.status, newStatus);
 
         // Guarantee the paid buyer has a backing application row. The open flow's
         // best-effort client insert can fail (RLS reject, rate-limit, tab closed),
@@ -668,33 +683,46 @@ Deno.serve(async (req) => {
             }, { onConflict: 'event_slug,phone', ignoreDuplicates: true });
         }
 
-        await supabase
-          .from('applications')
-          .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
-          .eq('event_slug', eventSlug)
-          .eq('phone', phone);
+        // A stale replay must not touch the booking at all — see PAID_RANK.
+        if (isStale) {
+          console.warn('[payu-webhook] stale result ignored — booking is already further ahead', {
+            txnid, current: (appRow as any)?.status, incoming: newStatus,
+          });
+        } else {
+          await supabase
+            .from('applications')
+            .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
+            .eq('event_slug', eventSlug)
+            .eq('phone', phone);
 
-        await supabase
-          .from('invite_payment_submissions')
-          .upsert(
-            {
-              invite_slug:  eventSlug,
-              event_slug:   eventSlug,
-              phone,
-              status:       newStatus,
-              amount:       stored.amount ?? 0,
-              event_title:  stored.event_title ?? '',
-              submitted_at: new Date().toISOString(),
-            },
-            { onConflict: 'invite_slug,phone', ignoreDuplicates: false },
-          );
+          // name is NOT NULL with no default here; omitting it failed every one
+          // of these upserts with an unchecked 400. Mirrors payu-callback.
+          const { error: submissionError } = await supabase
+            .from('invite_payment_submissions')
+            .upsert(
+              {
+                invite_slug:  eventSlug,
+                event_slug:   eventSlug,
+                phone,
+                name:         stored.name ?? '',
+                status:       newStatus,
+                amount:       stored.amount ?? 0,
+                event_title:  stored.event_title ?? '',
+                submitted_at: new Date().toISOString(),
+              },
+              { onConflict: 'event_slug,phone', ignoreDuplicates: false },
+            );
+          if (submissionError) {
+            console.error('[payu-webhook] invite_payment_submissions upsert failed:', submissionError);
+          }
 
-        if (paymentType === 'advance') {
-          await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
-        } else if (paymentType === 'balance') {
-          await fireBalancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
-        } else if (paymentType === 'full') {
-          await fireFullPaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+          if (paymentType === 'advance') {
+            await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+          } else if (paymentType === 'balance') {
+            await fireBalancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+          } else if (paymentType === 'full') {
+            await fireFullPaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+          }
         }
       }
     } else {
@@ -702,9 +730,24 @@ Deno.serve(async (req) => {
       // fires it, but if the user closed the tab on PayU's failure page the
       // callback never ran; the webhook is then the only path. The shared
       // aisensy_payment_failed_sent claim prevents a double-up.
+      // A replayed failure from an abandoned earlier attempt must never reach
+      // someone who has since paid on a different txnid — telling a paid guest
+      // their payment failed would send them to pay a second time.
       if (rawSlug && phone) {
         const eventSlug = await resolveCanonicalSlug(supabase, rawSlug);
-        await firePaymentFailedWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+        const { data: failRow } = await supabase
+          .from('applications')
+          .select('status')
+          .eq('event_slug', eventSlug)
+          .eq('phone', phone)
+          .maybeSingle();
+        if (PAID_RANK[(failRow as any)?.status ?? '']) {
+          console.warn('[payu-webhook] failure result ignored — booking is already paid', {
+            txnid, current: (failRow as any)?.status,
+          });
+        } else {
+          await firePaymentFailedWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
+        }
       }
     }
 
