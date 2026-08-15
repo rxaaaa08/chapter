@@ -95,7 +95,16 @@ export type PixelParams = {
 
 // `custom: true` routes through trackCustom — required for any event name that
 // isn't one of Meta's standard ones.
-export function trackPixel(eventName: string, params: PixelParams = {}, opts: { custom?: boolean } = {}): void {
+//
+// `eventID` is the deduplication key. Our server reports the same Purchase via
+// the Conversions API (supabase/functions/_shared/metaCapi.ts); Meta collapses
+// the pair only when both carry the same id. Omitting it would double-count
+// every sale reported twice and halve the apparent cost per purchase.
+export function trackPixel(
+  eventName: string,
+  params: PixelParams = {},
+  opts: { custom?: boolean; eventID?: string } = {},
+): void {
   try {
     if (!isPixelConfigured() || typeof window === 'undefined' || !window.fbq) return;
     if (!isCustomerRoute()) return;
@@ -103,7 +112,11 @@ export function trackPixel(eventName: string, params: PixelParams = {}, opts: { 
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null && v !== '') clean[k] = v;
     }
-    window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean);
+    if (opts.eventID) {
+      window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean, { eventID: opts.eventID });
+    } else {
+      window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean);
+    }
   } catch {
     // never block the page
   }
@@ -128,7 +141,12 @@ export function trackPurchaseOnce(txnid: string, params: PixelParams): void {
     if (!Array.isArray(sent)) sent = [];
     if (sent.includes(txnid)) return;
 
-    trackPixel('Purchase', { currency: 'INR', ...params });
+    // eventID = txnid, matching what payu-callback and payu-webhook send to the
+    // Conversions API for this same sale. All three paths may fire; Meta keeps
+    // one. The local dedup above only stops THIS browser repeating itself — it
+    // knows nothing about the server, so the shared id is what actually
+    // guarantees one sale is counted once.
+    trackPixel('Purchase', { currency: 'INR', ...params }, { eventID: txnid });
 
     // Keep the tail short — this is a dedup guard, not a history.
     try {

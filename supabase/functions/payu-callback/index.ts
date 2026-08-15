@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendPurchaseToMeta } from '../_shared/metaCapi.ts';
 
 // ── Hashing ──────────────────────────────────────────────────────────────────
 
@@ -786,6 +787,27 @@ Deno.serve(async (req) => {
           if (submissionError) {
             console.error('[payu-callback] invite_payment_submissions upsert failed:', submissionError);
           }
+
+          // Tell Meta the sale happened, from the server. The browser pixel
+          // fires the same Purchase on the return screen, but only for
+          // customers who both allow trackers AND actually land back on it —
+          // measured at 6 of 13 real payments. This path has neither
+          // dependency. Same event_id (txnid) on both, so Meta counts one sale.
+          //
+          // Deliberately inside the non-stale branch: a replayed callback must
+          // not report a second Purchase for a booking that already moved on.
+          await sendPurchaseToMeta({
+            txnid,
+            value: Number(stored.amount ?? amount) || 0,
+            currency: 'INR',
+            email: stored.email ?? null,
+            phone,
+            eventSlug,
+            eventTitle: stored.event_title ?? null,
+            sourceUrl: `${FRONTEND_URL}/`,
+            clientIp: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+            userAgent: req.headers.get('user-agent'),
+          });
 
           if (paymentType === 'advance') {
             await fireAdvancePaidWhatsApp(supabase, {

@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendPurchaseToMeta } from '../_shared/metaCapi.ts';
 
 // ── Hashing ──────────────────────────────────────────────────────────────────
 
@@ -715,6 +716,21 @@ Deno.serve(async (req) => {
           if (submissionError) {
             console.error('[payu-webhook] invite_payment_submissions upsert failed:', submissionError);
           }
+
+          // The webhook is the ONLY path that sees a payment when the customer
+          // closed the tab on PayU — precisely the case the browser pixel can
+          // never report. Same event_id (txnid) as the callback and the browser
+          // event, so however many of the three fire, Meta records one sale.
+          await sendPurchaseToMeta({
+            txnid,
+            value: Number(stored.amount ?? amount) || 0,
+            currency: 'INR',
+            email: stored.email ?? null,
+            phone,
+            eventSlug,
+            eventTitle: stored.event_title ?? null,
+            sourceUrl: `${Deno.env.get('FRONTEND_URL') ?? 'https://chaptera.in'}/`,
+          });
 
           if (paymentType === 'advance') {
             await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: stored.amount ?? amount, txnid });
