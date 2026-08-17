@@ -653,7 +653,7 @@ Deno.serve(async (req) => {
         // so without this the Recovered badge would be missed for those.
         const { data: appRow } = await supabase
           .from('applications')
-          .select('status, cart_abandoned, recovered_at')
+          .select('status, cart_abandoned, recovered_at, selected_city, attribution')
           .eq('event_slug', eventSlug)
           .eq('phone', phone)
           .maybeSingle();
@@ -730,6 +730,13 @@ Deno.serve(async (req) => {
             eventSlug,
             eventTitle: stored.event_title ?? null,
             sourceUrl: `${Deno.env.get('FRONTEND_URL') ?? 'https://chaptera.in'}/`,
+            // Same identifier set as the callback. Both paths must send an
+            // identical user_data shape, or the same sale would score
+            // differently depending on which one happened to report it.
+            name: stored.name ?? null,
+            city: (appRow as any)?.selected_city ?? null,
+            fbclid: (appRow as any)?.attribution?.fbclid ?? null,
+            fbclidSeenAt: (appRow as any)?.attribution?.landed_at ?? null,
           });
 
           if (paymentType === 'advance') {

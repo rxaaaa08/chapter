@@ -717,7 +717,7 @@ Deno.serve(async (req) => {
         // Set once (don't overwrite an earlier recovery on a later balance pay).
         const { data: appRow } = await supabase
           .from('applications')
-          .select('status, cart_abandoned, recovered_at')
+          .select('status, cart_abandoned, recovered_at, selected_city, attribution')
           .eq('event_slug', eventSlug)
           .eq('phone', phone)
           .maybeSingle();
@@ -807,6 +807,13 @@ Deno.serve(async (req) => {
             sourceUrl: `${FRONTEND_URL}/`,
             clientIp: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
             userAgent: req.headers.get('user-agent'),
+            // Extra identifiers so Meta can match the sale to a person. Without
+            // these it often knows a purchase happened but not who made it,
+            // which means it can't credit the ad or learn what buyers look like.
+            name: stored.name ?? null,
+            city: (appRow as any)?.selected_city ?? null,
+            fbclid: (appRow as any)?.attribution?.fbclid ?? null,
+            fbclidSeenAt: (appRow as any)?.attribution?.landed_at ?? null,
           });
 
           if (paymentType === 'advance') {
