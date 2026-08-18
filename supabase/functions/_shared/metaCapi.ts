@@ -56,6 +56,25 @@ function normalisePhone(raw: string | null | undefined): string | null {
   return `91${ten}`;
 }
 
+// Test bookings must never reach the ad dataset. `npm run dev` talks to the
+// PRODUCTION database, so an internal test pays through real PayU and produces a
+// real callback — from here it is indistinguishable from a customer, and Meta
+// would happily learn to go looking for more buyers who behave like us. Worse,
+// the value is fake (the 15 Aug test was Rs 1.02), so it also poisons the
+// purchase value Meta optimises toward.
+//
+// 90000000xx is the project's standing test-phone convention (CLAUDE.md). After
+// normalisePhone that becomes 9190000000 + two digits.
+//
+// LIMIT, stated plainly: this only protects tests that FOLLOW the convention. A
+// test booked on a real phone still reaches Meta — the 15 Aug one would have.
+// Code can enforce the habit, not replace it.
+const TEST_PHONE_PREFIX = '9190000000';
+
+function isTestPhone(normalisedPhone: string | null): boolean {
+  return normalisedPhone !== null && normalisedPhone.startsWith(TEST_PHONE_PREFIX);
+}
+
 // Names and city: lowercase, letters only. Meta strips punctuation, spaces and
 // accents before hashing on their side, so we must match that exactly or the
 // hashes simply never line up — which fails silently and looks like working.
@@ -139,6 +158,12 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
 
     const email = normaliseEmail(args.email);
     const phone = normalisePhone(args.phone);
+    if (isTestPhone(phone)) {
+      // Logged, not silent: a test that never shows up in Meta should be
+      // explainable from the function logs rather than looking like a bug.
+      console.log('[meta-capi] test booking, not reported to Meta', args.txnid);
+      return;
+    }
 
     // Every identifier we can supply raises Event Match Quality, which is what
     // decides whether Meta can tie a sale to a person — and therefore to an ad.

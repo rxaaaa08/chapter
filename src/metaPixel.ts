@@ -43,6 +43,22 @@ function isCustomerRoute(): boolean {
   return !NON_CUSTOMER_PREFIXES.some(p => path === p || path.startsWith(p + '/') || path.startsWith(p + '?'));
 }
 
+// The dataset must hold customers, not us. `npm run dev` serves this exact app
+// against the PRODUCTION Supabase, so without this guard every local test session
+// reports into the same dataset that decides where ad money goes: 14 events
+// arrived from `localhost` between 12 and 17 Aug 2026, and some of them are
+// sitting in the website-visitors audience right now, ready to be retargeted.
+//
+// Gated on the hostname rather than import.meta.env.DEV so that a preview
+// deployment, a LAN address, or a local production build is inert too — only the
+// real site should ever be able to write here.
+const PRODUCTION_HOSTS = ['chaptera.in', 'www.chaptera.in'];
+
+function isProductionHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  return PRODUCTION_HOSTS.includes(window.location.hostname);
+}
+
 export function isPixelConfigured(): boolean {
   return META_PIXEL_ID.trim().length > 0;
 }
@@ -53,6 +69,10 @@ export function initMetaPixel(): void {
   try {
     if (!isPixelConfigured() || typeof window === 'undefined' || typeof document === 'undefined') return;
     if (!isCustomerRoute()) return;
+    // Not the live site → never load the tracker at all. Guarding the loader is
+    // sufficient: trackPixel() short-circuits on a missing window.fbq, so no
+    // downstream event can fire either.
+    if (!isProductionHost()) return;
     if (window.fbq) return;
 
     // Meta's standard loader, transcribed rather than eval'd from a string so
