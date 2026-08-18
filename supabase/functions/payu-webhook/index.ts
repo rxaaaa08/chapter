@@ -595,7 +595,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -737,6 +737,11 @@ Deno.serve(async (req) => {
             city: (appRow as any)?.selected_city ?? null,
             fbclid: (appRow as any)?.attribution?.fbclid ?? null,
             fbclidSeenAt: (appRow as any)?.attribution?.landed_at ?? null,
+            // Captured in the browser at checkout by create-payu-order. This is
+            // the one identifier the server cannot derive for itself, and it is
+            // what lets Meta match a sale to the browser it showed the ad to
+            // when there was no ad CLICK to leave an fbclid behind.
+            fbp: (stored as any)?.fbp ?? null,
           });
 
           if (paymentType === 'advance') {

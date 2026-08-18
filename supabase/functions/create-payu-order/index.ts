@@ -210,6 +210,21 @@ Deno.serve(async (req) => {
       ? rawPreferredMethod
       : null;
 
+    // Meta's _fbp browser cookie, handed over by the checkout page. Stored on
+    // the payment row and replayed to the Conversions API by payu-callback /
+    // payu-webhook — the server can never read this cookie itself, and those
+    // two are the only paths that see a payment when the browser event doesn't
+    // fire. Purely for ad match quality; nothing about the order depends on it.
+    //
+    // Shape-checked before it touches the DB: this endpoint is anon-callable,
+    // so an unvalidated string here is a free write into our own table. A
+    // malformed value is also worse than none — Meta scores a supplied-but-
+    // unmatchable field against us rather than ignoring it.
+    const rawFbp = String(body.fbp ?? '').trim();
+    const fbp = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/.test(rawFbp) && rawFbp.length <= 120
+      ? rawFbp
+      : null;
+
     // ── 2. Init Supabase ──
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -549,6 +564,7 @@ Deno.serve(async (req) => {
       status: 'pending',
       payment_type: paymentType,
       whatsapp_group_url: null, // never trust this from the client
+      fbp,
     });
     if (insErr) {
       console.error('[create-payu-order] pending insert failed, aborting order', insErr);

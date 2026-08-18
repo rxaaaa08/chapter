@@ -112,7 +112,12 @@ export type CapiPurchaseArgs = {
   /** Raw fbclid from applications.attribution, plus when we saw it. */
   fbclid?: string | null;
   fbclidSeenAt?: string | null;
-  /** Meta's browser cookie. Not yet captured — see Phase B in meta-ads-sop.md. */
+  /**
+   * Meta's _fbp browser cookie, captured at checkout by the payment page and
+   * parked on payu_payments.fbp — the server cannot read it itself. Matters
+   * most for buyers who never clicked an ad (no fbclid, so no fbc): it is the
+   * only thing tying the sale back to the browser that saw the ad in-feed.
+   */
   fbp?: string | null;
 };
 

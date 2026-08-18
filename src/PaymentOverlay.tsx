@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from './supabase';
+import { getFbp } from './metaPixel';
 
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -431,6 +432,12 @@ export function NativePaymentOverlay({
           // and (2) emit enforce_paymethod so PayU's page is bound to the
           // method the customer was priced for.
           preferred_method: selectedMethod?.id,
+          // Meta's _fbp browser cookie, read at the moment of checkout. Only
+          // the browser can see it, and only the server can report the sales
+          // where the browser event never fires — so it has to be handed over
+          // here, stored on the payment row, and replayed from payu-callback /
+          // payu-webhook. Absent for ad-blocked visitors; simply omitted then.
+          fbp: getFbp() ?? undefined,
         }),
       });
       const data = await res.json();

@@ -158,3 +158,45 @@ export function trackPurchaseOnce(txnid: string, params: PixelParams): void {
     // never block the receipt
   }
 }
+
+// ─── _fbp — Meta's first-party browser cookie ────────────────────────────────
+//
+// fbevents.js writes _fbp on our own domain the first time the pixel loads, and
+// keeps it for 90 days. It is the strongest matching signal available for a
+// visitor who arrived WITHOUT clicking an ad (so there is no fbclid to build an
+// fbc from) but who has seen our ads in-feed: it lets Meta tie the sale back to
+// the same browser it showed the ad to.
+//
+// The browser Purchase already carries this automatically — fbevents.js attaches
+// it without being asked. Our SERVER event does not, because the server never
+// sees the cookie. That is the whole gap this closes: the payments where the
+// browser event never fires (tab closed on PayU, UPI handoff into another
+// browser) currently reach Meta with no fbp at all, and those are exactly the
+// payments only the server can report.
+//
+// Only present when the pixel actually loaded, so an ad-blocked visitor has
+// none. That is expected and fine: this raises match quality for the half of
+// visitors we can see; it does not pretend to recover the half we can't. We
+// never synthesise a value — an invented fbp matches nobody and quietly drags
+// the match-quality score down.
+const FBP_PATTERN = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/;
+
+export function getFbp(): string | null {
+  try {
+    if (typeof document === 'undefined') return null;
+    const hit = document.cookie
+      .split(';')
+      .map(c => c.trim())
+      .find(c => c.startsWith('_fbp='));
+    if (!hit) return null;
+    const value = decodeURIComponent(hit.slice('_fbp='.length)).trim();
+    // Shape-check rather than trust: a malformed or truncated cookie is worse
+    // than no cookie, because Meta counts a supplied-but-unmatchable field
+    // against the score instead of ignoring it.
+    if (value.length > 120 || !FBP_PATTERN.test(value)) return null;
+    return value;
+  } catch {
+    // cookie access can throw in restricted/embedded contexts — never block pay
+    return null;
+  }
+}
