@@ -423,3 +423,81 @@ Four test events — `AdvancedMatchingProbe`, `AdvancedMatchingProbe2`,
 **I fired those** while verifying advanced matching. One occurrence each, against
 2,040 PageViews, and they will age out of the reporting window. Nothing to act on,
 but they are mine, not Meta's and not yours.
+
+---
+
+# Addendum 3 — 21 Aug 2026: deduplication, audited against the spec
+
+Checked our setup line by line against Meta's published deduplication rules.
+
+## The rules, from Meta's documentation
+
+> "We determine if events are identical based on their **ID** and **name**."
+
+> "If we find the same server key combination (`event_id` and `event_name`) **and**
+> browser key combination (`eventID` and `event`) sent to the same Pixel ID
+> **within 48 hours**, we discard the subsequent events."
+
+So four things must line up: identical `event_id`, identical `event_name`, the
+same pixel, and arrival **within 48 hours**. `action_source` is not part of the
+match. Both values must be strings, and the match is case-sensitive.
+
+## Our setup against each rule
+
+| Requirement | Ours |
+|---|---|
+| `eventID` (browser) = `event_id` (server) | ✅ both the PayU `txnid`, same string |
+| Same `event_name`, same case | ✅ `'Purchase'` on both sides |
+| String, not a number | ✅ PayU txnids are alphanumeric |
+| Same pixel | ✅ one dataset, `28370453785913523` |
+| Within 48 hours | ⚠️ **was not guaranteed — now enforced** |
+
+## Two holes found
+
+**The balance fix was only half done.** Gating the server stopped it reporting the
+second half of a split booking, but the receipt screen kept firing a browser
+Purchase for exactly those payments. The double count had not gone away — it had
+moved from one source to the other. The browser now applies the same rule.
+
+**Stale receipts fell outside the 48-hour window.** The server fires seconds after
+payment. A receipt opened days later — the WhatsApp link, on a device that never
+fired it — arrives outside the window and is counted as a **second purchase**, and
+dated days after the real sale, misattributing it to the wrong reporting window.
+Now suppressed past 24h, deliberately half the limit so a slow clock or a late
+webhook cannot push a legitimate view over the edge.
+
+Both guards **fail open**: an unparseable timestamp or a missing `payment_type`
+still reports the sale. The failure mode is counting once too often, never
+silently losing a conversion.
+
+The 5-second fire-without-a-receipt fallback was removed at the same time. Its
+reasoning — a conversion missing its amount beats no conversion — predated the
+server reporting anything, and no longer holds.
+
+## Measured pairing, 16–20 Aug
+
+| Source | Purchase events |
+|---|---|
+| Browser | **12** |
+| Server | **13** |
+
+Every browser event has a server twin **in the same hour bucket**. The extra
+server event is PayU delivering one result twice, absorbed by the shared `txnid`.
+
+A practitioner benchmark circulating online puts a "healthy" Purchase
+deduplication rate at 40–70%. **Treat that as directional only** — it describes
+setups where the browser misses a large share of events. Ours pairs almost
+one-to-one because both sources deliberately report every sale, and the receipt
+screen is a page load nearly every payer reaches. Higher is not a fault.
+
+## Considered and dismissed
+
+**Meta's fallback match on `fbp`/`external_id` + `event_name`.** Now that browser
+events carry `external_id` via advanced matching, two Purchases from the same
+person could in principle collide. They cannot in practice: every event carries a
+distinct `event_id` (a distinct PayU txnid), and ID-and-name matching takes
+precedence. Two bookings by one customer stay two events.
+
+**Adding `event_id` to non-Purchase events.** Meta's best-practice card suggests
+it, but those events have no server counterpart, so there is nothing to
+deduplicate against. It would add a field with no effect.

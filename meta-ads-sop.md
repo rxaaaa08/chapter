@@ -137,6 +137,17 @@ single-payment.
 ⚠️ **Purchase counts before 21 Aug 2026 are inflated.** Never compare across that
 date without accounting for it — that is Rule 2 applied to our own history.
 
+### Deduplication has a 48-hour clock
+
+Meta collapses a browser and a server event only when both carry the same
+`event_id` and `event_name` **and arrive within 48 hours**. Ours are the PayU
+`txnid` and `'Purchase'`.
+
+That window is why the receipt screen no longer reports a sale older than 24
+hours: a WhatsApp receipt link opened days later would otherwise count as a
+second purchase, dated to the wrong week. If you ever change how the receipt is
+reached, re-check this.
+
 ### Which number to use for what
 
 | Question | Use | Never use |
