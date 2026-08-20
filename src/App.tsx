@@ -4171,13 +4171,33 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // always reconciles against payu_payments.
   React.useEffect(() => {
     if (view !== 'success') return;
-    trackPurchaseOnce(txnid || payment?.txnid || '', {
+    const id = txnid || payment?.txnid || '';
+    if (!id) return;
+
+    const fire = () => trackPurchaseOnce(id, {
       value: payment?.amount != null ? Number(payment.amount) : undefined,
       currency: 'INR',
       content_name: payment?.event_title,
       content_ids: payment?.event_slug ? [payment.event_slug] : undefined,
       content_type: 'product',
     });
+
+    // With the amount in hand there is nothing to wait for.
+    if (payment?.amount != null) { fire(); return; }
+
+    // Without it, DON'T fire yet. `view` flips to success the moment PayU says
+    // so, while `payment` arrives later from fetchReceipt — so firing straight
+    // away sent a Purchase carrying no value, and trackPurchaseOnce then refused
+    // the corrected one because the txnid was already in localStorage. The
+    // amount was therefore almost never reported, not occasionally missed:
+    // Meta flagged 62% of Purchases as having no value.
+    //
+    // So give the receipt a moment. When it lands this effect re-runs, the
+    // timer below is cleared, and the event goes with its real value. If it
+    // never lands we still fire — the original tradeoff stands, a conversion
+    // missing its amount beats no conversion at all.
+    const t = setTimeout(fire, 5000);
+    return () => clearTimeout(t);
   }, [view, txnid, payment]);
 
   // Payment is still being confirmed (e.g. a slow UPI collect). We deliberately
