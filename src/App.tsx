@@ -4970,6 +4970,22 @@ export default function App() {
     // off the landing URL, and a visitor whose source isn't captured here can
     // never be attributed afterwards — the information is simply gone.
     captureAttribution();
+    // Re-identify a visitor we already know, BEFORE the first pixel event.
+    //
+    // setPixelUserData runs when someone submits a booking form or lands on the
+    // receipt, and fbq then keeps that identity — but only for that page load.
+    // A reload starts over anonymous, and reloads are common here: page_view has
+    // reached 24 in a single session. Whatever they do after a reload — browsing
+    // plans, opening the calendar, pressing a CTA — was going to Meta with no
+    // identity at all despite us knowing exactly who they are.
+    //
+    // Phone only. It is the one thing stashed at booking time, and it doubles as
+    // external_id, so it is enough to tie the events to a person. Tab-scoped by
+    // design: sessionStorage, so it never follows someone into a new session.
+    try {
+      const knownPhone = sessionStorage.getItem('bookingPhone');
+      if (knownPhone) setPixelUserData({ phone: knownPhone });
+    } catch { /* storage disabled — identity is a bonus, never a requirement */ }
     if (!isAdmin && !isCreatorPage && !isTeamPage) trackEvent('page_view');
   }, []);
 
