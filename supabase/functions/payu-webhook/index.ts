@@ -745,6 +745,7 @@ Deno.serve(async (req) => {
             // Real cookie if checkout captured one; metaCapi falls back to
             // rebuilding from fbclid when it did not.
             fbc: (stored as any)?.fbc ?? null,
+            paymentType,
             // The webhook is a server-to-server call from PayU, so req.headers
             // describes PayU's machine, not the customer — sending those would be
             // worse than sending nothing. These were captured from the customer's

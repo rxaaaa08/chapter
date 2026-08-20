@@ -826,6 +826,7 @@ Deno.serve(async (req) => {
             // Real cookie if checkout captured one; metaCapi falls back to
             // rebuilding from fbclid when it did not.
             fbc: (stored as any)?.fbc ?? null,
+            paymentType,
             // PayU's `addedon` is when the payment actually happened. Only a few
             // seconds ago here, but the same call in payu-webhook can run much
             // later, and Meta attributes on event_time.

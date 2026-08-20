@@ -158,6 +158,11 @@ export type CapiPurchaseArgs = {
    */
   fbc?: string | null;
   /**
+   * 'advance' | 'full' | 'balance'. A balance payment is the second half of a
+   * split booking and must NOT report a Purchase — see the guard below.
+   */
+  paymentType?: string | null;
+  /**
    * When the payment actually happened, unix seconds (from PayU's `addedon` via
    * payuAddedOnToUnix). Falls back to now — right for the callback, wrong for a
    * webhook that arrives late.
@@ -197,6 +202,29 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
       // Equally silent and equally confusing: with this set, events land in Test
       // Events and never count toward live totals or match quality.
       console.warn('[meta-capi] TEST MODE — event goes to Test Events, NOT live totals', args.txnid);
+    }
+
+    // A balance payment is the SECOND half of a split booking, not a new sale.
+    //
+    // Both halves used to report a Purchase, so one customer produced two. Across
+    // 60 days that was 89 real bookings turning into 113 events — a 27% inflated
+    // conversion count, which makes cost per purchase read about 21% cheaper than
+    // it is. Optimising against that number means overspending on the strength of
+    // sales that were already counted.
+    //
+    // The ad earned the booking at the FIRST payment; the balance is collection
+    // from a customer we already won. So the acquisition is reported once, when
+    // it happens.
+    //
+    // Known trade-off, deliberately taken: Meta therefore sees the advance
+    // (₹102) rather than the full ticket (₹299) for split events, so revenue is
+    // understated there. That is the safe direction — the alternative is booking
+    // money before it is collected, and a no-show would make it a lie. Count
+    // accuracy drives bidding; value accuracy can be revisited when there is real
+    // spend to judge it against.
+    if ((args.paymentType ?? '').toLowerCase() === 'balance') {
+      console.log('[meta-capi] balance payment, already counted at booking', args.txnid);
+      return;
     }
 
     const email = normaliseEmail(args.email);
