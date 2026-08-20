@@ -27,6 +27,13 @@
 
 const API_VERSION = 'v21.0';
 
+// The customer's redirect to their receipt waits on this call. Without a deadline
+// a slow or hanging graph.facebook.com sits in front of the receipt for as long as
+// the platform allows — and an ad event is never worth making someone stare at a
+// blank page straight after paying. Three seconds is far above Meta's normal
+// response time, so a healthy call is unaffected and only a genuine stall is cut.
+const META_TIMEOUT_MS = 3000;
+
 // Same dataset as the browser pixel (src/metaPixel.ts). Env-overridable so a
 // future staging dataset doesn't need a code change.
 const DEFAULT_PIXEL_ID = '28370453785913523';
@@ -148,13 +155,24 @@ export type CapiPurchaseArgs = {
 export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> {
   try {
     const token = Deno.env.get('META_CAPI_ACCESS_TOKEN');
-    if (!token) return; // not configured yet — stay silent, don't warn per payment
+    if (!token) {
+      // Deliberately loud. This used to return silently, which on 2026-08-20 made
+      // a missing token indistinguishable from a slow Meta API for half an hour of
+      // debugging. A misconfiguration should say so.
+      console.warn('[meta-capi] META_CAPI_ACCESS_TOKEN is not set — Purchase NOT reported', args.txnid);
+      return;
+    }
     if (!args.txnid) return;
 
     const pixelId = Deno.env.get('META_PIXEL_ID') ?? DEFAULT_PIXEL_ID;
     // Set this to run events into Events Manager → Test events without
     // polluting live totals. Unset it once verified.
     const testCode = Deno.env.get('META_CAPI_TEST_CODE');
+    if (testCode) {
+      // Equally silent and equally confusing: with this set, events land in Test
+      // Events and never count toward live totals or match quality.
+      console.warn('[meta-capi] TEST MODE — event goes to Test Events, NOT live totals', args.txnid);
+    }
 
     const email = normaliseEmail(args.email);
     const phone = normalisePhone(args.phone);
@@ -209,20 +227,35 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
     };
     if (testCode) payload.test_event_code = testCode;
 
+    // Which identifiers actually went. Names only, never values — this is a
+    // production log and user_data holds hashed personal data. This one line is
+    // what turns "did Phase A work?" from a guess into a fact.
+    const sentKeys = Object.keys(user_data).sort().join(',');
+
     const res = await fetch(
       `https://graph.facebook.com/${API_VERSION}/${pixelId}/events?access_token=${encodeURIComponent(token)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(META_TIMEOUT_MS),
       },
     );
 
     if (!res.ok) {
       // Log and move on. A rejected ad event must never surface to the customer.
-      console.error('[meta-capi] non-ok', res.status, await res.text().catch(() => ''));
+      console.error('[meta-capi] REJECTED', args.txnid, res.status, await res.text().catch(() => ''));
+    } else {
+      console.log('[meta-capi] sent', args.txnid, 'keys=' + sentKeys);
     }
   } catch (err) {
-    console.error('[meta-capi] send failed', err);
+    // A timeout is a different problem from a malformed payload, and saying which
+    // saves the next debugging session.
+    const timedOut = err instanceof Error && err.name === 'TimeoutError';
+    if (timedOut) {
+      console.error(`[meta-capi] TIMEOUT after ${META_TIMEOUT_MS}ms — receipt not delayed further`, args.txnid);
+    } else {
+      console.error('[meta-capi] send failed', args.txnid, err);
+    }
   }
 }
