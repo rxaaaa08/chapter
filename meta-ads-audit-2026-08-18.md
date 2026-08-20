@@ -501,3 +501,81 @@ precedence. Two bookings by one customer stay two events.
 **Adding `event_id` to non-Purchase events.** Meta's best-practice card suggests
 it, but those events have no server counterpart, so there is nothing to
 deduplicate against. It would add a field with no effect.
+
+---
+
+# Addendum 4 — 21 Aug 2026: the non-Purchase drift, explained
+
+Purchase reconciles exactly because the server reports it too. Every other event
+is browser-only, and Meta sees fewer than we log. This is why.
+
+## Measured, 17–20 Aug (matched window)
+
+| Event | Meta | Ours | Meta captures |
+|---|---|---|---|
+| ViewContent | 107 | 128 | **83.6%** |
+| AddToCart | 85 | 101 | **84.2%** |
+| ReachedPricing | 62 | 71 | **87.3%** |
+| InitiateCheckout | 22 | 25 | **88.0%** |
+| Lead | 8 | 9 | **88.9%** |
+
+## The shape of the numbers is the finding
+
+Every rate sits between 83.6% and 88.9% — a **five-point spread across five
+different events**, fired from different components at different moments in the
+flow.
+
+An instrumentation bug does not behave like that. A miswired event, a race, a
+missing call site, a listener that sometimes fails — any of those would make one
+event stand out. Uniformity across all five means the loss is **per-visitor, not
+per-event**: some people's browsers never run our code at all, and those people
+lose their whole session's worth of events together.
+
+That is tracker blocking, and no browser-side change can fix it. Code that does
+not execute cannot be made to execute better.
+
+## Our loss is unusually LOW, and the device mix says why
+
+Published estimates put browser-pixel loss at **20–40%**, with some sources
+claiming 30–60%. *(Vendor and agency sources — directional only, per Rule 1.)*
+
+Ours is **11–16%**. Better than the range, not worse.
+
+The device breakdown over the same window explains it:
+
+| Device | Events | Share |
+|---|---|---|
+| Android phone | 804 | **63.9%** |
+| iPhone | 405 | **32.2%** |
+| Desktop | 49 | **3.9%** |
+
+**96.1% of traffic is mobile.** Ad blockers are overwhelmingly a desktop browser-
+extension phenomenon, and Instagram's in-app browser — where much of this traffic
+lives — cannot run extensions at all. The industry's 20–40% reflects desktop-heavy
+audiences. Ours does not.
+
+So the drift is not a defect, and it is not even average. It is the floor for a
+mobile-first audience.
+
+## What "fixing" it would actually require
+
+The only way to recover a blocked visitor's events is to send those events from
+the server, as we already do for Purchase. That has one natural hook —
+`create-payu-order`, the moment a bill is generated — and it is a poor fit:
+
+- It sits **lower** in the funnel than the events that drift. It cannot recover a
+  blocked ViewContent or AddToCart, because those people never reach a bill.
+- Making it report `InitiateCheckout` would change what that event means, from
+  "pressed Book Now" to "reached the payment page", and **break its baseline** —
+  counts would drop because fewer people reach a bill than press the button.
+- Recovering `Lead` server-side would need new infrastructure: the application
+  insert happens client-side, so it would take a database trigger and a new
+  endpoint.
+
+**Recommendation: do not chase it.** The SOP already says to expect 81–94% on
+browser-only events and not to treat it as a fault. This research confirms that
+rule with our own numbers and explains the mechanism, so it can stop being an
+open question.
+
+If a campaign ever optimises on `InitiateCheckout` and its volume proves too thin,
+the server-side option is written down above — with the baseline break it costs.

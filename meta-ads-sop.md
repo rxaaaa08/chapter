@@ -96,9 +96,17 @@ duplicate is absorbed.
 | Lead | 17 | 16 | 94% |
 | Purchase | 13 | 13 browser + 14 server | **13 deduplicated** ✓ |
 
-**Expect 81–94% capture on browser-only events.** Roughly one visitor in six blocks
-the tracker, so Meta will always read a little low. That is normal and is not a
-fault to chase.
+**Expect 83–89% capture on browser-only events.** Measured 17–20 Aug across five
+events — 83.6, 84.2, 87.3, 88.0, 88.9. A five-point spread across five different
+events is what per-visitor blocking looks like; a bug in any one event would make
+it stand out.
+
+Published estimates put typical browser loss at 20–40% *(vendor sources —
+directional only)*. **Ours is 11–16%**, because 96% of our traffic is mobile and
+ad blockers are overwhelmingly desktop extensions, which Instagram's in-app
+browser cannot run at all. This is the floor for a mobile-first audience, not a
+fault to chase. Only server-side events could recover it, and our only hook sits
+below the events that drift — see the audit for what that would cost.
 
 **Purchase is the exception, and should stay exact** — because the server reports
 it too. If deduplicated Purchase ever stops matching our payment count, something
