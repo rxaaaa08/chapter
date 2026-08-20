@@ -220,6 +220,29 @@ Deno.serve(async (req) => {
     // so an unvalidated string here is a free write into our own table. A
     // malformed value is also worse than none — Meta scores a supplied-but-
     // unmatchable field against us rather than ignoring it.
+    // The customer's own browser context, captured HERE because this is the only
+    // moment we are called directly by it. payu-callback can read equivalent
+    // headers (PayU's callback is a form POST rendered in the customer's
+    // browser), but payu-webhook cannot — it is a server-to-server call, so its
+    // headers describe PayU's machine. The webhook is the only path that reports
+    // a sale when the customer never returns, so without this those events reach
+    // Meta missing client_user_agent, which Meta lists as REQUIRED.
+    // Reuses the clientIp() helper above rather than re-deriving it, so the
+    // header precedence (x-forwarded-for, cf-connecting-ip, x-real-ip) stays in
+    // one place. It returns 'unknown' when it finds nothing; store null instead,
+    // because a literal "unknown" would be a supplied-but-unmatchable value.
+    const ipRaw = clientIp(req);
+    const customerIp = ipRaw && ipRaw !== 'unknown' ? ipRaw : null;
+    const customerUserAgent = req.headers.get('user-agent')?.slice(0, 512) || null;
+
+    // event_source_url for Meta. Taken from the Referer rather than trusting a
+    // client-supplied string, and only kept when it is genuinely one of our own
+    // pages — this endpoint is anon-callable.
+    const rawReferer = req.headers.get('referer') ?? '';
+    const sourceUrl = /^https:\/\/(www\.)?chaptera\.in\//.test(rawReferer)
+      ? rawReferer.slice(0, 512)
+      : null;
+
     const rawFbp = String(body.fbp ?? '').trim();
     const fbp = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/.test(rawFbp) && rawFbp.length <= 120
       ? rawFbp
@@ -565,6 +588,9 @@ Deno.serve(async (req) => {
       payment_type: paymentType,
       whatsapp_group_url: null, // never trust this from the client
       fbp,
+      client_ip: customerIp,
+      client_user_agent: customerUserAgent,
+      source_url: sourceUrl,
     });
     if (insErr) {
       console.error('[create-payu-order] pending insert failed, aborting order', insErr);

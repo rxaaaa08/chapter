@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPurchaseToMeta } from '../_shared/metaCapi.ts';
+import { sendPurchaseToMeta, payuAddedOnToUnix } from '../_shared/metaCapi.ts';
 
 // ── Hashing ──────────────────────────────────────────────────────────────────
 
@@ -595,7 +595,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, client_ip, client_user_agent, source_url, payu_response')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -729,7 +729,7 @@ Deno.serve(async (req) => {
             phone,
             eventSlug,
             eventTitle: stored.event_title ?? null,
-            sourceUrl: `${Deno.env.get('FRONTEND_URL') ?? 'https://chaptera.in'}/`,
+            sourceUrl: (stored as any)?.source_url ?? `${Deno.env.get('FRONTEND_URL') ?? 'https://chaptera.in'}/`,
             // Same identifier set as the callback. Both paths must send an
             // identical user_data shape, or the same sale would score
             // differently depending on which one happened to report it.
@@ -742,6 +742,16 @@ Deno.serve(async (req) => {
             // what lets Meta match a sale to the browser it showed the ad to
             // when there was no ad CLICK to leave an fbclid behind.
             fbp: (stored as any)?.fbp ?? null,
+            // The webhook is a server-to-server call from PayU, so req.headers
+            // describes PayU's machine, not the customer — sending those would be
+            // worse than sending nothing. These were captured from the customer's
+            // own browser at checkout, and this is the only path that reports a
+            // sale when they never came back.
+            clientIp: (stored as any)?.client_ip ?? null,
+            userAgent: (stored as any)?.client_user_agent ?? null,
+            // How late this fires is exactly why event_time must come from PayU
+            // rather than from now().
+            eventTime: payuAddedOnToUnix((stored as any)?.payu_response?.addedon),
           });
 
           if (paymentType === 'advance') {

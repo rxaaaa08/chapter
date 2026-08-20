@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPurchaseToMeta } from '../_shared/metaCapi.ts';
+import { sendPurchaseToMeta, payuAddedOnToUnix } from '../_shared/metaCapi.ts';
 
 // ── Hashing ──────────────────────────────────────────────────────────────────
 
@@ -651,7 +651,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, client_ip, client_user_agent, source_url, payu_response')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -804,9 +804,13 @@ Deno.serve(async (req) => {
             phone,
             eventSlug,
             eventTitle: stored.event_title ?? null,
-            sourceUrl: `${FRONTEND_URL}/`,
-            clientIp: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-            userAgent: req.headers.get('user-agent'),
+            sourceUrl: (stored as any)?.source_url ?? `${FRONTEND_URL}/`,
+            // This request comes from the customer's own browser, so its headers
+            // are genuinely theirs. Fall back to what checkout captured if a
+            // header is missing.
+            clientIp: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+              ?? (stored as any)?.client_ip ?? null,
+            userAgent: req.headers.get('user-agent') ?? (stored as any)?.client_user_agent ?? null,
             // Extra identifiers so Meta can match the sale to a person. Without
             // these it often knows a purchase happened but not who made it,
             // which means it can't credit the ad or learn what buyers look like.
@@ -819,6 +823,10 @@ Deno.serve(async (req) => {
             // what lets Meta match a sale to the browser it showed the ad to
             // when there was no ad CLICK to leave an fbclid behind.
             fbp: (stored as any)?.fbp ?? null,
+            // PayU's `addedon` is when the payment actually happened. Only a few
+            // seconds ago here, but the same call in payu-webhook can run much
+            // later, and Meta attributes on event_time.
+            eventTime: payuAddedOnToUnix((stored as any)?.payu_response?.addedon),
           });
 
           if (paymentType === 'advance') {

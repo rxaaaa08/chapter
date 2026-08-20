@@ -118,6 +118,19 @@ function buildFbc(fbclid: string | null | undefined, landedAt: string | null | u
   return `fb.1.${stamp}.${fbclid}`;
 }
 
+// PayU stamps every result with `addedon`, e.g. "2026-08-21 00:42:07". That is
+// the moment the payment actually happened, and it is IST with NO offset in the
+// string — parsing it as UTC would shift every event by 5.5 hours.
+//
+// Worth using instead of "now": the callback fires seconds after payment, but the
+// webhook can arrive much later, and Meta attributes on event_time. Exported so
+// payu-callback and payu-webhook cannot drift apart on the parsing rule.
+export function payuAddedOnToUnix(addedOn: string | null | undefined): number | null {
+  if (!addedOn) return null;
+  const ms = Date.parse(`${String(addedOn).trim().replace(' ', 'T')}+05:30`);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
 export type CapiPurchaseArgs = {
   /** PayU txnid — doubles as the dedup key against the browser event. */
   txnid: string;
@@ -138,6 +151,12 @@ export type CapiPurchaseArgs = {
   /** Raw fbclid from applications.attribution, plus when we saw it. */
   fbclid?: string | null;
   fbclidSeenAt?: string | null;
+  /**
+   * When the payment actually happened, unix seconds (from PayU's `addedon` via
+   * payuAddedOnToUnix). Falls back to now — right for the callback, wrong for a
+   * webhook that arrives late.
+   */
+  eventTime?: number | null;
   /**
    * Meta's _fbp browser cookie, captured at checkout by the payment page and
    * parked on payu_payments.fbp — the server cannot read it itself. Matters
@@ -210,7 +229,9 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
     const payload: Record<string, unknown> = {
       data: [{
         event_name: 'Purchase',
-        event_time: Math.floor(Date.now() / 1000),
+        event_time: args.eventTime && Number.isFinite(args.eventTime)
+          ? args.eventTime
+          : Math.floor(Date.now() / 1000),
         // Shared with the browser event so Meta counts this sale once.
         event_id: args.txnid,
         action_source: 'website',
