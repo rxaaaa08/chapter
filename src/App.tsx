@@ -4164,56 +4164,65 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // funnel happens on our own pages; the payment happens on PayU's, so without
   // this the ad platform never learns which click became a ticket.
   //
-  // Fires as soon as the outcome is success, whether or not the receipt has
-  // loaded — `payment` needs the booking phone from sessionStorage and may
-  // never arrive (returning visitor, cleared storage). A Purchase with no value
-  // still counts as a conversion, and a missed conversion is far worse than a
-  // missing amount. When the receipt is present the real figure rides along.
+  // Reports the sale ONCE, and only when we can verify what it was: the receipt
+  // has loaded, it is not a balance payment, and it is recent enough for Meta to
+  // deduplicate against the server event. Each of those guards is explained at
+  // the line that enforces it.
   //
   // NOTE: payment.amount is what PayU charged, i.e. INCLUDING the gateway fee
   // (₹102.42 on a ₹100 advance) — not net revenue. Kept as-is so this number
   // always reconciles against payu_payments.
   React.useEffect(() => {
     if (view !== 'success') return;
-    const id = txnid || payment?.txnid || '';
+
+    // Wait for the receipt rather than firing blind.
+    //
+    // This used to fire without `payment` after a 5s fallback, on the reasoning
+    // that a conversion missing its amount beats no conversion. That reasoning
+    // was written before the server reported anything. It no longer holds: the
+    // Conversions API now reports every advance and full payment on its own, so
+    // a browser event we cannot verify is not the difference between counting a
+    // sale and losing one — it only risks counting one twice.
+    if (!payment) return;
+
+    const id = txnid || payment.txnid || '';
     if (!id) return;
 
-    const fire = () => {
-      // The receipt is the one place a returning visitor's identity is known
-      // without them filling anything in, so attach it before the Purchase.
-      if (payment) {
-        setPixelUserData({
-          email: payment.email,
-          phone: payment.phone,
-          name: payment.name,
-          city: payment.selected_city,
-        });
-      }
-      return trackPurchaseOnce(id, {
-        value: payment?.amount != null ? Number(payment.amount) : undefined,
-        currency: 'INR',
-        content_name: payment?.event_title,
-        content_ids: payment?.event_slug ? [payment.event_slug] : undefined,
-        content_type: 'product',
-      });
-    };
+    // A balance payment is the second half of a split booking. The server already
+    // skips these; without the same guard here the browser kept reporting them
+    // and the double count simply moved from one source to the other.
+    if (String(payment.payment_type ?? '').toLowerCase() === 'balance') return;
 
-    // With the amount in hand there is nothing to wait for.
-    if (payment?.amount != null) { fire(); return; }
-
-    // Without it, DON'T fire yet. `view` flips to success the moment PayU says
-    // so, while `payment` arrives later from fetchReceipt — so firing straight
-    // away sent a Purchase carrying no value, and trackPurchaseOnce then refused
-    // the corrected one because the txnid was already in localStorage. The
-    // amount was therefore almost never reported, not occasionally missed:
-    // Meta flagged 62% of Purchases as having no value.
+    // Meta deduplicates a browser and server event only when both arrive within
+    // 48 HOURS carrying the same event_id and event_name. The server fired
+    // seconds after payment, so a receipt opened days later — the WhatsApp link,
+    // on a device that never fired it — lands outside that window and is counted
+    // as a SECOND purchase. It would also be dated days after the real sale,
+    // which misattributes it to the wrong window.
     //
-    // So give the receipt a moment. When it lands this effect re-runs, the
-    // timer below is cleared, and the event goes with its real value. If it
-    // never lands we still fire — the original tradeoff stands, a conversion
-    // missing its amount beats no conversion at all.
-    const t = setTimeout(fire, 5000);
-    return () => clearTimeout(t);
+    // 24h, not 48, so a slow clock or a late webhook cannot push a legitimate
+    // view over the edge.
+    const paidAtMs = Date.parse(String(payment.created_at ?? ''));
+    if (Number.isFinite(paidAtMs) && Date.now() - paidAtMs > 24 * 60 * 60 * 1000) return;
+
+    // The receipt is the one place a returning visitor's identity is known
+    // without them filling anything in, so attach it before the Purchase.
+    setPixelUserData({
+      email: payment.email,
+      phone: payment.phone,
+      name: payment.name,
+      city: payment.selected_city,
+    });
+
+    // eventID here must equal event_id on the server exactly — same string, same
+    // case — or Meta treats one sale as two. Both are the PayU txnid.
+    trackPurchaseOnce(id, {
+      value: payment.amount != null ? Number(payment.amount) : undefined,
+      currency: 'INR',
+      content_name: payment.event_title,
+      content_ids: payment.event_slug ? [payment.event_slug] : undefined,
+      content_type: 'product',
+    });
   }, [view, txnid, payment]);
 
   // Payment is still being confirmed (e.g. a slow UPI collect). We deliberately
