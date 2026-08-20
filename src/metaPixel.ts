@@ -32,7 +32,12 @@ const NON_CUSTOMER_PREFIXES = ['/admin', '/creator', '/team'];
 
 declare global {
   interface Window {
-    fbq?: ((...args: any[]) => void) & { callMethod?: (...args: any[]) => void; queue?: any[] };
+    fbq?: ((...args: any[]) => void) & {
+      callMethod?: (...args: any[]) => void;
+      queue?: any[];
+      /** Meta's flag to suppress automatic PageView on history changes. */
+      disablePushState?: boolean;
+    };
     _fbq?: unknown;
   }
 }
@@ -84,6 +89,26 @@ export function initMetaPixel(): void {
     stub.loaded = true;
     stub.version = '2.0';
     stub.queue = [];
+    // Stop Meta counting a "page view" every time the URL changes.
+    //
+    // fbevents.js hooks the History API and fires its own PageView on every
+    // history.pushState. Most sites push a handful of times per visit; we push
+    // on EVERY sheet and step, because the Instagram back button only works
+    // when each layer owns a distinct URL (62 pushState/replaceState sites
+    // across App.tsx + AppFlow.tsx). The result, measured 16-19 Aug 2026: Meta
+    // logged 1,001 PageViews against our 351 — it was counting interactions,
+    // not visits, and tracked our TOTAL event count (1,102) instead.
+    //
+    // Set on the stub BEFORE init, which is the only point it is read.
+    //
+    // Deliberately NOT the broader `fbq('set','autoConfig',false)`: that would
+    // also switch off automatic advanced matching, which is helping the very
+    // match-quality score Phase A exists to raise.
+    //
+    // Affects reporting only. Our own pushState calls, popstate handling and
+    // the layer stack are untouched — Meta stops emitting an event, the browser
+    // still gets its history entry.
+    stub.disablePushState = true;
     window.fbq = stub;
     window._fbq = stub;
 
