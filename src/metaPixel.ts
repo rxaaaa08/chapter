@@ -123,6 +123,83 @@ export function initMetaPixel(): void {
   }
 }
 
+// ─── Advanced Matching — identity on the BROWSER event ───────────────────────
+//
+// Our server event carries eleven identifiers. The browser event carried none of
+// the personal ones: it said, in effect, "someone on this device bought
+// something". For Purchase that barely matters — Meta merges the deduplicated
+// pair and the server's identity wins. It matters for every OTHER event, because
+// Lead, InitiateCheckout and the rest have no server counterpart at all and
+// reach Meta completely anonymous.
+//
+// Values are passed in PLAIN here on purpose: Meta's own script SHA-256 hashes
+// them inside the page before anything is sent, so no readable personal data
+// crosses the network. We still normalise first, identically to the server
+// (supabase/functions/_shared/metaCapi.ts) — if the two sides normalise
+// differently they hash differently and describe two different people.
+//
+// Meta documents user data only as the third argument to init. Re-calling init
+// with the same pixel id is the accepted way to supply it once the customer
+// identifies, and is verified here not to emit an extra PageView.
+export type PixelUserData = {
+  email?: string | null;
+  phone?: string | null;
+  name?: string | null;
+  city?: string | null;
+};
+
+function normalisePart(raw: string | null | undefined): string {
+  return (raw ?? '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z]/g, '');
+}
+
+export function setPixelUserData(u: PixelUserData): void {
+  try {
+    if (!isPixelConfigured() || typeof window === 'undefined' || !window.fbq) return;
+    if (!isCustomerRoute() || !isProductionHost()) return;
+
+    const data: Record<string, string> = {};
+
+    const email = (u.email ?? '').trim().toLowerCase();
+    if (email.includes('@')) data.em = email;
+
+    // Same shape the server sends: country code, digits only.
+    const digits = (u.phone ?? '').replace(/\D/g, '');
+    const ten = digits.slice(-10);
+    if (ten.length === 10) {
+      data.ph = `91${ten}`;
+      // Must be the SAME string the server hashes for external_id, or the two
+      // events describe two different people instead of one.
+      data.external_id = `91${ten}`;
+    }
+
+    const parts = (u.name ?? '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length) {
+      const fn = normalisePart(parts[0]);
+      if (fn) data.fn = fn;
+      // A single-word name gives fn only — a blank ln is scored as
+      // supplied-but-unmatched, which is worse than sending nothing.
+      if (parts.length > 1) {
+        const ln = normalisePart(parts[parts.length - 1]);
+        if (ln) data.ln = ln;
+      }
+    }
+
+    const city = normalisePart(u.city);
+    if (city) data.ct = city;
+
+    // Nothing identifying means nothing worth re-initialising for.
+    if (!Object.keys(data).length) return;
+    data.country = 'in';
+
+    window.fbq('init', META_PIXEL_ID, data);
+  } catch {
+    // never block a booking
+  }
+}
+
 export type PixelParams = {
   content_name?: string;
   content_ids?: string[];

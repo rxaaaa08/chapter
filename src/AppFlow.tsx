@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { getAffiliateRef } from './affiliate';
 import { getAttribution } from './attribution';
+import { setPixelUserData } from './metaPixel';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
 import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
@@ -522,6 +523,16 @@ function ApplicationForm({
       const chosenPoint = selectedPickupId
         ? (event.pickupPoints ?? []).find((p: any) => p.id === selectedPickupId)
         : null;
+
+      // Give the browser pixel an identity now that we have one. Everything the
+      // visitor does from here on — Lead, and Purchase if they come back to the
+      // receipt — carries it. Before this the browser events were anonymous.
+      setPixelUserData({
+        email: form.email,
+        phone: form.phone,
+        name: form.name,
+        city: selectedCity,
+      });
 
       const { error: sbError } = await supabase.from('applications').insert({
         event_slug: String(event.id ?? '').toLowerCase(),
@@ -1979,6 +1990,15 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       // insert passes RLS; a returning/abandoned lead simply hits the
       // (event_slug, phone) unique key (23505), which we treat as success — their
       // row already exists and refresh_open_application below updates its fields.
+      // Same as the invite flow: identify the browser as soon as we know who it
+      // is, so the events after this point stop being anonymous.
+      setPixelUserData({
+        email: detailsForm.email,
+        phone: normalizedPhone,
+        name: detailsForm.name,
+        city: selectedCity,
+      });
+
       const { error: appErr } = await supabase
         .from('applications')
         .insert({

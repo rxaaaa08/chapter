@@ -11,7 +11,7 @@ import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
-import { trackPurchaseOnce } from './metaPixel';
+import { setPixelUserData, trackPurchaseOnce } from './metaPixel';
 import { captureAttribution } from './attribution';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
@@ -4174,13 +4174,25 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
     const id = txnid || payment?.txnid || '';
     if (!id) return;
 
-    const fire = () => trackPurchaseOnce(id, {
-      value: payment?.amount != null ? Number(payment.amount) : undefined,
-      currency: 'INR',
-      content_name: payment?.event_title,
-      content_ids: payment?.event_slug ? [payment.event_slug] : undefined,
-      content_type: 'product',
-    });
+    const fire = () => {
+      // The receipt is the one place a returning visitor's identity is known
+      // without them filling anything in, so attach it before the Purchase.
+      if (payment) {
+        setPixelUserData({
+          email: payment.email,
+          phone: payment.phone,
+          name: payment.name,
+          city: payment.selected_city,
+        });
+      }
+      return trackPurchaseOnce(id, {
+        value: payment?.amount != null ? Number(payment.amount) : undefined,
+        currency: 'INR',
+        content_name: payment?.event_title,
+        content_ids: payment?.event_slug ? [payment.event_slug] : undefined,
+        content_type: 'product',
+      });
+    };
 
     // With the amount in hand there is nothing to wait for.
     if (payment?.amount != null) { fire(); return; }
