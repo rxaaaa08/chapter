@@ -4005,7 +4005,11 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
       // Stash the applicant's chosen date so the warm note reads the right
       // per-date booking steps for a multi-date event.
       setAppSelectedDate(String(matchedApp?.selected_date ?? ''));
-      return p;
+      // get-user-context returns the PAYMENT row, which has no city — but the
+      // matched application does. Attach it so the receipt can hand a city to
+      // the pixel's advanced matching; without this `ct` was silently always
+      // undefined on this path.
+      return p ? { ...p, selected_city: matchedApp?.city ?? null } : p;
     } catch { return null; }
   }, [txnid]);
 
