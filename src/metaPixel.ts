@@ -303,22 +303,42 @@ export function trackPurchaseOnce(txnid: string, params: PixelParams): void {
 // the match-quality score down.
 const FBP_PATTERN = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/;
 
-export function getFbp(): string | null {
+function readMetaCookie(name: '_fbp' | '_fbc'): string | null {
   try {
     if (typeof document === 'undefined') return null;
     const hit = document.cookie
       .split(';')
       .map(c => c.trim())
-      .find(c => c.startsWith('_fbp='));
+      .find(c => c.startsWith(`${name}=`));
     if (!hit) return null;
-    const value = decodeURIComponent(hit.slice('_fbp='.length)).trim();
+    const value = decodeURIComponent(hit.slice(name.length + 1)).trim();
     // Shape-check rather than trust: a malformed or truncated cookie is worse
     // than no cookie, because Meta counts a supplied-but-unmatchable field
     // against the score instead of ignoring it.
-    if (value.length > 120 || !FBP_PATTERN.test(value)) return null;
+    if (value.length > 200 || !FBP_PATTERN.test(value)) return null;
     return value;
   } catch {
     // cookie access can throw in restricted/embedded contexts — never block pay
     return null;
   }
+}
+
+export function getFbp(): string | null {
+  return readMetaCookie('_fbp');
+}
+
+// Meta's click id, as fbevents itself recorded it.
+//
+// The server can rebuild this from the fbclid in applications.attribution, and
+// still does when the cookie is missing. But a rebuild has to invent the
+// timestamp portion — it uses when WE saw the landing, while fbevents used when
+// IT saw the click. Same click, two different strings, one reported by the
+// browser and the other by the server.
+//
+// fbc is the field that ties a sale to an ad, so it is worth having both sides
+// say exactly the same thing. Read the real cookie when it exists; fall back to
+// the reconstruction when the pixel was blocked, where the URL parameter is all
+// anyone has.
+export function getFbc(): string | null {
+  return readMetaCookie('_fbc');
 }

@@ -651,7 +651,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, client_ip, client_user_agent, source_url, payu_response')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, payu_response')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -823,6 +823,9 @@ Deno.serve(async (req) => {
             // what lets Meta match a sale to the browser it showed the ad to
             // when there was no ad CLICK to leave an fbclid behind.
             fbp: (stored as any)?.fbp ?? null,
+            // Real cookie if checkout captured one; metaCapi falls back to
+            // rebuilding from fbclid when it did not.
+            fbc: (stored as any)?.fbc ?? null,
             // PayU's `addedon` is when the payment actually happened. Only a few
             // seconds ago here, but the same call in payu-webhook can run much
             // later, and Meta attributes on event_time.

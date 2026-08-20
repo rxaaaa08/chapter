@@ -152,6 +152,12 @@ export type CapiPurchaseArgs = {
   fbclid?: string | null;
   fbclidSeenAt?: string | null;
   /**
+   * The real _fbc cookie captured at checkout. Preferred over rebuilding from
+   * fbclid: a rebuild has to invent the timestamp portion, so the browser and
+   * the server would report two different strings for the same click.
+   */
+  fbc?: string | null;
+  /**
    * When the payment actually happened, unix seconds (from PayU's `addedon` via
    * payuAddedOnToUnix). Falls back to now — right for the callback, wrong for a
    * webhook that arrives late.
@@ -207,7 +213,10 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
     // At 6.2/10 Meta often knew a purchase happened but not who made it.
     const { fn, ln } = splitName(args.name);
     const city = normaliseNamePart(args.city);
-    const fbc = buildFbc(args.fbclid, args.fbclidSeenAt);
+    // The browser's own cookie is the truth. Rebuild only when it is missing,
+    // which is the ad-blocked case — there the fbclid in the URL is all anyone
+    // has, and a rebuilt fbc still beats none.
+    const fbc = args.fbc ?? buildFbc(args.fbclid, args.fbclidSeenAt);
 
     const user_data: Record<string, unknown> = {};
     if (email) user_data.em = [await sha256Hex(email)];

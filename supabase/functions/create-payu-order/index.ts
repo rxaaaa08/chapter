@@ -243,10 +243,16 @@ Deno.serve(async (req) => {
       ? rawReferer.slice(0, 512)
       : null;
 
+    const META_COOKIE = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/;
+
     const rawFbp = String(body.fbp ?? '').trim();
-    const fbp = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/.test(rawFbp) && rawFbp.length <= 120
-      ? rawFbp
-      : null;
+    const fbp = META_COOKIE.test(rawFbp) && rawFbp.length <= 120 ? rawFbp : null;
+
+    // Meta's click id as the browser recorded it. Preferred over rebuilding it
+    // server-side, so both reports of one sale carry the same string. Same
+    // shape-check; the cap is looser because an fbclid is longer than an fbp id.
+    const rawFbc = String(body.fbc ?? '').trim();
+    const fbc = META_COOKIE.test(rawFbc) && rawFbc.length <= 200 ? rawFbc : null;
 
     // ── 2. Init Supabase ──
     const supabase = createClient(
@@ -588,6 +594,7 @@ Deno.serve(async (req) => {
       payment_type: paymentType,
       whatsapp_group_url: null, // never trust this from the client
       fbp,
+      fbc,
       client_ip: customerIp,
       client_user_agent: customerUserAgent,
       source_url: sourceUrl,

@@ -595,7 +595,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, client_ip, client_user_agent, source_url, payu_response')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, payu_response')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -742,6 +742,9 @@ Deno.serve(async (req) => {
             // what lets Meta match a sale to the browser it showed the ad to
             // when there was no ad CLICK to leave an fbclid behind.
             fbp: (stored as any)?.fbp ?? null,
+            // Real cookie if checkout captured one; metaCapi falls back to
+            // rebuilding from fbclid when it did not.
+            fbc: (stored as any)?.fbc ?? null,
             // The webhook is a server-to-server call from PayU, so req.headers
             // describes PayU's machine, not the customer — sending those would be
             // worse than sending nothing. These were captured from the customer's

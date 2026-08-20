@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from './supabase';
-import { getFbp } from './metaPixel';
+import { getFbc, getFbp } from './metaPixel';
 
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -438,6 +438,10 @@ export function NativePaymentOverlay({
           // here, stored on the payment row, and replayed from payu-callback /
           // payu-webhook. Absent for ad-blocked visitors; simply omitted then.
           fbp: getFbp() ?? undefined,
+          // The real _fbc cookie, so the browser and server report an identical
+          // click id. Absent for ad-blocked visitors; the server then rebuilds
+          // it from the fbclid instead.
+          fbc: getFbc() ?? undefined,
         }),
       });
       const data = await res.json();
