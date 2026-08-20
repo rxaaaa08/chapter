@@ -78,6 +78,12 @@ export function initMetaPixel(): void {
     // sufficient: trackPixel() short-circuits on a missing window.fbq, so no
     // downstream event can fire either.
     if (!isProductionHost()) return;
+
+    // Before anything else, and deliberately before the `window.fbq` early
+    // return: fbevents.js loads asynchronously and may never record the click,
+    // so stamp the cookie from the URL while the landing URL is still current.
+    ensureFbcCookie();
+
     if (window.fbq) return;
 
     // Meta's standard loader, transcribed rather than eval'd from a string so
@@ -341,4 +347,54 @@ export function getFbp(): string | null {
 // anyone has.
 export function getFbc(): string | null {
   return readMetaCookie('_fbc');
+}
+
+// Write _fbc ourselves when the pixel hasn't.
+//
+// WHY THIS IS NEEDED
+// fbevents normally turns an fbclid in the URL into an _fbc cookie by itself,
+// and on a normal browser it does — verified on the live site. But on the real
+// booking of 2026-08-21 it did not: the visit arrived from l.instagram.com with
+// a valid fbclid, _fbp was written, and _fbc never appeared. Instagram's in-app
+// browser is where most of our customers actually are, so "usually works" is not
+// good enough for the one field that ties a sale to an ad.
+//
+// The server already covers itself by rebuilding fbc from
+// applications.attribution.fbclid. The BROWSER event has no such fallback — it
+// can only read the cookie — so without this, click id reaches Meta from one
+// source instead of two on our main traffic source.
+//
+// Meta sanctions this: "If the _fbc cookie is not available ... it is still
+// possible to send the fbc event parameter ... if an fbclid query parameter is
+// in the URL." Format and expiry below are theirs.
+const FBC_MAX_AGE_SECONDS = 90 * 24 * 60 * 60; // Meta's stated 90 days
+
+// Meta: "'com' = 0, 'example.com' = 1, 'www.example.com' = 2" — i.e. the number
+// of dot-separated parts minus one. chaptera.in is 1, www.chaptera.in is 2.
+function subdomainIndex(): number {
+  const parts = window.location.hostname.split('.').filter(Boolean);
+  return Math.max(1, parts.length - 1);
+}
+
+export function ensureFbcCookie(): void {
+  try {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (!isCustomerRoute() || !isProductionHost()) return;
+
+    // NEVER invent a click id. No fbclid means this visitor did not arrive from
+    // Meta, and a fabricated fbc would attribute a sale to an ad they never saw.
+    const fbclid = new URLSearchParams(window.location.search).get('fbclid')?.trim();
+    if (!fbclid || !/^[A-Za-z0-9_-]+$/.test(fbclid) || fbclid.length > 500) return;
+
+    // Meta's rule: only write when there is no cookie, or when the URL carries a
+    // DIFFERENT click than the one already stored (a genuinely new ad click).
+    // Re-stamping an unchanged click would just move its timestamp for nothing.
+    const existing = readMetaCookie('_fbc');
+    if (existing && existing.split('.').slice(3).join('.') === fbclid) return;
+
+    document.cookie = `_fbc=fb.${subdomainIndex()}.${Date.now()}.${fbclid}`
+      + `; path=/; max-age=${FBC_MAX_AGE_SECONDS}; SameSite=Lax; Secure`;
+  } catch {
+    // cookie access can throw in restricted contexts — never block the page
+  }
 }
