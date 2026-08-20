@@ -281,6 +281,7 @@ Statuses are from the 18 Aug audit. Re-verify before any spend.
 | 9 | Creative is legally runnable | ⚠️ Instagram licensed music **cannot** run as an ad — re-cut with Meta Sound Collection or voiceover |
 | 10 | Campaign spending limit set | ❌ no campaign exists yet |
 | 11 | The event actually has seats | manual check |
+| 12 | **Two-purchase dedup test done** | ❌ **pending — do this before spending.** Two ₹1 bookings from one phone, minutes apart; confirm BOTH land as separate Purchases. Three real same-person-within-48h cases exist, one of them a ₹2,662 second sale |
 
 Items 4, 6 and 7 are ours to fix and cost nothing.
 
