@@ -361,6 +361,20 @@ Purchase is too rare a signal for Meta to learn from.
 | 10–50 | InitiateCheckout |
 | under 10 | AddToCart, or don't run yet |
 
+### Owner's decision, 21 Aug 2026: always Purchase — do not re-propose
+
+**Optimise for Purchase regardless of how sparse it is.** This overrides the table
+above, which was borrowed reasoning and is wrong for us at this budget.
+
+That table assumes the goal is exiting the learning phase. On a ₹400 test we never
+will, whatever event we pick — so a proxy event buys nothing and costs something
+real: Meta would go hunting people who press "Book Now" and never pay, when the
+entire purpose of the test is learning what a **ticket** costs.
+
+Expect "Learning Limited" permanently and possible under-delivery. Both are the
+price of pointing the algorithm at the thing we actually want, and both were
+accepted knowingly.
+
 **Never optimise for `SubscribedButtonClick`** — it appears in our dataset with
 zero volume and we did not implement it. It is Meta's automatic detection, and we
 do not control it.
