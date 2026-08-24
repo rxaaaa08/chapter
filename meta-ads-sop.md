@@ -212,8 +212,10 @@ error — it silently matches nobody, which looks exactly like working.
 `fb.1.<timestamp_ms>.<fbclid>`. Sending the bare click ID is accepted by Meta and
 matches nothing. `fbc` and `fbp` are the only fields sent **raw, never hashed**.
 
-**Target:** deploy Phase A, then re-read the score. Do not set a target number in
-advance — read what it becomes and decide from there.
+**Meta's own target: 6.0 or higher.** From their verification documentation —
+"we typically recommend that you aim for an Event Match Quality score of 6.0 or
+higher." That is a platform-published number, so unlike an agency benchmark it is
+a legitimate bar. **We are at 8.0–8.4**, comfortably past it.
 
 ---
 

@@ -131,6 +131,19 @@ export function payuAddedOnToUnix(addedOn: string | null | undefined): number | 
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
 }
 
+const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
+
+// Falls back to now outside Meta's accepted range. A slightly late timestamp
+// beats a rejected sale. An hour of margin keeps us off the boundary, and a
+// future time — clock skew on either side — is clamped for the same reason.
+function safeEventTime(eventTime: number | null | undefined): number {
+  const now = Math.floor(Date.now() / 1000);
+  if (!eventTime || !Number.isFinite(eventTime)) return now;
+  const age = now - eventTime;
+  if (age > SEVEN_DAYS_SECONDS - 3600 || age < -3600) return now;
+  return eventTime;
+}
+
 export type CapiPurchaseArgs = {
   /** PayU txnid — doubles as the dedup key against the browser event. */
   txnid: string;
@@ -266,9 +279,12 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
     const payload: Record<string, unknown> = {
       data: [{
         event_name: 'Purchase',
-        event_time: args.eventTime && Number.isFinite(args.eventTime)
-          ? args.eventTime
-          : Math.floor(Date.now() / 1000),
+        // Meta: "event_time can be up to 7 days before you send an event ... If any
+        // event_time in data is greater than 7 days in the past, we return an
+        // error for the ENTIRE request and process no events." We take this from
+        // PayU's own timestamp, so a stale or clock-skewed value would cost the
+        // whole event rather than degrade it.
+        event_time: safeEventTime(args.eventTime),
         // Shared with the browser event so Meta counts this sale once.
         event_id: args.txnid,
         action_source: 'website',

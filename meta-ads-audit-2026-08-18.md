@@ -579,3 +579,81 @@ open question.
 
 If a campaign ever optimises on `InitiateCheckout` and its volume proves too thin,
 the server-side option is written down above — with the baseline break it costs.
+
+---
+
+# Addendum 5 — 21 Aug 2026: checked against three more official docs
+
+Read *Using the API*, *Verifying Your Setup*, and *Handling Duplicate Pixel and
+Conversions API Events*. Two things I had told the owner were wrong, and one real
+hardening came out of it.
+
+## CORRECTION: test events are not harmless
+
+I said a `test_event_code` routes purchases away from live totals. Meta:
+
+> "Events sent with `test_event_code` are **not dropped**. They flow into Events
+> Manager and are used for **targeting and ads measurement** purposes."
+
+The advice — confirm `META_CAPI_TEST_CODE` is unset — was right. The reason given
+for it was wrong, and the risk is higher than described: a test code left set
+does not quarantine anything, it pollutes live measurement.
+
+## CORRECTION: Meta does not merge the two sources
+
+I said Meta "combines the data from both sources" when deduplicating, sourced from
+a practitioner blog. Meta:
+
+> "If server and browser events do not differ meaningfully in their content, we
+> generally **prefer the event that is received first**."
+
+So the event that arrives **first** is the one kept. That makes arrival order
+matter, and ours is favourable by accident of architecture: `payu-callback` runs
+server-side *during* the PayU redirect, before the browser reaches the receipt, so
+the **server event — the one carrying eleven identifiers — arrives first.**
+
+If that ever inverts (a slower callback, a faster receipt), the kept event becomes
+the poorer one. Worth remembering before changing anything about the redirect.
+
+## The pending two-purchase test is lower-risk than feared
+
+Meta's limits on the `fbp`/`external_id` fallback:
+
+> "Generally, it only works for deduplicating events sent **first from the browser
+> and then through the server**."
+
+> "Does **not** deduplicate events when only using one event source ... If you send
+> us two consecutive server events with the same information, we do not discard
+> either."
+
+Our order is server-first, which is the direction that method does *not* cover,
+and two server events for one person are explicitly never collapsed. The test is
+still worth doing — the cross-source case (purchase A's browser event, purchase
+B's server event) is not addressed by either quote — but the likely answer is now
+"nothing collapses".
+
+## HARDENING: event_time outside Meta's window cost the whole event
+
+> "`event_time` can be up to **7 days** before you send an event ... If any
+> `event_time` in `data` is greater than 7 days in the past, we return an error for
+> the **entire request** and process no events."
+
+We take `event_time` from PayU's own `addedon`, so a stale or clock-skewed value
+would have cost the sale silently rather than degrading it. Now clamped: anything
+older than the limit (with an hour of margin) or in the future falls back to now.
+Verified — 2 minutes and 6 days pass through unchanged; 8 days and a future time
+fall back.
+
+## Confirmed already correct
+
+| Meta's rule | Ours |
+|---|---|
+| **"aim for an Event Match Quality score of 6.0 or higher"** | **8.0–8.4** — Meta's own benchmark, comfortably cleared |
+| Send within an hour of the event | seconds, via the callback |
+| Max 1,000 events per request | we send 1 |
+| Data Processing Options / LDU | US-only; correctly omitted, which Meta lists as the way to disable it |
+| `action_source` accurate | `website`, and it is |
+
+**Noted, not changed:** we call API `v21.0`; Meta's current examples use `v25.0`.
+Every version is supported at least two years, so v21 is fine — but it is worth
+moving before it ages out, and that is a deploy, not an emergency.
