@@ -11,7 +11,7 @@ import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
-import { setPixelUserData, trackPurchaseOnce } from './metaPixel';
+import { captureMetaIds, setPixelUserData, trackPurchaseOnce } from './metaPixel';
 import { captureAttribution } from './attribution';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
@@ -4979,6 +4979,23 @@ export default function App() {
     // off the landing URL, and a visitor whose source isn't captured here can
     // never be attributed afterwards — the information is simply gone.
     captureAttribution();
+
+    // Grab Meta's _fbp / _fbc on the LANDING page, per Meta's guidance: "Capture
+    // cookies early ... Do not retrieve them only from down-funnel events." We
+    // used to read them at checkout and nowhere else, so anything that changed a
+    // cookie in between meant we reported a value that no longer described the
+    // visit that earned the sale. Retried because fbevents writes _fbp only after
+    // its script loads; whichever call sees a value first is the one kept.
+    captureMetaIds();
+    // Poll rather than retry once. _fbc lands immediately because we write it,
+    // but fbevents wrote _fbp roughly five seconds later on a real load, so a
+    // single early retry missed it. Stops as soon as both are held, and gives up
+    // after 15s — a blocked pixel never writes _fbp and must not poll forever.
+    const metaIdsPoll = window.setInterval(() => {
+      if (captureMetaIds()) window.clearInterval(metaIdsPoll);
+    }, 1000);
+    const metaIdsGiveUp = window.setTimeout(() => window.clearInterval(metaIdsPoll), 15000);
+
     // Re-identify a visitor we already know, BEFORE the first pixel event.
     //
     // setPixelUserData runs when someone submits a booking form or lands on the
@@ -4996,6 +5013,7 @@ export default function App() {
       if (knownPhone) setPixelUserData({ phone: knownPhone });
     } catch { /* storage disabled — identity is a bonus, never a requirement */ }
     if (!isAdmin && !isCreatorPage && !isTeamPage) trackEvent('page_view');
+    return () => { window.clearInterval(metaIdsPoll); window.clearTimeout(metaIdsGiveUp); };
   }, []);
 
   useEffect(() => {

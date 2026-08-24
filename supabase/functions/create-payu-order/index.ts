@@ -243,7 +243,11 @@ Deno.serve(async (req) => {
       ? rawReferer.slice(0, 512)
       : null;
 
-    const META_COOKIE = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/;
+    // Mirrors FBP_PATTERN in src/metaPixel.ts — the optional final group is the
+    // appendix Meta's parameter-builder documentation appends
+    // (fb.1.<ts>.<id>.ABcDEFGh). Without it a valid five-part cookie would be
+    // rejected here and silently stored as null.
+    const META_COOKIE = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)?$/;
 
     const rawFbp = String(body.fbp ?? '').trim();
     const fbp = META_COOKIE.test(rawFbp) && rawFbp.length <= 120 ? rawFbp : null;

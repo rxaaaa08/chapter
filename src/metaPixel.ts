@@ -307,7 +307,17 @@ export function trackPurchaseOnce(txnid: string, params: PixelParams): void {
 // visitors we can see; it does not pretend to recover the half we can't. We
 // never synthesise a value — an invented fbp matches nobody and quietly drags
 // the match-quality score down.
-const FBP_PATTERN = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/;
+// fb.<subdomainIndex>.<creationTimeMs>.<id>, with an OPTIONAL trailing appendix.
+//
+// Meta's parameter-builder documentation gives the canonical format as
+// `fb.1.1554763741205.AbCdEf.ABcDEFGh` — an 8-character appendix identifying the
+// SDK version and language. fbevents writes the four-part form today, but a
+// five-part value is valid and our old pattern rejected it outright, which would
+// have silently dropped fbp/fbc rather than erroring. Accept both.
+//
+// Deliberately NOT case-insensitive and never lowercased: Meta states "_fbc is
+// case sensitive; do not normalize or format the _fbc to lowercase."
+const FBP_PATTERN = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)?$/;
 
 function readMetaCookie(name: '_fbp' | '_fbc'): string | null {
   try {
@@ -329,8 +339,69 @@ function readMetaCookie(name: '_fbp' | '_fbc'): string | null {
   }
 }
 
+// Remember the FIRST _fbp / _fbc seen this visit.
+//
+// Meta is explicit: "Capture cookies early ... Ideally retrieve _fbp and _fbc
+// cookies when loading your landing page. Do not retrieve them ONLY from
+// down-funnel events." We were doing exactly that — reading them at checkout and
+// nowhere else — so anything that changed the cookie between landing and payment
+// (Safari ITP capping it, a cleared cookie, a second ad click arriving with a
+// different fbclid) meant we sent a value that no longer described the visit that
+// actually earned the sale.
+//
+// Session-scoped. Holds the first value seen so there is something to fall back
+// on if the cookie disappears later — see the precedence note on getFbp/getFbc
+// for why the LIVE cookie still wins when both exist.
+const META_IDS_KEY = 'ca_meta_ids';
+
+function rememberFirst(field: 'fbp' | 'fbc', value: string | null): void {
+  if (!value) return;
+  try {
+    const store = JSON.parse(sessionStorage.getItem(META_IDS_KEY) || '{}');
+    if (store[field]) return; // already captured earlier in the visit
+    store[field] = value;
+    sessionStorage.setItem(META_IDS_KEY, JSON.stringify(store));
+  } catch {
+    // storage disabled — fall back to reading the cookie live
+  }
+}
+
+function recalled(field: 'fbp' | 'fbc'): string | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(META_IDS_KEY) || '{}')[field];
+    return typeof v === 'string' && v.length ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// Call on landing. fbevents writes _fbp asynchronously after its script loads, so
+// the caller retries shortly after — whichever call sees a value first wins.
+export function captureMetaIds(): boolean {
+  rememberFirst('fbp', readMetaCookie('_fbp'));
+  rememberFirst('fbc', readMetaCookie('_fbc'));
+  // Caller stops polling once both exist. Measured on a real page load: _fbc
+  // appears immediately (we write it), but fbevents took ~5s to write _fbp — a
+  // single early retry missed it entirely.
+  return !!(recalled('fbp') && recalled('fbc'));
+}
+
+// PRECEDENCE: the live cookie wins; the stored landing value is only a fallback.
+//
+// Tempting to prefer the value captured at landing, but that is wrong for fbc.
+// Meta's own rule overwrites _fbc whenever a DIFFERENT fbclid arrives, so the
+// cookie always holds the most recent click — and the most recent click is the
+// one that earned the sale. Verified live: landing on ad A then ad B leaves the
+// cookie on B while the session store still holds A. Sending A would credit the
+// wrong ad.
+//
+// The stored value earns its place when the cookie is GONE at checkout — Safari
+// capping it, a clear, an embedded browser losing it — which is exactly the loss
+// Meta's "capture cookies early" guidance is about.
 export function getFbp(): string | null {
-  return readMetaCookie('_fbp');
+  const live = readMetaCookie('_fbp');
+  rememberFirst('fbp', live);
+  return live ?? recalled('fbp');
 }
 
 // Meta's click id, as fbevents itself recorded it.
@@ -346,7 +417,9 @@ export function getFbp(): string | null {
 // the reconstruction when the pixel was blocked, where the URL parameter is all
 // anyone has.
 export function getFbc(): string | null {
-  return readMetaCookie('_fbc');
+  const live = readMetaCookie('_fbc');
+  rememberFirst('fbc', live);
+  return live ?? recalled('fbc');
 }
 
 // Write _fbc ourselves when the pixel hasn't.
