@@ -1,12 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendPurchaseToMeta, payuAddedOnToUnix } from '../_shared/metaCapi.ts';
 
 // verify-pending-payments
 //
 // Reconciliation backstop (PayU "Verify Payment" step). Fired every 15 min by
 // pg_cron. For each payu_payments row stuck at 'pending' (15 min–24 h old), it
 // PULLS the authoritative status from PayU's Verify Payment API and resolves
-// the row — flipping the application + firing the right WhatsApp, exactly like
-// payu-webhook would have.
+// the row — flipping the application, firing the right WhatsApp, and reporting
+// the Purchase to Meta, exactly like payu-webhook would have.
+//
+// That last one used to be missing, and the omission was invisible: this comment
+// claimed parity with payu-webhook while the Conversions API call existed only
+// there and in payu-callback. Every sale this cron rescued was therefore absent
+// from Meta entirely — see the note at the sendPurchaseToMeta call below.
 //
 // Why it exists: the browser callback and the S2S webhook are both PUSH
 // (PayU -> us). If a UPI payment goes 'pending' and the webhook is delayed,
@@ -577,7 +583,11 @@ Deno.serve(async (req) => {
     // run = any age, optionally a single txnid.
     let q = supabase
       .from('payu_payments')
-      .select('txnid, event_slug, phone, payment_type, event_title, amount, name')
+      // email + the Meta columns (fbp/fbc/client_ip/client_user_agent/source_url)
+      // are here for the Conversions API call below. This is a cron, so the
+      // request headers belong to the scheduler, not the customer — the values
+      // captured at checkout by create-payu-order are the only real ones.
+      .select('txnid, event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(100);
@@ -658,9 +668,12 @@ Deno.serve(async (req) => {
           // This cron re-checks rows up to 24 h old, so it is the likeliest path
           // to resolve a STALE advance long after the balance was paid. Ranking
           // the paid statuses stops it walking a fully_paid booking backwards.
+          // selected_city + attribution ride along for the Meta call below:
+          // city is a match key, and attribution.fbclid is what lets a rebuilt
+          // fbc tie this sale back to the ad click.
           const { data: appRow } = await supabase
             .from('applications')
-            .select('status')
+            .select('status, selected_city, attribution')
             .eq('event_slug', eventSlug).eq('phone', phone)
             .maybeSingle();
 
@@ -696,6 +709,59 @@ Deno.serve(async (req) => {
             } else {
               await fireAdvancePaidWhatsApp(supabase, { phone, eventSlug, amount: row.amount ?? 0, txnid });
             }
+
+            // Report the sale to Meta — the third and last path that can turn a
+            // payment into a booking.
+            //
+            // WHY THIS MATTERS MORE HERE THAN ANYWHERE ELSE
+            // This cron exists for payments the PUSH paths missed: a UPI collect
+            // that sat 'pending' while the webhook was late. Those are precisely
+            // the customers who never got back to the receipt screen, so the
+            // BROWSER Purchase never fired either. Without this call such a sale
+            // reached Meta from neither side — completely invisible, not merely
+            // unmatched. Confirmed live on txnid CHA1787330233514XCNV (21 Aug
+            // 2026): a real advance resolved here, and Meta recorded a Lead for
+            // that visit and no Purchase at all.
+            //
+            // The bias is the dangerous part: slow UPI collects are the ones that
+            // land here, so the sales this path rescues are exactly the ones ads
+            // would never get credit for.
+            //
+            // Deliberately after the WhatsApp: a guest's confirmation must never
+            // wait on an ad event. Safe to await — sendPurchaseToMeta never throws
+            // and self-limits to 3s, and it skips balance payments and test phones
+            // on its own, so no gate is repeated here.
+            //
+            // Inside the non-stale branch for the same reason as payu-callback:
+            // a booking that already moved on must not report a second Purchase.
+            await sendPurchaseToMeta({
+              txnid,
+              value: Number(row.amount ?? 0) || 0,
+              currency: 'INR',
+              email: (row as any).email ?? null,
+              phone,
+              eventSlug,
+              eventTitle: (row.event_title as string | null) ?? null,
+              // Null on older rows predating source_url; metaCapi falls back to
+              // the site root itself, so the default lives in exactly one place
+              // (this function has no FRONTEND_URL const of its own).
+              sourceUrl: (row as any).source_url ?? null,
+              // Captured at checkout. The cron's own headers describe the
+              // scheduler, so unlike payu-callback there is no live fallback.
+              clientIp: (row as any).client_ip ?? null,
+              userAgent: (row as any).client_user_agent ?? null,
+              name: (row.name as string | null) ?? null,
+              city: (appRow as any)?.selected_city ?? null,
+              fbclid: (appRow as any)?.attribution?.fbclid ?? null,
+              fbclidSeenAt: (appRow as any)?.attribution?.landed_at ?? null,
+              fbp: (row as any).fbp ?? null,
+              fbc: (row as any).fbc ?? null,
+              paymentType,
+              // PayU's own stamp for when the payment happened. Load-bearing here:
+              // this cron can run up to 24 h late, and Meta attributes on
+              // event_time, so "now" would date the sale to the reconcile.
+              eventTime: payuAddedOnToUnix(txn?.addedon),
+            });
           }
           resolvedSuccess++;
           console.log('[verify-pending-payments] resolved -> success', txnid);
