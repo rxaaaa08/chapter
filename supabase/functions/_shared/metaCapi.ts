@@ -25,7 +25,20 @@
 // delay a payment redirect. Losing an ad event is acceptable; delaying a
 // customer's receipt is not.
 
-const API_VERSION = 'v21.0';
+// Meta supports each Graph API version for "at least two years", and the
+// Conversions API rides that cycle. v21.0 dates from late 2024, which put it
+// close enough to end-of-life to be a bad thing to start spending ad money on:
+// if it sunsets, every server event fails at once and the only symptom is
+// conversions quietly stopping. v25.0 is the version Meta's own current docs
+// use in their examples.
+//
+// Nothing in our payload is version-specific — em/ph/fn/ln/ct/country,
+// external_id, fbc/fbp, event_id and custom_data are all long-standing fields —
+// so the bump is a URL change, not a migration.
+//
+// Worth re-checking roughly yearly. If Meta's docs stop showing this version in
+// their examples, it is time to move again.
+const API_VERSION = 'v25.0';
 
 // The customer's redirect to their receipt waits on this call. Without a deadline
 // a slow or hanging graph.facebook.com sits in front of the receipt for as long as
@@ -85,10 +98,24 @@ function isTestPhone(normalisedPhone: string | null): boolean {
 // Names and city: lowercase, letters only. Meta strips punctuation, spaces and
 // accents before hashing on their side, so we must match that exactly or the
 // hashes simply never line up — which fails silently and looks like working.
+// The accent range is written as \u escapes on purpose. It used to be a pair of
+// LITERAL combining characters (U+0300-U+036F) sitting inside the character
+// class — invisible in every editor, and indistinguishable from a typo or from
+// nothing at all. The range is identical either way, so this changes no
+// behaviour; it removes a failure mode. If those bytes were ever dropped by a
+// copy-paste, an editor normalising the file, or a build transform, the regex
+// would quietly stop stripping accents, "josé" and "jose" would hash
+// differently, and Meta would simply stop matching those customers — with no
+// error anywhere. Same reason the rest of this file is loud about failures:
+// silent mismatches are the expensive kind.
+//
+// Must stay byte-identical in meaning to normalisePart() in src/metaPixel.ts —
+// if the two sides normalise differently they hash differently, and one person
+// reaches Meta as two.
 function normaliseNamePart(raw: string | null | undefined): string | null {
   const v = (raw ?? '')
     .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip accents
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
     .replace(/[^a-z]/g, '');
   return v.length ? v : null;
 }
@@ -190,6 +217,184 @@ export type CapiPurchaseArgs = {
   fbp?: string | null;
 };
 
+// ─── Shared plumbing ─────────────────────────────────────────────────────────
+//
+// Every event type sends the same identity block to the same endpoint, so
+// Purchase and Lead share these two functions instead of each keeping a copy.
+// Two copies is exactly how a browser and a server end up normalising a name
+// differently, and that failure is silent: Meta accepts the event and quietly
+// matches nobody. One implementation, or none.
+
+/** The identity half of an event — the same shape whatever the event is. */
+export type MetaIdentity = {
+  email?: string | null;
+  phone?: string | null;
+  /** Full name as captured; split into fn/ln here. */
+  name?: string | null;
+  city?: string | null;
+  clientIp?: string | null;
+  userAgent?: string | null;
+  /** The real _fbc cookie, when the browser had one. */
+  fbc?: string | null;
+  /** Raw fbclid + when we first saw it, to rebuild fbc when the cookie is gone. */
+  fbclid?: string | null;
+  fbclidSeenAt?: string | null;
+  fbp?: string | null;
+};
+
+async function buildUserData(p: MetaIdentity): Promise<Record<string, unknown>> {
+  const email = normaliseEmail(p.email);
+  const phone = normalisePhone(p.phone);
+  const { fn, ln } = splitName(p.name);
+  const city = normaliseNamePart(p.city);
+  // The browser's own cookie is the truth. Rebuild only when it is missing,
+  // which is the ad-blocked case — there the fbclid in the URL is all anyone
+  // has, and a rebuilt fbc still beats none.
+  const fbc = p.fbc ?? buildFbc(p.fbclid, p.fbclidSeenAt);
+
+  const user_data: Record<string, unknown> = {};
+  if (email) user_data.em = [await sha256Hex(email)];
+  if (phone) user_data.ph = [await sha256Hex(phone)];
+  if (fn) user_data.fn = [await sha256Hex(fn)];
+  if (ln) user_data.ln = [await sha256Hex(ln)];
+  if (city) user_data.ct = [await sha256Hex(city)];
+  // Every customer is Indian; the field still has to be hashed like the rest.
+  user_data.country = [await sha256Hex('in')];
+  // A stable per-person id. Phone is our real user key (applications.id is
+  // per-event, so it would look like a different person on every booking).
+  // MUST stay the identical string the browser hashes — see setPixelUserData in
+  // src/metaPixel.ts — or one person reaches Meta as two.
+  if (phone) user_data.external_id = [await sha256Hex(phone)];
+  if (p.clientIp) user_data.client_ip_address = p.clientIp;
+  if (p.userAgent) user_data.client_user_agent = p.userAgent;
+  // fbc/fbp are the ONLY user_data fields Meta wants raw, never hashed.
+  if (fbc) user_data.fbc = fbc;
+  if (p.fbp) user_data.fbp = p.fbp;
+  return user_data;
+}
+
+/**
+ * Posts one event. Never throws, never blocks longer than META_TIMEOUT_MS, and
+ * no-ops entirely when META_CAPI_ACCESS_TOKEN is unset — so shipping this cannot
+ * change behaviour on its own.
+ */
+async function postEventToMeta(opts: {
+  eventName: string;
+  /** Dedup key. Must equal the browser event's eventID exactly, or one action counts twice. */
+  eventId: string;
+  eventTime?: number | null;
+  sourceUrl?: string | null;
+  userData: Record<string, unknown>;
+  customData?: Record<string, unknown>;
+  /** True only when Meta confirmed it counted the event. Callers that keep a
+   *  "still owed" marker rely on this being pessimistic: anything short of an
+   *  explicit success is false, so a retry is preferred over a silent loss. */
+}): Promise<boolean> {
+  const tag = `${opts.eventName} ${opts.eventId}`;
+  try {
+    const token = Deno.env.get('META_CAPI_ACCESS_TOKEN');
+    if (!token) {
+      // Deliberately loud. This used to return silently, which on 2026-08-20 made
+      // a missing token indistinguishable from a slow Meta API for half an hour of
+      // debugging. A misconfiguration should say so.
+      console.warn('[meta-capi] META_CAPI_ACCESS_TOKEN is not set — NOT reported', tag);
+      return false;
+    }
+
+    const pixelId = Deno.env.get('META_PIXEL_ID') ?? DEFAULT_PIXEL_ID;
+    // Set this to run events into Events Manager → Test events without
+    // polluting live totals. Unset it once verified.
+    // Makes the event visible in Events Manager -> Test Events, which is how you
+    // confirm a send worked and that browser/server deduplicate.
+    //
+    // IT IS NOT A SANDBOX, despite the name. Meta is explicit: "Events sent with
+    // test_event_code are not dropped. They flow into Events Manager and are used
+    // for targeting and ads measurement purposes." So a test booking still counts
+    // as a real conversion and still lands in audiences — the code is a debugging
+    // VIEW, not isolation.
+    //
+    // The only real isolation is the test-phone guard above, and that skips the
+    // send entirely, so it cannot be used to test the send itself. A genuine
+    // end-to-end test therefore costs one real event in the dataset; budget for
+    // that rather than believing it is free.
+    const testCode = Deno.env.get('META_CAPI_TEST_CODE');
+    if (testCode) {
+      console.warn('[meta-capi] TEST MODE — visible in Test Events, but STILL counts live', tag);
+    }
+
+    const payload: Record<string, unknown> = {
+      data: [{
+        event_name: opts.eventName,
+        // Meta: "event_time can be up to 7 days before you send an event ... If any
+        // event_time in data is greater than 7 days in the past, we return an
+        // error for the ENTIRE request and process no events." A stale or
+        // clock-skewed value costs the whole event rather than degrading it.
+        event_time: safeEventTime(opts.eventTime),
+        event_id: opts.eventId,
+        action_source: 'website',
+        event_source_url: opts.sourceUrl ?? 'https://chaptera.in/',
+        user_data: opts.userData,
+        ...(opts.customData ? { custom_data: opts.customData } : {}),
+      }],
+    };
+    if (testCode) payload.test_event_code = testCode;
+
+    // Which identifiers actually went. Names only, never values — this is a
+    // production log and user_data holds hashed personal data. This one line is
+    // what turns "did the match keys ship?" from a guess into a fact.
+    const sentKeys = Object.keys(opts.userData).sort().join(',');
+
+    const res = await fetch(
+      `https://graph.facebook.com/${API_VERSION}/${pixelId}/events?access_token=${encodeURIComponent(token)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(META_TIMEOUT_MS),
+      },
+    );
+
+    if (!res.ok) {
+      // Log and move on. A rejected ad event must never surface to the customer.
+      console.error('[meta-capi] REJECTED', tag, res.status, await res.text().catch(() => ''));
+      return false;
+    }
+
+    // A 200 is not proof the event counted. Meta's documented success body is
+    // {"events_received": 1, "messages": [], "fbtrace_id": ...} — and it can
+    // come back 200 with events_received: 0, or with a non-empty messages
+    // array carrying a validation warning. Reading only res.ok would log both
+    // of those as "sent".
+    //
+    // Worth the extra parse: these logs are the fastest way to tell whether an
+    // event reached Meta, and on 2026-08-24 a missing log line is exactly what
+    // exposed verify-pending-payments never calling this module at all. A log
+    // that can say "fine" when it isn't is worse than no log.
+    const body = await res.json().catch(() => null) as
+      { events_received?: number; messages?: unknown[] } | null;
+    const received = body?.events_received;
+    const messages: unknown[] = Array.isArray(body?.messages) ? (body as any).messages : [];
+    if (received === 0 || messages.length > 0) {
+      console.error('[meta-capi] ACCEPTED BUT NOT COUNTED', tag,
+        'events_received=' + String(received), 'messages=' + JSON.stringify(messages));
+      return false;
+    }
+    console.log('[meta-capi] sent', tag,
+      'events_received=' + String(received ?? '?'), 'keys=' + sentKeys);
+    return true;
+  } catch (err) {
+    // A timeout is a different problem from a malformed payload, and saying which
+    // saves the next debugging session.
+    const timedOut = err instanceof Error && err.name === 'TimeoutError';
+    if (timedOut) {
+      console.error(`[meta-capi] TIMEOUT after ${META_TIMEOUT_MS}ms — caller not delayed further`, tag);
+    } else {
+      console.error('[meta-capi] send failed', tag, err);
+    }
+    return false;
+  }
+}
+
 /**
  * Reports one Purchase to Meta. Resolves quietly on every failure path.
  * No-ops entirely when META_CAPI_ACCESS_TOKEN is unset, so this is inert until
@@ -197,25 +402,12 @@ export type CapiPurchaseArgs = {
  */
 export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> {
   try {
-    const token = Deno.env.get('META_CAPI_ACCESS_TOKEN');
-    if (!token) {
-      // Deliberately loud. This used to return silently, which on 2026-08-20 made
-      // a missing token indistinguishable from a slow Meta API for half an hour of
-      // debugging. A misconfiguration should say so.
-      console.warn('[meta-capi] META_CAPI_ACCESS_TOKEN is not set — Purchase NOT reported', args.txnid);
-      return;
-    }
     if (!args.txnid) return;
 
-    const pixelId = Deno.env.get('META_PIXEL_ID') ?? DEFAULT_PIXEL_ID;
-    // Set this to run events into Events Manager → Test events without
-    // polluting live totals. Unset it once verified.
-    const testCode = Deno.env.get('META_CAPI_TEST_CODE');
-    if (testCode) {
-      // Equally silent and equally confusing: with this set, events land in Test
-      // Events and never count toward live totals or match quality.
-      console.warn('[meta-capi] TEST MODE — event goes to Test Events, NOT live totals', args.txnid);
-    }
+    // The token and test-mode warnings now live in postEventToMeta, so every
+    // event type reports a misconfiguration the same way. Deliberately checked
+    // AFTER the guards below: there is nothing to warn about for an event we
+    // were never going to send.
 
     // A balance payment is the SECOND half of a split booking, not a new sale.
     //
@@ -239,8 +431,6 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
       console.log('[meta-capi] balance payment, already counted at booking', args.txnid);
       return;
     }
-
-    const email = normaliseEmail(args.email);
     const phone = normalisePhone(args.phone);
     if (isTestPhone(phone)) {
       // Logged, not silent: a test that never shows up in Meta should be
@@ -249,87 +439,107 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
       return;
     }
 
-    // Every identifier we can supply raises Event Match Quality, which is what
-    // decides whether Meta can tie a sale to a person — and therefore to an ad.
-    // At 6.2/10 Meta often knew a purchase happened but not who made it.
-    const { fn, ln } = splitName(args.name);
-    const city = normaliseNamePart(args.city);
-    // The browser's own cookie is the truth. Rebuild only when it is missing,
-    // which is the ad-blocked case — there the fbclid in the URL is all anyone
-    // has, and a rebuilt fbc still beats none.
-    const fbc = args.fbc ?? buildFbc(args.fbclid, args.fbclidSeenAt);
-
-    const user_data: Record<string, unknown> = {};
-    if (email) user_data.em = [await sha256Hex(email)];
-    if (phone) user_data.ph = [await sha256Hex(phone)];
-    if (fn) user_data.fn = [await sha256Hex(fn)];
-    if (ln) user_data.ln = [await sha256Hex(ln)];
-    if (city) user_data.ct = [await sha256Hex(city)];
-    // Every customer is Indian; the field still has to be hashed like the rest.
-    user_data.country = [await sha256Hex('in')];
-    // A stable per-person id. Phone is our real user key (applications.id is
-    // per-event, so it would look like a different person on every booking).
-    if (phone) user_data.external_id = [await sha256Hex(phone)];
-    if (args.clientIp) user_data.client_ip_address = args.clientIp;
-    if (args.userAgent) user_data.client_user_agent = args.userAgent;
-    // fbc/fbp are the ONLY user_data fields Meta wants raw, never hashed.
-    if (fbc) user_data.fbc = fbc;
-    if (args.fbp) user_data.fbp = args.fbp;
-
-    const payload: Record<string, unknown> = {
-      data: [{
-        event_name: 'Purchase',
-        // Meta: "event_time can be up to 7 days before you send an event ... If any
-        // event_time in data is greater than 7 days in the past, we return an
-        // error for the ENTIRE request and process no events." We take this from
-        // PayU's own timestamp, so a stale or clock-skewed value would cost the
-        // whole event rather than degrade it.
-        event_time: safeEventTime(args.eventTime),
-        // Shared with the browser event so Meta counts this sale once.
-        event_id: args.txnid,
-        action_source: 'website',
-        event_source_url: args.sourceUrl ?? 'https://chaptera.in/',
-        user_data,
-        custom_data: {
-          currency: args.currency ?? 'INR',
-          value: Number(args.value) || 0,
-          content_type: 'product',
-          ...(args.eventSlug ? { content_ids: [args.eventSlug] } : {}),
-          ...(args.eventTitle ? { content_name: args.eventTitle } : {}),
-        },
-      }],
-    };
-    if (testCode) payload.test_event_code = testCode;
-
-    // Which identifiers actually went. Names only, never values — this is a
-    // production log and user_data holds hashed personal data. This one line is
-    // what turns "did Phase A work?" from a guess into a fact.
-    const sentKeys = Object.keys(user_data).sort().join(',');
-
-    const res = await fetch(
-      `https://graph.facebook.com/${API_VERSION}/${pixelId}/events?access_token=${encodeURIComponent(token)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(META_TIMEOUT_MS),
+    await postEventToMeta({
+      eventName: 'Purchase',
+      // Shared with the browser event so Meta counts this sale once.
+      eventId: args.txnid,
+      // PayU's own stamp for when the payment happened, not when we noticed it.
+      eventTime: args.eventTime,
+      sourceUrl: args.sourceUrl,
+      userData: await buildUserData(args),
+      customData: {
+        currency: args.currency ?? 'INR',
+        value: Number(args.value) || 0,
+        content_type: 'product',
+        // Meta lists order_id as a standard purchase parameter: "the order ID
+        // for this transaction as a string". Sent for reporting and for tracing
+        // a disputed sale back to a PayU row.
+        //
+        // It does NOT deduplicate anything for us, despite the obvious guess.
+        // Meta's end-to-end guide is explicit that order_id-based purchase
+        // deduplication "is limited to select Meta partners", so the field is
+        // accepted and recorded but that behaviour is not switched on for a
+        // normal advertiser. event_id (the same txnid) is what actually
+        // collapses our browser/server pair, and it stays the only dedup key
+        // worth reasoning about here.
+        order_id: String(args.txnid),
+        ...(args.eventSlug ? { content_ids: [args.eventSlug] } : {}),
+        ...(args.eventTitle ? { content_name: args.eventTitle } : {}),
       },
-    );
-
-    if (!res.ok) {
-      // Log and move on. A rejected ad event must never surface to the customer.
-      console.error('[meta-capi] REJECTED', args.txnid, res.status, await res.text().catch(() => ''));
-    } else {
-      console.log('[meta-capi] sent', args.txnid, 'keys=' + sentKeys);
-    }
+    });
   } catch (err) {
-    // A timeout is a different problem from a malformed payload, and saying which
-    // saves the next debugging session.
-    const timedOut = err instanceof Error && err.name === 'TimeoutError';
-    if (timedOut) {
-      console.error(`[meta-capi] TIMEOUT after ${META_TIMEOUT_MS}ms — receipt not delayed further`, args.txnid);
-    } else {
-      console.error('[meta-capi] send failed', args.txnid, err);
+    console.error('[meta-capi] purchase send failed', args.txnid, err);
+  }
+}
+
+// ─── Lead ────────────────────────────────────────────────────────────────────
+//
+// WHY A SERVER-SIDE LEAD EXISTS
+// Invite-only events are optimised on Lead, not Purchase, because payment there
+// is a separate admin-gated step that lands much later — measured on
+// anna-nagar-meetup, 48% of paid bookings completed more than 24 h after the
+// application and 17% took over a week. The application IS the conversion the ad
+// produced; the payment is a downstream business step.
+//
+// That makes Lead the number Meta bids against for those campaigns, so it has to
+// be as complete as Purchase is. The browser alone cannot deliver that: roughly
+// half of visitors block fbevents.js outright. Routing the same event through our
+// own domain reaches Meta for exactly those people, because an ad blocker that
+// blocks connect.facebook.net has no reason to block our backend.
+//
+// The identity here is the best we ever have: the applicant has just typed their
+// name, phone, email and city into the form. Where a mid-funnel event would reach
+// Meta nearly anonymous, a Lead carries a full match set.
+export type CapiLeadArgs = MetaIdentity & {
+  /**
+   * Dedup key, shared with the browser Lead's eventID. Unlike Purchase there is
+   * no natural transaction id, so the client generates a UUID and sends the same
+   * one both ways — Meta explicitly permits "a random number (so long as the same
+   * random number is sent between browser and server events)".
+   */
+  leadId: string;
+  eventSlug?: string | null;
+  eventTitle?: string | null;
+  sourceUrl?: string | null;
+  /** When the application was submitted, unix seconds. Defaults to now. */
+  eventTime?: number | null;
+};
+
+/**
+ * Reports one Lead. Same contract as sendPurchaseToMeta: never throws, never
+ * blocks longer than META_TIMEOUT_MS, and inert without META_CAPI_ACCESS_TOKEN.
+ */
+export async function sendLeadToMeta(args: CapiLeadArgs): Promise<boolean> {
+  try {
+    if (!args.leadId) return false;
+
+    const phone = normalisePhone(args.phone);
+    if (isTestPhone(phone)) {
+      // Reported as success on purpose: a test application is not owed to Meta,
+      // so the caller should stamp it done rather than retry it every sweep.
+      console.log('[meta-capi] test application, Lead not reported to Meta', args.leadId);
+      return true;
     }
+
+    return await postEventToMeta({
+      eventName: 'Lead',
+      eventId: args.leadId,
+      eventTime: args.eventTime,
+      sourceUrl: args.sourceUrl,
+      userData: await buildUserData(args),
+      customData: {
+        content_type: 'product',
+        ...(args.eventSlug ? { content_ids: [args.eventSlug] } : {}),
+        ...(args.eventTitle ? { content_name: args.eventTitle } : {}),
+        // Deliberately NO value/currency. Meta bids proportionally to whatever
+        // value is supplied, so inventing a rupee figure for an application —
+        // which may never be paid, and on invite events often is not — would
+        // teach it to chase the wrong applicants. An unvalued Lead optimises on
+        // count, which is exactly what was asked for.
+      },
+    });
+  } catch (err) {
+    console.error('[meta-capi] lead send failed', args.leadId, err);
+    return false;
   }
 }

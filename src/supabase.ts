@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
-import { trackPixel } from './metaPixel';
+import { trackPixel, getFbp, getFbc } from './metaPixel';
 
 // Fail loudly if env vars aren't wired up. We used to fall back to the
 // production URL + anon key on a misconfigured preview deploy, which
@@ -79,7 +79,17 @@ const PIXEL_EVENTS: Partial<Record<string, { name: string; custom?: boolean; cta
 
 export async function trackEvent(
   event_type: 'page_view' | 'city_selected' | 'category_selected' | 'event_selected' | 'calendar_opened' | 'date_selected' | 'reached_pricing' | 'book_clicked' | 'contact_clicked' | 'pricing_cta_clicked' | 'book_cta_clicked' | 'contact_cta_clicked' | 'external_redirect_initiated' | 'application_started' | 'application_submitted' | 'details_form_opened' | 'details_form_submitted' | 'community_sheet_opened' | 'community_whatsapp_clicked',
-  meta: { city?: string; category?: string; event_id?: string; event_title?: string } = {}
+  meta: {
+    city?: string; category?: string; event_id?: string; event_title?: string;
+    /**
+     * Deduplication key for the Meta event, when this step also gets reported
+     * server-side. Passed straight through as fbq's `eventID` so the browser and
+     * the server describe one action, not two. Named to avoid confusion with
+     * `event_id` above, which is our EVENT's slug and has nothing to do with Meta.
+     * Only Lead uses this today (see reportLead below).
+     */
+    dedupId?: string;
+  } = {}
 ) {
   // Mirror to Meta first, and without awaiting: the Supabase insert below is a
   // network round-trip, and a visitor who taps through fast (or leaves) must
@@ -96,7 +106,7 @@ export async function trackEvent(
         city: meta.city,
         cta_type: pixel.cta,
       },
-      { custom: pixel.custom },
+      { custom: pixel.custom, eventID: meta.dedupId },
     );
   }
   // Instagram / Facebook in-app browsers used to be dropped here: the wall
@@ -114,6 +124,72 @@ export async function trackEvent(
     });
   } catch (_) {
     // fire-and-forget — never block the user flow
+  }
+}
+
+// ─── Lead: the one funnel step we also report from the server ────────────────
+//
+// Invite-only events are optimised on Lead, because payment there is a separate
+// admin-gated step that can land days later — so the application IS the
+// conversion the ad produced. That makes Lead a number Meta bids against, and it
+// has to be as complete as Purchase.
+//
+// The browser Lead alone is not: roughly half of visitors block fbevents.js and
+// it never fires for them. The capi-lead function sits on our own domain, which
+// an ad blocker has no reason to block, so the same event still lands for those
+// people. Both carry the same id, so Meta counts one.
+
+/**
+ * A dedup id for one Lead. Meta accepts any unique string for events with no
+ * natural transaction id, as long as browser and server send the identical one.
+ *
+ * crypto.randomUUID needs a secure context and is missing from some older
+ * in-app browsers — and Instagram's webview is where most of our customers
+ * actually are. The fallback only has to be unique and match the server's uuid
+ * shape check; it is a correlation key, never a secret.
+ */
+export function newLeadId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch (_) { /* fall through */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : ((r & 0x3) | 0x8)).toString(16);
+  });
+}
+
+/**
+ * Mirrors a submitted application to Meta server-side. Fire-and-forget by
+ * contract: an ad event must never delay or break a booking, so every failure
+ * path is swallowed.
+ *
+ * Deliberately sends almost nothing. Name, email and city are read from the
+ * applications row by the function itself — the browser only supplies what the
+ * server cannot know: the shared id, which row to look up, and the two Meta
+ * cookies, which exist only in this browser.
+ */
+export function reportLead(args: {
+  leadId: string;
+  eventSlug: string;
+  eventTitle?: string;
+  phone: string;
+}): void {
+  try {
+    if (!args.leadId || !args.eventSlug || !args.phone) return;
+    void supabase.functions.invoke('capi-lead', {
+      body: {
+        leadId: args.leadId,
+        eventSlug: args.eventSlug,
+        eventTitle: args.eventTitle ?? '',
+        phone: args.phone,
+        fbp: getFbp() ?? undefined,
+        fbc: getFbc() ?? undefined,
+      },
+    }).catch(() => { /* never block a booking for an ad event */ });
+  } catch (_) {
+    // never block a booking for an ad event
   }
 }
 

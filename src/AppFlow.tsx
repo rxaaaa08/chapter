@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut, newLeadId, reportLead } from './supabase';
 import { getAffiliateRef } from './affiliate';
 import { getAttribution } from './attribution';
-import { setPixelUserData } from './metaPixel';
+import { setPixelUserData, getFbp, getFbc } from './metaPixel';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { TermsContent } from './TermsContent';
 import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
@@ -534,8 +534,25 @@ function ApplicationForm({
         city: selectedCity,
       });
 
+      // Minted BEFORE the insert so the row itself carries the dedup key. That is
+      // what lets the browser Lead, the immediate server call and any later
+      // sweep all report the SAME id — a backstop that generated a fresh one
+      // would collide with nothing and count the application twice.
+      const leadId = newLeadId();
+
       const { error: sbError } = await supabase.from('applications').insert({
         event_slug: String(event.id ?? '').toLowerCase(),
+        // Dedup key for the Meta Lead. NULL on admin/marketer-created rows,
+        // which is precisely what keeps those out of the ad dataset.
+        lead_id: leadId,
+        // Captured here because this is the only moment they exist. If the
+        // browser's own capi-lead call later fails, the sweep runs from cron with
+        // no request to read headers from — and Meta lists client_user_agent as
+        // REQUIRED for every website event. Without these the backstop would
+        // report Leads that are missing a required parameter and match poorly.
+        lead_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 512) : null,
+        lead_fbp: getFbp(),
+        lead_fbc: getFbc(),
         name: form.name.trim(),
         phone: form.phone,
         // gender is NOT NULL: galcode invite applications auto-store Female;
@@ -563,7 +580,24 @@ function ApplicationForm({
         else { setError(`${sbError.code}: ${sbError.message}`); }
         return;
       }
-      trackEvent('application_submitted', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+      // Lead — the conversion an invite-only campaign is optimised on, so it is
+      // reported twice: once from this browser, once from our server. They share
+      // one id, so Meta counts a single application.
+      //
+      // The server copy is what reaches Meta for the ~half of visitors whose
+      // browser blocks fbevents.js entirely. It is safe to fire here and only
+      // here: the applications row was inserted immediately above and the insert
+      // succeeded, so capi-lead's "no application, no Lead" guard will find it.
+      // (The open flow deliberately has no server Lead — there this event fires
+      // before the row exists, and a server copy would arrive with a different
+      // id and double-count. Open events optimise on Purchase anyway.)
+      trackEvent('application_submitted', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title, dedupId: leadId });
+      reportLead({
+        leadId,
+        eventSlug: String(event.id ?? '').toLowerCase(),
+        eventTitle: event.title,
+        phone: form.phone,
+      });
       setSubmitted(true);
       onSubmitted();
       // Navigate the already-opened window to WhatsApp. If there wasn't one
