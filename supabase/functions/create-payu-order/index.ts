@@ -254,9 +254,16 @@ Deno.serve(async (req) => {
 
     // Meta's click id as the browser recorded it. Preferred over rebuilding it
     // server-side, so both reports of one sale carry the same string. Same
-    // shape-check; the cap is looser because an fbclid is longer than an fbp id.
+    // shape-check; the cap is far looser because an fbclid is much longer than
+    // an fbp id — 512, matching MAX_META_COOKIE_LEN in src/metaPixel.ts.
+    //
+    // Was 200, which is under the length of a real cookie for some of our own
+    // traffic: `fb.1.<13-digit ms>.` is 19 characters and the longest fbclid in
+    // applications.attribution is 187, for a 206-character total. Those rows
+    // stored null and the sale was reported with a rebuilt click id instead of
+    // the true one — the exact substitution this parameter exists to avoid.
     const rawFbc = String(body.fbc ?? '').trim();
-    const fbc = META_COOKIE.test(rawFbc) && rawFbc.length <= 200 ? rawFbc : null;
+    const fbc = META_COOKIE.test(rawFbc) && rawFbc.length <= 512 ? rawFbc : null;
 
     // ── 2. Init Supabase ──
     const supabase = createClient(

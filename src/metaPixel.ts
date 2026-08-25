@@ -325,6 +325,30 @@ export function trackPurchaseOnce(txnid: string, params: PixelParams): void {
 // case sensitive; do not normalize or format the _fbc to lowercase."
 const FBP_PATTERN = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)?$/;
 
+// How long a valid _fbc / _fbp is allowed to be before we treat it as junk.
+//
+// This used to be 200, which quietly threw away real click ids. An _fbc is
+// `fb.1.<13-digit ms>.<fbclid>` — a 19-character prefix plus whatever length
+// Meta made the fbclid. Meta publishes no maximum for fbclid, and the ones it
+// uses in its own current examples run 155-175 characters. Ours run longer:
+// the longest fbclid in applications.attribution is 187 characters, which makes
+// a 206-character cookie, and 3 of the 10 ad-clicked applications in the last 90
+// days carry exactly that. Every one of them failed this check.
+//
+// The cost was invisible and precisely backwards: a visitor who clicked an ad —
+// the only kind of visitor fbc exists for — had their click id dropped from
+// every browser event, while a visitor who never clicked one was unaffected.
+// (The server still reported an fbc for them, but only by REBUILDING it from
+// attribution.fbclid with our own landing timestamp, which is the second-best
+// value this file goes to some length to avoid needing.)
+//
+// 512 is chosen to be far past anything Meta has been observed to mint rather
+// than snug against it: the whole point of a cap here is to reject garbage, and
+// a cap that also rejects the real thing is worse than no cap at all. Keep in
+// step with MAX_FBCLID_LEN in src/attribution.ts and the server-side checks in
+// create-payu-order and capi-lead.
+const MAX_META_COOKIE_LEN = 512;
+
 function readMetaCookie(name: '_fbp' | '_fbc'): string | null {
   try {
     if (typeof document === 'undefined') return null;
@@ -337,7 +361,7 @@ function readMetaCookie(name: '_fbp' | '_fbc'): string | null {
     // Shape-check rather than trust: a malformed or truncated cookie is worse
     // than no cookie, because Meta counts a supplied-but-unmatchable field
     // against the score instead of ignoring it.
-    if (value.length > 200 || !FBP_PATTERN.test(value)) return null;
+    if (value.length > MAX_META_COOKIE_LEN || !FBP_PATTERN.test(value)) return null;
     return value;
   } catch {
     // cookie access can throw in restricted/embedded contexts — never block pay
@@ -463,13 +487,22 @@ export function ensureFbcCookie(): void {
     // NEVER invent a click id. No fbclid means this visitor did not arrive from
     // Meta, and a fabricated fbc would attribute a sale to an ad they never saw.
     const fbclid = new URLSearchParams(window.location.search).get('fbclid')?.trim();
-    if (!fbclid || !/^[A-Za-z0-9_-]+$/.test(fbclid) || fbclid.length > 500) return;
+    if (!fbclid || !/^[A-Za-z0-9_-]+$/.test(fbclid) || fbclid.length > MAX_META_COOKIE_LEN) return;
 
     // Meta's rule: only write when there is no cookie, or when the URL carries a
     // DIFFERENT click than the one already stored (a genuinely new ad click).
     // Re-stamping an unchanged click would just move its timestamp for nothing.
+    //
+    // Compare the FOURTH segment, not everything after the third dot. Meta words
+    // this rule as "the string after the last '.' in cookie value", which holds
+    // only for the four-part form. A five-part cookie ends in the parameter-
+    // builder appendix, so both that phrasing and a slice(3).join('.') read the
+    // appendix as part of the click id, decide the cookie is stale, and overwrite
+    // a perfectly good value with a fresh timestamp. FBP_PATTERN already
+    // guarantees at least four segments, and the fbclid is segment 3 in both
+    // forms, so indexing it is right either way.
     const existing = readMetaCookie('_fbc');
-    if (existing && existing.split('.').slice(3).join('.') === fbclid) return;
+    if (existing && existing.split('.')[3] === fbclid) return;
 
     document.cookie = `_fbc=fb.${subdomainIndex()}.${Date.now()}.${fbclid}`
       + `; path=/; max-age=${FBC_MAX_AGE_SECONDS}; SameSite=Lax; Secure`;

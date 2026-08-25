@@ -24,6 +24,21 @@ const KEY = 'ca_attribution';
 // written by anon, straight into the DB.
 const MAX_LEN = 200;
 
+// fbclid gets its own, much larger ceiling — and is REJECTED rather than
+// trimmed when it exceeds it.
+//
+// Truncating is the wrong move for this one field specifically. A utm_campaign
+// cut short is still a readable label; an fbclid cut short is a valid-LOOKING
+// click id that matches nobody, and Meta scores a supplied-but-unmatchable
+// parameter against match quality instead of ignoring it. Dropping it is the
+// honest outcome: the server then sends no fbc rather than a confident wrong one.
+//
+// 200 was not a theoretical squeeze. The longest fbclid in this table is 187
+// characters, so real traffic was landing 13 characters from being silently
+// mangled — and the same 200 elsewhere was already discarding the matching
+// cookie outright. Keep in step with MAX_META_COOKIE_LEN in src/metaPixel.ts.
+const MAX_FBCLID_LEN = 512;
+
 // fbclid is Meta's click id — the single most reliable marker that a visit came
 // from a Meta ad, and it survives even when the pixel is blocked.
 const PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid'] as const;
@@ -39,6 +54,14 @@ function clean(v: string | null): string | undefined {
   return t.length ? t : undefined;
 }
 
+// All or nothing — see MAX_FBCLID_LEN.
+function cleanFbclid(v: string | null): string | undefined {
+  if (!v) return undefined;
+  const t = v.trim();
+  if (!t.length || t.length > MAX_FBCLID_LEN) return undefined;
+  return t;
+}
+
 // Called once on app load, before anything else reads attribution.
 //
 // A URL carrying any tracking parameter counts as a NEW touch and overwrites
@@ -52,7 +75,7 @@ export function captureAttribution(): void {
     const q = new URLSearchParams(window.location.search);
     const found: Attribution = {};
     for (const p of PARAMS) {
-      const v = clean(q.get(p));
+      const v = p === 'fbclid' ? cleanFbclid(q.get(p)) : clean(q.get(p));
       if (v) found[p] = v;
     }
     if (!Object.keys(found).length) return;
