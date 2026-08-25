@@ -214,6 +214,8 @@ export type PixelParams = {
   city?: string;
   value?: number;
   currency?: string;
+  /** PayU txnid. Set by trackPurchaseOnce, not by callers — see there. */
+  order_id?: string;
   // Book Now vs Contact Us. Both fire ONE InitiateCheckout so Meta optimises on
   // the combined signal (the founder's call — a bigger pool reads better at low
   // budget), but the button is kept as a parameter so the two can still be told
@@ -274,7 +276,11 @@ export function trackPurchaseOnce(txnid: string, params: PixelParams): void {
     // one. The local dedup above only stops THIS browser repeating itself — it
     // knows nothing about the server, so the shared id is what actually
     // guarantees one sale is counted once.
-    trackPixel('Purchase', { currency: 'INR', ...params }, { eventID: txnid });
+    // order_id is set HERE rather than by the caller, from the same txnid that
+    // becomes eventID — so the browser and the server (which sends order_id in
+    // custom_data too) can never report different order ids for one sale. A
+    // caller that had to remember to pass it is a caller that eventually won't.
+    trackPixel('Purchase', { currency: 'INR', ...params, order_id: txnid }, { eventID: txnid });
 
     // Keep the tail short — this is a dedup guard, not a history.
     try {
