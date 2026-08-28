@@ -45,7 +45,8 @@ Production must not have them, so production cannot call Wamafy even by accident
 | Variable | Value |
 |---|---|
 | `WAMAFY_API_KEY` | `wamafy_live_…` from Settings → API Access → Create key |
-| `WAMAFY_WEBHOOK_SECRET` | Signing secret from Settings → API Access → Status webhook |
+| `WAMAFY_STATUS_WEBHOOK_SECRET` | Signing secret shown by the **Status webhook** panel (delivery receipts) |
+| `WAMAFY_WEBHOOK_SECRET` | Signing secret shown when you add a webhook in the **Webhooks** panel (inbound) |
 | `WAMAFY_TEST_SECRET` | Any long random string you invent — guards the trigger routes |
 | `WAMAFY_TEST_ALLOWED_NUMBERS` | The 2nd number, comma-separated for more |
 | `WHATSAPP_LOG_SECRET` | `whatsapp_log_secret` — ask Krutesh, it is in `app_secrets` |
@@ -67,8 +68,13 @@ A Vercel preview URL is guessable and this endpoint spends money, so:
    route refuses to send to *anyone*. It cannot reach a real customer.
 3. **Preview-scoped key** — production has no `WAMAFY_API_KEY` at all.
 
-The webhook fails closed too: no `WAMAFY_WEBHOOK_SECRET` means 503, and a bad
+The webhook fails closed too: no signing secret at all means 503, and a bad
 `X-Wamafy-Signature` means 401.
+
+**The two panels issue two different signing secrets.** Their docs say status
+callbacks are "signed the same way", which means the same *scheme*, not the same
+key — a real trap, since both panels point at this one route. The handler accepts
+either secret, so delivery receipts and inbound messages both verify.
 
 ## Running the test
 

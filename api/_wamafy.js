@@ -29,26 +29,36 @@ export function readRawBody(req) {
   });
 }
 
-// Wamafy signs callbacks as "sha256=" + HMAC-SHA256(raw body, signing secret),
-// the same scheme Meta uses. Constant-time compare, and fail closed when the
-// secret is unset -- an unverified callback can write rows into our log, so an
-// unconfigured endpoint must refuse rather than trust.
-export function verifySignature(rawBody, headerValue, secret) {
-  if (!secret || !headerValue) return false;
+// Wamafy signs callbacks as "sha256=" + HMAC-SHA256(raw body, signing secret).
+//
+// The Status webhook and the inbound Webhooks panel each issue their OWN
+// signing secret -- their docs say status callbacks are "signed the same way",
+// which means the same scheme, NOT the same key. Both panels point at this one
+// route, so we accept either secret rather than forcing a choice between
+// receiving delivery receipts and receiving inbound messages.
+//
+// Constant-time compare, and fail closed when no secret is set: an unverified
+// callback can write rows into our log, so an unconfigured endpoint must refuse
+// rather than trust.
+export function verifySignature(rawBody, headerValue, secrets) {
+  const list = (Array.isArray(secrets) ? secrets : [secrets]).filter(Boolean);
+  if (list.length === 0 || !headerValue) return false;
   const prefix = 'sha256=';
   const received = headerValue.startsWith(prefix)
     ? headerValue.slice(prefix.length)
     : headerValue;
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-  if (received.length !== expected.length) return false;
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(received, 'utf8'),
-      Buffer.from(expected, 'utf8'),
-    );
-  } catch {
-    return false;
-  }
+  return list.some(secret => {
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    if (received.length !== expected.length) return false;
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(received, 'utf8'),
+        Buffer.from(expected, 'utf8'),
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 // Guards the trigger routes. Without this anyone who finds the preview URL can

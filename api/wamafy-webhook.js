@@ -22,17 +22,22 @@ export default async function handler(req, res) {
   if (req.method === 'GET') return res.status(200).send('ok');
   if (req.method !== 'POST') return res.status(405).send('POST only');
 
-  const secret = process.env.WAMAFY_WEBHOOK_SECRET;
-  if (!secret) {
+  // Both panels post here, and each has its own secret. Either one verifying is
+  // proof the caller is Wamafy.
+  const secrets = [
+    process.env.WAMAFY_STATUS_WEBHOOK_SECRET,
+    process.env.WAMAFY_WEBHOOK_SECRET,
+  ].filter(Boolean);
+  if (secrets.length === 0) {
     // Fail closed: without the secret we cannot tell a real callback from a
     // forged one, and an unverified caller could poison the delivery log.
-    console.error('[wamafy-webhook] WAMAFY_WEBHOOK_SECRET not set — refusing');
+    console.error('[wamafy-webhook] no signing secret set — refusing');
     return res.status(503).send('webhook not configured');
   }
 
   const rawBody = await readRawBody(req);
   const sig = req.headers['x-wamafy-signature'];
-  if (!verifySignature(rawBody, typeof sig === 'string' ? sig : '', secret)) {
+  if (!verifySignature(rawBody, typeof sig === 'string' ? sig : '', secrets)) {
     console.warn('[wamafy-webhook] signature mismatch — rejecting');
     return res.status(401).send('invalid signature');
   }
