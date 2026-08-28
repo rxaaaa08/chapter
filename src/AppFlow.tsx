@@ -2758,6 +2758,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const steps = (socialProofIdx >= 0 ? displayEventSteps.filter((_: any, i: number) => i !== socialProofIdx) : displayEventSteps)
                           // Single-payment events have no remaining-balance step.
                           .filter((s: any) => selectedEvent.paymentMode === 'full' ? !/balance/i.test(`${s.label} ${s.value}`) : true)
+                          // Open events pay immediately — there is no application step. Steps
+                          // left over from an invite-era flow (or copied from an invite event)
+                          // still carry a "vibe check / Request Invitation" row, which would
+                          // otherwise render on a flow that has no invitation at all.
+                          .filter((s: any) => isPayUFlow ? !/vibe.?check|request.?invitation/i.test(`${s.label} ${s.value}`) : true)
                           // Drop blank rows (no label and no value) — stale/empty steps from an
                           // earlier save must never render as an empty numbered step.
                           .filter((s: any) => String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== '');
@@ -2882,7 +2887,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                           <ArrowRight size={18} strokeWidth={3.0} />
                         </button>
                       </>
-                    ) : selectedEvent.inviteOnly ? (
+                    ) : selectedEvent.inviteOnly && !isPayUFlow ? (
                       <button
                         onClick={() => {
                           trackEvent('external_redirect_initiated', { city: formatCityLabel(selectedCity), category: selectedCategory || selectedEvent?.category, event_id: selectedEvent?.id, event_title: selectedEvent?.title });
