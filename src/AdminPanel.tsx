@@ -157,22 +157,41 @@ type PayuPayment = {
 // Default native-application booking-timeline steps for a payment mode.
 // Single-pay = 4 rows (one entry payment); split = 5 rows (advance + balance).
 // Last row is the gold social-proof row (event title).
-function nativeDefaultBookingSteps(isFullPay: boolean, title: string): Array<{ label: string; value: string; date: string }> {
+function nativeDefaultBookingSteps(isFullPay: boolean, title: string, payAtVenue = false): Array<{ label: string; value: string; date: string }> {
   const titleRow = { label: '{application_count} ppl have requested invitation', value: title || 'Your Plan Name', date: '' };
-  return isFullPay
-    ? [
-        { label: 'vibe check',            value: 'Request Invitation',      date: '' },
-        { label: "if you're invited",     value: '{price}',                 date: '' },
-        { label: "you'll receive exact",  value: 'Meeting Spot Details 📍', date: '' },
-        titleRow,
-      ]
-    : [
-        { label: 'vibe check',                  value: 'Request Invitation',      date: '' },
-        { label: "if you're invited (advance)", value: '{advance}',               date: '' },
-        { label: 'remaining balance',           value: '{balance}',               date: '' },
-        { label: "you'll receive exact",        value: 'Meeting Spot Details 📍', date: '' },
-        titleRow,
-      ];
+  if (isFullPay) {
+    return [
+      { label: 'vibe check',            value: 'Request Invitation',      date: '' },
+      { label: "if you're invited",     value: '{price}',                 date: '' },
+      { label: "you'll receive exact",  value: 'Meeting Spot Details 📍', date: '' },
+      titleRow,
+    ];
+  }
+  // Invite + Pay at Venue: the open-event PAV story, but keeping the application
+  // step. The advance holds the spot → the group chat opens immediately (the
+  // trust step that makes settling in person feel safe) → the balance is settled
+  // at the venue. The meeting-spot row is dropped deliberately: details now
+  // arrive via the group chat the guest just joined. Group-chat sits at index 2,
+  // balance at 3 (open-PAV keeps balance at 2 — the extra invite row shifts it).
+  // Safe: the /invite chat greeting anchors PAV copy to the event date, not to
+  // booking_steps[2]/[3], and the /invite timeline is regex-, not index-, driven.
+  // Keep this in sync with the editor's inline nativeDefaultSteps.
+  if (payAtVenue) {
+    return [
+      { label: 'vibe check',                  value: 'Request Invitation',   date: '' },
+      { label: "if you're invited (advance)", value: '{advance}',            date: '' },
+      { label: "you'll receive",              value: 'plan group-chat link', date: '' },
+      { label: 'remaining balance',           value: '{balance}',            date: '' },
+      titleRow,
+    ];
+  }
+  return [
+    { label: 'vibe check',                  value: 'Request Invitation',      date: '' },
+    { label: "if you're invited (advance)", value: '{advance}',               date: '' },
+    { label: 'remaining balance',           value: '{balance}',               date: '' },
+    { label: "you'll receive exact",        value: 'Meeting Spot Details 📍', date: '' },
+    titleRow,
+  ];
 }
 
 // True when stored steps structurally match the payment mode: split must have a
@@ -188,25 +207,40 @@ function bookingStepsMatchMode(
   steps: Array<{ label: string; value: string }> | undefined | null,
   isFullPay: boolean,
   payAtVenue = false,
+  inviteRow: 'require' | 'forbid' | 'any' = 'any',
 ): boolean {
   if (!steps?.length) return false;
-  const hasBalance = steps.some(s => /\{balance\}/i.test(`${s.label} ${s.value}`));
+  const hay = (s: { label: string; value: string }) => `${s.label} ${s.value}`;
+  // The application row is what separates the two fixed timelines, and a flow
+  // flip (or an event copied across flows) leaves the old shape behind. Native
+  // (invite) events must HAVE that row; open events must NOT — without both
+  // checks the stale steps count as a "match" and are reused verbatim, which is
+  // how a copied event ended up showing the wrong flow's timeline in each
+  // direction.
+  const hasInviteRow = steps.some(s => /request invitation|vibe check/i.test(hay(s)));
+  if (inviteRow === 'require' && !hasInviteRow) return false;
+  if (inviteRow === 'forbid'  &&  hasInviteRow) return false;
+  const hasBalance = steps.some(s => /\{balance\}/i.test(hay(s)));
   if (isFullPay) return !hasBalance;
   if (!hasBalance) return false;
-  if (payAtVenue) return steps.some(s => /group[\s-]?chat/i.test(`${s.label} ${s.value}`));
+  if (payAtVenue) return steps.some(s => /group[\s-]?chat/i.test(hay(s)));
   return true;
 }
 
 // Rebuild steps for a new payment mode, preserving dates on the rows whose role
 // survives the switch (request-invitation, meeting-spot, social-proof). Only the
 // payment rows are structurally reset.
-function regenNativeBookingSteps(existing: Array<{ label: string; value: string; date: string }> | undefined, isFullPay: boolean, title: string) {
+function regenNativeBookingSteps(existing: Array<{ label: string; value: string; date: string }> | undefined, isFullPay: boolean, title: string, payAtVenue = false) {
   const prevDate = (re: RegExp) => (existing ?? []).find(s => re.test(`${s.label} ${s.value}`))?.date ?? '';
   const inviteDate  = prevDate(/request invitation|vibe check/i);
-  const meetingDate = prevDate(/meeting spot|you'?ll receive/i);
+  // Anchor the meeting date on the meeting-spot wording only. The pay-at-venue
+  // group-chat row also reads "you'll receive", so matching that here would let a
+  // (non-existent) group-chat date masquerade as a meeting date.
+  const meetingDate = prevDate(/meeting spot|meeting point/i);
   const socialDate  = prevDate(/application_count/i);
-  return nativeDefaultBookingSteps(isFullPay, title).map(s => {
+  return nativeDefaultBookingSteps(isFullPay, title, payAtVenue).map(s => {
     const k = `${s.label} ${s.value}`;
+    if (/group[\s-]?chat/i.test(k))               return s; // group-chat row carries no date
     if (/request invitation|vibe check/i.test(k)) return { ...s, date: inviteDate };
     if (/meeting spot|you'?ll receive/i.test(k)) return { ...s, date: meetingDate };
     if (/application_count/i.test(k))            return { ...s, date: socialDate };
@@ -3639,6 +3673,18 @@ export default function AdminPanel() {
                             { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
                             { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
                           ]
+                        : trip.pay_at_venue
+                        // Invite + Pay at Venue — mirrors nativeDefaultBookingSteps():
+                        // keep the application row, swap the meeting-spot row for the
+                        // group-chat trust step, settle the balance at the venue. Keep
+                        // the two definitions in sync.
+                        ? [
+                            { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
+                            { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
+                            { label: 'you\'ll receive',                   value: 'plan group-chat link',    date: '' },
+                            { label: 'remaining balance',                 value: '{balance}',               date: '' },
+                            { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
+                          ]
                         : [
                             { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
                             { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
@@ -3680,15 +3726,15 @@ export default function AdminPanel() {
                       // payment mode (split needs a {balance} row, single must not).
                       // Steps left over from a mode switch fall back to the mode default.
                       const defaultSteps = isNativeApp
-                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay) ? trip.booking_steps! : nativeDefaultSteps)
+                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay, !!trip.pay_at_venue, 'require') ? trip.booking_steps! : nativeDefaultSteps)
                         : isOpenApp
-                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay, !!trip.pay_at_venue) ? trip.booking_steps! : openDefaultSteps)
+                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay, !!trip.pay_at_venue, 'forbid') ? trip.booking_steps! : openDefaultSteps)
                         : trip.booking_steps ?? [
                           { label: 'Advance', value: '{advance}', date: '' },
                           { label: 'Remaining Balance', value: '{balance}', date: '' },
                           { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
                         ];
-                      const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay, !!trip.pay_at_venue) ? undefined : perDateSteps;
+                      const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay, !!trip.pay_at_venue, isNativeApp ? 'require' : 'forbid') ? undefined : perDateSteps;
                       const rawStepsAll: Array<{ label: string; value: string; date: string }> =
                         timelineEdits[editKey] ?? (saveTimelineForDate ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
                       // Single-payment events drop the remaining-balance step in the editor too,
@@ -9144,7 +9190,7 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
                           // Switching payment mode rebuilds the timeline to the new
                           // mode's structure (single = entry payment; split = advance +
                           // balance) so it can't keep stale rows from the old mode.
-                          ? { ...trip, payment_mode: option.mode, pay_at_venue: payAtVenue, booking_steps: regenNativeBookingSteps(trip.booking_steps, option.mode === 'full', trip.title ?? '') }
+                          ? { ...trip, payment_mode: option.mode, pay_at_venue: payAtVenue, booking_steps: regenNativeBookingSteps(trip.booking_steps, option.mode === 'full', trip.title ?? '', payAtVenue) }
                           : { ...trip, payment_mode: option.mode, pay_at_venue: payAtVenue }
                       );
                     }}
@@ -9169,7 +9215,19 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 14px', border: '1.5px solid #e0e0e0', borderRadius: 10, background: trip.pay_at_venue ? '#eef2ff' : '#fafafa' }}>
                 <button
                   type="button"
-                  onClick={() => set('pay_at_venue', !trip.pay_at_venue)}
+                  onClick={() => {
+                    // Toggling PAV reshapes a native (invite) event's timeline in
+                    // place — swap the meeting-spot row for the group-chat step (on)
+                    // or restore it (off) — so the stored steps never drift from the
+                    // toggle. Per-date timelines still heal on their next Save in
+                    // Flow ▸ Timelines. Non-native events only flip the flag.
+                    const next = !trip.pay_at_venue;
+                    onChange(
+                      trip.booking_url === 'native-application' && (trip.payment_mode ?? 'split') !== 'full'
+                        ? { ...trip, pay_at_venue: next, booking_steps: regenNativeBookingSteps(trip.booking_steps, false, trip.title ?? '', next) }
+                        : { ...trip, pay_at_venue: next }
+                    );
+                  }}
                   style={{ position: 'relative', width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: trip.pay_at_venue ? '#6366f1' : '#ccc', transition: 'background 0.15s', flexShrink: 0 }}
                   aria-pressed={!!trip.pay_at_venue}
                   aria-label="Pay at Venue"
