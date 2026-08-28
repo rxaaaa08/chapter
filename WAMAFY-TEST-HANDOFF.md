@@ -137,3 +137,54 @@ test rows deleted afterwards. Confirmed working:
 - a **repeated** `delivered` — did not overwrite the first timestamp
 - a status arriving **before** the send was logged — stub row created, then
   filled in by the send without a unique-index collision
+
+---
+
+## Trial results — 2026-08-28
+
+**Working end to end.** Send → log → status callback → joined to the right row.
+
+| Signal | Result |
+|---|---|
+| `sent_at` | 11:37:13, from the send response |
+| `delivered_at` | 11:37:16 — status webhook, **2.5s** later |
+| `read_at` | **never arrived** — see below |
+
+### Confirmed working
+
+- **`messageId` matches end to end.** The `wamid` returned by `POST /messages` is
+  the same one on the status callback, so statuses land on the right row with no
+  fuzzy matching. This is the join key AiSensy never gave us.
+- **Both signing secrets verify.** Inbound and status callbacks both accepted on
+  one endpoint.
+- **Stub path fired for real**, not just in testing: an inbound "Hi" with no send
+  behind it created its own row rather than being dropped.
+
+### Finding 1 — a cold send failed, a warm one succeeded
+
+The 11:24 send was **accepted by Wamafy (`200`, `status: "sent"`, real `wamid`)
+and then failed at WhatsApp** — visible only as a red icon in their inbox. The
+11:37 send succeeded, 20 seconds after the recipient had messaged the number.
+
+**This is the single most important open question of the trial.** The real invite
+flow sends to people who have *never* messaged us. If the new number cannot
+cold-start a conversation, it cannot do the job no matter how good the logging
+is. Ask Wamafy directly: messaging limits on a new WABA, and whether the number
+is cleared to template-message a recipient with no prior contact.
+
+It also demonstrates why this project exists: a 2xx from the provider means
+*accepted*, not *delivered*. Our current AiSensy code checks only `aiRes.ok`, so
+this exact failure is invisible on the live site today.
+
+### Finding 2 — `read` receipts may never arrive
+
+No `read` callback was received after the recipient opened the message. Vercel
+logs show **one POST, 200, zero 401s** — nothing was rejected, Wamafy never sent
+one. Most likely the recipient has **read receipts disabled** in WhatsApp privacy
+settings, which suppresses `read` reporting to businesses too.
+
+**Consequence for the UI:** the blue double tick is a **one-way signal**. Its
+presence proves the message was read; its absence proves nothing. A grey double
+tick means either "not yet read" or "read by someone who hides receipts", and
+those are indistinguishable. Any "delivered but unread → chase them" workflow
+will therefore chase some people who already read it.
