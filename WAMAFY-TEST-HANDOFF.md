@@ -176,15 +176,33 @@ It also demonstrates why this project exists: a 2xx from the provider means
 *accepted*, not *delivered*. Our current AiSensy code checks only `aiRes.ok`, so
 this exact failure is invisible on the live site today.
 
-### Finding 2 — `read` receipts may never arrive
+### Finding 2 — `read` receipts DO work (corrected)
 
-No `read` callback was received after the recipient opened the message. Vercel
-logs show **one POST, 200, zero 401s** — nothing was rejected, Wamafy never sent
-one. Most likely the recipient has **read receipts disabled** in WhatsApp privacy
-settings, which suppresses `read` reporting to businesses too.
+A second test to `9940111282` produced the **full chain**:
 
-**Consequence for the UI:** the blue double tick is a **one-way signal**. Its
-presence proves the message was read; its absence proves nothing. A grey double
-tick means either "not yet read" or "read by someone who hides receipts", and
-those are indistinguishable. Any "delivered but unread → chase them" workflow
-will therefore chase some people who already read it.
+| Stage | Time | Gap |
+|---|---|---|
+| `sent_at` | 11:44:46.03 | — |
+| `delivered_at` | 11:44:50.83 | +4.8s |
+| `read_at` | 11:46:50.79 | +2m 0s |
+
+The first recipient (`8838111564`) simply has read receipts disabled, or never
+opened the message — not a platform limitation.
+
+**The weaker caveat still holds:** some users disable read receipts, so a missing
+blue tick is not proof the message went unread. The blue tick is a **one-way
+signal** — its presence proves a read, its absence proves nothing. A
+"delivered but unread → chase them" workflow will therefore chase some people who
+have already read it. Design for that; do not present grey-double as "unread".
+
+### What the log captures per message
+
+Automatically joined by `messageId`, with no fuzzy matching:
+
+- template name, on both the send and the callback
+- the substituted variables
+- `errorCode` / `errorMessage` (null on success, populated on failure)
+- full raw payloads for send and callback
+- exact timings, making "how long until invites get read?" a query
+
+This is the capability AiSensy gates behind +Rs1,500/mo.
