@@ -2580,10 +2580,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             const isFullyPaid = nativeEventData?.isFullyPaid ?? false;
             const isPaid = nativeEventData?.isBalancePayment ?? false;
             const isFullPay = (nativeEventData?.paymentMode ?? 'split') === 'full';
+            const isPayAtVenue = nativeEventData?.payAtVenue ?? false;
             // Pay-at-venue events unlock the group chat on the advance (isPaid =
             // advance_paid), not on full payment. The Pay Balance chip stays —
             // they're in the group AND still owe the balance, settled at the door.
-            const groupChatUnlocked = isFullyPaid || ((nativeEventData?.payAtVenue ?? false) && isPaid);
+            const groupChatUnlocked = isFullyPaid || (isPayAtVenue && isPaid);
             const eventTitle = nativeEventData?.title ?? '';
             const headerAnnouncements = (nativeEventData?.announcements ?? []).filter(Boolean);
             const headerText = headerAnnouncements.length > 0
@@ -2675,8 +2676,24 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               ? `Hi ${firstName}! We can't wait to see you in ${nativeEventData?.title ?? 'this trip'}. We're currently sorting out all the final logistics…\n\nJust join the group chat & we will send all details there${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' soon'}.`
               : isSoldOut
               ? `Hey ${firstName}, we really wanted you in this plan but...\n\nAll ${totalSpots} spots in ${nativeEventData?.title ?? 'this plan'} are already reserved.\n\nPlease note — your spot is only reserved once the advance is settled.\n\nJoin the waitlist & we'll let you know if someone cancels their spot. We hope to see you in the future!`
+              : isPaid && isPayAtVenue
+              // Advance settled on a pay-at-venue invite: the group chat is already
+              // open to them (unlocked at advance_paid), and the balance is paid in
+              // person — so invite them in NOW and drop the "we'll add you later" /
+              // balance-deadline framing, which would both be wrong here.
+              ? `Hi ${firstName}, your spot for ${nativeEventData?.title ?? 'this plan'} is reserved 🙌\n\nJust join the plan group chat now! Meeting-point details will be shared there${eventDateFormatted ? ` a few days before ${eventDateFormatted}` : ' a few days before the plan'}. You can pay the rest at the venue when you arrive.\n\nWhat would you like to do now?`
               : isPaid
               ? `Hi ${firstName}, we're working on giving you the best ${nativeEventData?.title ?? 'trip'} experience!\n\nWe'll add you to the plan group chat & share further meeting point details${meetingPointDateFormatted ? ` by ${meetingPointDateFormatted}` : ' a few days before the plan'}.\n\nWhat would you like to do now?`
+              : isPayAtVenue
+              // Unpaid pay-at-venue invite (invited, advance not yet paid). Lead with
+              // how little it takes to hold the spot and that the rest isn't due
+              // online — the size of the number is usually why they hesitate. Scarcity
+              // escalates at the same >0.50 threshold as the standard branches below.
+              ? `Hi ${firstName}, your vibe matched our club perfectly!\n\nPay ${advanceAmountLabel} to reserve your spot — you can settle the remaining balance at the venue. (An invitation alone doesn't hold the spot; the advance does.)\n\n${
+                  inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50
+                    ? `${inviteReservedCount} of ${totalSpots} spots are already reserved, so grab yours before it's gone!`
+                    : 'Spots here are first come, first served.'
+                } What would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null && inviteReservedCount / totalSpots > 0.50)
               ? `Hi ${firstName}, out of all applications, your vibe matched our club perfectly!\n\nBut please note — the invitation does not reserve your spot. A spot is reserved for you once ${isFullPay ? 'payment is made' : 'the advance is paid'}.\n\n${inviteReservedCount} out of ${totalSpots} spots are already reserved. What would you like to do now?`
               : (inviteReservedCount != null && totalSpots != null)
@@ -3281,6 +3298,14 @@ function NativeBookingConfirmation({
   );
 }
 
+// WhatsApp mark shown next to the pay-at-venue "plan group-chat link" row, so
+// the group-chat step reads the same here as it does in the /plans timeline.
+const WhatsAppGlyph = ({ size = 14 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#25D366" aria-hidden="true" className="flex-shrink-0">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488" />
+  </svg>
+);
+
 // ─── NATIVE BOOKING TIMELINE ──────────────────────────────────────────────────
 function NativeBookingTimeline({
   eventTitle,
@@ -3423,10 +3448,19 @@ function NativeBookingTimeline({
       ]
     : bookingSteps && bookingSteps.length > 0
       ? (() => {
-          // User is invited but advance unpaid — skip application-phase steps too
-          const filteredSteps = bookingSteps.filter(s =>
-            !isTimelineMetaStep(s) && !/vibe.?check|request.?invitation|apply|application|group[\s-]?chat/i.test(`${s.label} ${s.value}`)
-          );
+          // User is invited but advance unpaid — skip application-phase steps too.
+          // Pay-at-venue keeps its group-chat row (the "you're in the moment you
+          // pay the advance" trust step, shown here as an "After Advance" promise);
+          // the group chat isn't unlocked yet, so unlike the balance bill there's
+          // no live Join button beside it to make the row redundant. Non-PAV invite
+          // timelines still drop it.
+          const filteredSteps = bookingSteps.filter(s => {
+            if (isTimelineMetaStep(s)) return false;
+            const hay = `${s.label} ${s.value}`;
+            if (/vibe.?check|request.?invitation|apply|application/i.test(hay)) return false;
+            if (/group[\s-]?chat/i.test(hay)) return payAtVenue;
+            return true;
+          });
           const advIdx = filteredSteps.findIndex(s => /advance/i.test(`${s.label} ${s.value}`));
           const src = filteredSteps[advIdx] ?? filteredSteps[0];
           return [
@@ -3523,6 +3557,11 @@ function NativeBookingTimeline({
               // renders bare, since pay-at-venue rows carry no date.
               const isVenueBalanceRow = !isNowRow && payAtVenue && !isFullPay
                 && /balance/i.test(`${step.label} ${step.value}`);
+              // Pay-at-venue group-chat row (kept in the invited/unpaid timeline):
+              // it opens right after the advance, so it gets the same "After Advance"
+              // pill and WhatsApp mark as the /plans timeline.
+              const isGroupChatRow = !isNowRow && payAtVenue
+                && /group[\s-]?chat/i.test(`${step.label} ${step.value}`);
               const stepDateLabel = !isNowRow && step.date && !isBalanceDueRow && !isVenueBalanceRow
                 ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                 : null;
@@ -3530,7 +3569,7 @@ function NativeBookingTimeline({
                 <div key={si} className={`px-5 py-3 flex items-center justify-between border-b border-black/5 ${isBalanceDueRow ? 'bg-[#FFD700]/10' : ''}`}>
                   <div>
                     <p className="text-[11px] text-gray-400 font-medium mb-0.5">{resolveValue(step.label)}</p>
-                    <p className="text-[15px] font-black text-gray-900 leading-none">{stepValue}</p>
+                    <p className="text-[15px] font-black text-gray-900 leading-none flex items-center gap-1.5">{stepValue}{isGroupChatRow && <WhatsAppGlyph />}</p>
                   </div>
                   {isAdvancePaidRow ? (
                     <span className="text-[11px] font-bold text-white bg-green-500 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -3543,6 +3582,10 @@ function NativeBookingTimeline({
                   ) : isNowRow ? (
                     <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
                       Now
+                    </span>
+                  ) : isGroupChatRow ? (
+                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                      After Advance
                     </span>
                   ) : isVenueBalanceRow ? (
                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -3945,6 +3988,22 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // promise a deadline (there isn't one) or offer to add them to the group chat
   // later (the advance already did).
   const [warmPayAtVenue, setWarmPayAtVenue] = React.useState(false);
+  // WhatsApp group invite link for THIS applicant's date. Only ever filled for
+  // the pay-at-venue OPEN flow (see the resolver effect below) — every other
+  // flow either hasn't unlocked the group yet or already offers the chip inside
+  // the /invite chat.
+  const [groupUrl, setGroupUrl] = React.useState('');
+  // The event lookup below is a SECOND round-trip that starts only once the
+  // payment row has arrived. Everything it feeds — the group-chat card, the
+  // warm note and its dates — would otherwise pop in (or, for invite-only
+  // pay-at-venue, pop in and then vanish) after the receipt had already
+  // painted. The success view waits on this so the page lands settled.
+  // Keyed by SLUG, not a boolean: the effect runs once before the payment
+  // exists and takes its no-slug branch, and a bare `true` from that run would
+  // unlock the gate for one commit the moment the payment landed — painting a
+  // receipt with the warm note and no group card for ~17ms before the real
+  // lookup reset it. Comparing against the paid slug makes that impossible.
+  const [lookupDoneFor, setLookupDoneFor] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [dlLoading, setDlLoading] = React.useState(false);
   const [showRetryBill, setShowRetryBill] = React.useState(false);
@@ -4040,7 +4099,7 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // clause gracefully.
   React.useEffect(() => {
     const slug = payment?.event_slug;
-    if (!slug) { setDetailsDate(''); setBalanceDate(''); setWarmPayAtVenue(false); return; }
+    if (!slug) { setDetailsDate(''); setBalanceDate(''); setWarmPayAtVenue(false); setGroupUrl(''); setLookupDoneFor(''); return; }
     let cancelled = false;
     const fmt = (raw: any): string => {
       if (typeof raw !== 'string' || !raw) return '';
@@ -4065,14 +4124,38 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
       // indexes don't apply — they'd read the wrong rows. The copy needs neither.
       const isPayAtVenue = !!(ev as any)?.payAtVenue && !isFull;
       setWarmPayAtVenue(isPayAtVenue);
+      // Group-chat link on the receipt — pay-at-venue events, on the advance.
+      // Pay at venue is the condition that matters: the balance is settled at
+      // the door, so the advance is the last online payment either way and
+      // there's nothing later to gate on. Deliberately NOT restricted by flow —
+      // open events land on /plans (no invite chat) so this receipt is their
+      // only surface, and invite events get it here as well as on the chat's
+      // "Join Groupchat" chip, which already unlocks on the same rule.
+      // Balance/full payments are excluded: the guest is already in the group.
+      // Matched to the applicant's OWN date: payu_payments.trip_date is a
+      // display string ("Sun, Aug 30th"), so applications.selected_date is the
+      // only trustworthy key. A multi-date event we can't match shows nothing
+      // rather than risk handing out another date's group link.
+      const evDates: any[] = Array.isArray(ev?.dates) ? ev.dates : [];
+      const groupDateRow = appSelectedDate
+        ? evDates.find((d: any) => String(d?.date ?? '') === appSelectedDate)
+        : (evDates.length === 1 ? evDates[0] : undefined);
+      const groupUnlocked = isPayAtVenue && payment?.payment_type === 'advance';
+      setGroupUrl(groupUnlocked ? String(groupDateRow?.whatsappGroupUrl ?? '') : '');
       if (isPayAtVenue) { setBalanceDate(''); setDetailsDate(''); return; }
       const balanceIdx = isFull ? -1 : (isOpen ? 1 : 2);          // full-pay flows have no balance step
       const detailsIdx = isOpen ? (isFull ? 1 : 2) : (isFull ? 2 : 3);
       setBalanceDate(balanceIdx >= 0 ? fmt(steps[balanceIdx]?.date) : '');
       setDetailsDate(fmt(steps[detailsIdx]?.date));
-    }).catch(() => { /* silent — warm note just drops the date clause */ });
-    return () => { cancelled = true; };
-  }, [payment?.event_slug, appSelectedDate]);
+    })
+      .catch(() => { /* silent — warm note just drops the date clause */ })
+      .finally(() => { if (!cancelled) setLookupDoneFor(String(slug)); });
+    // Safety net: never let a hung event lookup strand the customer on a
+    // spinner after their money has already been taken. The receipt itself
+    // only needs the payment row, so past this point we render what we have.
+    const bail = window.setTimeout(() => { if (!cancelled) setLookupDoneFor(String(slug)); }, 3000);
+    return () => { cancelled = true; window.clearTimeout(bail); };
+  }, [payment?.event_slug, payment?.payment_type, appSelectedDate]);
 
   // The retry bill (NativePaymentOverlay below) is a full-screen overlay shown
   // in place, without its own route. The Try Again button pushes a history
@@ -4291,7 +4374,10 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
     );
   }
 
-  if (loading) {
+  // Hold the spinner past the payment fetch until the event lookup settles, but
+  // only on the success receipt — the failed and pending views read nothing from
+  // it and must never be delayed behind it.
+  if (loading || (view === 'success' && payment && lookupDoneFor !== String(payment.event_slug ?? ''))) {
     return phoneFrame(
       <div className="flex-1 flex items-center justify-center">
         <svg className="w-8 h-8 animate-spin text-gray-300" viewBox="0 0 24 24" fill="none">
@@ -4385,6 +4471,18 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
     : paymentType === 'balance'
       ? 'Remaining Balance'
       : 'Full Payment';
+  // Resolved client-side from the event's date row. payu_payments has a
+  // whatsapp_group_url column too, but nothing has ever written it (and
+  // get-user-context doesn't return it) — kept as the fallback so a future
+  // server-side stamp lights this up without another client change.
+  const joinGroupUrl = groupUrl || payment?.whatsapp_group_url || '';
+  // Pay-at-venue receipts drop the warm note, in both flows: the group-chat
+  // card directly below already tells the guest what happens next, and the
+  // balance line ("settle at the venue") adds nothing when there is no online
+  // balance left to collect. Deliberately requires joinGroupUrl — if the date
+  // has no group link the card never renders, and removing the note too would
+  // leave a bare receipt with no next step at all.
+  const hideWarmNote = warmPayAtVenue && !!joinGroupUrl;
 
   const handleDownloadReceipt = async () => {
     if (dlLoading) return;
@@ -4487,7 +4585,7 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
             Pay at venue overrides both: there is no balance deadline to name,
             and the guest joined the group chat back when they paid the advance,
             so promising to add them later would be a downgrade. */}
-        {payment?.event_title && (
+        {payment?.event_title && !hideWarmNote && (
           <div className="bg-[#FAF7F2] border border-[#E8E0D5] rounded-2xl px-4 py-3.5">
             {payment?.payment_type === 'advance' ? (
               <p className="text-[13px] text-gray-500 leading-relaxed">
@@ -4515,11 +4613,11 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
         )}
 
         {/* WhatsApp group join — shown first so it's above the fold */}
-        {payment?.whatsapp_group_url && (
+        {joinGroupUrl && (
           <div className="bg-[#25D366]/8 border border-[#25D366]/20 rounded-3xl px-5 py-5 flex flex-col gap-3">
             <div>
               <p className="text-[13px] font-black text-gray-900 leading-tight">Join Plan Group Chat</p>
-              <p className="text-[12px] text-gray-500 mt-0.5">Exact meeting point details & last-minute updates — all in one place.</p>
+              <p className="text-[12px] text-gray-500 mt-0.5">You'll get last-minute updates here!</p>
             </div>
             <style>{`
               @keyframes wa-shimmer {
@@ -4528,14 +4626,14 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
               }
             `}</style>
             <a
-              href={payment.whatsapp_group_url}
+              href={joinGroupUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="relative overflow-hidden flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-[#25D366] text-white text-[14px] font-bold active:opacity-80 transition-all"
             >
               <span
                 className="pointer-events-none absolute top-0 left-0 h-full"
-                style={{ width: '45%', background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', animation: 'wa-shimmer 1s ease-in-out 1s infinite', filter: 'blur(2.2px)', boxShadow: '0 -4px 16px rgba(255,255,255,0.22)' }}
+                style={{ width: '45%', background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%)', animation: 'wa-shimmer 1s ease-in-out 1s infinite backwards', filter: 'blur(2.2px)', boxShadow: '0 -4px 16px rgba(255,255,255,0.22)' }}
               />
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
