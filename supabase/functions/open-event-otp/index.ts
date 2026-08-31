@@ -109,6 +109,108 @@ function aiSensyAccepted(payload: unknown): boolean {
   return result.success !== false && result.status !== 'error' && !result.error;
 }
 
+// ── WhatsApp OTP delivery ────────────────────────────────────────────────────
+// Wamafy became the primary sender on 2026-08-31 (BSP migration off AiSensy).
+//
+// AiSensy is kept as an automatic FALLBACK rather than deleted. This template
+// gates every open-event booking -- create-payu-order refuses a ticket without a
+// verified OTP session -- so a Wamafy outage would otherwise stop ticket sales
+// outright. Both credentials are still live, so the fallback costs nothing until
+// it is needed. Remove the AiSensy branch only once Wamafy has proven itself
+// over real bookings, and note that Supabase edge functions have NO rollback:
+// the restore point is backup/aisensy-live-2026-08-31/.
+//
+// Returns which provider actually accepted the send, or null if none could.
+async function sendOtpViaWhatsApp(phone: string, otp: string, name: string): Promise<
+  { provider: 'wamafy' | 'aisensy'; messageId: string | null } | null
+> {
+  const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
+  if (wamafyKey) {
+    try {
+      const res = await fetch('https://api.wamafy.com/api/v1/public/messages', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${wamafyKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: `+91${phone}`,
+          templateName: 'otp',
+          variables: { '1': otp },
+          // Authentication templates carry a copy-code button, and WhatsApp
+          // rejects the whole send when its parameter is missing.
+          buttons: [{ index: 0, type: 'copy_code', value: otp }],
+        }),
+      });
+      const text = await res.text();
+      let body: any = null;
+      try { body = text ? JSON.parse(text) : null; } catch { /* keep raw text for logs */ }
+      if (res.ok && body?.success !== false) {
+        return { provider: 'wamafy', messageId: body?.data?.messageId ?? null };
+      }
+      console.error('[open-event-otp] wamafy rejected OTP', res.status, text.slice(0, 300));
+    } catch (err) {
+      console.error('[open-event-otp] wamafy fetch failed', err);
+    }
+  }
+
+  const aisensyKey = Deno.env.get('AISENSY_API_KEY');
+  if (!aisensyKey) return null;
+  try {
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: aisensyKey,
+        campaignName: 'otp',
+        destination: `91${phone}`,
+        userName: name || 'chapter A 3063',
+        source: 'open-event-booking',
+        templateParams: [otp],
+        buttons: [{
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: otp }],
+        }],
+      }),
+    });
+    const responseText = await aiRes.text();
+    let responseBody: unknown = null;
+    try { responseBody = responseText ? JSON.parse(responseText) : null; } catch { /* retain raw text for logs */ }
+    if (aiRes.ok && aiSensyAccepted(responseBody)) {
+      return { provider: 'aisensy', messageId: null };
+    }
+    console.error('[open-event-otp] AiSensy rejected OTP', aiRes.status, responseText.slice(0, 300));
+  } catch (err) {
+    console.error('[open-event-otp] aisensy fetch failed', err);
+  }
+  return null;
+}
+
+// Records the send in whatsapp_sends so delivery/read callbacks can attach to it
+// by message_id. Entirely optional: skipped when the secret is unset, and never
+// allowed to throw -- logging must not be able to fail a booking.
+// The OTP itself is deliberately NOT logged.
+async function logOtpSend(supabase: any, args: {
+  provider: string; messageId: string | null; phone: string;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return;
+  try {
+    await supabase.rpc('log_whatsapp_send', {
+      p_secret: secret,
+      p_provider: args.provider,
+      p_message_id: args.messageId,
+      p_to: args.phone,
+      p_template: 'otp',
+      p_variables: null,
+      p_ok: true,
+      p_http_status: 200,
+      p_raw: null,
+    });
+  } catch (err) {
+    console.error('[open-event-otp] send log failed', err);
+  }
+}
+
 function otpEmailHtml(args: { name: string; otp: string }): string {
   const name = esc(args.name || 'there');
   const otp = esc(args.otp);
@@ -234,38 +336,14 @@ Deno.serve(async (req) => {
 
     try {
       if (delivery === 'whatsapp') {
-        const apiKey = Deno.env.get('AISENSY_API_KEY');
-        if (!apiKey) {
+        const sent = await sendOtpViaWhatsApp(phone, otp, name);
+        if (!sent) {
           await supabase.from('open_event_otp_sessions').delete().eq('verification_token', verificationToken);
-          console.error('[open-event-otp] AISENSY_API_KEY is not configured');
-          return reply(500, { error: 'WhatsApp verification is not configured yet.' }, cors);
-        }
-        const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey,
-            campaignName: 'otp',
-            destination: `91${phone}`,
-            userName: name || 'chapter A 3063',
-            source: 'open-event-booking',
-            templateParams: [otp],
-            buttons: [{
-              type: 'button',
-              sub_type: 'url',
-              index: '0',
-              parameters: [{ type: 'text', text: otp }],
-            }],
-          }),
-        });
-        const responseText = await aiRes.text();
-        let responseBody: unknown = null;
-        try { responseBody = responseText ? JSON.parse(responseText) : null; } catch { /* retain raw text for logs */ }
-        if (!aiRes.ok || !aiSensyAccepted(responseBody)) {
-          console.error('[open-event-otp] AiSensy rejected OTP', aiRes.status, responseText.slice(0, 300));
-          await supabase.from('open_event_otp_sessions').delete().eq('verification_token', verificationToken);
+          console.error('[open-event-otp] no WhatsApp provider could send the OTP');
           return reply(502, { error: 'We could not send your WhatsApp code. Please try again.' }, cors);
         }
+        console.log('[open-event-otp] OTP sent via', sent.provider);
+        await logOtpSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone });
       } else {
         const apiKey = Deno.env.get('BREVO_API_KEY');
         if (!apiKey) {
