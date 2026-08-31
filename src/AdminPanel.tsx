@@ -1629,7 +1629,7 @@ export default function AdminPanel() {
 
   const loadApplications = async () => {
     setApplicationsLoading(true);
-    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }, { data: marketerRows }, { data: boardRows }] = await Promise.all([
+    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }, { data: marketerRows }, { data: boardRows }, { data: waInboundRows }] = await Promise.all([
       fetchAllRows('applications', 'created_at'),
       fetchAllRows('doubt_submissions', 'submitted_at'),
       supabase.from('events').select('slug, invite_slug'),
@@ -1639,6 +1639,14 @@ export default function AdminPanel() {
       supabase.from('call_marketers').select('id, name'),
       // Transparent team board (peers' tickets sold + earned) for marketers.
       supabase.rpc('get_marketer_board'),
+      // Inbound WhatsApp replies. Bounded on purpose: this table grows forever and
+      // a lead's reply stops being useful long before it stops being stored.
+      supabase
+        .from('whatsapp_inbound')
+        .select('id, from_phone, from_name, body_text, msg_type, interactive_reply_id, sent_at, received_at')
+        .gte('received_at', new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString())
+        .order('received_at', { ascending: false })
+        .limit(500),
     ]);
     if (marketerRows) setMarketerNameById(Object.fromEntries(marketerRows.map((m: any) => [m.id, m.name])));
     if (boardRows) setMarketerBoard(boardRows as any);
@@ -1676,6 +1684,18 @@ export default function AdminPanel() {
         arr.push(d);
         doubtsByKey.set(key, arr);
       });
+      // Replies are keyed by phone ALONE — a WhatsApp message carries no event, so
+      // someone with two applications sees the same reply on both. That is the
+      // honest rendering: we genuinely do not know which booking they meant.
+      const waByPhone = new Map<string, any[]>();
+      (waInboundRows ?? []).forEach((m: any) => {
+        const normPhone = String(m.from_phone ?? '').replace(/\D/g, '').slice(-10);
+        if (!normPhone) return;
+        const arr = waByPhone.get(normPhone) ?? [];
+        arr.push(m);
+        waByPhone.set(normPhone, arr);
+      });
+
       const enriched = (data ?? []).map((a: any) => {
         const normPhone = String(a.phone ?? '').replace(/\D/g, '').slice(-10);
         const aliases = eventSlugAliases.get(String(a.event_slug ?? '').trim()) ?? new Set<string>([a.event_slug]);
@@ -1683,6 +1703,7 @@ export default function AdminPanel() {
         return {
           ...a,
           doubts,
+          waReplies: waByPhone.get(normPhone) ?? [],
         };
       });
       const totalDoubtsAttached = enriched.reduce((sum, a) => sum + (a.doubts?.length ?? 0), 0);
@@ -5354,6 +5375,7 @@ export default function AdminPanel() {
 
                         // ─── CALL MODE ───
                         const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
+                        const waReplies = (app.waReplies ?? []) as any[];
                         // Meeting point sub-line under the event title — useful for events
                         // with pickups in multiple cities (e.g. "Koyambedu, Chennai") so the
                         // caller knows exactly where the applicant is joining from. We only
@@ -5365,7 +5387,7 @@ export default function AdminPanel() {
                           ? `${pickupSpot}, ${pickupCity}`
                           : pickupSpot || pickupCity || '';
                         if (peopleMode === 'call') return (
-                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : undefined }}>
+                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : (waReplies.length > 0 ? '#f0fdf4' : undefined) }}>
                             <td style={{ padding: '11px 12px', maxWidth: 280, minWidth: 200 }} title={app.why_join ? `${app.name || '—'}\n${app.why_join}` : (app.name || '—')}>
                               <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {app.name || '—'}
@@ -5373,6 +5395,11 @@ export default function AdminPanel() {
                                 {openDoubts.length > 0 && (
                                   <span title={`${openDoubts.length} unresolved doubt${openDoubts.length === 1 ? '' : 's'}`} style={{ marginLeft: 6, background: '#fde047', color: '#854d0e', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
                                     💬 {openDoubts.length}
+                                  </span>
+                                )}
+                                {waReplies.length > 0 && (
+                                  <span title={`${waReplies.length} WhatsApp repl${waReplies.length === 1 ? 'y' : 'ies'}`} style={{ marginLeft: 6, background: '#bbf7d0', color: '#166534', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
+                                    ↩ {waReplies.length}
                                   </span>
                                 )}
                               </div>
@@ -5442,6 +5469,24 @@ export default function AdminPanel() {
                                   ))}
                                   {openDoubts.length > 3 && (
                                     <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600 }}>+{openDoubts.length - 3} more</div>
+                                  )}
+                                </div>
+                              )}
+                              {waReplies.length > 0 && (
+                                <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {waReplies.slice(0, 3).map((m: any) => (
+                                    <div key={m.id} style={{ background: '#dcfce7', borderLeft: '3px solid #22c55e', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#14532d', lineHeight: 1.4 }}>
+                                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 600, marginBottom: 2 }}>
+                                        ↩ replied {formatAdminDateTime(m.sent_at || m.received_at)}
+                                      </div>
+                                      {/* A tapped button carries no text, and a photo carries no text
+                                          either — say which it was rather than render an empty card. */}
+                                      {m.body_text
+                                        || (m.interactive_reply_id ? `tapped "${m.interactive_reply_id}"` : `sent ${m.msg_type || 'a message'}`)}
+                                    </div>
+                                  ))}
+                                  {waReplies.length > 3 && (
+                                    <div style={{ fontSize: 10, color: '#166534', fontWeight: 600 }}>+{waReplies.length - 3} more</div>
                                   )}
                                 </div>
                               )}
