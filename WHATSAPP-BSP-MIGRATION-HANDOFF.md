@@ -3,7 +3,8 @@
 **Single source of truth for this work.** Supersedes `bsp-migration-plan.md`
 (planning) and `WAMAFY-TEST-HANDOFF.md` (trial log); both are kept for history.
 
-Last updated **2026-09-01**.
+Last updated **2026-09-01**. All templates needed for the pay-at-venue open-event
+flow now exist and are verified.
 
 ---
 
@@ -217,7 +218,7 @@ instant, so `delivered_at` is an **upper bound** (observed 2.6s to 4m48s).
 | `otp` | `otp` ✅ | code | 1 × copy_code (the code) |
 | `car_abandon_deeplink2` | `cart_abandon` ✅ | name, event, date | 1 × URL |
 | `single_payment_sucess_dpl` | `single_payment_sucess_dpl` | amount, details-date | 2 × URL |
-| `fullpaid_dpl` | `balance_paid_dpl` | amount, details-date | 2 × URL |
+| `fullpaid_dpl` | `balance_success` ✅ | amount, details-date | 2 × URL |
 | `payment_failure_dpl` | `payment_failed` | name, amount | 2 × URL |
 | `advance_success_dpl` | `advancepaid` ⚠️ | amount **only** | 2 × URL |
 | `send_details_dpl` | `resend_details` | name, event | 2 × URL |
@@ -225,12 +226,11 @@ instant, so `delivered_at` is an **upper bound** (observed 2.6s to 4m48s).
 
 ### Known template problems
 
-1. **`balance_paid_dpl` is MARKETING, should be UTILITY.** Identical body to
-   `single_payment_sucess_dpl`, which is correctly UTILITY. Marketing costs
-   several times more per send *and* is the category Meta restricts — a payment
-   receipt subject to marketing limits or a marketing opt-out is the wrong
-   trade. Category cannot be changed after approval; recreate it. No code change
-   needed if the name is kept.
+1. ~~`balance_paid_dpl` is MARKETING~~ — **resolved 2026-09-01.** Replaced by
+   **`balance_success`** (UTILITY, `en`), same body, same two params, same two
+   URL buttons. Verified against Wamafy. Use `balance_success`; the MARKETING
+   `balance_paid_dpl` is now a duplicate and **should be deleted** so nobody
+   wires the expensive, delivery-restricted one by mistake.
 2. **`advancepaid` is missing two parameters.** AiSensy's `advance_success_dpl`
    sends amount, **balance due date** and **transaction id**. Harmless for
    pay-at-venue (which uses `single_payment_sucess_dpl`), but a regular split
@@ -272,7 +272,8 @@ instant, so `delivered_at` is an **upper bound** (observed 2.6s to 4m48s).
 
 ## 10. What is left
 
-1. **Recreate `balance_paid_dpl` as UTILITY.**
+1. ~~Recreate `balance_paid_dpl` as UTILITY~~ — done, it is `balance_success`.
+   Delete the leftover MARKETING `balance_paid_dpl`.
 2. **Swap the three payment functions together** — `payu-callback`,
    `payu-webhook`, `verify-pending-payments`. They share the same confirmation
    templates, so migrating one alone means the same payment gets announced from
