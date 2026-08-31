@@ -3,8 +3,9 @@
 **Single source of truth for this work.** Supersedes `bsp-migration-plan.md`
 (planning) and `WAMAFY-TEST-HANDOFF.md` (trial log); both are kept for history.
 
-Last updated **2026-09-01**. All templates needed for the pay-at-venue open-event
-flow now exist and are verified.
+Last updated **2026-09-01**. **All six senders are migrated.** Every WhatsApp
+message the product sends now goes through Wamafy, with AiSensy as an automatic
+fallback on each one.
 
 ---
 
@@ -12,11 +13,29 @@ flow now exist and are verified.
 
 | Message | Fires from | Provider now |
 |---|---|---|
-| `otp` | `open-event-otp` | ✅ **Wamafy** (AiSensy fallback) |
-| `cart_abandon` | `cart-abandonment` | ✅ **Wamafy** (AiSensy fallback) |
-| advance / balance / full paid | `payu-callback`, `payu-webhook`, `verify-pending-payments` | ⏳ AiSensy |
-| `payment_failed` | same three | ⏳ AiSensy |
-| invite + details | `send-aisensy-invite` | ⏳ AiSensy |
+| `otp` | `open-event-otp` | ✅ **Wamafy** |
+| `cart_abandon` | `cart-abandonment` | ✅ **Wamafy** |
+| advance / balance / full paid | `payu-callback`, `payu-webhook`, `verify-pending-payments` | ✅ **Wamafy** |
+| `payment_failed` | same three | ✅ **Wamafy** |
+| invite + details | `send-aisensy-invite` | ✅ **Wamafy** |
+| *advance on a regular split event* | same three | ⏳ AiSensy — see §8 |
+
+Every one keeps AiSensy as an automatic fallback: if Wamafy fails or its key is
+absent, the send falls through rather than being lost. **Keep the AiSensy
+subscription paid until Wamafy has run clean through real bookings** — one extra
+month buys a working fallback, and edge functions have no rollback.
+
+Also built alongside the migration:
+
+- **Delivery, read and failure logging** on every send, joined by `messageId`.
+- **`whatsapp_inbound`** — customer replies, rendered inline on the People rows
+  in the same card as a doubt (green rather than amber). Shown on a person's
+  topmost row only: a conversation belongs to a person, but the table is one row
+  per booking.
+- **`whatsapp-reply`** — free-form replies from the People tab, inside WhatsApp's
+  24-hour window. Admin-gated twice (`verify_jwt` plus an `admin_users` lookup),
+  rate limited to 60/hour per admin, and recorded in `whatsapp_sends` with
+  `template_name` NULL and `sent_by_email` set.
 
 **Customers are currently in a split-number state** — codes from the new number
 `+91 82208 88650`, everything else from the old `+91 99401 11564`. Acceptable only
@@ -273,10 +292,11 @@ that is what guests will now read.
    sends amount, **balance due date** and **transaction id**. Harmless for
    pay-at-venue (which uses `single_payment_sucess_dpl`), but a regular split
    event would lose the due date and reference. Fix before running one.
-3. **`invitation_with_contact` has static buttons.** It sends fine with no
-   buttons array, and Wamafy rejects unexpected button params, so its URLs are
-   fixed. The AiSensy version passes `?phone=…&name=…` so the link identifies the
-   guest. As-is, invited guests land on a generic page.
+3. ~~`invitation_with_contact` has static buttons~~ — **withdrawn, this was wrong.**
+   The AiSensy path only attaches buttons on the *details* delivery; the invite
+   itself has never carried dynamic buttons on either provider. The Wamafy copy is
+   a faithful match. (`resend_details` does take the two dynamic buttons, and gets
+   them.)
 
 ---
 
@@ -319,10 +339,16 @@ that is what guests will now read.
    codebase; deploy with `--no-verify-jwt` and run a ₹1 booking straight after.
    For pay-at-venue, only the **advance** and **failed** paths need wiring —
    balance sends nothing.
-3. **Swap `send-aisensy-invite`** — admin-triggered, errors visible on screen.
-4. **Fix `advancepaid`** before running a non-pay-at-venue split event.
-5. **Fix `invitation_with_contact` buttons** before running an invite-only event.
-6. Once all templates have run clean for a week: remove the AiSensy fallback
+3. ~~Swap `send-aisensy-invite`~~ — done.
+4. **Run a ₹1 pay-at-venue booking end to end.** Everything is verified by
+   construction, smoke test and single sends; no real transaction has yet gone
+   through the migrated payment path.
+5. **Fix `advancepaid`** before running a non-pay-at-venue split event — it needs
+   `{{2}}` balance due date and `{{3}}` txn id. Until then those advances stay on
+   AiSensy by design.
+6. **Delete the leftover MARKETING `balance_paid_dpl`** so nobody wires the
+   expensive, delivery-restricted copy by mistake.
+7. Once everything has run clean for a week: remove the AiSensy fallback
    branches, revoke `AISENSY_API_KEY`, cancel the subscription. **Not before** —
    keeping it paid one extra month buys a working fallback.
 
@@ -351,3 +377,20 @@ that is what guests will now read.
 | Cart abandonment | real `bill_opens` row → `{sent:1}` → delivered 3.7s |
 | OTP not logged | `variables` is null on otp rows |
 
+---
+
+## 12. Auth boundaries — verified 2026-09-01
+
+| Function | `verify_jwt` | Anonymous POST |
+|---|---|---|
+| `payu-callback` | false | 302 — PayU can reach it |
+| `payu-webhook` | false | 200 |
+| `verify-pending-payments` | false | reachable |
+| `open-event-otp` | false | 400 (validation, not auth) |
+| `cart-abandonment` | false | reachable |
+| `send-aisensy-invite` | **true** | **401** |
+| `whatsapp-reply` | **true** | **401** |
+
+The two admin-only functions reject anonymous callers; the customer- and
+PayU-facing ones stay open. **A 401 on `payu-callback` means payments have
+stopped** — that is the single check worth re-running after any deploy.
