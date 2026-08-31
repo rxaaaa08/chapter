@@ -288,11 +288,106 @@ async function maybeSendPaymentFailureEmail(supabase: any, app: any, args: {
   }
 }
 
+// ── WhatsApp provider ────────────────────────────────────────────────────────
+// Wamafy primary since 2026-09-01, AiSensy kept as an automatic fallback while
+// both accounts are paid. Remove the AiSensy half only once Wamafy has proven
+// itself over real bookings -- edge functions have NO rollback, and the restore
+// point is backup/aisensy-live-2026-08-31/.
+//
+// Deliberately duplicated across payu-callback, payu-webhook and
+// verify-pending-payments instead of living in _shared/: that folder is bundled
+// at DEPLOY time, so editing it silently leaves already-deployed callers on an
+// old copy -- the exact failure that cost us two Meta reporting gaps. Three
+// visible copies beat one invisible drift.
+//
+// wamafyTemplate === null means no Wamafy equivalent exists yet, so the send
+// goes straight to AiSensy.
+async function sendPaidWhatsApp(args: {
+  wamafyTemplate: string | null;
+  wamafyVars: Record<string, string>;
+  aisensyCampaign: string;
+  aisensyParams: string[];
+  phone: string; userName: string; buttonParam: string; buttonCount: number;
+  eventSlug: string; txnid: string; amount: string; source: string;
+}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null } | null> {
+  const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
+  if (wamafyKey && args.wamafyTemplate) {
+    try {
+      const res = await fetch('https://api.wamafy.com/api/v1/public/messages', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${wamafyKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: `+91${args.phone}`,
+          templateName: args.wamafyTemplate,
+          variables: args.wamafyVars,
+          // Button value is the placeholder tail only; WhatsApp appends it to the
+          // prefix baked into the approved template.
+          buttons: Array.from({ length: args.buttonCount }, (_, i) => ({
+            index: i, type: 'url', value: args.buttonParam,
+          })),
+        }),
+      });
+      const text = await res.text();
+      let body: any = null;
+      try { body = text ? JSON.parse(text) : null; } catch { /* keep raw for logs */ }
+      if (res.ok && body?.success !== false) {
+        return { provider: 'wamafy', messageId: body?.data?.messageId ?? null };
+      }
+      console.error(`[${args.source}] wamafy rejected ${args.wamafyTemplate}:`, res.status, text.slice(0, 300));
+    } catch (err) {
+      console.error(`[${args.source}] wamafy fetch failed:`, err);
+    }
+  }
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) return null;
+  try {
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: AISENSY_API_KEY,
+        campaignName: args.aisensyCampaign,
+        destination: '91' + args.phone,
+        userName: args.userName || 'chapter A 3063',
+        templateParams: args.aisensyParams,
+        source: args.source,
+        media: {},
+        buttons: buildAiSensyUrlButton(args.buttonParam, args.buttonCount),
+        carouselCards: [],
+        location: {},
+        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: args.amount },
+        paramsFallbackValue: { FirstName: args.userName },
+      }),
+    });
+    if (aiRes.ok) return { provider: 'aisensy', messageId: null };
+    console.error(`[${args.source}] aisensy rejected:`, aiRes.status, (await aiRes.text()).slice(0, 300));
+  } catch (err) {
+    console.error(`[${args.source}] aisensy fetch failed:`, err);
+  }
+  return null;
+}
+
+// Never allowed to throw: logging must not be able to fail a payment confirmation.
+async function logPaidSend(supabase: any, args: {
+  provider: string; messageId: string | null; phone: string; template: string;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return;
+  try {
+    await supabase.rpc('log_whatsapp_send', {
+      p_secret: secret, p_provider: args.provider, p_message_id: args.messageId,
+      p_to: args.phone, p_template: args.template, p_variables: null,
+      p_ok: true, p_http_status: 200, p_raw: null,
+    });
+  } catch (err) {
+    console.error('[paid send log] failed:', err);
+  }
+}
+
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-  if (!AISENSY_API_KEY) { console.warn('[aisensy advance_paid webhook] AISENSY_API_KEY not set'); return; }
+  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) { console.warn('[paid whatsapp] no provider configured'); return; }
   const { data: app } = await supabase
     .from('applications')
     .select('id, name, selected_date, aisensy_advance_paid_sent')
@@ -320,23 +415,21 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
     // approved single-payment template with a phrase for its details line.
     const payAtVenue = await isPayAtVenue(supabase, args.eventSlug);
 
-    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: AISENSY_API_KEY,
-        campaignName: payAtVenue ? AISENSY_CAMPAIGN_FULL : AISENSY_CAMPAIGN,
-        destination: '91' + args.phone,
-        userName: displayName || 'chapter A 3063',
-        templateParams: payAtVenue
+        const sent = await sendPaidWhatsApp({
+      wamafyTemplate: payAtVenue ? 'advancepaid' : null,
+      wamafyVars: { '1': formattedAmount },
+      aisensyCampaign: payAtVenue ? AISENSY_CAMPAIGN_FULL : AISENSY_CAMPAIGN,
+      aisensyParams: payAtVenue
           ? [formattedAmount, PAY_AT_VENUE_DETAILS_WHEN]
           : [formattedAmount, dueFinal, args.txnid],
-        source: 'payu-webhook',
-        media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
-        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: displayName },
-      }),
+      phone: args.phone, userName: displayName, buttonParam, buttonCount: 2,
+      eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
+      source: 'payu-webhook',
     });
+    if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: payAtVenue ? 'advancepaid' : 'advance_success_dpl' });
+    // Shim: leaves every non-ok / claim-release block below byte-identical,
+    // so the dedup semantics around these sends are provably unchanged.
+    const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
 
     if (!aiRes.ok) {
       console.error('[aisensy advance_paid webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
@@ -351,8 +444,7 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
 async function fireBalancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-  if (!AISENSY_API_KEY) { console.warn('[aisensy balance_paid webhook] AISENSY_API_KEY not set'); return; }
+  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) { console.warn('[paid whatsapp] no provider configured'); return; }
   const { data: app } = await supabase
     .from('applications')
     .select('id, name, selected_date, aisensy_balance_paid_sent')
@@ -377,24 +469,19 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
     const buttonParam = buildInviteButtonParam(args.phone, displayName);
     const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
-    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: AISENSY_API_KEY,
-        campaignName: AISENSY_CAMPAIGN_BALANCE,
-        destination: '91' + args.phone,
-        userName: displayName || 'chapter A 3063',
-        templateParams: [
-          formattedAmount,
-          detailsDate,
-        ],
-        source: 'payu-webhook',
-        media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
-        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: displayName },
-      }),
+        const sent = await sendPaidWhatsApp({
+      wamafyTemplate: 'balance_success',
+      wamafyVars: { '1': formattedAmount, '2': detailsDate },
+      aisensyCampaign: AISENSY_CAMPAIGN_BALANCE,
+      aisensyParams: [formattedAmount, detailsDate],
+      phone: args.phone, userName: displayName, buttonParam, buttonCount: 2,
+      eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
+      source: 'payu-webhook',
     });
+    if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'balance_success' });
+    // Shim: leaves every non-ok / claim-release block below byte-identical,
+    // so the dedup semantics around these sends are provably unchanged.
+    const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
 
     if (!aiRes.ok) {
       console.error('[aisensy balance_paid webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
@@ -409,8 +496,7 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
 async function fireFullPaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-  if (!AISENSY_API_KEY) { console.warn('[aisensy full_paid webhook] AISENSY_API_KEY not set'); return; }
+  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) { console.warn('[paid whatsapp] no provider configured'); return; }
   const { data: app } = await supabase
     .from('applications')
     .select('id, name, selected_date, aisensy_full_paid_sent')
@@ -432,24 +518,19 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
     const buttonParam = buildInviteButtonParam(args.phone, displayName);
     const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
-    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: AISENSY_API_KEY,
-        campaignName: AISENSY_CAMPAIGN_FULL,
-        destination: '91' + args.phone,
-        userName: displayName || 'chapter A 3063',
-        templateParams: [
-          formattedAmount,
-          detailsDate,
-        ],
-        source: 'payu-webhook',
-        media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
-        attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-        paramsFallbackValue: { FirstName: displayName },
-      }),
+        const sent = await sendPaidWhatsApp({
+      wamafyTemplate: 'single_payment_sucess_dpl',
+      wamafyVars: { '1': formattedAmount, '2': detailsDate },
+      aisensyCampaign: AISENSY_CAMPAIGN_FULL,
+      aisensyParams: [formattedAmount, detailsDate],
+      phone: args.phone, userName: displayName, buttonParam, buttonCount: 2,
+      eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
+      source: 'payu-webhook',
     });
+    if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'single_payment_sucess_dpl' });
+    // Shim: leaves every non-ok / claim-release block below byte-identical,
+    // so the dedup semantics around these sends are provably unchanged.
+    const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
 
     if (!aiRes.ok) {
       console.error('[aisensy full_paid webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
@@ -464,7 +545,6 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
 async function firePaymentFailedWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
   // Keep the WhatsApp lookup independent of the email-only migration. If that
   // migration has not reached production yet, failure WhatsApps must still send.
   const { data: app, error: appError } = await supabase
@@ -484,30 +564,28 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
   let claimedWhatsApp = false;
 
   try {
-    if (AISENSY_API_KEY && !app.aisensy_payment_failed_sent && await claimSendFlag(supabase, app.id, 'aisensy_payment_failed_sent')) {
+    if (!app.aisensy_payment_failed_sent && await claimSendFlag(supabase, app.id, 'aisensy_payment_failed_sent')) {
       claimedWhatsApp = true;
       const buttonParam = buildInviteButtonParam(args.phone, displayName);
-      const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: AISENSY_API_KEY,
-          campaignName: AISENSY_CAMPAIGN_FAILED,
-          destination: '91' + args.phone,
-          userName: displayName || 'chapter A 3063',
-          templateParams: [displayName, formattedAmount],
-          source: 'payu-webhook',
-          media: {}, buttons: buildAiSensyUrlButton(buttonParam, 2), carouselCards: [], location: {},
-          attributes: { event_slug: args.eventSlug, txn_id: args.txnid, amount: String(args.amount) },
-          paramsFallbackValue: { FirstName: displayName },
-        }),
+            const sent = await sendPaidWhatsApp({
+        wamafyTemplate: 'payment_failed',
+        wamafyVars: { '1': displayName, '2': formattedAmount },
+        aisensyCampaign: AISENSY_CAMPAIGN_FAILED,
+        aisensyParams: [displayName, formattedAmount],
+        phone: args.phone, userName: displayName, buttonParam, buttonCount: 2,
+        eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
+        source: 'payu-webhook',
       });
+      if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'payment_failed' });
+      // Shim: leaves every non-ok / claim-release block below byte-identical,
+      // so the dedup semantics around these sends are provably unchanged.
+      const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
 
       if (!aiRes.ok) {
         console.error('[aisensy payment_failed webhook] non-ok, releasing claim:', aiRes.status, await aiRes.text());
         await releaseSendFlag(supabase, app.id, 'aisensy_payment_failed_sent');
       }
-    } else if (!AISENSY_API_KEY) {
+    } else if (false) {
       console.warn('[aisensy payment_failed webhook] AISENSY_API_KEY not set, skipping WhatsApp');
     }
 
