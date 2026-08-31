@@ -233,9 +233,22 @@ message customers. Rate limited to **60 replies per admin per hour**.
 - **Nobody is notified when a customer replies** — you have to be looking at the
   panel. `send-admin-push` already exists and could be wired to inbound; it is
   not, yet.
-- No template fallback when the window is shut. Deliberate: the approved
-  templates are announcements, and sending `resend_details` to someone asking a
-  specific question answers nothing.
+- ~~No template fallback when the window is shut~~ — **solved by
+  `doubt_assisstance`.** It is not a canned announcement: `{{1}}` quotes their
+  question, `{{2}}` carries our answer, so an approved template can deliver a
+  specific reply. One URL button (`Contact Us`).
+
+  Call `whatsapp-reply` with `action: 'send_doubt'` and
+  `{ phone, name, question, answer }`. Logged as `template_name`
+  `'doubt_assisstance'` with `body_text` set to the **answer**, so the thread
+  reads as a conversation rather than "a template was sent".
+
+  **It is MARKETING and staying that way** — Meta reclassifies anything not
+  strictly transactional, so applying as UTILITY would burn a review cycle for
+  nothing. The consequence to know: **a guest who opted out of marketing will not
+  receive it.** That is not silent — the send is logged, and a suppression comes
+  back as a failed status with a reason in `whatsapp_sends`. Worth watching the
+  first few.
 
 ### Useful queries
 
@@ -429,6 +442,23 @@ that is what guests will now read.
 7. Once everything has run clean for a week: remove the AiSensy fallback
    branches, revoke `AISENSY_API_KEY`, cancel the subscription. **Not before** —
    keeping it paid one extra month buys a working fallback.
+
+### In flight elsewhere — People ▸ Chat
+
+A parallel session owns `AdminPanel.tsx` and is building a **People ▸ Chat**
+sub-view that merges `whatsapp_inbound` and `whatsapp_sends` by phone into one
+conversation, and re-keys the reply state from application id to phone. That is a
+better answer than the inline per-row thread to the same problem: a conversation
+belongs to a person, and the same person can hold several bookings.
+
+**The `send_doubt` edge action is deployed and waiting for a UI.** The form needs
+two fields — their question (sensible to prefill from their latest inbound
+message, but editable, since the last message is not always the question) and the
+answer.
+
+Two agents editing a 6,600-line file concurrently overwrote each other's work
+here before this was noticed. If it happens again, the tell is a change you made
+and verified being absent minutes later.
 
 ### Worth doing next on the messaging side
 
