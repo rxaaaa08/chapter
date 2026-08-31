@@ -94,6 +94,76 @@ Deno.serve(async (req) => {
     }
   }
 
+  // 2b. Window shut: answer via the doubt_assisstance template, which carries
+  //     their question in {{1}} and our answer in {{2}}. Not a canned
+  //     announcement -- a template shaped to deliver a specific reply, which is
+  //     the only way to answer someone outside the 24-hour window.
+  //
+  //     It is MARKETING category and will stay that way: Meta reclassifies
+  //     anything that is not strictly transactional. The consequence to know is
+  //     that a guest who opted out of marketing will not receive it. That is not
+  //     silent -- the send is logged and a suppression comes back as a failed
+  //     status with a reason, visible in whatsapp_sends.
+  if (action === 'send_doubt') {
+    const question = String(body.question ?? '').trim().slice(0, 900);
+    const answer   = String(body.answer   ?? '').trim().slice(0, 900);
+    const name     = String(body.name ?? '').trim().replace(/[|<>]/g, '').slice(0, 60);
+    if (!question || !answer) return json(400, { error: 'both the question and the answer are needed' }, cors);
+
+    const { data: allowedT } = await supabase.rpc('check_rate_limit', {
+      p_kind: 'whatsapp-reply:admin',
+      p_key: callerEmail,
+      p_window_seconds: 3600,
+      p_max_requests: 60,
+    });
+    if (allowedT === false) return json(429, { error: 'too many replies in the last hour' }, cors);
+
+    const buttonParam = `?${new URLSearchParams({ phone, name: name || 'Guest' }).toString()}`;
+    try {
+      const res = await fetch(`${WAMAFY_BASE_URL}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: `+91${phone}`,
+          templateName: 'doubt_assisstance',
+          variables: { '1': question, '2': answer },
+          buttons: [{ index: 0, type: 'url', value: buttonParam }],
+        }),
+      });
+      const raw = await res.text();
+      let parsed: any = null;
+      try { parsed = raw ? JSON.parse(raw) : null; } catch { /* keep raw */ }
+      if (!res.ok || parsed?.success === false) {
+        console.error('[whatsapp-reply] doubt template rejected:', res.status, raw.slice(0, 300));
+        return json(502, { error: parsed?.error?.message ?? 'could not send the answer' }, cors);
+      }
+      const messageId = parsed?.data?.messageId ?? parsed?.messageId ?? null;
+      try {
+        await supabase.from('whatsapp_sends').insert({
+          provider: 'wamafy',
+          message_id: messageId,
+          to_phone: phone,
+          template_name: 'doubt_assisstance',
+          // The answer, so the thread reads as a conversation rather than as
+          // "a template was sent" with the content lost.
+          body_text: answer,
+          sent_by_email: callerEmail,
+          sent_at: new Date().toISOString(),
+          send_ok: true,
+          send_http_status: res.status,
+          raw_send: parsed,
+        });
+      } catch (logErr) {
+        console.error('[whatsapp-reply] could not log the answer:', logErr);
+      }
+      console.log('[whatsapp-reply] doubt answered', { by: callerEmail, to_tail: phone.slice(-4), messageId });
+      return json(200, { ok: true, messageId }, cors);
+    } catch (err) {
+      console.error('[whatsapp-reply] doubt send threw:', err);
+      return json(502, { error: 'could not send the answer' }, cors);
+    }
+  }
+
   if (action !== 'send') return json(400, { error: 'invalid action' }, cors);
 
   const text = String(body.text ?? '').trim().slice(0, 4000);
