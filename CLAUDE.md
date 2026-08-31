@@ -44,7 +44,7 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 
 ## Verification
 - After every code edit: `npx tsc --noEmit` must pass.
-- Preview server: launch.json "Vite Dev Server" (port 3000). Admin/marketer views sit behind login — not drivable in preview; verify those via tsc + SQL simulation instead.
+- Preview server: **port 5175** (`vite.config.ts`, `strictPort: true` — the single source of truth; `npm run dev` must NOT pass its own `--port`). Since 2026-08-17 a launchd agent `~/Library/LaunchAgents/com.chaptera.vite-dev.plist` keeps it running at login and restarts it on crash, so the port is normally already taken — the in-app preview pane can only attach to servers it started itself, so to drive the pane run `launchctl bootout gui/$(id -u)/com.chaptera.vite-dev` first, then `preview_start`. Logs: `~/Library/Logs/chaptera-vite-dev.log`. Admin/marketer views sit behind login — not drivable in preview; verify those via tsc + SQL simulation instead.
 - For DB changes: show the user exactly what changed (`RETURNING`), and re-check with a SELECT.
 
 ## Workflow preferences
