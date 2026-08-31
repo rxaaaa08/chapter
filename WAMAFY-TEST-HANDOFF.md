@@ -206,3 +206,63 @@ Automatically joined by `messageId`, with no fuzzy matching:
 - exact timings, making "how long until invites get read?" a query
 
 This is the capability AiSensy gates behind +Rs1,500/mo.
+
+---
+
+## Production cutover of the callback receiver — 2026-09-01
+
+The webhooks had been pointing at a **preview branch URL** while live traffic
+already flowed through Wamafy, so real customers' delivery receipts depended on
+that branch continuing to exist. Now on `https://chaptera.in/api/wamafy-webhook`.
+
+### What ships where, and why
+
+| | Production (`main`) | Preview (`wamafy-test`) |
+|---|---|---|
+| `api/wamafy-webhook.js` + `_wamafy.js` | ✅ receives callbacks | ✅ |
+| `api/wamafy-send.js`, `wamafy-templates.js` | ❌ **never** | ✅ manual testing |
+| `WAMAFY_API_KEY` (Vercel) | ❌ **never** | ✅ |
+| `WAMAFY_*_WEBHOOK_SECRET` | ✅ | — |
+| `WHATSAPP_LOG_SECRET` | ✅ | ✅ |
+
+**Production is structurally incapable of sending a WhatsApp message.** It holds no
+sending key and has no send route, so a bug in a public endpoint cannot spend
+quota or message customers. Real sending happens only in Supabase edge functions,
+which hold their own `WAMAFY_API_KEY` secret — Vercel is not in the sending path.
+
+Secrets were rotated during this move (the originals had been pasted into a chat
+transcript repeatedly) and are now stored as **Secret** type, not Config, so they
+cannot be read back from the dashboard.
+
+### Verified on production
+
+| Signal | Result |
+|---|---|
+| Endpoint armed | `503` → `401` after secrets loaded |
+| Delivery receipt | sent 19:17:21 → delivered 19:17:22 (**1.6 s**), `200` in production logs |
+| Inbound reply | text, name, phone, conversation + lead ids all captured |
+
+### Inbound replies
+
+`whatsapp_inbound` stores what customers actually write. `from_phone` is
+normalised to the last 10 digits, matching `applications.phone`, so a reply joins
+straight to a booking:
+
+```sql
+select i.sent_at, i.from_name, i.body_text, a.event_slug, a.status
+from whatsapp_inbound i join applications a on a.phone = i.from_phone
+order by i.sent_at desc;
+```
+
+`sent_at` is the customer's send time (`data.sentAt`), never the envelope's
+`occurredAt` — measured 3.5 s apart in the live test, and only one of them is true.
+
+### Remaining
+
+- `cart-abandonment` — next swap, lowest blast radius (cron nudge)
+- `payu-callback` + `payu-webhook` + `verify-pending-payments` — move together;
+  they share the same confirmation templates
+- `send-aisensy-invite` — admin-triggered
+- **Missing template:** balance-paid (AiSensy `fullpaid_dpl`) for pay-at-venue
+- `invitation_with_contact` has static buttons, so its link cannot carry
+  `?phone=…&name=…` the way AiSensy's does
