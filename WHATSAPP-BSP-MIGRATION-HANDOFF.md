@@ -167,7 +167,75 @@ triple-fire design protects the money; only messaging is exposed.
 - All three tables are `is_admin_strict()` SELECT only, with no write policy —
   every write goes through the RPCs.
 
-Migrations: `20260828_whatsapp_send_log.sql`, `20260901_whatsapp_inbound.sql`.
+- **`whatsapp_sends.body_text` / `.sent_by_email`** — a free-form staff reply is
+  stored here with `template_name` NULL, so the conversation reads in order from
+  one table and delivery callbacks attach by `message_id` exactly as for a
+  template. `sent_by_email` records who answered: every reply leaves under the
+  same business number, so without it there is no way to tell afterwards.
+
+Migrations: `20260828_whatsapp_send_log.sql`, `20260901_whatsapp_inbound.sql`,
+`20260901_whatsapp_freeform_reply.sql`.
+
+### Two-way messaging — seeing what customers say
+
+Replies land in `whatsapp_inbound` from the production webhook and render inline
+on the **People** rows, reusing the existing doubt card: same shape, same slot,
+**green instead of amber** so a reply is never mistaken for an unresolved doubt.
+A row tints pale green when a reply is waiting and no doubt is, so amber keeps
+its meaning as the more urgent state.
+
+Three deliberate choices in that rendering:
+
+- **Shown on a person's topmost row only.** A conversation belongs to a person,
+  but this table is one row per booking — so someone with two bookings would
+  otherwise see the same thread printed twice, with two reply boxes that do the
+  same thing. The `↩ n` badge stays on every row, so nothing is hidden; it just
+  is not said twice. Grouping the whole table by phone was the alternative and is
+  the wrong trade: status, date, marketer, payment state and the Approve button
+  are all genuinely per booking.
+- **Keyed by phone alone.** A WhatsApp message carries no event. Attaching a
+  reply to a guessed booking would be a fabrication; showing it against the
+  person is the honest rendering.
+- **Button taps and photos show as what they are** — `tapped "Join Groupchat"`,
+  `sent image` — rather than an empty card. That is also how we will learn
+  whether template buttons get used at all.
+
+Bounded to 60 days / 500 rows on load: the table grows forever and a reply stops
+being useful long before it stops being stored.
+
+### Two-way messaging — replying from the panel
+
+`whatsapp-reply` (edge function, `verify_jwt: true`) lets an admin answer in
+their own words from the People tab, instead of picking up a personal phone —
+which left no record and messaged the guest from an unknown number.
+
+**The 24-hour window is the whole constraint.** Free-form text is only allowed
+within 24 hours of the **customer's** last message (Meta's rule; Wamafy answers
+`400 NO_OPEN_CONVERSATION` outside it). So:
+
+- The UI calls `action: 'window'` **before** showing the box. If the window is
+  shut it says so in plain words and points at calling instead. Letting someone
+  compose a careful answer that silently bounces is the outcome worth designing
+  against.
+- The window can also close **between** the check and the send. That returns
+  `409` and is reported as the window closing, not as a failure — "failed" would
+  send someone hunting for a fault that is not there.
+
+**Security.** Sending lives here and never in Vercel, which deliberately holds no
+WhatsApp key. Gated twice: `verify_jwt` stops anonymous traffic at Supabase's
+gateway, then an `admin_users` lookup means a stolen non-admin JWT still cannot
+message customers. Rate limited to **60 replies per admin per hour**.
+
+**Known limits, by design for now:**
+
+- Only replies to the **Wamafy** number are captured. Anyone answering the old
+  AiSensy number is invisible, because nothing ever recorded those.
+- **Nobody is notified when a customer replies** — you have to be looking at the
+  panel. `send-admin-push` already exists and could be wired to inbound; it is
+  not, yet.
+- No template fallback when the window is shut. Deliberate: the approved
+  templates are announcements, and sending `resend_details` to someone asking a
+  specific question answers nothing.
 
 ### Useful queries
 
@@ -181,6 +249,16 @@ from whatsapp_sends group by template_name order by template_name;
 select i.sent_at, i.from_name, i.body_text, a.event_slug, a.status
 from whatsapp_inbound i join applications a on a.phone = i.from_phone
 order by i.sent_at desc;
+
+-- one conversation, both directions, in order
+select ts, direction, who, text from (
+  select sent_at as ts, 'in'  as direction, from_name     as who, body_text as text
+    from whatsapp_inbound where from_phone = '8838111564'
+  union all
+  select sent_at as ts, 'out' as direction, sent_by_email as who,
+         coalesce(body_text, '[template: ' || template_name || ']')
+    from whatsapp_sends where to_phone = '8838111564'
+) t order by ts;
 ```
 
 ### Vercel
@@ -352,6 +430,16 @@ that is what guests will now read.
    branches, revoke `AISENSY_API_KEY`, cancel the subscription. **Not before** —
    keeping it paid one extra month buys a working fallback.
 
+### Worth doing next on the messaging side
+
+- **Notify someone when a customer replies.** Right now a reply sits in the panel
+  until a human happens to look. `send-admin-push` already routes role-scoped
+  pushes and could be triggered from the inbound webhook.
+- **Show the outbound side of the thread in the panel.** Staff replies are stored
+  but only the one just sent is rendered; older replies and template sends are not
+  shown next to the inbound messages.
+- **Capture replies to the old number** — or retire it, so there is one inbox.
+
 ### Not part of this migration, but found along the way
 
 - `META_PIXEL_ID` and `CRON_SECRET` are referenced by edge functions but **not
@@ -376,6 +464,8 @@ that is what guests will now read.
 | Idempotency | repeated `delivered` did not overwrite; out-of-order handled |
 | Cart abandonment | real `bill_opens` row → `{sent:1}` → delivered 3.7s |
 | OTP not logged | `variables` is null on otp rows |
+| Inbound reply | text, name, phone, conversation + lead ids; `sent_at` 3.5 s before the callback |
+| **Free-form reply** | "hello mellow" sent from the panel by `krutesh08@gmail.com`, delivered, `template_name` NULL |
 
 ---
 
