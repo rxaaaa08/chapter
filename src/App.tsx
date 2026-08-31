@@ -1135,6 +1135,18 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     !!sessionStorage.getItem('ca_payu_bill') && !sessionStorage.getItem('ca_payu_timeline')
   );
   const [isTimelineRestoreLoading, setIsTimelineRestoreLoading] = useState(() => !!sessionStorage.getItem('ca_payu_timeline'));
+  // The customer-facing "N going" figure. Counts TICKETS that have been paid
+  // for — advance_paid included, because on a pay-at-venue event the balance is
+  // only settled at the door, so waiting for it would show nobody going right
+  // up until the event starts.
+  //
+  // OPEN events only. It was the registered count, which includes leads who
+  // never paid — roughly harmless when a lead meant one seat, but once one
+  // person could claim five it stopped being social proof and became someone's
+  // abandoned intent: Chill-pill read "13 going" for 6 people, 5 of those
+  // tickets from two buyers who never completed payment. /plans already counts
+  // paid tickets for open events; this brings the invite route in line for the
+  // same events. Invite-only events keep counting applicants, unchanged.
   const [inviteApplicationCount, setInviteApplicationCount] = useState<number | null>(null);
   const [inviteReservedCount, setInviteReservedCount] = useState<number | null>(null);
   const [form, setForm] = useState({ name: '', phone: '' });
@@ -1151,8 +1163,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   const [showTcModal, setShowTcModal] = useState(false);
   const { activeSubsheet, openSubsheet, dismissSubsheet, handleSubsheetPop } = usePaymentSubsheetHistory();
   // Native-application payment overlay
-  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; payAtVenue?: boolean; girlsOnly?: boolean; isOpenEvent?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
+  const [nativeEventData, setNativeEventData] = useState<{ priceAdvance: number; priceFull: number; paymentMode?: string; payAtVenue?: boolean; girlsOnly?: boolean; isOpenEvent?: boolean; title: string; firstDate: string; bookingSteps?: Array<{ label: string; value: string; date?: string }>; announcements?: string[]; planDetails?: InvitePlanDetails; transportPlan?: any[]; isBalancePayment?: boolean; isFullyPaid?: boolean; ticketCount?: number; whatsappGroupUrl?: string; inviteSlug?: string; eventSlug?: string; inviteSpots?: number | null; inviteFaqs?: Array<{ question: string; answer: string }>; resolvedCity?: string } | null>(null);
   const [showNativeTimeline, setShowNativeTimeline] = useState(false);
+  // Pay-at-venue group bookings answer "how many of you are here?" BEFORE the
+  // timeline, so the timeline can quote a real balance and the bill stays a
+  // plain review screen. Null headcount = not asked yet (solo bookings).
+  const [showVenueHeadcount, setShowVenueHeadcount] = useState(false);
+  const [venueAttending, setVenueAttending] = useState<number | null>(null);
   const [showNativeBill, setShowNativeBill] = useState(false);
   const [showNativeConfirmation, setShowNativeConfirmation] = useState(false);
   // Email from the user's application keyed by canonical event_slug. Populated
@@ -1448,6 +1465,9 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       },
       isBalancePayment,
       isFullyPaid,
+      // Seats this booking holds. Drives the venue balance headcount picker and
+      // the "x N" line on the bill. Defaults to 1 for every pre-multi-ticket row.
+      ticketCount: Math.max(1, Number((appRow as any)?.ticket_count ?? 1) || 1),
       whatsappGroupUrl: resolvedGroupUrl,
       transportPlan: Array.isArray(event.transport_plan) ? event.transport_plan : [],
       inviteSlug: event.invite_slug ?? slug,
@@ -1474,15 +1494,20 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     // every date of the plan combined. Mirrors the booking-application flow,
     // which already drives its social-proof number from per-date counts.
     // Falls back to slug-wide totals only when the date can't be resolved.
+    // Only OPEN events count paid tickets here. Invite events have exactly one
+    // seat per booking, so they never had the inflation problem multi-ticket
+    // introduced — and switching them would have quietly rewritten years of
+    // social proof (Chill Sunday 177 -> 66, Pondy 48 -> 4) for no reason.
+    const isOpenGoingCount = event.booking_url === 'payu-hosted';
     if (firstDate) {
       fetchEventDateCounts(realSlug).then(map => {
         const dc = map[firstDate];
-        setInviteApplicationCount(dc?.registered ?? 0);
+        setInviteApplicationCount(isOpenGoingCount ? (dc?.reserved ?? 0) : (dc?.registered ?? 0));
         setInviteReservedCount(dc?.reserved ?? 0);
       });
     } else {
       fetchEventCounts(realSlug).then(({ registered, reserved }) => {
-        setInviteApplicationCount(registered);
+        setInviteApplicationCount(isOpenGoingCount ? reserved : registered);
         setInviteReservedCount(reserved);
       });
     }
@@ -2063,6 +2088,15 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
           return;
         }
       } catch { /* proceed — see note above */ }
+    }
+    // A pay-at-venue booking holding more than one seat needs its headcount
+    // before anything can quote a balance. Solo bookings skip straight through —
+    // there is only one possible answer.
+    const seats = nativeEventData?.ticketCount ?? 1;
+    if (nativeEventData?.isBalancePayment && nativeEventData?.payAtVenue && seats > 1) {
+      setVenueAttending(n => n ?? seats);
+      setShowVenueHeadcount(true);
+      return;
     }
     window.history.pushState({ chapteraInviteStep: 'timeline' }, '', inviteStepUrl('timeline'));
     setShowNativeTimeline(true);
@@ -3049,6 +3083,21 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
           })()}
         </AnimatePresence>
         <AnimatePresence>
+          {showVenueHeadcount && nativeEventData && (
+            <VenueHeadcountSheet
+              booked={nativeEventData.ticketCount ?? 1}
+              value={venueAttending ?? (nativeEventData.ticketCount ?? 1)}
+              onChange={setVenueAttending}
+              onContinue={() => {
+                setShowVenueHeadcount(false);
+                window.history.pushState({ chapteraInviteStep: 'timeline' }, '', inviteStepUrl('timeline'));
+                setShowNativeTimeline(true);
+              }}
+              onClose={() => setShowVenueHeadcount(false)}
+            />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
           {showNativeTimeline && nativeEventData && (
             <NativeBookingTimeline
               eventTitle={nativeEventData.title}
@@ -3064,6 +3113,11 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               inviteSpots={nativeEventData.inviteSpots}
               applicationCount={inviteApplicationCount}
               reserved={inviteReservedCount}
+              ticketCount={nativeEventData.ticketCount ?? 1}
+              attendingCount={venueAttending ?? undefined}
+              onBack={venueAttending != null && (nativeEventData.ticketCount ?? 1) > 1
+                ? () => { setShowNativeTimeline(false); setShowVenueHeadcount(true); }
+                : undefined}
               onPayAdvance={() => {
                 if (typeof window !== 'undefined') {
                   window.history.pushState({ chapteraInviteStep: 'bill' }, '', inviteStepUrl('bill'));
@@ -3104,6 +3158,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               eventSlug={nativeEventData.eventSlug || verifiedSlug}
               selectedCity={nativeEventData.resolvedCity ?? ''}
               paymentType={nativeEventData.paymentMode === 'full' ? 'full' : (nativeEventData.isBalancePayment ? 'balance' : 'advance')}
+              ticketCount={nativeEventData.ticketCount ?? 1}
+              attendingCount={venueAttending ?? undefined}
               skipEntrance={billRestored}
               onBeforePayU={() => {
                 if (nativeEventData) {
@@ -3306,6 +3362,127 @@ const WhatsAppGlyph = ({ size = 14 }: { size?: number }) => (
   </svg>
 );
 
+// ─── VENUE HEADCOUNT SHEET ────────────────────────────────────────────────────
+// Shown ONLY before the balance timeline, and only for a pay-at-venue booking
+// holding more than one seat. At the venue the group settles for the people who
+// actually turned up, so the headcount has to be known before we can quote a
+// balance — asking here rather than on the bill keeps the bill a plain review
+// screen with no decisions left in it.
+//
+// Deliberately mirrors NativeBookingTimeline's chrome (same backdrop, same
+// rounded-t-[2rem] sheet, same spring, same floating close button) so the two
+// read as one flow rather than two different screens.
+function VenueHeadcountSheet({
+  booked,
+  value,
+  onChange,
+  onContinue,
+  onClose,
+}: {
+  booked: number;
+  value: number;
+  onChange: (n: number) => void;
+  onContinue: () => void;
+  onClose: () => void;
+}) {
+  const missing = booked - value;
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: { duration: 0.22, ease: 'easeIn' } }}
+        transition={{ duration: 0.2 }}
+        className="absolute inset-0 bg-black/40 backdrop-blur-md z-[65]"
+        onClick={onClose}
+      />
+
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%', transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } }}
+        transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+        className="absolute bottom-0 left-0 right-0 z-[66] bg-white rounded-t-[2rem]"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 -top-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center active:scale-95 transition-all shadow-sm"
+          aria-label="Close"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+
+        <div className="px-6 pt-7 pb-4">
+          <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight text-center">How Many Are Here?</p>
+          <p className="mt-2 text-[13px] text-gray-500 leading-relaxed text-center">
+            You booked {booked} tickets. Pay the balance only for the people who came.
+          </p>
+        </div>
+
+        <div className="px-6 pb-6">
+          <div className="bg-[#F2F2F7] rounded-3xl px-5 py-5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => onChange(Math.max(1, value - 1))}
+              disabled={value <= 1}
+              aria-label="One person fewer"
+              className={`w-12 h-12 rounded-2xl border text-[22px] leading-none flex items-center justify-center transition-all ${
+                value <= 1
+                  ? 'border-gray-200 text-gray-300 bg-white'
+                  : 'border-gray-300 text-gray-900 bg-white active:scale-95'
+              }`}
+            >
+              −
+            </button>
+            <div className="flex flex-col items-center">
+              <span className="text-[34px] font-black text-gray-900 leading-none tabular-nums">{value}</span>
+              <span className="text-[12px] text-gray-400 mt-1.5">{value === 1 ? 'person here' : 'people here'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onChange(Math.min(booked, value + 1))}
+              disabled={value >= booked}
+              aria-label="One person more"
+              className={`w-12 h-12 rounded-2xl border text-[22px] leading-none flex items-center justify-center transition-all ${
+                value >= booked
+                  ? 'border-gray-200 text-gray-300 bg-white'
+                  : 'border-gray-300 text-gray-900 bg-white active:scale-95'
+              }`}
+            >
+              +
+            </button>
+          </div>
+
+          {/* Said before they choose, not after they have paid. Keeping a
+              no-show's advance is only fair if it was never a surprise. */}
+          {missing > 0 && (
+            <p className="mt-3 text-[12px] text-gray-400 leading-relaxed text-center">
+              The advance for {missing === 1 ? 'the person' : `the ${missing} people`} who didn't come isn't refunded — it held their spot.
+            </p>
+          )}
+        </div>
+
+        <div className="px-6 pb-8">
+          <button
+            type="button"
+            onClick={onContinue}
+            className="w-full min-h-[58px] py-[17px] rounded-2xl bg-[#FFD700] text-black text-[17px] font-black flex items-center justify-center gap-2.5 active:scale-95 transition-all"
+          >
+            Continue
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
 // ─── NATIVE BOOKING TIMELINE ──────────────────────────────────────────────────
 function NativeBookingTimeline({
   eventTitle,
@@ -3321,6 +3498,9 @@ function NativeBookingTimeline({
   inviteSpots,
   applicationCount = null,
   reserved = null,
+  ticketCount = 1,
+  attendingCount,
+  onBack,
   onPayAdvance,
   onClose,
 }: {
@@ -3338,6 +3518,14 @@ function NativeBookingTimeline({
   inviteSpots?: number | null;
   applicationCount?: number | null;
   reserved?: number | null;
+  // Seats this booking holds, and (on a pay-at-venue balance) how many of them
+  // actually turned up. Both default to one, so a solo booking renders exactly
+  // as it did before group buys existed.
+  ticketCount?: number;
+  attendingCount?: number;
+  // Present only when a headcount sheet came before this, so the guest can go
+  // back and correct a mis-tap — the number decides what they are charged.
+  onBack?: () => void;
   onPayAdvance: () => void;
   onClose: () => void;
 }) {
@@ -3346,9 +3534,26 @@ function NativeBookingTimeline({
   const originalAdvance = isBalancePayment ? priceFull - priceAdvance : priceAdvance;
   const balanceToPay   = isBalancePayment ? priceAdvance : priceFull - priceAdvance;
 
-  const advanceStr = `₹${priceAdvance.toLocaleString('en-IN')}`;
-  const balanceStr = `₹${Math.max(priceFull - priceAdvance, 0).toLocaleString('en-IN')}`;
-  const priceStr   = `₹${priceFull.toLocaleString('en-IN')}`;
+  // Seats charged on each line: the advance covered every ticket booked, while
+  // a pay-at-venue balance covers only the heads that turned up.
+  const seats     = Math.max(1, ticketCount);
+  const heads     = Math.max(1, Math.min(attendingCount ?? seats, seats));
+  const advanceTotal = Math.max(originalAdvance, 0) * seats;
+  const balanceTotal = Math.max(balanceToPay, 0) * (isBalancePayment ? heads : seats);
+
+  // These feed the {advance} / {balance} placeholders in a saved timeline.
+  //
+  // They USED to read straight off the props, which is inverted once the advance
+  // is paid: from that point priceAdvance carries the balance still owed, so a
+  // saved timeline showed a Founders Meet guest "advance ₹199 / balance ₹100"
+  // when they had paid ₹100 and owed ₹199. Only the display lied — the charge
+  // always came from the server — and it stayed hidden because the one event
+  // anybody tested on had an equal ₹1 advance and ₹1 balance. Both now derive
+  // from originalAdvance / balanceToPay, the same values the fallback rows below
+  // have always used correctly.
+  const advanceStr = `₹${advanceTotal.toLocaleString('en-IN')}`;
+  const balanceStr = `₹${balanceTotal.toLocaleString('en-IN')}`;
+  const priceStr   = `₹${(Math.max(priceFull, 0) * seats).toLocaleString('en-IN')}`;
 
   const countStr = applicationCount !== null ? String(applicationCount) : null;
   const resolveValue = (v: string) =>
@@ -3435,9 +3640,9 @@ function NativeBookingTimeline({
     : isBalancePayment
     ? [
         // Row 0: advance — already paid
-        { label: 'advance', value: `₹${Math.max(originalAdvance, 0).toLocaleString('en-IN')}`, date: '' },
+        { label: 'advance', value: advanceStr, date: '' },
         // Row 1: remaining balance — due now (highlighted)
-        { label: 'remaining balance', value: `₹${Math.max(balanceToPay, 0).toLocaleString('en-IN')}`, date: balanceDueDate },
+        { label: 'remaining balance', value: balanceStr, date: balanceDueDate },
         // Any extra non-advance/non-balance/non-application steps (e.g. "Receive" with a date)
         // The user has already been invited so the vibe-check/application step is skipped.
         // The group-chat row is dropped too: this timeline sits beside a live
@@ -3468,6 +3673,17 @@ function NativeBookingTimeline({
             ...filteredSteps.filter((_, i) => i !== advIdx),
           ];
         })()
+      : payAtVenue
+      // Same twin-fallback trap the /plans timeline had: with no stored steps this
+      // is what an invited-but-unpaid customer reads, and the generic rows below
+      // promise trip details instead of the group chat, with no hint the balance is
+      // settled in person. Order matches AdminPanel's nativeDefaultSteps so the
+      // editor and this screen can't tell two different stories.
+      ? [
+          { label: 'settle advance', value: '{advance}', date: '' },
+          { label: "you'll receive", value: 'plan group-chat link', date: '' },
+          { label: 'Remaining Balance', value: '{balance}', date: '' },
+        ]
       : [
           { label: 'settle advance', value: '{advance}', date: '' },
           { label: 'Remaining Balance', value: '{balance}', date: '' },
@@ -3529,7 +3745,21 @@ function NativeBookingTimeline({
 
 
         {/* Title */}
-        <div className="px-6 pt-7 pb-4">
+        <div className="px-6 pt-7 pb-4 relative">
+          {/* Only when a headcount sheet preceded this — that number decides the
+              balance, so it has to be correctable without restarting. */}
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to headcount"
+              className="absolute left-5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#F2F2F7] text-gray-600 flex items-center justify-center active:scale-95 transition-all"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+            </button>
+          )}
           <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight text-center">Your Booking Timeline</p>
         </div>
 
@@ -4335,7 +4565,11 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
 
   // Retry bill: show the NativePaymentOverlay with recovered payment details
   if (view === 'failed' && showRetryBill && payment) {
-    const baseAmount = Math.round(Number(payment.amount) / 1.0242);
+    // payu_payments.amount is the whole charge for the group, but the bill wants
+    // a PER-TICKET figure and multiplies it back up itself. Divide by the seats
+    // that payment covered or a retried group buy would be billed N x N.
+    const retryQty = Math.max(1, Number((payment as any).quantity ?? 1) || 1);
+    const baseAmount = Math.round(Number(payment.amount) / 1.0242 / retryQty);
     return (
       <div className="h-[100dvh] bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center p-0 sm:p-4">
         <div className="w-full bg-white flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white overflow-hidden relative">
@@ -4349,6 +4583,7 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
             lockEmail={!!appEmailForEvent}
             eventSlug={payment.event_slug ?? ''}
             paymentType={payment.payment_type === 'balance' ? 'balance' : 'advance'}
+            ticketCount={retryQty}
             onClose={() => {
               if (isOpen) { setShowRetryBill(false); return; }
               // If we have enough data, go back to the invite chat (skip phone re-entry)
@@ -4531,6 +4766,9 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
       doc.setDrawColor(229, 231, 235);
       doc.line(left, y - 26, right, y - 26);
       row('Event', payment?.event_title || '-', left, y);
+      if (Number(payment?.quantity ?? 1) > 1) {
+        row('Tickets', String(payment.quantity), right, y, 'right');
+      }
       if (payment?.trip_date) {
         doc.setTextColor(107, 114, 128);
         doc.setFont('helvetica', 'normal');
@@ -4688,7 +4926,12 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Payment For</p>
-                <p className="mt-0.5 text-[14px] font-black text-gray-900">{paymentForLabel}</p>
+                <p className="mt-0.5 text-[14px] font-black text-gray-900">
+                  {paymentForLabel}
+                  {Number(payment?.quantity ?? 1) > 1 && (
+                    <span className="text-gray-400"> × {Number(payment?.quantity)}</span>
+                  )}
+                </p>
               </div>
               <p className="text-[22px] font-black text-gray-950 leading-none">
                 ₹{Number(payment?.amount ?? 0).toLocaleString('en-IN')}

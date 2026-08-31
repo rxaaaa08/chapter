@@ -1,5 +1,5 @@
 // chaptera admin panel
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, parseHeroImages, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { dateKeyInTimeZone, isoDateKey, payuTripDateKey } from './dateKeys';
 
@@ -306,6 +306,36 @@ const ADMIN_TABS = ['trips', 'flow', 'people', 'marketers', 'analytics', 'map', 
 type AdminTab = typeof ADMIN_TABS[number];
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
+// ── Group bookings ──────────────────────────────────────────────────────────
+// One row can hold several seats, and at a pay-at-venue event the guest picks
+// how many of them actually turned up — so the booking carries two numbers.
+//
+// They share ONE slot rather than getting a line each. "×3" means three seats,
+// all settled. "1/3" means three seats but only one head was paid for at the
+// door, which is the single case worth noticing: it is the only visible sign
+// that the honour-system headcount might be being understated. Because the
+// shape changes rather than the colour, a column of ×2 ×3 1/3 ×2 puts the odd
+// one out in front of you without shouting.
+//
+// A booking where everyone came shows plain "×3" — "3/3" would just be noise.
+function SeatBadge({ app }: { app: any }) {
+  const booked = Math.max(1, Number(app?.ticket_count ?? 1) || 1);
+  const attendedRaw = app?.attended_count == null ? null : Number(app.attended_count);
+  const attended = attendedRaw != null && Number.isFinite(attendedRaw) ? attendedRaw : null;
+  if (booked <= 1) return null;
+  const shortfall = attended != null && attended < booked;
+  return (
+    <span
+      title={shortfall
+        ? `Booked ${booked} tickets, paid the venue balance for ${attended}`
+        : `${booked} tickets on this booking`}
+      style={{ marginLeft: 6, color: '#999', fontSize: 12, fontWeight: 500 }}
+    >
+      {shortfall ? (<>{attended}<span style={{ color: '#c7c7cc' }}>/</span>{booked}</>) : <>×{booked}</>}
+    </span>
+  );
+}
+
 export default function AdminPanel() {
   const [adminRole, setAdminRole] = useState<'admin' | 'ops' | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -543,6 +573,9 @@ export default function AdminPanel() {
   // Founder-only; feeds the Outstanding payouts view + per-date Settle buttons.
   const [marketerPayouts, setMarketerPayouts] = useState<Array<{ event_slug: string; event_title: string | null; selected_date: string | null; marketer_id: string; marketer_name: string | null; tickets: number; amount: number }>>([]);
   const [eventMarketersMap, setEventMarketersMap] = useState<Record<string, string[]>>({});
+  // Staff attendance — one row per person per IST day they had the panel open.
+  // Attendance only: it says someone was here, never that they did any work.
+  const [staffPresence, setStaffPresence] = useState<Array<{ email: string; ist_day: string; last_seen_at: string }>>([]);
   // Per-date booking counts for the events the logged-in marketer is assigned to.
   // Keyed slug → { 'YYYY-MM-DD' → { registered, reserved } }. Reserved is the
   // TRUE total (all marketers + direct bookings) via the SECURITY DEFINER RPC —
@@ -858,6 +891,37 @@ export default function AdminPanel() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ─── PRESENCE: tell the server this person has the panel open ─────────────
+  // Keyed on adminRole rather than living inside onAuthStateChange, because the
+  // access token isn't attached to the client yet at that point (the same race
+  // that once made /creator report "not a creator"). By the time a role exists,
+  // resolveRole has already completed a successful authenticated read.
+  //
+  // Runs for admins AND ops, so marketers are the ones actually recorded. The
+  // RPC is a silent no-op for anyone not in admin_users, and swallows its own
+  // errors — presence must never be able to break the panel.
+  useEffect(() => {
+    if (!adminRole) return;
+    let stopped = false;
+    const ping = () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      supabase.rpc('touch_presence').then(({ error }) => {
+        if (error) console.warn('[admin] presence ping failed:', error.message);
+      });
+    };
+    ping();
+    // Five minutes is well under any realistic session, so a marketer who opens
+    // the panel at all gets recorded, while 15 staff cost ~1 write/minute.
+    const timer = window.setInterval(ping, 5 * 60 * 1000);
+    // Phones suspend timers in a backgrounded tab; re-ping when they come back.
+    document.addEventListener('visibilitychange', ping);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', ping);
+    };
+  }, [adminRole]);
+
   const login = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -969,7 +1033,11 @@ export default function AdminPanel() {
   const loadMarketersData = async () => {
     if (adminRole !== 'admin') return;
     setMarketersLoading(true);
-    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }, { data: payoutRows }, { data: intentRows }, { data: signupRows }] = await Promise.all([
+    // 60 days of attendance covers the 14-day strip and still lets "last seen"
+    // reach back past a holiday before falling back to "not seen".
+    const presenceSince = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(new Date(Date.now() - 60 * 24 * 60 * 60 * 1000));
+    const [{ data: mkRows }, { data: salesRows }, { data: emRows }, { data: perfRows }, { data: fcRows }, { data: payoutRows }, { data: intentRows }, { data: signupRows }, { data: presenceRows }] = await Promise.all([
       supabase.from('call_marketers').select('id, email, name, commission_amount, active, reviewed_at, upi_id, phone').order('created_at'),
       supabase.from('marketer_sales').select('marketer_id, amount'),
       supabase.from('event_marketers').select('event_slug, marketer_id'),
@@ -978,8 +1046,10 @@ export default function AdminPanel() {
       supabase.rpc('get_marketer_payouts_outstanding'),
       supabase.from('marketer_signup_intents').select('email, completed_at'),
       supabase.from('marketer_signups').select('email, progress, status'),
+      supabase.from('staff_presence_days').select('email, ist_day, last_seen_at').gte('ist_day', presenceSince),
     ]);
     setMarketersLoading(false);
+    setStaffPresence((presenceRows ?? []) as any);
     setPerfSummary(perfRows ?? null);
     setMarketerPayouts((payoutRows ?? []) as any);
     setFixedCosts((fcRows ?? []) as any);
@@ -1013,6 +1083,35 @@ export default function AdminPanel() {
     });
     setEventMarketersMap(map);
   };
+
+  // Attendance derived for the Marketers roster. Day keys are IST (YYYYMMDD
+  // ints, same helpers the rest of the panel uses), so someone who opens the
+  // panel at 11pm IST counts for that day rather than the next UTC one.
+  const presenceView = useMemo(() => {
+    // Index 0 = today, so a row's index IS its age in days.
+    const dayKeys: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      const key = dateKeyInTimeZone(new Date(Date.now() - i * 24 * 60 * 60 * 1000), 'Asia/Kolkata');
+      if (key !== null) dayKeys.push(key);
+    }
+    const ageOf = new Map(dayKeys.map((key, index) => [key, index]));
+    const byEmail = new Map<string, { days: Set<number>; ageDays: number | null; lastSeenAt: string | null }>();
+    staffPresence.forEach(row => {
+      const email = String(row.email ?? '').toLowerCase();
+      const key = isoDateKey(row.ist_day);
+      if (!email || key === null) return;
+      const entry = byEmail.get(email) ?? { days: new Set<number>(), ageDays: null, lastSeenAt: null };
+      entry.days.add(key);
+      const age = ageOf.get(key);
+      if (age !== undefined && (entry.ageDays === null || age < entry.ageDays)) {
+        entry.ageDays = age;
+        entry.lastSeenAt = row.last_seen_at ?? null;
+      }
+      byEmail.set(email, entry);
+    });
+    // Oldest → newest, so the strip reads left-to-right like a calendar.
+    return { byEmail, strip: dayKeys.slice(0, 14).slice().reverse() };
+  }, [staffPresence]);
 
   // Settle every unpaid marketer commission for one event + date (founder-only
   // RPC stamps paid_out_at). Clears that date from Outstanding payouts and drops
@@ -5270,6 +5369,7 @@ export default function AdminPanel() {
                             <td style={{ padding: '11px 12px', maxWidth: 280, minWidth: 200 }} title={app.why_join ? `${app.name || '—'}\n${app.why_join}` : (app.name || '—')}>
                               <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {app.name || '—'}
+                                <SeatBadge app={app} />
                                 {openDoubts.length > 0 && (
                                   <span title={`${openDoubts.length} unresolved doubt${openDoubts.length === 1 ? '' : 's'}`} style={{ marginLeft: 6, background: '#fde047', color: '#854d0e', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
                                     💬 {openDoubts.length}
@@ -5428,7 +5528,10 @@ export default function AdminPanel() {
                         // ─── PAYMENTS MODE ───
                         return (
                           <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top' }}>
-                            <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>{app.name || '—'}</td>
+                            <td style={{ padding: '11px 12px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                              {app.name || '—'}
+                              <SeatBadge app={app} />
+                            </td>
                             <td style={{ padding: '11px 12px', color: '#555', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={eventTitle}>{eventTitle}</td>
                             <td style={{ padding: '11px 12px', whiteSpace: 'nowrap' }}>
                               <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -5803,8 +5906,8 @@ export default function AdminPanel() {
           // A client-side stage only has data from the day its ping shipped. If
           // the window reaches back before that, its rate is meaningless — the
           // denominator is full of history the numerator could never match, and
-          // it renders as a confident 0% rather than "no data". (Form Completion
-          // did exactly this: 0 of 41.) Compare each stage's first-ever row
+          // it renders as a confident 0% rather than "no data". (Submitted
+          // Details did exactly this: 0 of 41.) Compare each stage's first-ever row
           // against the window start and treat anything older as not-yet-measured.
           const stageFirstSeen: Record<string, string> = summary?.stage_first_seen ?? {};
           const windowStart = summary?.since ? new Date(summary.since).getTime() : null;
@@ -5840,7 +5943,7 @@ export default function AdminPanel() {
           const openFunnelByEvent: Record<string, OpenRow> = {};
           ((summary?.open_funnel ?? []) as OpenRow[]).forEach((r) => { openFunnelByEvent[r.event_id] = r; });
           // Open form opens/submits — both client pings, both counted as distinct
-          // SESSIONS server-side, so Form Completion divides like units. It used
+          // SESSIONS server-side, so Submitted Details divides like units. It used
           // to divide applications rows (one per event+phone, forever) by
           // sessions, which under-read the rate every time an abandoner came
           // back: new session, no new row.
@@ -6188,7 +6291,7 @@ export default function AdminPanel() {
                     // and each one now divides like units:
                     //   Pricing Conversion  saw the price → tapped a CTA   [sessions]
                     //   Form Open Rate      tapped a CTA → form opened     [sessions]
-                    //   Form Completion     opened the form → submitted it [sessions]
+                    //   Submitted Details   opened the form → asked for a code [sessions]
                     //   Verification Rate   asked for a code → verified it [phones]
                     //   Payment Rate        booking row created → paid     [bookings]
                     // Contact Us is in the CTA denominators on purpose: that path
@@ -6207,7 +6310,7 @@ export default function AdminPanel() {
                     const openSteps: Step[] = [
                       { label: 'Pricing Conversion', pct: pooledPct(openConverted, openReached),           num: openConverted,      den: openReached,        descr: 'sessions that saw the price tapped a CTA (Book Now or Contact Us)' },
                       { label: 'Form Open Rate',     pct: formOpenMeasured ? pooledPct(openFormOpened, openConverted) : null,     num: openFormOpened,     den: openConverted,      descr: 'sessions that tapped a CTA reached the details form', emptyText: notMeasuredYet('details_form_opened') },
-                      { label: 'Form Completion',    pct: formSubmitMeasured ? pooledPct(openFormSubmitted, openFormOpened) : null, num: openFormSubmitted,  den: openFormOpened,     descr: 'sessions that opened the form filled it in and submitted', emptyText: notMeasuredYet('details_form_submitted') },
+                      { label: 'Submitted Details',  pct: formSubmitMeasured ? pooledPct(openFormSubmitted, openFormOpened) : null, num: openFormSubmitted,  den: openFormOpened,     descr: 'sessions that opened the form filled it in and asked for a WhatsApp code', emptyText: notMeasuredYet('details_form_submitted') },
                       { label: 'Verification Rate',  pct: pooledPct(openAgg.otpVerified, openAgg.otpRequested), num: openAgg.otpVerified, den: openAgg.otpRequested, descr: 'phone numbers sent a WhatsApp code entered it correctly', emptyText: 'no verification codes requested in this window' },
                       { label: 'Payment Rate',       pct: pooledPct(openAgg.paid, openAgg.details),        num: openAgg.paid,       den: openAgg.details,    descr: 'bookings created went on to pay' },
                     ];
@@ -6487,7 +6590,7 @@ export default function AdminPanel() {
                         'Date Picked', 'Date Pick Rate',
                         'Reached Pricing', 'Tapped Book Now', 'Tapped Contact Us', 'Total CTA', 'Pricing Conversion Rate',
                         'Open Form Opened', 'Open Form Open Rate',
-                        'Open Form Submitted', 'Open Form Completion Rate',
+                        'Open Form Submitted', 'Open Submitted Details Rate',
                         'Open OTP Requested', 'Open OTP Verified', 'Open Verification Rate',
                         'Open Bookings Created', 'Open Paid', 'Open Payment Rate',
                         'Application Started', 'Application Submitted', 'Application Completion Rate',
@@ -6762,15 +6865,15 @@ export default function AdminPanel() {
                   />
 
                   <OpenEventRateCard
-                    title="Open Form Completion Rate"
-                    description="For open events, of users who opened the details form, how many filled it in and submitted. Both sides count browser sessions, so someone who comes back a second time is counted the same way on both. A low rate means the form itself is losing people."
+                    title="Open Submitted Details"
+                    description="For open events, of users who opened the details form, how many filled it in and asked for a WhatsApp code. It counts the moment the code is sent, NOT the moment it's entered — entering the code is the next step, Verification Rate. Both sides count browser sessions, so someone who comes back a second time is counted the same way on both. A low rate means the form itself is losing people."
                     valuesForEvent={(eventId) => {
                       const formOpened = detailsFormOpenedByEvent[eventId] || 0;
                       const formSubmitted = detailsFormSubmittedByEvent[eventId] || 0;
                       return {
                         numerator: formSubmitted,
                         denominator: formOpened,
-                        detail: `${formSubmitted} of ${formOpened} who opened the form submitted`,
+                        detail: `${formSubmitted} of ${formOpened} who opened the form submitted their details`,
                         unmeasured: !stageCoversWindow('details_form_submitted'),
                         emptyText: stageCoversWindow('details_form_submitted') ? 'no tracked form opens in this window' : notMeasuredYet('details_form_submitted'),
                       };
@@ -6779,7 +6882,7 @@ export default function AdminPanel() {
 
                   <OpenEventRateCard
                     title="Open Verification Rate"
-                    description="For open events, of users who were sent a WhatsApp verification code after submitting the form, how many entered it correctly. This step sits between the form and the booking, and used to be hidden inside Form Completion. A low rate means codes aren't arriving — check the AiSensy WhatsApp sends."
+                    description="For open events, of users who were sent a WhatsApp verification code after submitting the form, how many entered it correctly. This step sits between the form and the booking, and used to be hidden inside Submitted Details. A low rate means codes aren't arriving — or that people are asking for a code and walking away — so check the AiSensy WhatsApp sends."
                     greenAt={70}
                     yellowAt={40}
                     valuesForEvent={(eventId) => {
@@ -7433,6 +7536,27 @@ export default function AdminPanel() {
               <button style={s.btn()} onClick={() => setAddingMarketer(true)}>+ Add Marketer</button>
             </div>
 
+            {/* Attendance. Deliberately says "opened the panel", never "worked":
+                the ping fires when the dashboard is open, so it is attendance
+                and is gameable by opening it for five seconds. A work-based
+                signal was considered and postponed — see the note in
+                20260817_staff_presence.sql. */}
+            {(() => {
+              const activeMarketers = marketers.filter(marketer => marketer.active);
+              const seenToday = activeMarketers.filter(marketer => presenceView.byEmail.get(String(marketer.email ?? '').toLowerCase())?.ageDays === 0).length;
+              const missing = activeMarketers.length - seenToday;
+              const allIn = activeMarketers.length > 0 && missing === 0;
+              return (
+                <div style={{ background: allIn ? '#f0fdf4' : '#fffbeb', border: `1px solid ${allIn ? '#bbf7d0' : '#fde68a'}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: allIn ? '#15803d' : '#92400e', lineHeight: 1.55 }}>
+                  <b style={{ fontSize: 14 }}>{seenToday} of {activeMarketers.length}</b> active {activeMarketers.length === 1 ? 'marketer has' : 'marketers have'} opened the panel today
+                  {missing > 0 && <> · <b>{missing}</b> {missing === 1 ? 'has' : 'have'} not</>}
+                  <div style={{ fontSize: 11.5, color: '#a16207', marginTop: 4 }}>
+                    Opening the panel is all this measures — not calls made. Anyone showing “Not yet” simply hasn&apos;t opened it since tracking began.
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Self-serve signup funnel — strict-admin reads only. Historical
                 marketers are backfilled, so unfinished starts at zero and only
                 reflects real post-launch drop-off. */}
@@ -7476,14 +7600,14 @@ export default function AdminPanel() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#fafafa', borderBottom: '1.5px solid #eee' }}>
-                    {['Name', 'Email', 'Status', ''].map(h => (
+                    {['Name', 'Email', 'Status', 'Last seen', ''].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700, color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {marketers.length === 0 && (
-                    <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#888' }}>No marketers yet. Click "+ Add Marketer".</td></tr>
+                    <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#888' }}>No marketers yet. Click "+ Add Marketer".</td></tr>
                   )}
                   {marketers.map(mk => {
                     const isNew = !mk.reviewed_at;
@@ -7501,6 +7625,28 @@ export default function AdminPanel() {
                           <span style={{ background: mk.active ? '#dcfce7' : '#fee2e2', color: mk.active ? '#15803d' : '#b91c1c', padding: '3px 9px', borderRadius: 6, fontWeight: 700, fontSize: 11 }}>
                             {mk.active ? 'Active' : 'Inactive'}
                           </span>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          {(() => {
+                            const seen = presenceView.byEmail.get(String(mk.email ?? '').toLowerCase());
+                            const age = seen?.ageDays ?? null;
+                            const tone = age === null ? '#9ca3af' : age === 0 ? '#16a34a' : age <= 3 ? '#d97706' : '#dc2626';
+                            const label = age === null ? 'Not yet' : age === 0 ? 'Today' : age === 1 ? 'Yesterday' : `${age} days ago`;
+                            return (
+                              <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: tone, fontSize: 12.5 }}
+                                     title={seen?.lastSeenAt ? `Last opened ${new Date(seen.lastSeenAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })} IST` : 'No sign-in recorded since tracking began'}>
+                                  <span style={{ width: 8, height: 8, borderRadius: 999, background: tone, flex: '0 0 auto' }} />
+                                  {label}
+                                </div>
+                                <div style={{ display: 'flex', gap: 2, marginTop: 5 }} title="Last 14 days, oldest first — a filled bar means they opened the panel that day">
+                                  {presenceView.strip.map(dayKey => (
+                                    <span key={dayKey} style={{ width: 6, height: 12, borderRadius: 2, background: seen?.days.has(dayKey) ? '#16a34a' : '#e5e7eb', flex: '0 0 auto' }} />
+                                  ))}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                           {isNew && <button style={{ ...s.outlineBtn, marginRight: 6 }} onClick={() => markMarketerReviewed({ id: mk.id, name: mk.name })}>Mark reviewed</button>}

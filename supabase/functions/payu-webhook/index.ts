@@ -544,6 +544,30 @@ function isStaleStatus(current: string | null | undefined, incoming: string): bo
   return (PAID_RANK[current ?? ''] ?? 0) > (PAID_RANK[incoming] ?? 0);
 }
 
+// Multi-ticket: a payment row's `quantity` means different things by type, and
+// the booking has a column for each — tickets bought vs heads that turned up at
+// the venue and were billed the balance.
+//
+// Written as part of the SAME update that flips the status, never a follow-up
+// write: PayU is known to deliver two success notifications for one capture, so
+// a split write can land the status without the count.
+//
+// BOTH counts are always stamped, including 1. Skipping the write on a quantity
+// of 1 looked harmless (the column defaults to 1) but is not: an abandoned lead
+// who first picked 3 seats leaves a stale ticket_count on their pending row, so
+// paying for a single seat later has to actively correct it. And on a balance,
+// "one of the three booked actually came" is precisely the case worth keeping —
+// left null it would be indistinguishable from a balance never paid.
+//
+// Kept BYTE-IDENTICAL in payu-callback, payu-webhook and verify-pending-payments
+// rather than shared: supabase/functions/_shared/* is bundled at DEPLOY time, so
+// a shared copy silently goes stale in whichever of the three is not redeployed.
+function ticketCountPatch(paymentType: string, quantity: unknown): Record<string, number> {
+  const raw = Math.floor(Number(quantity));
+  const qty = Number.isFinite(raw) && raw >= 1 ? raw : 1;
+  return paymentType === 'balance' ? { attended_count: qty } : { ticket_count: qty };
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -595,7 +619,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, payu_response')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, payu_response, quantity')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -692,7 +716,7 @@ Deno.serve(async (req) => {
         } else {
           await supabase
             .from('applications')
-            .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}) })
+            .update({ status: newStatus, ...(isRecovery ? { recovered_at: new Date().toISOString() } : {}), ...ticketCountPatch(paymentType, (stored as any).quantity) })
             .eq('event_slug', eventSlug)
             .eq('phone', phone);
 

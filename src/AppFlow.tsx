@@ -954,6 +954,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const detailsReadyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const detailsSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [detailsForm, setDetailsForm] = useState({ name: '', phone: '', gender: '', email: '' });
+  // Seats this booking is for. Always 1 unless the plan allows a group buy.
+  const [ticketCount, setTicketCount] = useState(1);
+  // How many tickets the blocked "already booked" screen should mention, from
+  // the server's 409 — the client can't read applications directly (RLS).
+  const [alreadyPaidTickets, setAlreadyPaidTickets] = useState(1);
   const [tcAccepted, setTcAccepted] = useState(false);
   const [googleUser, setGoogleUser] = useState<{ name: string; email: string } | null>(null);
   const [googleSignInLoading, setGoogleSignInLoading] = useState(false);
@@ -1035,6 +1040,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     whatsappGroupUrl?: string;
     email?: string;
     selectedCity?: string;
+    // Seats this bill covers. Absent/1 everywhere except a pay-at-venue group buy.
+    ticketCount?: number;
   } | null>(null);
   const [offerAcknowledged, setOfferAcknowledged] = useState(false);
   const [showDoubtPopup, setShowDoubtPopup] = useState(false);
@@ -1101,6 +1108,63 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   }, [isPlansHistoryManaged, activeHistoryLayer]);
   const isPhonePeFlow = selectedEvent?.bookingUrl?.toLowerCase().includes('phonepe');
   const isPayUFlow    = selectedEvent?.bookingUrl === 'payu-hosted';
+
+  // ── Group bookings ────────────────────────────────────────────────────────
+  // One number may hold several seats, but ONLY on an open + split +
+  // pay-at-venue plan. That is where a group buy makes sense: the advance is
+  // small enough to front for friends, and the balance is settled per head who
+  // actually turns up. Everywhere else stays strictly one ticket per number.
+  // create-payu-order re-checks this and forces 1, so the stepper is a
+  // convenience, not the control.
+  const MAX_TICKETS = 5;
+  const allowsMultiTicket = isPayUFlow
+    && selectedEvent?.paymentMode === 'split'
+    && !!selectedEvent?.payAtVenue;
+
+  // The date this booking will actually land on. Mirrors the fallback in
+  // handleProceedToPhonePe exactly: without it, a customer who never opened the
+  // calendar would be offered seats counted against no date at all, while their
+  // payment silently went to the first one.
+  const effectiveBookingDate = bookingDate || selectedEvent?.dates?.[0]?.date || '';
+
+  // Never offer more seats than that date actually has. Capacity is per-date
+  // (totalCapacity) against the date's reserved tickets, which now sums
+  // ticket_count rather than counting bookings. Unknown capacity means no cap
+  // here — the server still refuses an overshoot.
+  const spotsLeftForBookingDate = (() => {
+    const cap = (selectedEvent as any)?.totalCapacity;
+    if (typeof cap !== 'number' || cap <= 0) return null;
+    const reserved = effectiveBookingDate && dateCounts
+      ? (dateCounts[effectiveBookingDate]?.reserved ?? 0)
+      : 0;
+    return Math.max(0, cap - reserved);
+  })();
+  // The stepper deliberately goes to 5 even when the date holds fewer. Capping
+  // the + button silently is the worse experience: someone wanting 4 seats taps
+  // a dead control and is told nothing. Letting them ask for 4 and answering
+  // "only 2 left on this date" tells them what's actually true, and they can
+  // change the date instead of abandoning.
+  const maxTickets = MAX_TICKETS;
+
+  // A capacity figure the SERVER corrected us with. dateCounts is fetched when
+  // the plan loads and goes stale on a form left open, so the preflight can come
+  // back with a smaller number than the client believed. Null until that happens.
+  const [serverSpotsLeft, setServerSpotsLeft] = useState<number | null>(null);
+  useEffect(() => { setServerSpotsLeft(null); }, [effectiveBookingDate, selectedEvent?.id, ticketCount]);
+
+  const spotsLeftForTickets = serverSpotsLeft ?? spotsLeftForBookingDate;
+  const ticketsExceedSpots = allowsMultiTicket
+    && spotsLeftForTickets != null
+    && ticketCount > spotsLeftForTickets;
+
+  // Reset to a single ticket when the plan can't do group buys; otherwise just
+  // hold the 1..5 bound. Deliberately does NOT pull the number down to fit the
+  // remaining spots — that would silently undo the customer's choice and hide
+  // the very message we want them to read.
+  useEffect(() => {
+    if (!allowsMultiTicket) { setTicketCount(1); return; }
+    setTicketCount(n => Math.min(Math.max(1, n), MAX_TICKETS));
+  }, [allowsMultiTicket]);
   const isNativeApplicationFlow = selectedEvent?.bookingUrl === 'native-application';
 
   // Open-event funnel pings. The server counts DISTINCT sessions per stage, so
@@ -1821,11 +1885,27 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           email: detailsForm.email.trim(),
           event_slug: selectedEvent.id,
           selected_city: selectedCity || undefined,
+          ticket_count: ticketCount,
+          // No booking row exists yet on this preflight, so the capacity check
+          // needs the chosen date from here — and it has to be the same date the
+          // payment will use, fallback included.
+          selected_date: effectiveBookingDate || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 409 && data?.error === 'already paid for this open event') {
+        setAlreadyPaidTickets(Math.max(1, Number(data?.ticket_count ?? 1) || 1));
         setOpenAlreadyPaid(true);
+        return false;
+      }
+      // The group buy no longer fits the date — someone else took the spots
+      // while this form was open. Tell them the real number rather than a
+      // generic failure; the stepper re-clamps as soon as counts refresh.
+      if (res.status === 409 && data?.error === 'not enough spots left for that many tickets') {
+        // Record what the server says is left and let the inline message under
+        // the stepper do the talking — the customer keeps the number they chose
+        // and decides whether to lower it or change the date.
+        setServerSpotsLeft(Math.max(0, Number(data?.spots_left ?? 0) || 0));
         return false;
       }
       if (!res.ok) {
@@ -1976,6 +2056,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       whatsappGroupUrl: selectedDateEntry?.whatsappGroupUrl ?? undefined,
       email: detailsForm.email.trim() || undefined,
       otpSession: isPayUFlow ? verifiedOtpSession : undefined,
+      ticketCount: allowsMultiTicket ? ticketCount : 1,
       // Sent to create-payu-order so it charges the correct city-aware price
       // directly from the client's current selection (server validates it
       // against event.cities) instead of depending on the applications-row
@@ -2049,6 +2130,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           pickup_point_id: chosenPoint?.id ?? (selectedMeetingPoint || null),
           pickup_label: chosenPoint?.label ?? null,
           selected_city: selectedCity ?? null,
+          // Seats this lead is after. Recorded before payment so an abandoned
+          // group buy is visible in the People tab as the 3-seat intent it was,
+          // not as a single ticket. The money never comes from here — the server
+          // recomputes it from the order request.
+          ticket_count: allowsMultiTicket ? ticketCount : 1,
           // Creator affiliate attribution on first insert (BEFORE INSERT trigger
           // resolves affiliate_code → affiliate_id).
           affiliate_code: affRef,
@@ -2075,6 +2161,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         p_pickup_point_id: chosenPoint?.id ?? (selectedMeetingPoint || null),
         p_pickup_label: chosenPoint?.label ?? null,
         p_selected_city: selectedCity ?? null,
+        p_ticket_count: allowsMultiTicket ? ticketCount : 1,
       });
       if (refreshErr) console.error('open application detail refresh failed:', refreshErr);
 
@@ -2107,12 +2194,16 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         event_date: paymentContext.tripDateFull,
         customer_name: paymentContext.name,
         contact: paymentContext.phone,
-        amount_paid: paymentContext.amount,
+        // Per-ticket figures x the seats booked. This legacy mock-gateway receipt
+        // isn't reachable for a group buy (multi-ticket needs payu-hosted, which
+        // goes through PayU and PayUReturnScreen), but leaving a per-ticket total
+        // sitting in a receipt table is a wrong number waiting to be believed.
+        amount_paid: paymentContext.amount * (paymentContext.ticketCount ?? 1),
         payment_for: paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance',
         payment_mode: 'Mock BillDesk Gateway',
         status: 'successful',
         paid_on: paymentContext.issuedAt,
-        remaining_balance: paymentContext.remainingBalance,
+        remaining_balance: paymentContext.remainingBalance * (paymentContext.ticketCount ?? 1),
         balance_due: paymentContext.balanceDue,
       }, { onConflict: 'receipt_no' });
     setPaymentView('success');
@@ -2285,7 +2376,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   // require it. Gender is asked ONLY for girls-only events (female confirmation) —
   // regular chapter events drop it.
   const detailsFormGirlsOnly = !!(selectedEvent?.girlsOnly || hasGirlsOnlyQuickInfo(selectedEvent?.quickInfo));
-  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && (!isPayUFlow || (isEmailValid && (!detailsFormGirlsOnly || isGenderValid)));
+  const isDetailsFormValid = isNameValid && isPhoneValid && tcAccepted && !ticketsExceedSpots && (!isPayUFlow || (isEmailValid && (!detailsFormGirlsOnly || isGenderValid)));
 
   if (previewLoading) return <div className="fixed inset-0 bg-white z-50" />;
 
@@ -2665,8 +2756,15 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         const capacity = (selectedEvent as any).totalCapacity;
                         const socialProofDate = bookingDate || selectedEvent?.dates?.[0]?.date || '';
                         const perDateRegistered = dateCounts && socialProofDate ? (dateCounts[socialProofDate]?.registered ?? 0) : null;
+                        // A date with no key in dateCounts has genuinely nobody on it, so it
+                        // must read 0 — falling back to the event-wide reservedCount here made
+                        // a brand-new second date inherit the first date's social proof ("28 ppl
+                        // have already joined" on a date with zero bookings). Every other
+                        // dateCounts read in this file already treats a missing key as 0. The
+                        // single-date open-full case that genuinely needs the event-wide number
+                        // is covered by the Math.max just below.
                         const rawPerDateReserved = dateCounts && socialProofDate
-                          ? (dateCounts[socialProofDate]?.reserved ?? reservedCount ?? 0)
+                          ? (dateCounts[socialProofDate]?.reserved ?? 0)
                           : reservedCount;
                         const perDateReserved =
                           isPayUFlow && selectedEvent.paymentMode === 'full' && (selectedEvent.dates?.length ?? 0) <= 1
@@ -2712,6 +2810,20 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                     { label: 'settle payment', value: '{price}', date: '' },
                                     { label: "you'll receive exact", value: 'Meeting Spot Details 📍', date: '' },
                                   ]
+                                : selectedEvent.payAtVenue
+                                // Pay at venue tells a different story and MUST stay in step with
+                                // AdminPanel's openDefaultSteps: advance → you're in the group chat
+                                // → settle the rest in person. The meeting-spot row is dropped on
+                                // purpose (details arrive in the chat the guest just joined). Balance
+                                // stays third so booking_steps[2] still means "balance".
+                                // A date whose booking_steps were never saved lands here, so this
+                                // branch is what the customer sees — without it the admin editor
+                                // and /plans showed two different timelines for the same date.
+                                ? [
+                                    { label: 'pay advance', value: '{advance}', date: '' },
+                                    { label: "you'll receive", value: 'plan group-chat link', date: '' },
+                                    { label: 'remaining balance', value: '{balance}', date: '' },
+                                  ]
                                 : [
                                     { label: 'Advance', value: '{advance}', date: '' },
                                     { label: 'Remaining Balance', value: '{balance}', date: '' },
@@ -2721,6 +2833,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                 ? [
                                     { label: 'Entry Ticket', value: '{price}', date: '' },
                                     { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
+                                  ]
+                                : selectedEvent.payAtVenue
+                                // Invite + pay at venue, mirroring AdminPanel's
+                                // nativeDefaultSteps: the group chat replaces the
+                                // pickup/trip-details promise, and the balance is settled
+                                // in person. Same twin-fallback trap as the open branch
+                                // above — an unsaved timeline here used to promise trip
+                                // details the pay-at-venue story never delivers.
+                                ? [
+                                    { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
+                                    { label: "you'll receive", value: 'plan group-chat link', date: '' },
+                                    { label: 'Remaining Balance', value: '{balance}', date: '' },
                                   ]
                                 : [
                                     { label: selectedEvent.inviteOnly ? 'Sign Up' : 'Advance', value: selectedEvent.inviteOnly ? 'Free — no payment yet' : '{advance}', date: '' },
@@ -3116,6 +3240,77 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                   />
                                 </div>
 
+                                {/* Group buy. Everything stays under this one
+                                    number — we deliberately never collect the
+                                    friends' numbers, so there is one point of
+                                    contact and one group-chat invite. */}
+                                {/* Group buy. Outlined rather than filled, so it
+                                    reads as an action next to the filled input
+                                    fields — same treatment as the OTP block
+                                    below. Deliberately carries no caption: a
+                                    disabled control says "you're at the limit"
+                                    without a line of copy. */}
+                                {allowsMultiTicket && (
+                                  <div className={`bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3 flex items-center justify-between gap-3 transition-shadow ${
+                                    ticketsExceedSpots ? 'ring-1 ring-red-500' : ''
+                                  }`}>
+                                    {/* Built as a form field like the ones above
+                                        it: permanent label, and a line beneath
+                                        that always reads as placeholder guidance —
+                                        it describes the choice rather than echoing
+                                        it, since the number itself is already
+                                        right there in the stepper. Red is reserved
+                                        for the one case that blocks them.
+                                        Truncated rather than wrapped so the card
+                                        can never change height on a narrow phone. */}
+                                    <div className="min-w-0">
+                                      <span className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Tickets</span>
+                                      <p className={`text-[17px] truncate ${
+                                        ticketsExceedSpots ? 'text-red-500' : 'text-gray-300'
+                                      }`}>
+                                        {ticketsExceedSpots
+                                          ? (spotsLeftForTickets === 0
+                                              ? 'Date sold out'
+                                              : `Only ${spotsLeftForTickets} ${spotsLeftForTickets === 1 ? 'spot' : 'spots'} left`)
+                                          : ticketCount > 1
+                                            ? `You + ${ticketCount - 1} ${ticketCount - 1 === 1 ? 'friend' : 'friends'}`
+                                            : 'Most people join solo'}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-3.5 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => setTicketCount(n => Math.max(1, n - 1))}
+                                        disabled={ticketCount <= 1}
+                                        aria-label="One ticket fewer"
+                                        className={`w-[30px] h-[30px] rounded-[9px] border text-[17px] leading-none flex items-center justify-center transition-all ${
+                                          ticketCount <= 1
+                                            ? 'border-gray-200 text-gray-400 bg-white'
+                                            : 'border-gray-300 text-gray-900 bg-white active:scale-95'
+                                        }`}
+                                      >
+                                        −
+                                      </button>
+                                      <span className="text-[17px] font-medium text-gray-900 min-w-[12px] text-center tabular-nums">
+                                        {ticketCount}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setTicketCount(n => Math.min(maxTickets, n + 1))}
+                                        disabled={ticketCount >= maxTickets}
+                                        aria-label="One ticket more"
+                                        className={`w-[30px] h-[30px] rounded-[9px] border text-[17px] leading-none flex items-center justify-center transition-all ${
+                                          ticketCount >= maxTickets
+                                            ? 'border-gray-200 text-gray-400 bg-white'
+                                            : 'border-gray-300 text-gray-900 bg-white active:scale-95'
+                                        }`}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
                                 {openOtpSession && (
                                   <div className="rounded-2xl border border-gray-200 bg-white px-4 pt-3 pb-4">
                                     <p className="text-[13px] text-gray-500 leading-snug">Enter 6-digit code sent to {openOtpDelivery === 'email' ? detailsForm.email.trim() : detailsForm.phone}</p>
@@ -3292,12 +3487,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 </button>
                 <div className="flex flex-col items-center justify-center gap-4 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">👋</div>
-                  <p className="text-[20px] font-black text-gray-900">Spot Already Reserved!</p>
-                  <p className="text-[14px] text-gray-500 leading-relaxed max-w-[310px]">
-                    A payment has already been made for this event with this WhatsApp number.
+                  <p className="text-[20px] font-black text-gray-900">
+                    {alreadyPaidTickets > 1 ? 'Spots Already Reserved!' : 'Spot Already Reserved!'}
                   </p>
                   <p className="text-[14px] text-gray-500 leading-relaxed max-w-[310px]">
-                    To get another ticket, please use a different WhatsApp number.
+                    {alreadyPaidTickets > 1
+                      ? `You've already booked ${alreadyPaidTickets} tickets for this event with this WhatsApp number.`
+                      : 'A payment has already been made for this event with this WhatsApp number.'}
+                  </p>
+                  {/* No self-serve top-up by decision — a second charge on a
+                      paid number is exactly what the server guard stops. */}
+                  <p className="text-[14px] text-gray-500 leading-relaxed max-w-[310px]">
+                    Need {alreadyPaidTickets > 1 ? 'more tickets' : 'another ticket'}? Please use a different WhatsApp number.
                   </p>
                   <button
                     type="button"
@@ -3524,6 +3725,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                 eventSlug={paymentContext.eventId}
                 selectedCity={paymentContext.selectedCity ?? ''}
                 otpSession={paymentContext.otpSession ?? ''}
+                ticketCount={paymentContext.ticketCount ?? 1}
                 onClose={() => {
                   setPaymentView('idle');
                   setShowDetailsForm(true);
@@ -3606,9 +3808,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Payment For</p>
-                      <p className="mt-0.5 text-[14px] font-black text-gray-900">{paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance'}</p>
+                      <p className="mt-0.5 text-[14px] font-black text-gray-900">
+                        {paymentContext.isBalancePayment ? 'Remaining Balance' : 'Advance'}
+                        {(paymentContext.ticketCount ?? 1) > 1 && (
+                          <span className="text-gray-400"> × {paymentContext.ticketCount}</span>
+                        )}
+                      </p>
                     </div>
-                    <p className="text-[22px] font-black text-gray-950 leading-none">{formatINR(paymentContext.amount)}</p>
+                    <p className="text-[22px] font-black text-gray-950 leading-none">{formatINR(paymentContext.amount * (paymentContext.ticketCount ?? 1))}</p>
                   </div>
                   <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F7F7F8] px-4 py-3">
                     <p className="text-[12px] font-semibold text-gray-500">Payment Mode</p>
@@ -3617,7 +3824,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <div className="flex items-start justify-between gap-3 border-t border-black/5 pt-3">
                     <p className="text-[12px] font-semibold text-gray-500">Balance Due</p>
                     <div className="text-right">
-                      <p className="text-[13px] font-bold text-gray-800">{formatINR(paymentContext.remainingBalance)}</p>
+                      <p className="text-[13px] font-bold text-gray-800">{formatINR(paymentContext.remainingBalance * (paymentContext.ticketCount ?? 1))}</p>
                       {paymentContext.remainingBalance > 0 && (
                         <p className="mt-0.5 text-[10px] font-semibold text-gray-400">due by {paymentContext.balanceDue}</p>
                       )}

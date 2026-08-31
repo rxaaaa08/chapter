@@ -317,6 +317,44 @@ Inputs the founder maintains: `events.cost_per_ticket` (per-event) and
 
 Migration: `supabase/migrations/20260618_performance_dashboard.sql`.
 
+## 8c. Attendance — "did they open the panel today?" (added 2026-08-17)
+
+`staff_presence_days` records **one row per staff email per IST day** that they
+had the admin panel open. Shown as a **Last seen** column on the Team ▸
+Marketers roster (dot + "Today"/"Yesterday"/"N days ago", plus a 14-day strip),
+with a summary line: "*N of M* active marketers have opened the panel today".
+
+**How it's written:** `AdminPanel` calls the `touch_presence()` RPC once the
+role resolves, then every 5 minutes while the tab is visible, plus on
+`visibilitychange` (phones suspend timers in background tabs). The RPC is
+SECURITY DEFINER, stamps the caller's **own** JWT email — so nobody can mark
+somebody else present — and is a **silent no-op** for non-staff. It swallows all
+exceptions: this fires on every admin page load and must never break the panel.
+
+**Why the ping and not something that already existed:**
+- `admin_audit_log` records *actions*, not attendance. Reading leads and making
+  phone calls leaves zero trace.
+- `auth.users.last_sign_in_at` only moves on a **fresh** Google login and
+  sessions persist for weeks — one marketer's last sign-in was 16 Jun while he
+  was demonstrably working in the panel through July. It cannot answer "today".
+
+> ⚠️ **This is attendance, not work, and it is gameable** — opening the panel
+> for five seconds marks you present. A second "Worked today" dot (from
+> `admin_audit_log` + `application_events`, both of which carry the actor and a
+> timestamp) was designed and **deliberately postponed**: as of 2026-08-17 not
+> one `call_status` had been saved by any of the 15 active marketers in ten
+> days, so a work signal would have shown the whole team as idle when the real
+> problem is that phone work is never recorded. Before adding it, close this
+> gap: **saving a call *note* without changing the call *status* currently
+> writes nothing anywhere** — not to `admin_audit_log` (the save doesn't call
+> `logAdminAction`) and not to `application_events` (the trigger doesn't watch
+> `call_notes`).
+
+RLS: SELECT is **`is_admin_strict()`** — founders only, so staff can't read each
+other's attendance. No write policies exist; `TRUNCATE` is revoked from
+anon+authenticated for the same reason as on `application_events` (it bypasses
+RLS).
+
 ## 9. File reference
 
 | File | Contents |
@@ -326,7 +364,8 @@ Migration: `supabase/migrations/20260618_performance_dashboard.sql`.
 | `supabase/migrations/20260617_marketers_rls.sql` | RLS policies |
 | `supabase/migrations/20260618_admin_push_subscriptions_delete_admin_only.sql` | ops can't delete push devices |
 | `supabase/migrations/20260705_marketer_commission_per_event.sql` | `events.marketer_commission` + event-aware `accrue_marketer_sale` / `get_performance_summary` |
-| `src/AdminPanel.tsx` | Marketers tab, commission banner, `MarketerAssignment`, client logic |
+| `supabase/migrations/20260817_staff_presence.sql` | `staff_presence_days` + `touch_presence()` (§8c attendance) |
+| `src/AdminPanel.tsx` | Marketers tab, commission banner, `MarketerAssignment`, presence heartbeat + Last seen column, client logic |
 
 Related: the **Re-Target** flag (`applications.re_target`) and `retarget-check`
 edge function are a separate but adjacent system for chasing un-actioned invited

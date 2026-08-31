@@ -31,7 +31,7 @@ async function resolveEvent(supabase: any, inputSlug: string) {
   if (!inputSlug) return null;
   const { data } = await supabase
     .from('events')
-    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details, payment_mode, booking_url')
+    .select('slug, title, price_advance, price_full, is_active, invite_only, invite_slug, cities, city_details, payment_mode, booking_url, pay_at_venue, invite_spots, total_capacity')
     .or(`slug.eq.${inputSlug},invite_slug.eq.${inputSlug}`)
     .maybeSingle();
   return data ?? null;
@@ -69,11 +69,33 @@ function sanitizeName(raw: any): string | null {
   return s.replace(/\|/g, '');
 }
 
-function err(status: number, message: string, cors: Record<string, string>) {
-  return new Response(JSON.stringify({ error: message }), {
+function err(status: number, message: string, cors: Record<string, string>, extra?: Record<string, unknown>) {
+  return new Response(JSON.stringify({ error: message, ...(extra ?? {}) }), {
     status,
     headers: { 'Content-Type': 'application/json', ...cors },
   });
+}
+
+// ── Multi-ticket (open + split + pay-at-venue ONLY) ─────────────────────────
+// One WhatsApp number may buy up to MAX_TICKETS_PER_BOOKING seats, but ONLY on
+// a pay-at-venue open event. That narrow gate is the founder's decision, and it
+// is enforced here rather than in the UI because this function is anon-callable:
+// a hand-crafted request naming any other event silently gets one ticket, never
+// an error, so nothing about existing invite or single-payment flows can shift.
+const MAX_TICKETS_PER_BOOKING = 5;
+
+function isMultiTicketEvent(event: any): boolean {
+  return event?.booking_url === 'payu-hosted'
+      && event?.payment_mode === 'split'
+      && event?.pay_at_venue === true;
+}
+
+// Floors, bounds and defaults an untrusted quantity to 1..max. Anything absent,
+// fractional, negative or non-numeric collapses to 1 — the safe direction.
+function clampTickets(raw: unknown, max: number): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, max);
 }
 
 // ── Payment-method fee table (server-side canonical source) ─────────────────
@@ -297,6 +319,14 @@ Deno.serve(async (req) => {
     // event to a cheaper 'advance' charge.
     if (event.payment_mode === 'full') paymentType = 'full';
 
+    // How many seats this order is for. Forced to 1 on every event shape that
+    // is not open+split+pay-at-venue, so a client claiming otherwise is ignored
+    // rather than rejected.
+    const multiTicket = isMultiTicketEvent(event);
+    const ticketCount = multiTicket
+      ? clampTickets(body.ticket_count, MAX_TICKETS_PER_BOOKING)
+      : 1;
+
     const canonicalSlug = event.slug as string;
     // Populated below when this phone+email previously submitted a doubt for
     // this exact open event. A matching doubt is an intentional alternate path
@@ -309,7 +339,7 @@ Deno.serve(async (req) => {
     if (event.booking_url === 'payu-hosted' && paymentType !== 'balance') {
       const { data: paidApplication, error: paidApplicationError } = await supabase
         .from('applications')
-        .select('id')
+        .select('id, ticket_count')
         .eq('event_slug', canonicalSlug)
         .eq('phone', phone)
         .in('status', ['advance_paid', 'fully_paid'])
@@ -318,7 +348,63 @@ Deno.serve(async (req) => {
         console.error('[create-payu-order] paid application lookup failed', paidApplicationError);
         return err(500, 'could not verify booking status', cors);
       }
-      if (paidApplication) return err(409, 'already paid for this open event', cors);
+      // Hand the count back so the blocked screen can say "you've already booked
+      // 3 tickets" rather than the generic one-spot message. There is no
+      // self-serve top-up by decision; extra seats are handled by hand.
+      if (paidApplication) {
+        return err(409, 'already paid for this open event', cors, {
+          ticket_count: Number((paidApplication as any).ticket_count ?? 1) || 1,
+        });
+      }
+    }
+
+    // ── Capacity gate for group buys ────────────────────────────────────────
+    // A 4-seat order can overshoot a date that only had 2 left. The stepper is
+    // already capped client-side; this is the copy an edited request can't skip.
+    //
+    // Runs BEFORE the check_only return on purpose, so the details form learns
+    // the date is too full while the customer is still on it — rather than after
+    // they have sat through an OTP. The date comes from the request on that
+    // preflight (no booking row exists yet) and from the row itself by the time
+    // a real order is placed.
+    //
+    // Deliberately NOT atomic: two simultaneous group buys can still tip a hot
+    // date a few seats over, which is ops-resolvable. The atomic version is the
+    // same FOR UPDATE reservation pattern used to harden OTP verify.
+    //
+    // Fails OPEN on missing data (no date, no configured capacity): before this
+    // there was no gate at all, so an unknown must never start blocking sales.
+    if (ticketCount > 1 && paymentType !== 'balance') {
+      // total_capacity is what the customer's own calendar divides against, so
+      // the server must agree with it or the stepper and the gate would disagree
+      // about the same date. invite_spots is the older field and only a fallback.
+      const perDateSpots = Number(event.total_capacity ?? event.invite_spots ?? 0);
+      if (perDateSpots > 0) {
+        let chosenDate = String(body.selected_date ?? '').trim().slice(0, 32) || null;
+        if (!chosenDate) {
+          const { data: appRow } = await supabase
+            .from('applications')
+            .select('selected_date')
+            .eq('event_slug', canonicalSlug)
+            .eq('phone', phone)
+            .maybeSingle();
+          chosenDate = (appRow as any)?.selected_date ?? null;
+        }
+        if (chosenDate) {
+          const { data: dateCounts } = await supabase
+            .rpc('event_booking_counts_by_date', { p_slug: canonicalSlug });
+          const row = Array.isArray(dateCounts)
+            ? dateCounts.find((d: any) => d.selected_date === chosenDate)
+            : null;
+          const reserved = Number(row?.reserved ?? 0);
+          const left = perDateSpots - reserved;
+          if (left < ticketCount) {
+            return err(409, 'not enough spots left for that many tickets', cors, {
+              spots_left: Math.max(0, left),
+            });
+          }
+        }
+      }
     }
 
     // Used by the open-event details form before it opens the bill. The actual
@@ -465,11 +551,14 @@ Deno.serve(async (req) => {
 
     // ── 4. Compute amount from DB based on payment_type ──
     let amountNum: number;
+    // Heads the guest is paying the venue balance for. Stays null on advance /
+    // full orders, where the quantity written to the payment row is ticketCount.
+    let balanceAttendingCount: number | null = null;
     if (paymentType === 'full') {
       // Single-payment event: charge the full price in one shot (city-aware).
       const full = prices.full;
       if (full <= 0) return err(409, 'event price_full not configured', cors);
-      amountNum = full;
+      amountNum = full * ticketCount;
       // Same invite-only authorization gate as the advance (first-payment) path.
       if (event.invite_only) {
         const [{ data: invited }, { data: approvedApp }] = await Promise.all([
@@ -498,19 +587,37 @@ Deno.serve(async (req) => {
       // Require that the user has actually paid the advance for this event
       const { data: app } = await supabase
         .from('applications')
-        .select('id, status')
+        .select('id, status, ticket_count')
         .eq('event_slug', canonicalSlug)
         .eq('phone', phone)
         .maybeSingle();
       if (!app)                              return err(409, 'no application found for balance payment', cors);
       if (app.status !== 'advance_paid')     return err(409, 'advance not yet paid', cors);
-      amountNum = full - adv;
+
+      // Pay-at-venue: the guest settles the balance only for the people who
+      // actually turned up, chosen on their own phone with the host watching.
+      // The ceiling comes from the DB row, never from the client's claim about
+      // how many it booked, so the worst a tampered request can do is pay for
+      // FEWER heads than are present — which is the risk the host is there to
+      // catch, not one this function can rule out.
+      //
+      // An absent attending_count means "everyone came": a bill page cached
+      // from before multi-ticket shipped therefore charges the full amount,
+      // which is the safe direction to be wrong in.
+      const bookedTickets = Math.max(1, Number((app as any).ticket_count ?? 1) || 1);
+      const attendingCount = body.attending_count === undefined || body.attending_count === null
+        ? bookedTickets
+        : clampTickets(body.attending_count, bookedTickets);
+
+      amountNum = (full - adv) * attendingCount;
       if (amountNum <= 0) return err(409, 'computed balance is non-positive', cors);
+      // Recorded on the payment row so payu-callback can stamp attended_count.
+      balanceAttendingCount = attendingCount;
     } else {
       // Advance payment (city-aware)
       const adv = prices.advance;
       if (adv <= 0) return err(409, 'event price_advance not configured', cors);
-      amountNum = adv;
+      amountNum = adv * ticketCount;
       // For invite-only events: require the phone to be authorized through
       // EITHER the bulk-invited list OR a per-application approval from the
       // admin panel. The two tables represent two valid ways admins grant
@@ -603,6 +710,10 @@ Deno.serve(async (req) => {
       trip_date: tripDate,
       status: 'pending',
       payment_type: paymentType,
+      // What this payment covers: seats bought on an advance/full order, heads
+      // present on a venue balance. payu-callback copies it onto the booking as
+      // ticket_count or attended_count accordingly.
+      quantity: balanceAttendingCount ?? ticketCount,
       whatsapp_group_url: null, // never trust this from the client
       fbp,
       fbc,

@@ -264,6 +264,8 @@ export function NativePaymentOverlay({
   selectedCity = '',
   otpSession = '',
   paymentType = 'advance',
+  ticketCount = 1,
+  attendingCount,
   skipEntrance = false,
   onBeforePayU,
   onClose,
@@ -285,6 +287,14 @@ export function NativePaymentOverlay({
   // payment balance intentionally leave it blank.
   otpSession?: string;
   paymentType?: 'advance' | 'balance' | 'full';
+  // Seats this bill covers. priceAdvance stays the PER-TICKET figure so the line
+  // item can read "Entry Ticket x 3" against the unit price; every total below
+  // multiplies. 1 everywhere except a pay-at-venue group buy.
+  ticketCount?: number;
+  // Balance bills only: heads present at the venue, chosen on the sheet BEFORE
+  // the booking timeline. The bill is a review screen — it displays and charges
+  // this number, it never asks for it.
+  attendingCount?: number;
   skipEntrance?: boolean;
   onBeforePayU?: () => void;
   onClose: () => void;
@@ -360,8 +370,14 @@ export function NativePaymentOverlay({
   // Advance breakdown: liveFeeRate comes from the server-canonical table
   // (with a baked-in fallback). Whatever the bill shows is exactly what the
   // server will charge.
-  const platformFee = selectedMethod ? priceAdvance * liveFeeRate : 0;
-  const totalPayNow = priceAdvance + platformFee;
+  // Seats this particular payment covers: every seat booked on an advance, and
+  // on a balance only the heads the guest confirmed on the headcount sheet.
+  // Absent means everybody came.
+  const attending = Math.max(1, Math.min(attendingCount ?? ticketCount, ticketCount));
+  const billedUnits = paymentType === 'balance' ? attending : ticketCount;
+  const baseAmount  = priceAdvance * billedUnits;
+  const platformFee = selectedMethod ? baseAmount * liveFeeRate : 0;
+  const totalPayNow = baseAmount + platformFee;
   const fmtFee = (n: number) => n % 1 === 0 ? `₹${n.toLocaleString('en-IN')}` : `₹${n.toFixed(2)}`;
   const [showFeeInfo, setShowFeeInfo] = useState(false);
 
@@ -381,7 +397,7 @@ export function NativePaymentOverlay({
     setShowFeeInfo(false);
   };
   // Fee sub-breakdown: base 2% + 18% GST on that
-  const basePFF = selectedMethod ? priceAdvance * 0.02 : 0;
+  const basePFF = selectedMethod ? baseAmount * 0.02 : 0;
   const gstOnFee = selectedMethod ? basePFF * 0.18 : 0;
 
   const formattedDate = eventDate
@@ -428,6 +444,10 @@ export function NativePaymentOverlay({
           otp_session: otpSession || undefined,
           trip_date: formattedDate,
           payment_type: paymentType,
+          // Server clamps both and recomputes the charge; these only say what
+          // the customer asked for.
+          ticket_count: ticketCount,
+          ...(paymentType === 'balance' ? { attending_count: attending } : {}),
           // Server uses this to (1) charge the right fee on top of the base
           // and (2) emit enforce_paymethod so PayU's page is bound to the
           // method the customer was priced for.
@@ -560,9 +580,25 @@ export function NativePaymentOverlay({
           <p className="text-[12px] font-bold text-gray-500 uppercase tracking-[1px] mb-3">Bill Details</p>
 
           {/* Advance / Balance */}
-          <div className="flex items-center justify-between py-3 border-b border-dashed border-gray-200">
-            <span className="text-[14px] text-gray-700">{paymentType === 'full' ? 'Entry Ticket' : paymentType === 'balance' ? 'Balance' : 'Advance'}</span>
-            <span className="text-[14px] font-medium text-gray-900">₹{priceAdvance.toLocaleString('en-IN')}</span>
+          {/* The unit price sits UNDER the label, not beside the total: keeping
+              the right-hand column a single unbroken column of amounts is what
+              makes a bill read as a bill. Inline, it shunts the total leftward
+              and breaks alignment with the fee and To Pay rows below — and it
+              would collide outright once the numbers get long. */}
+          <div className="flex items-start justify-between py-3 border-b border-dashed border-gray-200">
+            <div>
+              <p className="text-[14px] text-gray-700">
+                {paymentType === 'full' ? 'Entry Ticket' : paymentType === 'balance' ? 'Balance' : 'Advance'}
+              </p>
+              {billedUnits > 1 && (
+                <p className="text-[12px] text-gray-400 mt-0.5">
+                  ₹{priceAdvance.toLocaleString('en-IN')} × {billedUnits}
+                </p>
+              )}
+            </div>
+            <span className="text-[14px] font-medium text-gray-900">
+              ₹{baseAmount.toLocaleString('en-IN')}
+            </span>
           </div>
 
           {/* Payment processing fee */}
@@ -586,7 +622,7 @@ export function NativePaymentOverlay({
           <div className="flex items-center justify-between py-3.5">
             <span className="text-[15px] font-bold text-gray-900">To Pay</span>
             <span className="text-[15px] font-bold text-gray-900">
-              {fmtFee(selectedMethod ? totalPayNow : priceAdvance)}
+              {fmtFee(selectedMethod ? totalPayNow : baseAmount)}
             </span>
           </div>
         </div>
@@ -727,7 +763,7 @@ export function NativePaymentOverlay({
               <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             ) : (
               <span className="text-white font-black text-[17px]">
-                Pay {fmtFee(selectedMethod ? totalPayNow : priceAdvance)}
+                Pay {fmtFee(selectedMethod ? totalPayNow : baseAmount)}
               </span>
             )}
           </button>
