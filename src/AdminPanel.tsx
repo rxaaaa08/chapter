@@ -724,6 +724,14 @@ export default function AdminPanel() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
   const [resendingDetailsId, setResendingDetailsId] = useState<string | null>(null);
+  // Free-form WhatsApp reply, per application row. `replyWindow` caches the
+  // 24-hour customer-service window check so opening a box does not re-hit
+  // Wamafy on every render.
+  const [replyOpenFor, setReplyOpenFor] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState<Record<string, string>>({});
+  const [replySendingId, setReplySendingId] = useState<string | null>(null);
+  const [replyWindow, setReplyWindow] = useState<Record<string, { checking?: boolean; open?: boolean; expiresAt?: string | null; error?: string }>>({});
+  const [replySentFor, setReplySentFor] = useState<Record<string, string>>({});
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
   const [callNotesEdits, setCallNotesEdits] = useState<Record<string, string>>({});
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
@@ -1768,6 +1776,66 @@ export default function AdminPanel() {
     const day = d.getDate();
     const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th';
     return `${dayName}, ${month} ${day}${suffix}`;
+  };
+
+  // Free-form replies only work inside WhatsApp's 24-hour window (Meta's rule).
+  // Check before showing the box so nobody types a careful answer that bounces.
+  const openWhatsAppReply = async (app: any) => {
+    setReplyOpenFor(app.id);
+    if (replyWindow[app.id]?.open !== undefined) return;
+    setReplyWindow(w => ({ ...w, [app.id]: { checking: true } }));
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+        },
+        body: JSON.stringify({ action: 'window', phone: app.phone }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setReplyWindow(w => ({ ...w, [app.id]: { error: j?.error ?? 'could not check' } }));
+        return;
+      }
+      setReplyWindow(w => ({ ...w, [app.id]: { open: !!j.windowOpen, expiresAt: j.expiresAt ?? null } }));
+    } catch {
+      setReplyWindow(w => ({ ...w, [app.id]: { error: 'could not check' } }));
+    }
+  };
+
+  const sendWhatsAppReply = async (app: any) => {
+    const text = (replyText[app.id] ?? '').trim();
+    if (!text) return;
+    setReplySendingId(app.id);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+        },
+        body: JSON.stringify({ action: 'send', phone: app.phone, text }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        // Window shut between the check and the send.
+        setReplyWindow(w => ({ ...w, [app.id]: { open: false } }));
+        showToast(j?.message ?? 'Their reply window has closed.');
+        return;
+      }
+      if (!res.ok) { showToast(`Not sent: ${j?.error ?? res.status}`); return; }
+      setReplySentFor(m => ({ ...m, [app.id]: text }));
+      setReplyText(t => ({ ...t, [app.id]: '' }));
+      setReplyOpenFor(null);
+      showToast('Reply sent on WhatsApp');
+    } catch (err: any) {
+      showToast(`Not sent: ${err?.message ?? 'network error'}`);
+    } finally {
+      setReplySendingId(null);
+    }
   };
 
   const resendInviteDetails = async (id: string) => {
@@ -5490,6 +5558,72 @@ export default function AdminPanel() {
                                   )}
                                 </div>
                               )}
+                              {waReplies.length > 0 && (() => {
+                                const win = replyWindow[app.id] ?? {};
+                                const justSent = replySentFor[app.id];
+                                if (justSent) {
+                                  return (
+                                    <div style={{ background: '#eff6ff', borderLeft: '3px solid #3b82f6', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#1e3a8a', lineHeight: 1.4, marginBottom: 6 }}>
+                                      <div style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 600, marginBottom: 2 }}>you replied</div>
+                                      {justSent}
+                                    </div>
+                                  );
+                                }
+                                if (replyOpenFor !== app.id) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWhatsAppReply(app)}
+                                      style={{ marginBottom: 6, background: '#fff', color: '#166534', border: '1px solid #86efac', borderRadius: 999, padding: '2px 9px', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                      Reply on WhatsApp
+                                    </button>
+                                  );
+                                }
+                                if (win.checking) {
+                                  return <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>Checking if they can be replied to…</div>;
+                                }
+                                if (win.error) {
+                                  return <div style={{ fontSize: 10, color: '#b91c1c', marginBottom: 6 }}>Couldn't check the reply window. Try again.</div>;
+                                }
+                                if (win.open === false) {
+                                  // Meta only allows a free-form message within 24h of THEIR last
+                                  // message. Say so rather than offering a box that cannot work.
+                                  return (
+                                    <div style={{ fontSize: 10, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4, padding: '5px 7px', marginBottom: 6, lineHeight: 1.45 }}>
+                                      Their 24-hour reply window has closed, so WhatsApp won't allow a free-form message. Call them, or message from your own phone.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div style={{ marginBottom: 6 }}>
+                                    <textarea
+                                      value={replyText[app.id] ?? ''}
+                                      onChange={e => setReplyText(t => ({ ...t, [app.id]: e.target.value }))}
+                                      placeholder="Type your reply…"
+                                      rows={3}
+                                      style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '6px 7px', border: '1px solid #86efac', borderRadius: 4, resize: 'vertical', fontFamily: 'inherit' }}
+                                    />
+                                    <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                                      <button
+                                        type="button"
+                                        disabled={replySendingId === app.id || !(replyText[app.id] ?? '').trim()}
+                                        onClick={() => sendWhatsAppReply(app)}
+                                        style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: replySendingId === app.id ? 'not-allowed' : 'pointer', opacity: (replySendingId === app.id || !(replyText[app.id] ?? '').trim()) ? 0.5 : 1 }}
+                                      >
+                                        {replySendingId === app.id ? 'Sending…' : 'Send'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setReplyOpenFor(null)}
+                                        style={{ background: 'none', border: 'none', color: '#888', fontSize: 11, cursor: 'pointer' }}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 	                              <select
 	                                value={callNt}
 			                                onChange={e => updateUserStatus(app.id, e.target.value)}
