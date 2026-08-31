@@ -30,6 +30,87 @@ function json(status: number, payload: any, cors: Record<string, string>) {
   });
 }
 
+// ── WhatsApp provider ────────────────────────────────────────────────────────
+// Wamafy primary since 2026-09-01, AiSensy kept as an automatic fallback while
+// both accounts are paid. The last of the six senders to migrate: it is
+// admin-triggered, so a failure surfaces on screen to the person who caused it
+// rather than silently to a customer.
+//
+// invitation_with_contact takes NO button parameters on either provider -- the
+// AiSensy path only attaches buttons on the details delivery -- so the Wamafy
+// copy is a faithful match rather than a downgrade.
+async function sendInviteWhatsApp(args: {
+  wamafyTemplate: string;
+  wamafyVars: Record<string, string>;
+  buttonParam: string | null;
+  buttonCount: number;
+  aisensyBody: Record<string, unknown>;
+}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null; status: number; body: string } | null> {
+  const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
+  if (wamafyKey) {
+    try {
+      const payload: Record<string, unknown> = {
+        to: `+91${String(args.aisensyBody.destination ?? '').replace(/^91/, '')}`,
+        templateName: args.wamafyTemplate,
+        variables: args.wamafyVars,
+      };
+      if (args.buttonParam && args.buttonCount > 0) {
+        payload.buttons = Array.from({ length: args.buttonCount }, (_, i) => ({
+          index: i, type: 'url', value: args.buttonParam,
+        }));
+      }
+      const res = await fetch('https://api.wamafy.com/api/v1/public/messages', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${wamafyKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      let parsed: any = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch { /* keep raw for logs */ }
+      if (res.ok && parsed?.success !== false) {
+        return { provider: 'wamafy', messageId: parsed?.data?.messageId ?? null, status: res.status, body: text };
+      }
+      console.error('[send-invite] wamafy rejected:', res.status, text.slice(0, 300));
+    } catch (err) {
+      console.error('[send-invite] wamafy fetch failed:', err);
+    }
+  }
+
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) return null;
+  try {
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: AISENSY_API_KEY, ...args.aisensyBody }),
+    });
+    const body = await aiRes.text().catch(() => '');
+    if (aiRes.ok) return { provider: 'aisensy', messageId: null, status: aiRes.status, body };
+    console.error('[send-invite] aisensy rejected:', aiRes.status, body.slice(0, 300));
+    return { provider: 'aisensy', messageId: null, status: aiRes.status, body };
+  } catch (err) {
+    console.error('[send-invite] aisensy fetch failed:', err);
+  }
+  return null;
+}
+
+// Optional and never allowed to throw.
+async function logInviteSend(supabase: any, args: {
+  provider: string; messageId: string | null; phone: string; template: string;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return;
+  try {
+    await supabase.rpc('log_whatsapp_send', {
+      p_secret: secret, p_provider: args.provider, p_message_id: args.messageId,
+      p_to: args.phone, p_template: args.template, p_variables: null,
+      p_ok: true, p_http_status: 200, p_raw: null,
+    });
+  } catch (err) {
+    console.error('[send-invite] send log failed:', err);
+  }
+}
+
 function buildAiSensyUrlButtons(phone: string, name: string, count = 1) {
   const params = new URLSearchParams();
   params.set('phone', phone);
@@ -49,8 +130,11 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST')    return json(405, { error: 'method not allowed' }, cors);
 
   try {
-    const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-    if (!AISENSY_API_KEY) return json(503, { error: 'aisensy not configured' }, cors);
+    // Require SOME provider: demanding AISENSY_API_KEY would stop every invite
+    // the day that key is removed, with Wamafy working perfectly.
+    if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+      return json(503, { error: 'no whatsapp provider configured' }, cors);
+    }
 
     // 1. Verify the caller is an admin (admin or ops role)
     //    verify_jwt=true gates anonymous traffic at Supabase's gateway.
@@ -182,32 +266,47 @@ Deno.serve(async (req) => {
     };
     const emailPromise = isDetailsDelivery ? Promise.resolve() : sendInviteEmail();
 
-    // 3. Forward to AiSensy
-    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey:        AISENSY_API_KEY,
-        campaignName:  isDetailsDelivery ? 'send_details_dpl' : 'invitation_with_contact',
-        destination:   '91' + phone,
-        userName,
-        source:        isOpenEventDetails ? 'send-open-event-details' : isInviteDetailsResend ? 'resend-invite-details' : 'send-aisensy-invite',
-        // send_details_dpl: {{1}} user name, {{2}} event name.
-        templateParams: isDetailsDelivery ? [userName || 'Guest', eventName] : [eventName, eventDate],
-        ...(isDetailsDelivery ? {
-          media: {},
-          // The approved campaign has two dynamic URL buttons. Both use the
-          // same /invite?phone=&name= replacement as the open cart deeplink.
-          buttons: buildAiSensyUrlButtons(phone, userName, 2),
-          carouselCards: [],
-          location: {},
-          paramsFallbackValue: { FirstName: userName || 'Guest' },
-        } : {}),
-        tags:           [isOpenEventDetails ? 'chapter-open-details' : isInviteDetailsResend ? 'chapter-resend-details' : 'chapter-invite'],
-        attributes:     { name: userName, event_name: eventName, event_date: eventDate, admin: callerEmail, flow: isOpenEventDetails ? 'open' : isInviteDetailsResend ? 'invite-resend' : 'invite' },
-      }),
+    // 3. Send — Wamafy first, AiSensy as fallback.
+    const aisensyBody = {
+      campaignName:  isDetailsDelivery ? 'send_details_dpl' : 'invitation_with_contact',
+      destination:   '91' + phone,
+      userName,
+      source:        isOpenEventDetails ? 'send-open-event-details' : isInviteDetailsResend ? 'resend-invite-details' : 'send-aisensy-invite',
+      // send_details_dpl: {{1}} user name, {{2}} event name.
+      templateParams: isDetailsDelivery ? [userName || 'Guest', eventName] : [eventName, eventDate],
+      ...(isDetailsDelivery ? {
+        media: {},
+        // The approved campaign has two dynamic URL buttons. Both use the
+        // same /invite?phone=&name= replacement as the open cart deeplink.
+        buttons: buildAiSensyUrlButtons(phone, userName, 2),
+        carouselCards: [],
+        location: {},
+        paramsFallbackValue: { FirstName: userName || 'Guest' },
+      } : {}),
+      tags:           [isOpenEventDetails ? 'chapter-open-details' : isInviteDetailsResend ? 'chapter-resend-details' : 'chapter-invite'],
+      attributes:     { name: userName, event_name: eventName, event_date: eventDate, admin: callerEmail, flow: isOpenEventDetails ? 'open' : isInviteDetailsResend ? 'invite-resend' : 'invite' },
+    };
+    const inviteButtonParam = `?${new URLSearchParams({ phone, name: userName || 'Guest' }).toString()}`;
+    const sent = await sendInviteWhatsApp({
+      wamafyTemplate: isDetailsDelivery ? 'resend_details' : 'invitation_with_contact',
+      wamafyVars: isDetailsDelivery
+        ? { '1': userName || 'Guest', '2': eventName }
+        : { '1': eventName, '2': eventDate },
+      // The invite template carries no dynamic buttons on either provider.
+      buttonParam: isDetailsDelivery ? inviteButtonParam : null,
+      buttonCount: isDetailsDelivery ? 2 : 0,
+      aisensyBody,
     });
-    const aiBody = await aiRes.text().catch(() => '');
+    if (sent) {
+      await logInviteSend(supabase, {
+        provider: sent.provider, messageId: sent.messageId, phone,
+        template: isDetailsDelivery ? 'resend_details' : 'invitation_with_contact',
+      });
+    }
+    // Shim: leaves the logging and response shape below byte-identical, so what
+    // the admin panel sees on success and failure is provably unchanged.
+    const aiRes = { ok: !!sent && sent.status >= 200 && sent.status < 300, status: sent?.status ?? 502 };
+    const aiBody = sent?.body ?? 'no provider accepted';
 
     // Log without full phone — log tail-4 only to keep correlation while
     // not shipping customer phone numbers to Supabase log retention.
