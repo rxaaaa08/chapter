@@ -218,11 +218,49 @@ instant, so `delivered_at` is an **upper bound** (observed 2.6s to 4m48s).
 | `otp` | `otp` ✅ | code | 1 × copy_code (the code) |
 | `car_abandon_deeplink2` | `cart_abandon` ✅ | name, event, date | 1 × URL |
 | `single_payment_sucess_dpl` | `single_payment_sucess_dpl` | amount, details-date | 2 × URL |
-| `fullpaid_dpl` | `balance_success` ✅ | amount, details-date | 2 × URL |
+| `advance_success_dpl` *(pay-at-venue)* | **`advancepaid`** | amount **only** | 2 × URL |
+| `fullpaid_dpl` | `balance_success` † | amount, details-date | 2 × URL |
 | `payment_failure_dpl` | `payment_failed` | name, amount | 2 × URL |
 | `advance_success_dpl` | `advancepaid` ⚠️ | amount **only** | 2 × URL |
 | `send_details_dpl` | `resend_details` | name, event | 2 × URL |
 | `invitation_with_contact` | `invitation_with_contact` ⚠️ | event, date | **static** |
+
+### Pay-at-venue open events — what actually fires
+
+This is the flow being migrated, and it is **shorter than it looks**:
+
+| Step | Template |
+|---|---|
+| Verification code | `otp` |
+| Abandoned cart | `cart_abandon` |
+| **Advance paid** | **`advancepaid`** |
+| **Balance settled at the venue** | **nothing — no message is sent** |
+| Payment failed | `payment_failed` |
+
+**There is no balance-paid message on pay-at-venue**, by design. All three
+payment functions return early:
+
+```js
+// Pay at venue: the balance is settled in person, with the guest standing in
+// front of us and already in the group chat. The bill's success page is the
+// confirmation — a "you're fully paid" WhatsApp adds nothing.
+if (await isPayAtVenue(supabase, args.eventSlug)) return;
+```
+
+† So `balance_success` is **not needed for the current flow** — it is for regular
+split events, where the balance is paid remotely and the guest does need telling.
+
+**Use `advancepaid` for the pay-at-venue advance.** The AiSensy code borrows the
+*full-payment* template there (`payAtVenue ? AISENSY_CAMPAIGN_FULL : …`) purely as
+a workaround: `advance_success_dpl`'s `{{2}}` is a balance deadline, and
+pay-at-venue has none, so it would render empty on copy telling the guest to settle
+by that date. `advancepaid` fixes this properly — advance-worded, and no date
+parameter to leave blank.
+
+One copy difference to accept or fix: `advancepaid` says details arrive **"a few
+days before the plan"**, while the borrowed template said **"one week before the
+event"** (`PAY_AT_VENUE_DETAILS_WHEN`). The phrase is baked into `advancepaid`, so
+that is what guests will now read.
 
 ### Known template problems
 
@@ -279,6 +317,8 @@ instant, so `delivered_at` is an **upper bound** (observed 2.6s to 4m48s).
    templates, so migrating one alone means the same payment gets announced from
    two different numbers. `payu-callback` is the highest-stakes file in the
    codebase; deploy with `--no-verify-jwt` and run a ₹1 booking straight after.
+   For pay-at-venue, only the **advance** and **failed** paths need wiring —
+   balance sends nothing.
 3. **Swap `send-aisensy-invite`** — admin-triggered, errors visible on screen.
 4. **Fix `advancepaid`** before running a non-pay-at-venue split event.
 5. **Fix `invitation_with_contact` buttons** before running an invite-only event.
