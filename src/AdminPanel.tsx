@@ -4583,6 +4583,19 @@ export default function AdminPanel() {
                 ...(pastPaidExpanded ? pastPaidApps : []),
               ]
             : filteredApps;
+
+          // A WhatsApp conversation belongs to a PERSON, but this table is one row
+          // per booking — so someone with two bookings would otherwise see the same
+          // thread printed twice, with two reply boxes that do the same thing.
+          // Render the thread on their topmost row only; the badge still marks the
+          // rest, so nothing is hidden, it just is not said twice.
+          const waThreadRowByPhone = new Map<string, string>();
+          rowItems.forEach((r: any) => {
+            if (!r?.id || !r?.phone) return;
+            const p = String(r.phone).replace(/\D/g, '').slice(-10);
+            if (!p || waThreadRowByPhone.has(p)) return;
+            waThreadRowByPhone.set(p, r.id);
+          });
           // Dates that actually have leads (respecting the current event filter),
           // so the date dropdown only ever offers dates worth picking. Formatted
           // for the option labels; sorted chronologically.
@@ -5444,6 +5457,8 @@ export default function AdminPanel() {
                         // ─── CALL MODE ───
                         const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
                         const waReplies = (app.waReplies ?? []) as any[];
+                        const waThreadHere = waReplies.length > 0
+                          && waThreadRowByPhone.get(String(app.phone ?? '').replace(/\D/g, '').slice(-10)) === app.id;
                         // Meeting point sub-line under the event title — useful for events
                         // with pickups in multiple cities (e.g. "Koyambedu, Chennai") so the
                         // caller knows exactly where the applicant is joining from. We only
@@ -5540,7 +5555,7 @@ export default function AdminPanel() {
                                   )}
                                 </div>
                               )}
-                              {waReplies.length > 0 && (
+                              {waThreadHere && (
                                 <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                                   {waReplies.slice(0, 3).map((m: any) => (
                                     <div key={m.id} style={{ background: '#dcfce7', borderLeft: '3px solid #22c55e', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#14532d', lineHeight: 1.4 }}>
@@ -5558,7 +5573,7 @@ export default function AdminPanel() {
                                   )}
                                 </div>
                               )}
-                              {waReplies.length > 0 && (() => {
+                              {waThreadHere && (() => {
                                 const win = replyWindow[app.id] ?? {};
                                 const justSent = replySentFor[app.id];
                                 if (justSent) {
