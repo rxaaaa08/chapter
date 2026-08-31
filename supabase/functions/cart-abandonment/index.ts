@@ -26,7 +26,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const AISENSY_CAMPAIGN_CART = 'car_abandon_deeplink2';
 // Open events reuse the same deeplink template. Keeping a separate constant
 // makes the open branch explicit without changing trigger behavior.
-const AISENSY_CAMPAIGN_CART_OPEN = AISENSY_CAMPAIGN_CART;
 
 // Format the date the applicant chose as "Monday, March 5th" — matches the
 // invite invitation template's date param so both WhatsApp templates read the
@@ -133,6 +132,95 @@ function cartAbandonEmailHtml(args: {
 </html>`;
 }
 
+// ── Cart-abandonment WhatsApp ────────────────────────────────────────────────
+// Wamafy primary since 2026-09-01, AiSensy kept as an automatic fallback while
+// both accounts are paid. Migrated second, after otp, because a failure here
+// costs one re-engagement nudge and nothing else -- no booking is gated on it.
+//
+// Both the open and invite branches send the SAME three parameters and one URL
+// button, so they share this helper rather than duplicating the payload twice
+// as the AiSensy code did.
+//
+// URL button value is the placeholder tail only (?phone=&name=): WhatsApp
+// appends it to the prefix baked into the approved template, so passing a full
+// URL would put our domain in the link twice. Same contract AiSensy uses.
+async function sendCartAbandonWhatsApp(args: {
+  phone: string; name: string; eventTitle: string; eventDate: string; buttonParam: string;
+}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null } | null> {
+  const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
+  if (wamafyKey) {
+    try {
+      const res = await fetch('https://api.wamafy.com/api/v1/public/messages', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${wamafyKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: `+91${args.phone}`,
+          templateName: 'cart_abandon',
+          variables: { '1': args.name, '2': args.eventTitle, '3': args.eventDate },
+          buttons: [{ index: 0, type: 'url', value: args.buttonParam }],
+        }),
+      });
+      const text = await res.text();
+      let body: any = null;
+      try { body = text ? JSON.parse(text) : null; } catch { /* keep raw for logs */ }
+      if (res.ok && body?.success !== false) {
+        return { provider: 'wamafy', messageId: body?.data?.messageId ?? null };
+      }
+      console.error('[cart-abandonment] wamafy rejected:', res.status, text.slice(0, 300));
+    } catch (err) {
+      console.error('[cart-abandonment] wamafy fetch failed:', err);
+    }
+  }
+
+  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
+  if (!AISENSY_API_KEY) return null;
+  try {
+    const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: AISENSY_API_KEY,
+        campaignName: AISENSY_CAMPAIGN_CART,
+        destination: '91' + args.phone,
+        userName: args.name || 'chapter A 3063',
+        templateParams: [args.name, args.eventTitle, args.eventDate],
+        source: 'cart-abandonment',
+        media: {},
+        buttons: buildAiSensyUrlButton(args.buttonParam),
+        carouselCards: [],
+        location: {},
+        paramsFallbackValue: { FirstName: args.name },
+      }),
+    });
+    const body = await aiRes.text().catch(() => '');
+    if (aiRes.status >= 200 && aiRes.status < 300) {
+      return { provider: 'aisensy', messageId: null };
+    }
+    console.error('[cart-abandonment] aisensy rejected:', aiRes.status, body.slice(0, 300));
+  } catch (err) {
+    console.error('[cart-abandonment] aisensy fetch failed:', err);
+  }
+  return null;
+}
+
+// Optional: skipped when the secret is unset, and never allowed to throw --
+// logging must not be able to fail or delay a nudge.
+async function logCartAbandonSend(supabase: any, args: {
+  provider: string; messageId: string | null; phone: string;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return;
+  try {
+    await supabase.rpc('log_whatsapp_send', {
+      p_secret: secret, p_provider: args.provider, p_message_id: args.messageId,
+      p_to: args.phone, p_template: 'cart_abandon', p_variables: null,
+      p_ok: true, p_http_status: 200, p_raw: null,
+    });
+  } catch (err) {
+    console.error('[cart-abandonment] send log failed:', err);
+  }
+}
+
 async function sendCartAbandonEmail(args: {
   email: string; userName: string; eventName: string; contactUrl: string;
 }): Promise<boolean> {
@@ -189,10 +277,12 @@ async function maybeSendCartAbandonEmail(
 }
 
 Deno.serve(async (req) => {
-  const AISENSY_API_KEY = Deno.env.get('AISENSY_API_KEY');
-  if (!AISENSY_API_KEY) {
-    console.warn('[cart-abandonment] AISENSY_API_KEY not set, skipping');
-    return new Response(JSON.stringify({ error: 'aisensy not configured' }), {
+  // Require SOME WhatsApp provider, not one specific one. This used to demand
+  // AISENSY_API_KEY, which would have silently killed the whole cron the day
+  // that key is finally removed -- even with Wamafy working perfectly.
+  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+    console.warn('[cart-abandonment] no WhatsApp provider configured, skipping');
+    return new Response(JSON.stringify({ error: 'no whatsapp provider configured' }), {
       status: 503, headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -346,52 +436,22 @@ Deno.serve(async (req) => {
     // bill_open handled on a successful send, so a transient AiSensy failure
     // retries on the next cron run (matches the invite path's at-least-once).
     if (isOpenEvent) {
-      try {
-        const buttonParam = buildInviteButtonParam(row.phone, aiSensyName);
-        const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey: AISENSY_API_KEY,
-            campaignName: AISENSY_CAMPAIGN_CART_OPEN,
-            destination: '91' + row.phone,
-            userName: aiSensyName || 'chapter A 3063',
-            templateParams: [
-              aiSensyName,                 // {{1}} user name
-              row.event_title || 'trip',   // {{2}} event name
-              eventDate,                   // {{3}} event date they chose
-            ],
-            source: 'cart-abandonment',
-            media: {},
-            buttons: buildAiSensyUrlButton(buttonParam),
-            carouselCards: [],
-            location: {},
-            attributes: {
-              event_slug: row.event_slug,
-            },
-            paramsFallbackValue: { FirstName: aiSensyName },
-          }),
+      {
+        const sent_ = await sendCartAbandonWhatsApp({
+          phone: row.phone, name: aiSensyName,
+          eventTitle: row.event_title || 'trip', eventDate,
+          buttonParam: buildInviteButtonParam(row.phone, aiSensyName),
         });
-
-        const ok = aiRes.status >= 200 && aiRes.status < 300;
-        const body = await aiRes.text().catch(() => '');
-        console.log('[cart-abandonment] open aisensy response:', {
-          phone: row.phone,
-          event_slug: row.event_slug,
-          status: aiRes.status,
-          ok,
-          body: body.slice(0, 300),
+        console.log('[cart-abandonment] open nudge:', {
+          phone: row.phone, event_slug: row.event_slug, provider: sent_?.provider ?? 'none',
         });
-
-        if (ok) {
-          await supabase
-            .from('bill_opens')
-            .update({ cart_abandonment_sent: true })
-            .eq('id', row.id);
+        // Only mark handled on a successful send, so a transient provider
+        // failure retries on the next cron run (at-least-once).
+        if (sent_) {
+          await supabase.from('bill_opens').update({ cart_abandonment_sent: true }).eq('id', row.id);
           sent++;
+          await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone });
         }
-      } catch (err) {
-        console.error('[cart-abandonment] open aisensy fetch failed:', err);
       }
       // Email channel (open events with an email on file). Runs AFTER WhatsApp
       // so Brevo latency can't delay the primary channel — same pattern as invite.
@@ -405,52 +465,20 @@ Deno.serve(async (req) => {
     // ── INVITE events: car_abandon_deeplink2 template ────────────────────────
     // Fire AiSensy car_abandon_deeplink2 campaign FIRST — WhatsApp is the primary
     // channel and must not wait on Brevo latency; the email follows below.
-    try {
-      const buttonParam = buildInviteButtonParam(row.phone, aiSensyName);
-      const aiRes = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: AISENSY_API_KEY,
-          campaignName: AISENSY_CAMPAIGN_CART,
-          destination: '91' + row.phone,
-          userName: aiSensyName || 'chapter A 3063',
-          templateParams: [
-            aiSensyName,               // {{1}} user name
-            row.event_title || 'trip', // {{2}} event name
-            eventDate,                 // {{3}} event date they chose
-          ],
-          source: 'cart-abandonment',
-          media: {},
-          buttons: buildAiSensyUrlButton(buttonParam),
-          carouselCards: [],
-          location: {},
-          attributes: {
-            event_slug: row.event_slug,
-          },
-          paramsFallbackValue: { FirstName: aiSensyName },
-        }),
+    {
+      const sent_ = await sendCartAbandonWhatsApp({
+        phone: row.phone, name: aiSensyName,
+        eventTitle: row.event_title || 'trip', eventDate,
+        buttonParam: buildInviteButtonParam(row.phone, aiSensyName),
       });
-
-      const ok = aiRes.status >= 200 && aiRes.status < 300;
-      const body = await aiRes.text().catch(() => '');
-      console.log('[cart-abandonment] aisensy response:', {
-        phone: row.phone,
-        event_slug: row.event_slug,
-        status: aiRes.status,
-        ok,
-        body: body.slice(0, 300),
+      console.log('[cart-abandonment] invite nudge:', {
+        phone: row.phone, event_slug: row.event_slug, provider: sent_?.provider ?? 'none',
       });
-
-      if (ok) {
-        await supabase
-          .from('bill_opens')
-          .update({ cart_abandonment_sent: true })
-          .eq('id', row.id);
+      if (sent_) {
+        await supabase.from('bill_opens').update({ cart_abandonment_sent: true }).eq('id', row.id);
         sent++;
+        await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone });
       }
-    } catch (err) {
-      console.error('[cart-abandonment] aisensy fetch failed:', err);
     }
 
     // Email channel (invite events with an email on file). Runs AFTER WhatsApp
