@@ -56,3 +56,41 @@ message says "one week before the event" (`PAY_AT_VENUE_DETAILS_WHEN` in
   array, and Wamafy rejects unexpected button params, so the URLs are fixed. The
   AiSensy version passes `?phone=…&name=…` so the link identifies the guest.
   Invite-only concern, not open-event.
+
+---
+
+## Cutover step 1 — OTP is live on Wamafy (2026-08-31)
+
+`open-event-otp` v10 deployed with `--no-verify-jwt`; verify_jwt confirmed still
+`false`, no other function touched. Wamafy primary, **AiSensy automatic fallback**
+(this template gates every booking, and edge functions have no rollback).
+
+### Both open questions resolved
+
+**1. Cold start works for AUTHENTICATION templates.** A send to `8838111564`,
+whose 24h window had been closed since 28 Aug, delivered in **2.6 s**. The earlier
+cold failure was `invitation_with_contact` — a MARKETING template, the category
+Meta restricts. That distinction was the whole risk and it is now settled: OTP and
+UTILITY confirmations reach people who have never messaged us.
+
+**2. The real booking function delivers.** An OTP requested through the live
+`open-event-otp` endpoint for `founders-meet` was sent via `wamafy`, delivered,
+and read. The OTP code itself is not written to the log (`variables` is null).
+
+### Operational note — callback latency is variable
+
+Delivery callbacks arrived in 2.6 s in one case and **4 m 48 s** in another. Wamafy's
+`occurredAt` is when *they* posted the callback, not when WhatsApp delivered, so
+`delivered_at` is an upper bound. The message arrives fast; the reporting lags.
+Do not build anything time-sensitive on these timestamps.
+
+### Test-recipient discipline
+
+`WAMAFY_TEST_ALLOWED_NUMBERS` guards only the Vercel test route. **The live edge
+function has no allowlist** — it sends wherever the caller says, as production must.
+So the allowlist protects ad-hoc testing, not the real flow; when driving the live
+function, the number in the request is the only safeguard.
+
+Allowlist is now `8838111564,8015064473`. Note that `--force` on `vercel env add`
+silently failed to overwrite (the timestamp stayed at "3d ago"); use
+`vercel env rm` followed by `add`, and confirm the timestamp actually changes.
