@@ -16,6 +16,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import chatProfile from './assets/chat-profile.jpg';
 import { supabase } from './supabase';
+import { BUSINESS_WHATSAPP_E164 } from './whatsappLinks';
 import CreatorOnboarding from './CreatorOnboarding';
 import CreatorUpcomingEvents from './CreatorUpcomingEvents';
 import CreatorFirstBookingChecklist from './CreatorFirstBookingChecklist';
@@ -224,7 +225,7 @@ function CreatorTeamCard({ leaderboard }: { leaderboard: LeaderRow[] }) {
       <div style={{ marginTop: 18, color: '#57534e', fontSize: 13.5, lineHeight: 1.6, textAlign: 'center' }}>
         Need help? Feel free to{' '}
         <a
-          href="https://wa.me/919940111564"
+          href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`}
           target="_blank"
           rel="noopener noreferrer"
           style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}
@@ -810,7 +811,7 @@ export default function CreatorDashboard() {
           {accountMenuOpen && (
             <div id="creator-account-menu" role="menu" style={{ position: 'absolute', left: 0, top: 43, width: 148, padding: 4, border: '1px solid ' + HAIR, borderRadius: 12, background: '#fff', boxShadow: '0 12px 30px rgba(0,0,0,0.12)', display: 'grid', gap: 8 }}>
               <a
-                href="https://wa.me/919940111564"
+                href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 role="menuitem"

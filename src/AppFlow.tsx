@@ -5,6 +5,7 @@ import { getAttribution } from './attribution';
 import { setPixelUserData, getFbp, getFbc } from './metaPixel';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { formatEventTimeRange } from './eventTime';
+import { doubtWhatsAppUrl, businessWhatsAppUrl, BUSINESS_WHATSAPP_E164, BUSINESS_WHATSAPP_DISPLAY } from './whatsappLinks';
 import { TermsContent } from './TermsContent';
 import {
   timelineModel, defaultBookingSteps, resolveBookingStepsForDate,
@@ -515,8 +516,7 @@ function ApplicationForm({
       const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
     };
-    const waMessage = encodeURIComponent(`I have registered for ${event.title} on ${formatEventDate(selectedDate)}.`);
-    const waUrl = `https://wa.me/919940111564?text=${waMessage}`;
+    const waUrl = businessWhatsAppUrl(`I have registered for ${event.title} on ${formatEventDate(selectedDate)}.`);
     setWaLink(waUrl);
     // Instagram's in-app browser either returns null here or hands back a tab
     // it then refuses to navigate, and closing that dud tab on an error path
@@ -1786,9 +1786,21 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
 
   const doubtSubmittingRef = React.useRef(false);
+  // The CTA itself, so the Enter key can route through the same link the tap
+  // uses instead of a second, silently different submit path.
+  const doubtWaLinkRef = React.useRef<HTMLAnchorElement | null>(null);
+  const doubtFormValid = !!doubtFormData.name.trim()
+    && doubtFormData.phone.length === 10
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doubtFormData.email.trim())
+    && !!doubtFormData.message.trim()
+    && (isPayUFlow || !!doubtFormData.whyJoin.trim());
 
-  const handleDoubtSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Fired by the CTA, which is a real <a> to wa.me — see the button below for
+  // why. Everything here is unchanged from when it was a submit handler: the
+  // guest still gets their chat confirmation and the row is still written. The
+  // browser follows the link in a new tab in parallel, so nothing here has to
+  // finish before the handoff, and nothing here can block it.
+  const handleDoubtSubmit = async () => {
     if (doubtSubmittingRef.current) return; // guard against double-tap
     doubtSubmittingRef.current = true;
 
@@ -1802,10 +1814,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setDoubtSubmittedThisSession(true);
     setDoubtFormData({ name: '', phone: '', email: '', gender: '', message: '', whyJoin: '' });
 
-    // Inject chat messages right away
+    // Inject chat messages right away. The confirmation no longer promises that
+    // we will reach out, because by now the guest is in WhatsApp holding the
+    // message themselves — telling them to press send is the one thing left
+    // that actually has to happen.
     addUserMessage(message);
     simulateBotTyping(() => {
-      addBotMessage(`Got it! We'll contact you soon via WhatsApp on +91 ${phone}. 👍`);
+      addBotMessage(`Got it! Just hit send on WhatsApp and we'll reply there. 👍`);
     }, 1200);
 
     // Persist to DB in the background
@@ -3349,7 +3364,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                                           <span className="text-gray-500">
                                             Need Help?{' '}
                                             <a
-                                              href={`https://wa.me/919940111564?text=${encodeURIComponent(`I'm trying to book a slot for ${selectedEvent?.title ?? 'this event'}, I need help with OTP`)}`}
+                                              href={businessWhatsAppUrl(`I'm trying to book a slot for ${selectedEvent?.title ?? 'this event'}, I need help with OTP`)}
                                               target="_blank"
                                               rel="noreferrer"
                                               className="text-gray-900 underline font-medium"
@@ -3992,7 +4007,10 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                   <p className="text-[24px] font-black text-gray-900 tracking-tight leading-tight">What's the Matter? 🤠</p>
                 </div>
 
-                <form onSubmit={handleDoubtSubmit}>
+                {/* Enter inside a field still submits: preventDefault, then
+                    click the CTA so the keyboard path and the tap path are the
+                    same one code path rather than two that can drift. */}
+                <form onSubmit={e => { e.preventDefault(); doubtWaLinkRef.current?.click(); }}>
                   <div className="px-6 space-y-3">
                     <div className="bg-[#F2F2F7] rounded-2xl px-4 pt-2 pb-3">
                       <label className="text-[11px] text-gray-500 font-semibold uppercase tracking-widest block mb-0.5">Name</label>
@@ -4073,10 +4091,24 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
 
                   <div className="px-6 pt-4 pb-5">
-                    <button
-                      type="submit"
-                      disabled={!doubtFormData.name.trim() || doubtFormData.phone.length !== 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doubtFormData.email.trim()) || !doubtFormData.message.trim() || (!isPayUFlow && !doubtFormData.whyJoin.trim())}
-                      className="w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden disabled:opacity-50"
+                    {/* A real <a>, never a scripted popup. A top-level tap on a
+                        wa.me link is the one handoff every browser performs,
+                        Instagram's in-app browser included — window.open is
+                        swallowed there, and iOS Safari blocks it the moment it
+                        slips outside the tap gesture. target=_blank also keeps
+                        this page alive, so the insert above finishes normally
+                        while WhatsApp opens alongside. */}
+                    <a
+                      ref={doubtWaLinkRef}
+                      href={doubtWhatsAppUrl(selectedEvent?.title ?? '', doubtFormData.message)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-disabled={!doubtFormValid}
+                      onClick={e => {
+                        if (!doubtFormValid) { e.preventDefault(); return; }
+                        void handleDoubtSubmit();
+                      }}
+                      className={`w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden flex items-center justify-center gap-2.5 ${doubtFormValid ? '' : 'opacity-50 pointer-events-none'}`}
                     >
                       <motion.div
                         className="absolute inset-0 -skew-x-12 pointer-events-none"
@@ -4084,8 +4116,9 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         animate={{ x: ['-100%', '300%'] }}
                         transition={{ delay: 10, duration: 0.8, repeat: Infinity, repeatDelay: 7.0, ease: 'easeInOut' }}
                       />
-                      <span className="relative z-10">Send Message</span>
-                    </button>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="relative z-10 flex-shrink-0"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.297-.497.1-.198.05-.371-.025-.52-.074-.149-.668-1.612-.916-2.207-.241-.579-.486-.5-.668-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.064 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      <span className="relative z-10">Send on WhatsApp</span>
+                    </a>
                   </div>
                 </form>
                 </>
@@ -5764,7 +5797,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                 <>
                   <p><strong className="text-gray-900">chapter அ</strong><br />Chennai, Tamil Nadu, India</p>
                   <p>Email: <a href="mailto:chapteraaa.official@gmail.com" className="text-gray-900 underline">chapteraaa.official@gmail.com</a></p>
-                  <p>WhatsApp / Phone: <a href="tel:+918838111564" className="text-gray-900 underline">+91 8838111564</a></p>
+                  <p>WhatsApp: <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-gray-900 underline">{BUSINESS_WHATSAPP_DISPLAY} (WhatsApp only)</a></p>
                   <p>We typically respond within a few hours on WhatsApp.</p>
                 </>
               )}
@@ -5785,7 +5818,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                   <p><strong className="text-gray-900">2. Balance Payment</strong><br />The remaining balance must be paid before the event. Only those who have completed the full payment will be allowed to join the event. If the balance is not paid, the advance will not be refunded.</p>
                   <p><strong className="text-gray-900">3. Cancellation by Customer</strong><br />If a customer cancels, no refund will be provided, as we engage third-party partners for transport, accommodation, and curated expenses in advance. These arrangements are confirmed on your behalf and are non-recoverable.</p>
                   <p><strong className="text-gray-900">4. Cancellation by chapter அ</strong><br />If the event is cancelled for any reason, a full refund of all amounts paid will be issued.</p>
-                  <p><strong className="text-gray-900">5. Contact for Refunds</strong><br />Reach us on WhatsApp at +91 8838111564 or email chapteraaa.official@gmail.com.</p>
+                  <p><strong className="text-gray-900">5. Contact for Refunds</strong><br />Reach us on WhatsApp at {BUSINESS_WHATSAPP_DISPLAY} or email chapteraaa.official@gmail.com.</p>
                 </>
               )}
             </div>

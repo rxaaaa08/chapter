@@ -15,6 +15,7 @@ import {
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
+import { doubtWhatsAppUrl, BUSINESS_WHATSAPP_E164, BUSINESS_WHATSAPP_DISPLAY } from './whatsappLinks';
 import { captureMetaIds, setPixelUserData, trackPurchaseOnce } from './metaPixel';
 import { captureAttribution } from './attribution';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
@@ -375,7 +376,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
               ['2. Balance Payment', 'For experiences with partial payment options, the remaining balance must be paid by the communicated due date before participation. Reminder messages may be sent through WhatsApp or email.'],
               ['3. Cancellation by Customer', 'Unless otherwise stated on the specific booking page, advance payments are non-refundable because reservations and third-party arrangements may be made in advance on behalf of the customer.'],
               ['4. Cancellation by chapter அ', 'If chapter அ cancels an experience, the customer will receive a refund of the amount paid for that booking, unless an alternative date or replacement experience is accepted by the customer.'],
-              ['5. Refund Support', 'For cancellation or refund-related queries, customers can contact us on WhatsApp at +91 8838111564 or by email at chapteraaa.official@gmail.com.'],
+              ['5. Refund Support', `For cancellation or refund-related queries, customers can contact us on WhatsApp at ${BUSINESS_WHATSAPP_DISPLAY} or by email at chapteraaa.official@gmail.com.`],
             ].map(([title, body]) => (
               <div className="hp-policy-card" key={title}>
                 <div className="hp-policy-dot" />
@@ -430,7 +431,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
           <div className="hp-contact-grid">
             <div className="hp-contact-card"><div className="hp-contact-label">Location</div><p>Chennai, Tamil Nadu, India</p></div>
             <div className="hp-contact-card"><div className="hp-contact-label">Email</div><p><a href="mailto:chapteraaa.official@gmail.com">chapteraaa.official@gmail.com</a></p></div>
-            <div className="hp-contact-card"><div className="hp-contact-label">WhatsApp / Phone</div><p><a href="https://wa.me/918838111564">+91 8838111564</a></p></div>
+            <div className="hp-contact-card"><div className="hp-contact-label">WhatsApp</div><p><a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`}>{BUSINESS_WHATSAPP_DISPLAY} (WhatsApp only)</a></p></div>
           </div>
           <p className="hp-contact-note">Customer support and booking assistance are available through WhatsApp and email.</p>
         </div>
@@ -2038,6 +2039,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fired by the CTA, which is a real <a> to wa.me. The row is still written
+  // exactly as before — the amber card in People ▸ Call reads it, and on an
+  // open event this insert's trigger is the only thing that gives the lead a
+  // marketer. The browser opens WhatsApp in a new tab alongside, so if this
+  // insert fails the guest still reaches us; only the card is lost, which is
+  // the right way round.
   const submitDoubt = async () => {
     const msg = doubtText.trim();
     if (!msg || !verifiedSlug) return;
@@ -2058,7 +2065,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     }
     addInviteUserMsg(doubtText);
     simulateInviteTyping(() => {
-      addInviteBotMsg("Got it! 👍 We'll reach out to you on WhatsApp soon.");
+      addInviteBotMsg("Got it! 👍 Just hit send on WhatsApp and we'll reply there.");
       setInviteChatStep('doubt_submitted');
     });
   };
@@ -3058,13 +3065,25 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
                             className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-[14px] text-gray-800 placeholder:text-gray-400 focus:outline-none"
                           />
                           {doubtSubmitError && <p className="text-red-500 text-[11px] mt-1 px-1">{doubtSubmitError}</p>}
-                          <button
-                            onClick={submitDoubt}
-                            disabled={!doubtText.trim() || submittingDoubt}
-                            className="mt-2 w-full bg-[#FFD700] text-black rounded-xl py-2.5 text-[14px] font-semibold disabled:opacity-40 active:scale-[0.98] transition-all"
+                          {/* A real <a>, never a scripted popup: a top-level tap
+                              on a wa.me link is the one handoff every browser
+                              performs, Instagram's in-app browser included.
+                              target=_blank keeps this page alive so the insert
+                              finishes while WhatsApp opens alongside. */}
+                          <a
+                            href={doubtWhatsAppUrl(nativeEventData?.title ?? '', doubtText)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-disabled={!doubtText.trim() || submittingDoubt}
+                            onClick={e => {
+                              if (!doubtText.trim() || submittingDoubt) { e.preventDefault(); return; }
+                              void submitDoubt();
+                            }}
+                            className={`mt-2 w-full bg-[#FFD700] text-black rounded-xl py-2.5 text-[14px] font-semibold active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${(!doubtText.trim() || submittingDoubt) ? 'opacity-40 pointer-events-none' : ''}`}
                           >
-                            {submittingDoubt ? 'Sending…' : 'Send Message'}
-                          </button>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.297-.497.1-.198.05-.371-.025-.52-.074-.149-.668-1.612-.916-2.207-.241-.579-.486-.5-.668-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.064 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            {submittingDoubt ? 'Sending…' : 'Send on WhatsApp'}
+                          </a>
                         </motion.div>
                       );
                     }
@@ -5045,7 +5064,7 @@ function PrivacyScreen() {
 
             <div className="bg-white rounded-2xl px-4 py-4">
               <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Access &amp; Correction</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">You can request a copy of the personal data we hold about you, or ask us to correct any information that is inaccurate. Email <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> from the email address linked to your booking, or message us on WhatsApp at +91 8838111564.</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">You can request a copy of the personal data we hold about you, or ask us to correct any information that is inaccurate. Email <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> from the email address linked to your booking, or message us on WhatsApp at {BUSINESS_WHATSAPP_DISPLAY}.</p>
             </div>
 
             <div className="bg-white rounded-2xl px-4 py-4">
@@ -5090,7 +5109,7 @@ function PrivacyScreen() {
               <p className="text-[13px] text-gray-500 leading-relaxed">As required by the Digital Personal Data Protection Act, 2023, we have designated a Grievance Officer to receive privacy complaints.</p>
               <div className="mt-3 space-y-1">
                 <p className="text-[13px] text-gray-700"><span className="text-gray-400">Email:</span> <a href="mailto:chapteraaa.official@gmail.com?subject=DPDP%20Grievance" className="text-blue-600 underline">chapteraaa.official@gmail.com</a></p>
-                <p className="text-[13px] text-gray-700"><span className="text-gray-400">WhatsApp:</span> <a href="https://wa.me/918838111564" className="text-blue-600 underline">+91 8838111564</a></p>
+                <p className="text-[13px] text-gray-700"><span className="text-gray-400">WhatsApp:</span> <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a></p>
               </div>
               <p className="text-[12px] text-gray-400 leading-relaxed mt-3">We will acknowledge your complaint within 7 working days and respond substantively within 30 days. If you are not satisfied with our response, you may approach the Data Protection Board of India.</p>
             </div>
@@ -5104,7 +5123,7 @@ function PrivacyScreen() {
             {/* Contact */}
             <div className="bg-white rounded-2xl px-4 py-4">
               <p className="text-[13px] font-bold text-gray-900 mb-1">Contact</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">For privacy-related questions, email us at <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> or WhatsApp us at <a href="https://wa.me/918838111564" className="text-blue-600 underline">+91 8838111564</a>.</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed">For privacy-related questions, email us at <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> or WhatsApp us at <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a>.</p>
             </div>
 
             {/* Footer note */}

@@ -17,6 +17,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from './supabase';
+import { BUSINESS_WHATSAPP_E164 } from './whatsappLinks';
 import { CreatorTermsContent } from './CreatorTermsContent';
 import {
   DemoExitProvider,
@@ -170,7 +171,7 @@ const CREATOR_FAQS: CreatorFaq[] = [
       <>
         We&apos;re here to help! To get more clairity, feel free to{' '}
         <a
-          href="https://wa.me/919940111564"
+          href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`}
           target="_blank"
           rel="noopener noreferrer"
           style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}
