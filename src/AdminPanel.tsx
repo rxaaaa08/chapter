@@ -493,6 +493,12 @@ export default function AdminPanel() {
   // Performance tab: founder P&L summary (RPC) + editable fixed-costs ledger.
   const [marketersLoading, setMarketersLoading] = useState(false);
   const [perfSummary, setPerfSummary] = useState<any | null>(null);
+  // Behavioural scorecards for Team ▸ Performance. Separate RPC from
+  // get_performance_summary on purpose: that one is live and money-critical,
+  // and its deployed definition has drifted ahead of the migrations before.
+  const [scorecards, setScorecards] = useState<any | null>(null);
+  const [scorecardDays, setScorecardDays] = useState(30);
+  const [scorecardsLoading, setScorecardsLoading] = useState(false);
   const [fixedCosts, setFixedCosts] = useState<Array<{ id: string; label: string; amount: number; active: boolean }>>([]);
   const [costEdits, setCostEdits] = useState<Record<string, string>>({});
   const [newFixedLabel, setNewFixedLabel] = useState('');
@@ -957,6 +963,22 @@ export default function AdminPanel() {
     if (teamMode === 'creators') loadAffiliatesData();
     else { loadMarketersData(); loadManagersCard(); }
   }, [adminRole, tab, teamMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scorecards live on their own effect because the window is switchable and a
+  // change should not re-pull the whole money summary. The RPC is founder-gated
+  // server-side and returns NULL to anyone else, so this renders nothing rather
+  // than erroring for an ops login that somehow reaches the tab.
+  useEffect(() => {
+    if (adminRole !== 'admin' || tab !== 'marketers' || teamMode !== 'money') return;
+    let alive = true;
+    setScorecardsLoading(true);
+    void supabase.rpc('get_marketer_scorecards', { p_days: scorecardDays }).then(({ data, error }) => {
+      if (!alive) return;
+      setScorecards(error ? null : data);
+      setScorecardsLoading(false);
+    }, () => { if (alive) { setScorecards(null); setScorecardsLoading(false); } });
+    return () => { alive = false; };
+  }, [adminRole, tab, teamMode, scorecardDays]);
 
   useEffect(() => {
     if (adminRole !== 'admin' || tab !== 'analytics') return;
@@ -8892,6 +8914,101 @@ export default function AdminPanel() {
                       </table>
                     </div>
                   </div>
+
+                  {/* How the team works — behaviour, not money. Every column is
+                      something the system observed while the job was being done;
+                      nothing here depends on anyone filling a field in. That is
+                      deliberate: the one hand-filled field (call status) has been
+                      saved zero times since logging began, so a scorecard built
+                      on self-reporting would read empty for everyone forever.
+
+                      Founders only — this block already sits inside the
+                      adminRole === 'admin' branch, and the RPC re-checks
+                      is_admin_strict() server-side. Deliberately NOT on the
+                      transparent team board: sales numbers motivate when shared,
+                      response times are performance management. */}
+                  {(() => {
+                    const cards: any[] = scorecards?.marketers ?? [];
+                    const worked = cards.filter(c => Number(c.events) > 0 || Number(c.leads_owned) > 0);
+                    const fmtHrs = (h: any) => h == null ? '—' : Number(h) < 1 ? '<1h' : Number(h) < 48 ? `${Math.round(Number(h))}h` : `${Math.round(Number(h) / 24)}d`;
+                    const fmtLast = (iso: any) => {
+                      if (!iso) return '—';
+                      const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+                      return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`;
+                    };
+                    const neverLogged = cards.length > 0 && cards.every(c => Number(c.call_status_saves) === 0);
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8 }}>How the team works</div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {[7, 30, 90].map(d => (
+                              <button
+                                key={d}
+                                onClick={() => setScorecardDays(d)}
+                                style={{ border: 'none', borderRadius: 99, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: scorecardDays === d ? '#111' : '#fff', color: scorecardDays === d ? '#fff' : '#888' }}
+                              >{d}d</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
+                          Activity is from the audit log for the last {scorecardDays} days; outcomes are lifetime. Nothing here is self-reported. Real history starts 8 Aug 2026 — a longer window does not reach further back.
+                        </div>
+                        <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 660 }}>
+                            <thead>
+                              <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                <th style={{ textAlign: 'left', padding: '8px 16px' }}>Marketer</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px' }} title="Days they made any change in the panel, in this window">Active days</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px' }} title="Distinct leads they changed anything on">Leads touched</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px' }} title="Applications they moved from Pending to Invited">Invites</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px' }} title="Median time from the application arriving to them pressing Approve">Median to invite</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px' }} title="Their slowest invite in this window">Slowest</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px' }} title="Of their leads that ever abandoned a payment, how many came back and paid">Recovered</th>
+                                <th style={{ textAlign: 'right', padding: '8px 16px' }} title="Last time they changed anything at all">Last seen working</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {scorecardsLoading && cards.length === 0 && (
+                                <tr><td colSpan={8} style={{ padding: '14px 16px', color: '#bbb', fontSize: 13 }}>Loading…</td></tr>
+                              )}
+                              {!scorecardsLoading && cards.length === 0 && (
+                                <tr><td colSpan={8} style={{ padding: '14px 16px', color: '#bbb', fontSize: 13 }}>No scorecard data yet.</td></tr>
+                              )}
+                              {worked.map((c) => {
+                                const stale = c.last_action_at && (Date.now() - new Date(c.last_action_at).getTime()) > 14 * 86400000;
+                                const abandoned = Number(c.ever_abandoned);
+                                const recovered = Number(c.recovered);
+                                return (
+                                  <tr key={c.marketer_id} style={{ borderTop: '1px solid #f5f5f0' }}>
+                                    <td style={{ padding: '10px 16px', fontWeight: 600, color: '#111' }}>
+                                      {c.name}
+                                      {!c.linked && <span title="No login matches this marketer's email, so their actions cannot be attributed" style={{ fontSize: 10, color: '#d97706', marginLeft: 6 }}>unlinked</span>}
+                                    </td>
+                                    <td style={{ padding: '10px 10px', textAlign: 'right', color: Number(c.active_days) === 0 ? '#dc2626' : '#555' }}>{c.active_days}</td>
+                                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#555' }}>{c.leads_touched}</td>
+                                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{c.invites_sent}</td>
+                                    <td style={{ padding: '10px 10px', textAlign: 'right', color: c.median_hours_to_invite == null ? '#bbb' : Number(c.median_hours_to_invite) <= 6 ? '#16a34a' : Number(c.median_hours_to_invite) <= 24 ? '#d97706' : '#dc2626' }}>{fmtHrs(c.median_hours_to_invite)}</td>
+                                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#999' }}>{fmtHrs(c.slowest_hours_to_invite)}</td>
+                                    <td style={{ padding: '10px 10px', textAlign: 'right', color: abandoned === 0 ? '#bbb' : recovered > 0 ? '#16a34a' : '#dc2626' }}>{abandoned === 0 ? '—' : `${recovered}/${abandoned}`}</td>
+                                    <td style={{ padding: '10px 16px', textAlign: 'right', color: stale ? '#dc2626' : '#555' }}>{fmtLast(c.last_action_at)}</td>
+                                  </tr>
+                                );
+                              })}
+                              {!scorecardsLoading && cards.length > 0 && worked.length === 0 && (
+                                <tr><td colSpan={8} style={{ padding: '14px 16px', color: '#bbb', fontSize: 13 }}>Nobody has touched a lead in this window.</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        {neverLogged && (
+                          <div style={{ marginTop: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '9px 12px', fontSize: 11.5, color: '#92400e', lineHeight: 1.5 }}>
+                            <b>Nobody has ever saved a call status.</b> That field is the only hand-filled one on a lead, and it has never been used — so &ldquo;what happened on the call&rdquo; is currently unknowable. The new training makes logging it a required step; if this stays at zero a month after the first trained marketers start, the field is the wrong tool and the state should be inferred instead.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Outstanding payouts — only unsettled events. Unpaid tickets +
                       money owed per marketer, plus a per-date Settle action. Both
