@@ -29,29 +29,47 @@ it counts visitors who arrived tagged as Meta traffic but carried no ad ID.
 
 ---
 
-## 2. Domain verification + event priority — BEFORE the first campaign
+## 2. Domain verification + event priority
 
-This one is ordering-sensitive and the cost of getting it wrong is 72 hours of
-paused ads (Meta error `3260008`).
+**Domain: DONE.** `chaptera.in` is verified in the Chapter அ portfolio
+(domain ID 1610925223948745). Checked directly on 2026-09-07 — it shows the
+green **Verified** badge.
 
-**Events Manager → Aggregated Event Measurement:**
+**Event priority: cannot be set yet, and is NOT a blocker.** This corrects
+earlier guidance in this doc.
 
-1. Verify the domain `chaptera.in` if it is not already verified
-   (Business Settings → Brand Safety → Domains).
-2. Configure the **event priority list** for that domain — up to 8 events,
-   highest priority first. Ours should be:
+I looked for the Aggregated Event Measurement configuration tool in every place
+it can live and it is not present on this account:
 
-   1. `Purchase`
-   2. `Lead`
+- Business Settings → Domains → chaptera.in (only Partners / Connected assets /
+  Domain access)
+- Events Manager → Datasets → chaptera.in website → Overview and Settings
+- The Events Manager left nav (Connect data, Overview, Datasets, Custom
+  conversions, Integrations)
+- Ads Manager → Advertising settings, whole page
+- Three direct AEM URLs, all of which 404
 
-3. Save it and leave it alone.
+Meta's own documentation explains why: AEM events are *"autoconfigured for the
+account's domains **based on an account's ad activity**"*, and only then can an
+advertiser "edit and prioritize the automatically configured events". This
+account has never run an ad, so there is nothing to configure and Meta does not
+surface the tool.
 
-**Why the order matters and why now:** changing this list later pauses every ad
-using those events for **72 hours**. Set it before launching, not after you have
-data and want to tune it. An ad set optimising for Purchase will also refuse to
-publish at all if Purchase is not configured on the domain (error `3260007`).
+**What this means practically:** launch without it. Meta will auto-configure the
+priority list once ads start running, and the events it picks will be the ones
+we actually send — Purchase and Lead — because those are the only two in the
+dataset.
 
----
+**What still holds:** once the list exists, *changing* it pauses every ad using
+those events for **72 hours** (error `3260008`). So after the first campaign is
+live, look at the list once, set it deliberately to **Purchase above Lead**, and
+then leave it alone. The cost of getting it wrong has not gone away; it has just
+moved to after launch instead of before.
+
+Also still true: an ad set optimising for Purchase will not publish if Purchase
+is not configured on the domain (error `3260007`). If you hit that when creating
+the first campaign, that is the moment the configuration tool appears — set the
+order there and then.
 
 ## 3. The two Supabase secrets
 
