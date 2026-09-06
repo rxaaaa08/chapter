@@ -593,9 +593,10 @@ function ApplicationForm({
       // browser blocks fbevents.js entirely. It is safe to fire here and only
       // here: the applications row was inserted immediately above and the insert
       // succeeded, so capi-lead's "no application, no Lead" guard will find it.
-      // (The open flow deliberately has no server Lead — there this event fires
-      // before the row exists, and a server copy would arrive with a different
-      // id and double-count. Open events optimise on Purchase anyway.)
+      // (The open flow reports its Lead the same way, but in two halves: the
+      // browser event fires when the OTP is sent and the server call waits until
+      // the row exists a step later. Both use an id minted up front — see
+      // openLeadId — which is what stops the delay becoming a second Lead.)
       trackEvent('application_submitted', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title, dedupId: leadId });
       reportLead({
         leadId,
@@ -1179,6 +1180,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   // table we purge at 90 days. Latch each (stage, event) once per session so
   // one visitor writes one row per stage.
   const openFunnelPingedRef = React.useRef<Set<string>>(new Set());
+
+  // Dedup key for the open flow's Meta Lead.
+  //
+  // Minted once per visit and reused by all three reporters: the browser Lead
+  // (fired when the code is sent), the server call made once the OTP passes and
+  // the row exists, and the cron sweep that reads lead_id back off that row.
+  // Mirrors the invite flow — a second id generated anywhere would collide with
+  // nothing and count one applicant twice.
+  const openLeadIdRef = React.useRef<string>('');
+  const openLeadId = React.useCallback((): string => {
+    if (!openLeadIdRef.current) openLeadIdRef.current = newLeadId();
+    return openLeadIdRef.current;
+  }, []);
   const pingOpenFunnel = React.useCallback((stage: 'details_form_opened' | 'details_form_submitted') => {
     if (!isPayUFlow || !selectedEvent) return;
     const key = `${stage}:${selectedEvent.id}`;
@@ -1189,9 +1203,14 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       category: selectedCategory || selectedEvent.category,
       event_id: selectedEvent.id,
       event_title: selectedEvent.title,
+      // Only the submitted stage becomes a Meta Lead, so only that one needs a
+      // dedup key. Without it the open flow's browser Lead arrived with no
+      // event_id at all and could never be paired with a server copy — which is
+      // what held Lead event coverage at 33% against Meta's 75% guidance.
+      ...(stage === 'details_form_submitted' ? { dedupId: openLeadId() } : {}),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPayUFlow, selectedEvent, selectedCity, selectedCategory]);
+  }, [isPayUFlow, selectedEvent, selectedCity, selectedCategory, openLeadId]);
 
   // Fires when the open details form becomes visible. Invite/PhonePe/community
   // flows are untouched.
@@ -1972,6 +1991,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       // completed" moment — the applications row only lands AFTER the OTP is
       // verified, so counting rows was really counting form-fill AND OTP pass
       // as one step. Session-scoped, matching the form-open ping's units.
+      //
+      // Identity first. Everything the visitor typed has just passed validation
+      // and the booking was found eligible, so this is the earliest moment the
+      // open flow knows who they are — and the Lead is the event that most needs
+      // it. This used to run only after the OTP passed, several steps later,
+      // which left every open-event Lead reaching Meta with no em/ph/fn/ct at
+      // all. The invite flow already identifies at the equivalent point.
+      setPixelUserData({
+        email: detailsForm.email,
+        phone: detailsForm.phone,
+        name: detailsForm.name,
+        city: selectedCity,
+      });
       pingOpenFunnel('details_form_submitted');
       setOpenOtpSession(data.verification_token);
       setOpenOtpDigits(Array(6).fill(''));
@@ -2138,6 +2170,17 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         .from('applications')
         .insert({
           event_slug: openSlug,
+          // Dedup key for the Meta Lead, matching the one the browser Lead
+          // already used this visit. NULL on admin/marketer-created rows, which
+          // is exactly what keeps those out of the ad dataset.
+          lead_id: openLeadId(),
+          // Captured here because this is the only moment they exist. If the
+          // reportLead call below fails, the cron sweep runs with no request to
+          // read headers from — and Meta lists client_user_agent as REQUIRED for
+          // every website event.
+          lead_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 512) : null,
+          lead_fbp: getFbp(),
+          lead_fbc: getFbc(),
           name: detailsForm.name.trim(),
           phone: normalizedPhone,
           email: detailsForm.email.trim() || null,
@@ -2167,6 +2210,26 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       // 23505 = returning lead already has a row (expected, fine). Never block the
       // payment on tracking — log anything else and continue to checkout.
       if (appErr && appErr.code !== '23505') console.error('open application insert failed:', appErr);
+
+      // The server copy of the Lead the browser already fired at OTP-request
+      // time. Same id, so Meta counts one — and this is the copy that survives
+      // for the ~half of visitors whose browser blocks fbevents.js entirely.
+      //
+      // Fired HERE, not next to the browser event, and that ordering is the
+      // whole trick: capi-lead refuses to report a Lead with no matching
+      // application row, and the row only exists once the OTP has passed. Minting
+      // the id up front is what lets the two halves be sent at different moments
+      // and still describe one action.
+      //
+      // A returning lead hits the (event_slug, phone) unique key above, so their
+      // row keeps its original lead_id — but this call passes the id from THIS
+      // visit, which is the one the browser Lead used, so the pair still matches.
+      reportLead({
+        leadId: openLeadId(),
+        eventSlug: openSlug,
+        eventTitle: selectedEvent.title,
+        phone: normalizedPhone,
+      });
 
       // A returning lead's row is left as-is by the 23505 above — so if they now
       // pick a DIFFERENT date/pickup their stale selected_date would no longer match

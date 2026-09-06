@@ -714,6 +714,20 @@ Deno.serve(async (req) => {
       // present on a venue balance. payu-callback copies it onto the booking as
       // ticket_count or attended_count accordingly.
       quantity: balanceAttendingCount ?? ticketCount,
+      // What this booking is WORTH, as opposed to what PayU is charging right
+      // now. On a split booking those differ by design: we charge the ₹102
+      // advance but the ad won a ₹299 ticket, and reporting the advance told
+      // Meta every split sale had the same value — which is both a 3x
+      // understatement and a constant, so value optimisation had nothing to
+      // rank. Excludes PayU's fee: that is the customer's cost, not revenue.
+      //
+      // Decided HERE, once, because the browser Purchase and the server
+      // Purchase both report this sale and Meta keeps only one of them. Two
+      // separate calculations could disagree; one stored number cannot.
+      //
+      // Null on a balance payment — that half is never reported to Meta, so
+      // there is no value to state.
+      reported_value: paymentType === 'balance' ? null : prices.full * ticketCount,
       whatsapp_group_url: null, // never trust this from the client
       fbp,
       fbc,

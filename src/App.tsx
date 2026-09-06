@@ -4535,9 +4535,13 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
   // deduplicate against the server event. Each of those guards is explained at
   // the line that enforces it.
   //
-  // NOTE: payment.amount is what PayU charged, i.e. INCLUDING the gateway fee
-  // (₹102.42 on a ₹100 advance) — not net revenue. Kept as-is so this number
-  // always reconciles against payu_payments.
+  // VALUE: payment.reported_value, not payment.amount. `amount` is what PayU
+  // charged, which on a split booking is the advance alone — so Meta was told a
+  // ₹299 ticket was worth ₹102, identically every time. create-payu-order now
+  // stamps the booking's real value at order time and the server Purchase reads
+  // the same column, so the deduplicated pair can never state two different
+  // numbers for one sale. Older rows have no reported_value and fall back to
+  // amount, which is what they were reported with originally.
   React.useEffect(() => {
     if (view !== 'success') return;
 
@@ -4583,7 +4587,9 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
     // eventID here must equal event_id on the server exactly — same string, same
     // case — or Meta treats one sale as two. Both are the PayU txnid.
     trackPurchaseOnce(id, {
-      value: payment.amount != null ? Number(payment.amount) : undefined,
+      value: payment.reported_value != null
+        ? Number(payment.reported_value)
+        : (payment.amount != null ? Number(payment.amount) : undefined),
       currency: 'INR',
       content_name: payment.event_title,
       content_ids: payment.event_slug ? [payment.event_slug] : undefined,

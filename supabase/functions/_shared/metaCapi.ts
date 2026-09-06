@@ -95,6 +95,32 @@ function isTestPhone(normalisedPhone: string | null): boolean {
   return normalisedPhone !== null && normalisedPhone.startsWith(TEST_PHONE_PREFIX);
 }
 
+// Should this test booking be withheld from Meta?
+//
+// Normally yes — that is the whole point of the guard above. The exception is
+// while META_CAPI_TEST_CODE is set, because otherwise the guard makes the send
+// path untestable: the only bookings we are allowed to fake are exactly the ones
+// that never leave. You cannot verify a pipe you are forbidden to put water in.
+//
+// So with a test code present, test phones are let through and land in Events
+// Manager → Test Events, where the payload, the match keys and the browser/server
+// deduplication can all be read directly.
+//
+// KNOWN AND ACCEPTED: this is not a sandbox. Meta is explicit that events sent
+// with test_event_code "are not dropped ... they flow into Events Manager and are
+// used for targeting and ads measurement purposes". A test booking run this way
+// is a real conversion in the dataset and a real member of the website audience.
+// That is the price of an end-to-end test, and it is only payable while the code
+// is set — unset it and the guard closes again with no code change.
+function skipAsTestBooking(normalisedPhone: string | null): boolean {
+  if (!isTestPhone(normalisedPhone)) return false;
+  if (Deno.env.get('META_CAPI_TEST_CODE')) {
+    console.warn('[meta-capi] TEST PHONE allowed through because META_CAPI_TEST_CODE is set — this WILL count as a real conversion');
+    return false;
+  }
+  return true;
+}
+
 // Names and city: lowercase, letters only. Meta strips punctuation, spaces and
 // accents before hashing on their side, so we must match that exactly or the
 // hashes simply never line up — which fails silently and looks like working.
@@ -432,7 +458,7 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
       return;
     }
     const phone = normalisePhone(args.phone);
-    if (isTestPhone(phone)) {
+    if (skipAsTestBooking(phone)) {
       // Logged, not silent: a test that never shows up in Meta should be
       // explainable from the function logs rather than looking like a bug.
       console.log('[meta-capi] test booking, not reported to Meta', args.txnid);
@@ -514,7 +540,7 @@ export async function sendLeadToMeta(args: CapiLeadArgs): Promise<boolean> {
     if (!args.leadId) return false;
 
     const phone = normalisePhone(args.phone);
-    if (isTestPhone(phone)) {
+    if (skipAsTestBooking(phone)) {
       // Reported as success on purpose: a test application is not owed to Meta,
       // so the caller should stamp it done rather than retry it every sweep.
       console.log('[meta-capi] test application, Lead not reported to Meta', args.leadId);

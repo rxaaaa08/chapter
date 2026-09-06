@@ -695,7 +695,7 @@ Deno.serve(async (req) => {
       // are here for the Conversions API call below. This is a cron, so the
       // request headers belong to the scheduler, not the customer — the values
       // captured at checkout by create-payu-order are the only real ones.
-      .select('txnid, event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, quantity')
+      .select('txnid, event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, quantity, reported_value')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(100);
@@ -844,7 +844,13 @@ Deno.serve(async (req) => {
             // a booking that already moved on must not report a second Purchase.
             await sendPurchaseToMeta({
               txnid,
-              value: Number(row.amount ?? 0) || 0,
+              // The BOOKING's value, not the amount charged. On a split booking those
+              // differ: we charge the advance but the ad won the whole ticket.
+              // create-payu-order stamps reported_value at order time so this
+              // event and the browser's cannot state different numbers for one
+              // sale. Falls back to the charged amount on rows written before that
+              // column existed — which is exactly what we used to send.
+              value: Number((row as any)?.reported_value ?? row.amount ?? 0) || 0,
               currency: 'INR',
               email: (row as any).email ?? null,
               phone,

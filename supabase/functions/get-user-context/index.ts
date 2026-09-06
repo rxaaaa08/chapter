@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
     if (txnid) {
       const { data: p } = await supabase
         .from('payu_payments')
-        .select('txnid, name, phone, email, amount, event_slug, event_title, status, payment_type, mihpayid, trip_date, created_at, quantity')
+        .select('txnid, name, phone, email, amount, event_slug, event_title, status, payment_type, mihpayid, trip_date, created_at, quantity, reported_value')
         .eq('txnid', txnid)
         .maybeSingle();
       if (p && p.phone === phone) payment = p;

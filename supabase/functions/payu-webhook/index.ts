@@ -704,7 +704,7 @@ Deno.serve(async (req) => {
 
     const { data: stored } = await supabase
       .from('payu_payments')
-      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, payu_response, quantity')
+      .select('event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, payu_response, quantity, reported_value')
       .eq('txnid', txnid)
       .maybeSingle();
 
@@ -832,7 +832,13 @@ Deno.serve(async (req) => {
           // event, so however many of the three fire, Meta records one sale.
           await sendPurchaseToMeta({
             txnid,
-            value: Number(stored.amount ?? amount) || 0,
+            // The BOOKING's value, not the amount charged. On a split booking those
+            // differ: we charge the advance but the ad won the whole ticket.
+            // create-payu-order stamps reported_value at order time so this
+            // event and the browser's cannot state different numbers for one
+            // sale. Falls back to the charged amount on rows written before that
+            // column existed — which is exactly what we used to send.
+            value: Number((stored as any)?.reported_value ?? stored.amount ?? amount) || 0,
             currency: 'INR',
             email: stored.email ?? null,
             phone,
