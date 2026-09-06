@@ -30,6 +30,46 @@ const SIGNATURE_HEADER = 'x-hub-signature-256';
 // said in `field` and unpack `changed_fields` when the envelope carries it.
 const FIELD_CHANGED = 'field_changed';
 
+// ── Every webhook names the object differently ──────────────────────────────
+// Observed from a real Meta test payload on 2026-09-07: creative_fatigue
+// carries `adgroup_id` (Meta's internal name for an ad) and NO object_type at
+// all, while field_changed and subscriptions use object_id + object_type. A
+// reader that only looked at value.object_id stored null for every fatigue
+// notification — meaning we would know an ad was tiring without knowing WHICH
+// ad, which is the only fact that makes the alert worth having.
+//
+// Order matters: object_id first, because where it exists it is authoritative
+// and object_type travels with it.
+const OBJECT_ID_KEYS: ReadonlyArray<readonly [string, string | null]> = [
+  ['object_id', null],        // field_changed, subscriptions
+  ['adgroup_id', 'ad'],       // creative_fatigue — 'adgroup' is Meta's old name for an ad
+  ['ad_id', 'ad'],
+  ['adset_id', 'adset'],
+  ['campaign_id', 'campaign'],
+];
+
+function readObject(value: Record<string, unknown>): { id: string | null; type: string | null } {
+  for (const [key, impliedType] of OBJECT_ID_KEYS) {
+    const raw = value[key];
+    if (typeof raw === 'string' || typeof raw === 'number') {
+      const explicit = typeof value.object_type === 'string' ? value.object_type : null;
+      return { id: String(raw), type: explicit ?? impliedType };
+    }
+  }
+  return { id: null, type: typeof value.object_type === 'string' ? value.object_type : null };
+}
+
+// entry.id is normally the ad account, but Meta's dashboard test sends 0 while
+// putting the real one inside value.ad_account_id. Prefer the envelope, fall
+// back to the body, and never store a placeholder as if it were an account.
+function readAccountId(entryId: unknown, value: Record<string, unknown>): string | null {
+  const fromEntry = typeof entryId === 'string' || typeof entryId === 'number' ? String(entryId) : null;
+  if (fromEntry && fromEntry !== '0') return fromEntry;
+  const fromValue = value.ad_account_id;
+  if (typeof fromValue === 'string' || typeof fromValue === 'number') return String(fromValue);
+  return fromEntry;
+}
+
 function hex(buf: ArrayBuffer): string {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -148,14 +188,15 @@ Deno.serve(async (req) => {
     for (const change of entry.changes ?? []) {
       const value = (change.value ?? {}) as Record<string, unknown>;
       const field = change.field ?? 'unknown';
+      const obj = readObject(value);
       rows.push({
-        ad_account_id: entry.id ?? null,
+        ad_account_id: readAccountId(entry.id, value),
         field,
         changed_fields: field === FIELD_CHANGED && Array.isArray(value.changed_fields)
           ? value.changed_fields
           : null,
-        object_id: typeof value.object_id === 'string' ? value.object_id : null,
-        object_type: typeof value.object_type === 'string' ? value.object_type : null,
+        object_id: obj.id,
+        object_type: obj.type,
         value,
         entry_time: entryTime,
         dedup_key: await sha256Hex(
