@@ -51,7 +51,10 @@ const META_TIMEOUT_MS = 3000;
 // future staging dataset doesn't need a code change.
 const DEFAULT_PIXEL_ID = '28370453785913523';
 
-async function sha256Hex(input: string): Promise<string> {
+// Exported so Custom Audience uploads hash through EXACTLY this path. Two
+// implementations of 'normalise then SHA-256' will agree until the day they
+// do not, and the failure is silent: Meta simply matches nobody.
+export async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest))
@@ -62,13 +65,13 @@ async function sha256Hex(input: string): Promise<string> {
 // Meta matches on normalised-then-hashed values. Getting the normalisation
 // wrong doesn't error — it just silently fails to match anyone, which is worse
 // than an error because it looks like it works.
-function normaliseEmail(raw: string | null | undefined): string | null {
+export function normaliseEmail(raw: string | null | undefined): string | null {
   const v = (raw ?? '').trim().toLowerCase();
   return v.includes('@') ? v : null;
 }
 
 // We store phones as bare last-10-digits; Meta wants country code, digits only.
-function normalisePhone(raw: string | null | undefined): string | null {
+export function normalisePhone(raw: string | null | undefined): string | null {
   const digits = (raw ?? '').replace(/\D/g, '');
   if (!digits) return null;
   const ten = digits.slice(-10);
@@ -138,7 +141,7 @@ function skipAsTestBooking(normalisedPhone: string | null): boolean {
 // Must stay byte-identical in meaning to normalisePart() in src/metaPixel.ts —
 // if the two sides normalise differently they hash differently, and one person
 // reaches Meta as two.
-function normaliseNamePart(raw: string | null | undefined): string | null {
+export function normaliseNamePart(raw: string | null | undefined): string | null {
   const v = (raw ?? '')
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
