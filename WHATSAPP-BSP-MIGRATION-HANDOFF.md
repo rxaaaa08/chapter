@@ -2,10 +2,13 @@
 
 **Single source of truth for this work.** Supersedes `bsp-migration-plan.md`
 (planning) and `WAMAFY-TEST-HANDOFF.md` (trial log); both are kept for history.
+The admin surface built on top of it has its own file:
+**`CHAT-PAGE-HANDOFF.md`**.
 
 Last updated **2026-09-01**. **All six senders are migrated.** Every WhatsApp
 message the product sends now goes through Wamafy, with AiSensy as an automatic
-fallback on each one.
+fallback on each one. The whole thing is read and answered from **People ▸
+Chat** in the admin panel.
 
 ---
 
@@ -28,14 +31,13 @@ month buys a working fallback, and edge functions have no rollback.
 Also built alongside the migration:
 
 - **Delivery, read and failure logging** on every send, joined by `messageId`.
-- **`whatsapp_inbound`** — customer replies, rendered inline on the People rows
-  in the same card as a doubt (green rather than amber). Shown on a person's
-  topmost row only: a conversation belongs to a person, but the table is one row
-  per booking.
-- **`whatsapp-reply`** — free-form replies from the People tab, inside WhatsApp's
-  24-hour window. Admin-gated twice (`verify_jwt` plus an `admin_users` lookup),
-  rate limited to 60/hour per admin, and recorded in `whatsapp_sends` with
-  `template_name` NULL and `sent_by_email` set.
+- **`whatsapp_inbound`** — customer replies.
+- **`whatsapp-reply`** — free-form replies from the admin panel, inside
+  WhatsApp's 24-hour window. Admin-gated twice (`verify_jwt` plus an
+  `admin_users` lookup), rate limited to 60/hour per admin, and recorded in
+  `whatsapp_sends` with `template_name` NULL and `sent_by_email` set.
+- **People ▸ Chat** — the desk where all of that is read and answered: both
+  sides of every conversation, delivery state per message, and the reply box.
 
 **Customers are currently in a split-number state** — codes from the new number
 `+91 82208 88650`, everything else from the old `+91 99401 11564`. Acceptable only
@@ -176,50 +178,47 @@ triple-fire design protects the money; only messaging is exposed.
 Migrations: `20260828_whatsapp_send_log.sql`, `20260901_whatsapp_inbound.sql`,
 `20260901_whatsapp_freeform_reply.sql`.
 
-### Two-way messaging — seeing what customers say
+### People ▸ Chat — the WhatsApp desk
 
-Replies land in `whatsapp_inbound` from the production webhook and render inline
-on the **People** rows, reusing the existing doubt card: same shape, same slot,
-**green instead of amber** so a reply is never mistaken for an unresolved doubt.
-A row tints pale green when a reply is waiting and no doubt is, so amber keeps
-its meaning as the more urgent state.
+The admin surface where all of this is read and answered lives in **People ▸
+Chat**. It has its own file: **`CHAT-PAGE-HANDOFF.md`** — the information split
+across list/header/thread, what a message bubble can and cannot show, the status
+ticks, the composer, the layout traps, and how to verify any of it without being
+able to log in.
 
-Three deliberate choices in that rendering:
+Only the parts that belong to *this* migration are repeated here:
 
-- **Shown on a person's topmost row only.** A conversation belongs to a person,
-  but this table is one row per booking — so someone with two bookings would
-  otherwise see the same thread printed twice, with two reply boxes that do the
-  same thing. The `↩ n` badge stays on every row, so nothing is hidden; it just
-  is not said twice. Grouping the whole table by phone was the alternative and is
-  the wrong trade: status, date, marketer, payment state and the Approve button
-  are all genuinely per booking.
-- **Keyed by phone alone.** A WhatsApp message carries no event. Attaching a
-  reply to a guessed booking would be a fabrication; showing it against the
-  person is the honest rendering.
-- **Button taps and photos show as what they are** — `tapped "Join Groupchat"`,
-  `sent image` — rather than an empty card. That is also how we will learn
-  whether template buttons get used at all.
+- Threads are keyed by **phone alone**. A WhatsApp message carries no event, so
+  attaching a reply to a guessed booking would be a fabrication.
+- **Founder-only.** `whatsapp_inbound` and `whatsapp_sends` are both
+  `is_admin_strict()` SELECT, so ops and marketers read zero rows and the pill is
+  hidden from them rather than showing an empty pane.
+- **A refused send and a failed delivery are different things.** See §9.
+- Bounded to 60 days on load (1,000 inbound / 2,000 sends).
 
-Bounded to 60 days / 500 rows on load: the table grows forever and a reply stops
-being useful long before it stops being stored.
+### Delivery health lives in Growth ▸ Analytics
 
-### Two-way messaging — replying from the panel
+Sent / delivered / read / failed / never sent / replies in, over the same 60-day
+window, at the bottom of the Analytics page. It sits there rather than in Chat
+because it measures the messaging *system* — it is not something you act on in
+the middle of a conversation. Both surfaces read the same rows, so opening either
+one loads them.
+
+### Replying from the panel
 
 `whatsapp-reply` (edge function, `verify_jwt: true`) lets an admin answer in
-their own words from the People tab, instead of picking up a personal phone —
+their own words from People ▸ Chat, instead of picking up a personal phone —
 which left no record and messaged the guest from an unknown number.
 
 **The 24-hour window is the whole constraint.** Free-form text is only allowed
 within 24 hours of the **customer's** last message (Meta's rule; Wamafy answers
-`400 NO_OPEN_CONVERSATION` outside it). So:
+`400 NO_OPEN_CONVERSATION` outside it).
 
-- The UI calls `action: 'window'` **before** showing the box. If the window is
-  shut it says so in plain words and points at calling instead. Letting someone
-  compose a careful answer that silently bounces is the outcome worth designing
-  against.
-- The window can also close **between** the check and the send. That returns
-  `409` and is reported as the window closing, not as a failure — "failed" would
-  send someone hunting for a fault that is not there.
+**One composer, always visible.** The window decides the *transport*, not whether
+you can type: inside it the text goes as a free-form message, outside it as the
+`doubt_assisstance` template quoting their question. The UI mechanics — when the
+window check runs, how the quoted question is prefilled, what happens when the
+window closes mid-compose — are in `CHAT-PAGE-HANDOFF.md` §7.
 
 **Security.** Sending lives here and never in Vercel, which deliberately holds no
 WhatsApp key. Gated twice: `verify_jwt` stops anonymous traffic at Supabase's
@@ -230,9 +229,12 @@ message customers. Rate limited to **60 replies per admin per hour**.
 
 - Only replies to the **Wamafy** number are captured. Anyone answering the old
   AiSensy number is invisible, because nothing ever recorded those.
-- **Nobody is notified when a customer replies** — you have to be looking at the
-  panel. `send-admin-push` already exists and could be wired to inbound; it is
-  not, yet.
+- **Nobody is notified when a customer replies** — you have to open People ▸
+  Chat and look. `send-admin-push` already exists and could be wired to inbound;
+  it is not, yet. "Waiting on us" on the Chat strip is the number to watch.
+- **Chat is founder-only.** `whatsapp_inbound` and `whatsapp_sends` are both
+  `is_admin_strict()` SELECT, so the pill is hidden from ops and marketers
+  rather than showing them an empty pane.
 - ~~No template fallback when the window is shut~~ — **solved by
   `doubt_assisstance`.** It is not a canned announcement: `{{1}}` quotes their
   question, `{{2}}` carries our answer, so an approved template can deliver a
@@ -242,6 +244,13 @@ message customers. Rate limited to **60 replies per admin per hour**.
   `{ phone, name, question, answer }`. Logged as `template_name`
   `'doubt_assisstance'` with `body_text` set to the **answer**, so the thread
   reads as a conversation rather than "a template was sent".
+
+  **The UI for this is live in People ▸ Chat**: when the window check comes back
+  shut, the reply box is replaced by a two-field form — their question, prefilled
+  from their latest inbound message but editable (the last thing someone said is
+  often not the thing they were asking), and the answer. Because a person sent
+  it, the thread labels it with the template's plain name rather than as an
+  automatic message.
 
   **It is MARKETING and staying that way** — Meta reclassifies anything not
   strictly transactional, so applying as UTILITY would burn a review cycle for
@@ -397,6 +406,13 @@ that is what guests will now read.
   failure was `invitation_with_contact` — MARKETING, the restricted category. A
   send to a number whose 24h window had closed three days earlier delivered in
   **2.6s**. This was the risk that could have sunk the migration.
+- **A REFUSED send and a FAILED delivery are different things, stored in
+  different places.** `error_code` / `error_message` are written by the delivery
+  webhook, which never fires for a send the provider rejected outright — those
+  rows carry their reason only inside `raw_send.error.message`, with `sent_at`
+  null and `send_ok` false. Counting them as sends also flatters the delivery
+  rate: about a third of the trial rows are refusals. The panel reads the
+  reason out of `raw_send` and excludes refusals from the denominator.
 - **Read receipts are one-way evidence.** Two of three test handsets had them
   disabled. A blue tick proves a read; its absence proves nothing. Never present
   "delivered but not read" as "they ignored it".
@@ -443,31 +459,34 @@ that is what guests will now read.
    branches, revoke `AISENSY_API_KEY`, cancel the subscription. **Not before** —
    keeping it paid one extra month buys a working fallback.
 
-### In flight elsewhere — People ▸ Chat
-
-A parallel session owns `AdminPanel.tsx` and is building a **People ▸ Chat**
-sub-view that merges `whatsapp_inbound` and `whatsapp_sends` by phone into one
-conversation, and re-keys the reply state from application id to phone. That is a
-better answer than the inline per-row thread to the same problem: a conversation
-belongs to a person, and the same person can hold several bookings.
-
-**The `send_doubt` edge action is deployed and waiting for a UI.** The form needs
-two fields — their question (sensible to prefill from their latest inbound
-message, but editable, since the last message is not always the question) and the
-answer.
+### Concurrent-editing warning
 
 Two agents editing a 6,600-line file concurrently overwrote each other's work
-here before this was noticed. If it happens again, the tell is a change you made
-and verified being absent minutes later.
+here before it was noticed. If it happens again, the tell is a change you made
+and verified being absent minutes later. The Chat view and the `send_doubt`
+action were built in two sessions at once and stayed clean only because one
+owned `AdminPanel.tsx` and the other owned the edge function.
 
 ### Worth doing next on the messaging side
 
 - **Notify someone when a customer replies.** Right now a reply sits in the panel
   until a human happens to look. `send-admin-push` already routes role-scoped
   pushes and could be triggered from the inbound webhook.
-- **Show the outbound side of the thread in the panel.** Staff replies are stored
-  but only the one just sent is rendered; older replies and template sends are not
-  shown next to the inbound messages.
+- ~~Show the outbound side of the thread in the panel~~ — done, People ▸ Chat
+  renders both directions in order with per-message delivery state.
+- **Show WHICH event an automatic message was about.** Today a payment
+  confirmation in the thread reads "Advance paid — confirmation" with no plan
+  name, and for someone with two bookings that is genuinely unknowable from what
+  we store. **Logging the template's `variables` does NOT fix this** —
+  `advancepaid` carries the amount and nothing else. The fix is
+  `whatsapp_sends.application_id`, a column that already exists for exactly this
+  and is NULL on every row, because `log_whatsapp_send` has no parameter to write
+  it with. Three steps: add `p_application_id` to that RPC (backward-compatible,
+  existing callers unaffected); have `payu-callback`, `payu-webhook` and
+  `verify-pending-payments` pass it — each already holds the application row it
+  looked up for its dedup check, so it is one line apiece, but all three deploy
+  together; then join it in the panel. **Deferred by the owner 2026-09-01** as
+  too much moving machinery for one label.
 - **Capture replies to the old number** — or retire it, so there is one inbox.
 
 ### Not part of this migration, but found along the way
