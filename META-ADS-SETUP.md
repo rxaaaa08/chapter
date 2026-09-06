@@ -72,25 +72,39 @@ with both a payment method and API access. No `act_` prefix; the code adds it.
 ### 3b. The access token (you generate this; never paste it into chat)
 
 You need a **System User token**, not a personal one. Personal tokens expire and
-are tied to your login; a system user token belongs to the business and can be
-set to never expire.
+are tied to your login; a system user token belongs to the business.
 
-**First, make sure a Meta app exists** (developers.facebook.com/apps):
+**Make a SECOND system user — do not reuse the Conversions API one.**
 
-- If you have no app yet: **Create App** → use case **Other** → type
-  **Business** → link it to the business **Chapter அ**.
-- Add the **Marketing API** product to it.
+You already have `Conversions API System User` (ID 61593183602008), and the
+`META_CAPI_ACCESS_TOKEN` that carries every Purchase and Lead to Meta was
+generated from it. The **Revoke tokens** button in that screen is per system
+user and revokes *all* of its tokens at once. If the reporting token ever shares
+that user, a routine rotation takes conversion tracking down with it — payments
+keep working, Meta just stops hearing about them, and nothing looks broken.
 
-**Then, in business.facebook.com → Business Settings:**
+A read-only reporting token has no reason to share a lifecycle with the token
+carrying our revenue events.
 
-1. **Users → System Users → Add**. Name it something like
-   `chaptera-reporting`. Role: **Employee** is enough.
-2. With it selected, click **Add Assets → Ad Accounts** → tick
-   **chapter அ advertisement** → enable **View performance** (that is all this
-   needs — we never write to Meta).
-3. Click **Generate New Token**. Pick your app. Tick **`ads_read`**.
-   Set expiry to **Never**.
-4. Copy the token. It is shown once.
+In **business.facebook.com → Business Settings**:
+
+1. **Users → System Users → Add**. Name it `chaptera-reporting`.
+   Role: **Employee** is enough.
+2. **Add Assets → Apps** → **Conversions API Application** → enable
+   **Develop app**. The existing app is fine; a second app is not needed.
+3. **Add Assets → Ad accounts** → **chapter அ advertisement**
+   (`1580469137074269`) → enable **View performance**.
+
+   **This is the step that is missing today.** The Conversions API system user
+   has Apps, Pixels and Datasets assigned but *no ad account at all*, which is
+   why no token from it can read spend regardless of scopes.
+4. **Generate New Token** → pick that app → tick **`ads_read`** only.
+   Set expiry to **Never**. Copy it; it is shown once.
+
+Do not give this user the pixels or datasets. It has no business touching them.
+
+If `ads_read` is not offered in the scope list at step 4, add the
+**Marketing API** product to the app in the App Dashboard, then retry.
 
 Then set it — replace the placeholder with the real value, and run this in your
 own terminal:
