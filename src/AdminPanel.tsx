@@ -10248,7 +10248,12 @@ export default function AdminPanel() {
           const totals: any = rep?.totals ?? {};
           const diag: any = rep?.diagnostics ?? {};
           const money = (n: any) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
-          const neverSynced = !diag.last_synced_at;
+          // "Has the sync ever run" comes from the sync log, never from row
+          // timestamps: a healthy sync of an account with no ads running writes
+          // no rows, and reading that as "not connected" tells you to redo setup
+          // you have already finished.
+          const neverSynced = !diag.last_sync_at;
+          const syncFailing = diag.last_sync_ok === false;
 
           // ── Cost-per-booking over time ───────────────────────────────────
           // Plots OUR cost per booking, not Meta's cost per result: the point of
@@ -10308,6 +10313,22 @@ export default function AdminPanel() {
                   {metaAdsLoading ? 'Loading…' : 'Refresh'}
                 </button>
               </div>
+
+              {/* The last sync failed. Shown above everything, because every
+                  number below it is then stale by an unknown amount. */}
+              {syncFailing && (
+                <div style={{ ...s.card, borderLeft: '4px solid #dc2626' }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 6, color: '#dc2626' }}>Last sync from Meta failed</div>
+                  <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.6 }}>
+                    <code style={{ fontSize: 12 }}>{diag.last_sync_error ?? 'unknown error'}</code>
+                    <div style={{ marginTop: 6 }}>
+                      Everything below is as of the last successful sync, so treat it as stale.
+                      Code <b>190</b> means the access token expired or was revoked; <b>200</b> or <b>294</b>
+                      {' '}means the system user lost access to the ad account.
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Setup state. Shown until the sync has ever run — an empty table
                   would otherwise read as "your ads produced nothing". */}
@@ -10494,8 +10515,16 @@ export default function AdminPanel() {
                     {Number(diag.bookings_with_no_spend_row) > 0 && (
                       <div>{diag.bookings_with_no_spend_row} bookings matched an ad we have no spend row for — the sync has not caught up yet.</div>
                     )}
+                    {Number(diag.ads_with_spend) === 0 && !syncFailing && (
+                      <div style={{ color: '#16a34a' }}>
+                        Connected to Meta. No ads have run in this window yet — numbers will appear here once they do.
+                      </div>
+                    )}
                     <div style={{ color: '#999' }}>
-                      Last synced from Meta: {diag.last_synced_at ? new Date(diag.last_synced_at).toLocaleString('en-IN') : 'never'}
+                      Last synced from Meta: {diag.last_sync_at ? new Date(diag.last_sync_at).toLocaleString('en-IN') : 'never'}
+                      {diag.last_row_synced_at && Number(diag.ads_with_spend) > 0
+                        ? ` · ad data as of ${new Date(diag.last_row_synced_at).toLocaleString('en-IN')}`
+                        : ''}
                     </div>
                   </div>
                 </div>

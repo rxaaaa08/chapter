@@ -267,7 +267,22 @@ select case when public.is_admin_strict() then jsonb_build_object(
     'bookings_with_no_spend_row', coalesce((
       select sum(our_leads) from per_ad where spend = 0 and our_leads > 0
     ), 0),
-    'last_synced_at', (select max(synced_at) from public.meta_ad_daily)
+    -- Whether the sync has EVER run, and how the last one went. Deliberately
+    -- NOT derived from meta_ad_daily: a healthy sync of an account with no ads
+    -- running writes no rows at all, so reading row timestamps as "have we
+    -- connected?" tells the founder to redo setup he has already finished.
+    'last_sync_at', (select max(ran_at) from public.meta_ads_sync_log),
+    'last_sync_ok', (select ok from public.meta_ads_sync_log order by ran_at desc limit 1),
+    -- Only the MOST RECENT run's error. A failure three days ago that has since
+    -- recovered is history, not a current problem.
+    'last_sync_error', (
+      select case when not ok then
+        coalesce(error_code, 'error') ||
+        case when error_detail is not null then ': ' || error_detail else '' end
+      end
+      from public.meta_ads_sync_log order by ran_at desc limit 1
+    ),
+    'last_row_synced_at', (select max(synced_at) from public.meta_ad_daily)
   )
 ) end;
 $function$;

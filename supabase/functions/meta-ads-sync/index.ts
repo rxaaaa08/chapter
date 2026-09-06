@@ -191,6 +191,28 @@ function istToday(): Date {
 
 Deno.serve(async (req) => {
   const started = Date.now();
+
+  // Created first so every exit path below can record what happened. A run
+  // that fails on missing credentials is exactly the run worth logging.
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  // Fire-and-forget by contract: a logging failure must never turn a working
+  // sync into a failed one.
+  const logRun = async (row: Record<string, unknown>) => {
+    try {
+      const { error } = await supabase.from('meta_ads_sync_log').insert({
+        duration_ms: Date.now() - started,
+        ...row,
+      });
+      if (error) console.error('[meta-ads-sync] could not write sync log', error.message);
+    } catch (e) {
+      console.error('[meta-ads-sync] could not write sync log', e instanceof Error ? e.message : String(e));
+    }
+  };
+
   try {
     const token = Deno.env.get('META_ADS_ACCESS_TOKEN');
     const accountId = Deno.env.get('META_AD_ACCOUNT_ID');
@@ -199,6 +221,7 @@ Deno.serve(async (req) => {
       // Loud, not silent: an unset secret is the single most likely reason this
       // function ever does nothing, and it must not look like "no ads ran".
       console.error('[meta-ads-sync] META_ADS_ACCESS_TOKEN or META_AD_ACCOUNT_ID not set — nothing synced');
+      await logRun({ ok: false, error_code: 'missing_credentials', error_detail: 'META_ADS_ACCESS_TOKEN or META_AD_ACCOUNT_ID is not set' });
       return new Response(
         JSON.stringify({ ok: false, error: 'missing_credentials' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } },
@@ -231,11 +254,6 @@ Deno.serve(async (req) => {
       since = isoDate(new Date(today.getTime() - LOOKBACK_DAYS * 86400000));
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
-
     let next: string | null =
       `https://graph.facebook.com/${API_VERSION}/act_${accountId}/insights` +
       `?level=ad&time_increment=1&limit=${PAGE_LIMIT}` +
@@ -251,6 +269,11 @@ Deno.serve(async (req) => {
       const page = await fetchPage(next);
 
       if (!page.ok) {
+        await logRun({
+          ok: false, since, until,
+          error_code: page.summary.meta_code != null ? String(page.summary.meta_code) : 'meta_api_error',
+          error_detail: page.summary.meta_message ?? null,
+        });
         return new Response(
           JSON.stringify({
             ok: false,
@@ -302,6 +325,7 @@ Deno.serve(async (req) => {
           .upsert(chunk, { onConflict: 'ad_id,date_start' });
         if (error) {
           console.error('[meta-ads-sync] upsert failed', error.message);
+          await logRun({ ok: false, since, until, rows_fetched: rows.length, rows_upserted: upserted, error_code: 'upsert_failed', error_detail: error.message });
           return new Response(
             JSON.stringify({ ok: false, error: 'upsert_failed', detail: error.message, upserted }),
             { status: 500, headers: { 'Content-Type': 'application/json' } },
@@ -320,12 +344,14 @@ Deno.serve(async (req) => {
       upserted,
       ms: Date.now() - started,
     };
+    await logRun({ ok: true, since, until, rows_fetched: rows.length, rows_upserted: upserted });
     console.log('[meta-ads-sync]', JSON.stringify(result));
     return new Response(JSON.stringify(result), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (e) {
     console.error('[meta-ads-sync] unhandled', e instanceof Error ? e.message : String(e));
+    await logRun({ ok: false, error_code: 'unhandled', error_detail: e instanceof Error ? e.message : String(e) });
     return new Response(
       JSON.stringify({ ok: false, error: 'unhandled' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
