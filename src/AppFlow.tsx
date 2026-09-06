@@ -4,6 +4,7 @@ import { getAffiliateRef } from './affiliate';
 import { getAttribution } from './attribution';
 import { setPixelUserData, getFbp, getFbc } from './metaPixel';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
+import { formatEventTimeRange } from './eventTime';
 import { TermsContent } from './TermsContent';
 import {
   timelineModel, defaultBookingSteps, resolveBookingStepsForDate,
@@ -4227,6 +4228,10 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
   const resolvedMeeting   = userPoint?.meetingSpot ?? userPoint?.label ?? '';
   const resolvedTransport = userPoint?.transport ?? '';
   const resolvedTime      = userPoint?.time ?? '';
+  // Turn the single start time + the Duration field into a range ("11am to 1pm")
+  // for short events. Falls back to the start time alone for multi-day trips or
+  // anything we can't parse, so nothing that works today changes.
+  const displayTime       = formatEventTimeRange(resolvedTime, event.timing) ?? resolvedTime;
 
   return (
     <div>
@@ -4260,7 +4265,7 @@ const JourneyCard = ({ event, startDate, meetingPoint }: { event: Event; city: s
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{weekday}</span>
           <span className="text-[44px] font-black text-gray-900 leading-none">{day}</span>
           <span className="text-[14px] font-black text-gray-900 leading-tight">{month}</span>
-          {resolvedTime && <span className="text-[13px] font-bold text-gray-900 mt-1.5">{resolvedTime}</span>}
+          {displayTime && <span className="text-[13px] font-bold text-gray-900 mt-1.5 text-center leading-tight">{displayTime}</span>}
         </div>
 
       </div>
