@@ -57,6 +57,7 @@ Mobile-first social-experiences booking webapp (React + Vite + TypeScript, Supab
 - For DB changes: show the user exactly what changed (`RETURNING`), and re-check with a SELECT.
 
 ## Workflow preferences
+- **Build systems for the scale we are heading to, not the scale we are at.** Owner-stated 2026-09-06, after a proposal was scoped down because no ad money had been spent yet. Current volume is NOT a reason to defer infrastructure — "we haven't spent anything on ads yet" is exactly when the measurement plumbing has to be laid, because data not captured on day 1 is gone forever and cannot be backfilled. Judge a proposal by whether it still holds at 50x the volume. Small *sample* is a legitimate caveat on reading a chart; it is never an argument against building the pipe that fills it. Say the caveat once, then build the thing.
 - One concern per commit; commit messages explain the *why*.
 - Ask before anything irreversible or outward-facing (pushes, deletes of non-test data, deploys).
 - On "continue where you left off": consult the auto-memory note `open-event-flow-design` first instead of re-exploring code.
