@@ -112,9 +112,16 @@ const PAY_AT_VENUE_DETAILS_WHEN = 'one week before the event';
 // the selected date's timeline when it supplies a date.
 function pickMeetingSpotStep(ev: any, selectedDate?: string | null): any {
   const eventLevel = Array.isArray(ev?.booking_steps) ? ev.booking_steps : [];
-  const index = eventLevel.findIndex((s: any) =>
-    /meeting\s*(spot|point)|you'?ll receive/i.test(`${s?.label ?? ''} ${s?.value ?? ''}`)
-  );
+  // The group-chat row of a pay-at-venue timeline also reads "you'll receive",
+  // so it has to be excluded explicitly — otherwise it wins this search (it sits
+  // at a lower index) and a date left on it becomes the "you'll get details by …"
+  // parameter of a WhatsApp message. Mirrors stepRole() in src/bookingTimeline.ts,
+  // which checks group-chat before meeting for the same reason.
+  const index = eventLevel.findIndex((s: any) => {
+    const hay = `${s?.label ?? ''} ${s?.value ?? ''}`;
+    if (/group[\s-]?chat/i.test(hay)) return false;
+    return /meeting\s*(spot|point)|you'?ll receive/i.test(hay);
+  });
   if (index < 0) return null;
   if (selectedDate && Array.isArray(ev?.event_dates)) {
     const row = ev.event_dates.find((d: any) => String(d?.start_date ?? '') === String(selectedDate));

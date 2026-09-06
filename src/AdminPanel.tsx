@@ -2,6 +2,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, parseHeroImages, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { dateKeyInTimeZone, isoDateKey, payuTripDateKey } from './dateKeys';
+import {
+  timelineModel, defaultBookingSteps, stepsMatchModel, carryStepDates,
+  isFixedTimeline as isFixedTimelineModel, stepBadge, stripDeadStepDates, BADGE_LABEL,
+} from './bookingTimeline';
 
 // Journey Map tab (React Flow) — lazy so the map library only downloads when
 // the tab is opened, never in the customer-facing bundle.
@@ -154,98 +158,20 @@ type PayuPayment = {
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-// Default native-application booking-timeline steps for a payment mode.
-// Single-pay = 4 rows (one entry payment); split = 5 rows (advance + balance).
-// Last row is the gold social-proof row (event title).
-function nativeDefaultBookingSteps(isFullPay: boolean, title: string, payAtVenue = false): Array<{ label: string; value: string; date: string }> {
-  const titleRow = { label: '{application_count} ppl have requested invitation', value: title || 'Your Plan Name', date: '' };
-  if (isFullPay) {
-    return [
-      { label: 'vibe check',            value: 'Request Invitation',      date: '' },
-      { label: "if you're invited",     value: '{price}',                 date: '' },
-      { label: "you'll receive exact",  value: 'Meeting Spot Details 📍', date: '' },
-      titleRow,
-    ];
-  }
-  // Invite + Pay at Venue: the open-event PAV story, but keeping the application
-  // step. The advance holds the spot → the group chat opens immediately (the
-  // trust step that makes settling in person feel safe) → the balance is settled
-  // at the venue. The meeting-spot row is dropped deliberately: details now
-  // arrive via the group chat the guest just joined. Group-chat sits at index 2,
-  // balance at 3 (open-PAV keeps balance at 2 — the extra invite row shifts it).
-  // Safe: the /invite chat greeting anchors PAV copy to the event date, not to
-  // booking_steps[2]/[3], and the /invite timeline is regex-, not index-, driven.
-  // Keep this in sync with the editor's inline nativeDefaultSteps.
-  if (payAtVenue) {
-    return [
-      { label: 'vibe check',                  value: 'Request Invitation',   date: '' },
-      { label: "if you're invited (advance)", value: '{advance}',            date: '' },
-      { label: "you'll receive",              value: 'plan group-chat link', date: '' },
-      { label: 'remaining balance',           value: '{balance}',            date: '' },
-      titleRow,
-    ];
-  }
-  return [
-    { label: 'vibe check',                  value: 'Request Invitation',      date: '' },
-    { label: "if you're invited (advance)", value: '{advance}',               date: '' },
-    { label: 'remaining balance',           value: '{balance}',               date: '' },
-    { label: "you'll receive exact",        value: 'Meeting Spot Details 📍', date: '' },
-    titleRow,
-  ];
+// The row tables, the "do these steps still describe this event" check and the
+// mode-switch regeneration all live in ./bookingTimeline now, shared with the
+// two customer-facing timelines. These thin wrappers keep the call sites here
+// reading the way they always did.
+
+function tripTimelineModel(trip: { booking_url?: string; payment_mode?: string; pay_at_venue?: boolean }) {
+  return timelineModel({ booking_url: trip.booking_url, payment_mode: trip.payment_mode, pay_at_venue: trip.pay_at_venue });
 }
 
-// True when stored steps structurally match the payment mode: split must have a
-// {balance} row; single must NOT. Used to auto-heal steps left over from a mode
-// switch (e.g. a single-pay event flipped to split keeps its old {price}-only rows).
-//
-// Pay at venue is checked too, and it has to be. Its timeline swaps the
-// meeting-spot row for a group-chat one, but steps saved BEFORE the toggle was
-// switched on still satisfy the {balance} test — so without this they'd be
-// reused verbatim and the guest would keep seeing a meeting-spot row with a
-// date that a pay-at-venue event doesn't have.
-function bookingStepsMatchMode(
-  steps: Array<{ label: string; value: string }> | undefined | null,
-  isFullPay: boolean,
-  payAtVenue = false,
-  inviteRow: 'require' | 'forbid' | 'any' = 'any',
-): boolean {
-  if (!steps?.length) return false;
-  const hay = (s: { label: string; value: string }) => `${s.label} ${s.value}`;
-  // The application row is what separates the two fixed timelines, and a flow
-  // flip (or an event copied across flows) leaves the old shape behind. Native
-  // (invite) events must HAVE that row; open events must NOT — without both
-  // checks the stale steps count as a "match" and are reused verbatim, which is
-  // how a copied event ended up showing the wrong flow's timeline in each
-  // direction.
-  const hasInviteRow = steps.some(s => /request invitation|vibe check/i.test(hay(s)));
-  if (inviteRow === 'require' && !hasInviteRow) return false;
-  if (inviteRow === 'forbid'  &&  hasInviteRow) return false;
-  const hasBalance = steps.some(s => /\{balance\}/i.test(hay(s)));
-  if (isFullPay) return !hasBalance;
-  if (!hasBalance) return false;
-  if (payAtVenue) return steps.some(s => /group[\s-]?chat/i.test(hay(s)));
-  return true;
-}
-
-// Rebuild steps for a new payment mode, preserving dates on the rows whose role
-// survives the switch (request-invitation, meeting-spot, social-proof). Only the
-// payment rows are structurally reset.
+// Rebuild steps for a new payment mode / pay-at-venue setting, preserving dates
+// on the rows whose role survives the switch. Payment rows reset structurally.
 function regenNativeBookingSteps(existing: Array<{ label: string; value: string; date: string }> | undefined, isFullPay: boolean, title: string, payAtVenue = false) {
-  const prevDate = (re: RegExp) => (existing ?? []).find(s => re.test(`${s.label} ${s.value}`))?.date ?? '';
-  const inviteDate  = prevDate(/request invitation|vibe check/i);
-  // Anchor the meeting date on the meeting-spot wording only. The pay-at-venue
-  // group-chat row also reads "you'll receive", so matching that here would let a
-  // (non-existent) group-chat date masquerade as a meeting date.
-  const meetingDate = prevDate(/meeting spot|meeting point/i);
-  const socialDate  = prevDate(/application_count/i);
-  return nativeDefaultBookingSteps(isFullPay, title, payAtVenue).map(s => {
-    const k = `${s.label} ${s.value}`;
-    if (/group[\s-]?chat/i.test(k))               return s; // group-chat row carries no date
-    if (/request invitation|vibe check/i.test(k)) return { ...s, date: inviteDate };
-    if (/meeting spot|you'?ll receive/i.test(k)) return { ...s, date: meetingDate };
-    if (/application_count/i.test(k))            return { ...s, date: socialDate };
-    return s; // payment rows reset to blank date
-  });
+  const model = { flow: 'invite' as const, fullPay: isFullPay, payAtVenue: !isFullPay && payAtVenue };
+  return carryStepDates(existing, defaultBookingSteps(model, title)) as Array<{ label: string; value: string; date: string }>;
 }
 
 const statusLabel = { available: 'Available', selling_out: 'Selling Out', sold_out: 'Sold Out' };
@@ -3846,83 +3772,27 @@ export default function AdminPanel() {
                       const perDateSteps = (activeDateRow as any)?.booking_steps as Array<{ label: string; value: string; date: string }> | undefined;
                       const isNativeApp = trip.booking_url === 'native-application';
                       const isOpenApp = trip.booking_url === 'payu-hosted';
+                      // Every question about this timeline's SHAPE — which rows exist,
+                      // which of them carry a date, what the fixed pills say — is
+                      // answered by ./bookingTimeline, the same module the two customer
+                      // timelines ask. That is what stops the editor from offering a
+                      // date picker on a row the guest never sees a date on.
+                      const model = tripTimelineModel(trip);
                       // Both invite (native) and open events use a FIXED-row timeline
                       // (no free-form add/remove). Open drops the invite "vibe check"
                       // application step (they pay immediately): split = 4 rows, single = 3.
-                      const isFixedTimeline = isNativeApp || isOpenApp;
-                      const isFullPay = trip.payment_mode === 'full';
+                      const isFixedTimeline = isFixedTimelineModel(model);
+                      const isFullPay = model.fullPay;
                       const saveTimelineForDate = isFixedTimeline && !!selectedDate;
                       const editKey = saveTimelineForDate ? `${trip.id}:${selectedDate}` : trip.id!;
-                      // Single-payment native events have no remaining-balance step (4 rows).
-                      const nativeDefaultSteps = isFullPay
-                        ? [
-                            { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
-                            { label: 'if you\'re invited',               value: '{price}',                 date: '' },
-                            { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
-                            { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
-                          ]
-                        : trip.pay_at_venue
-                        // Invite + Pay at Venue — mirrors nativeDefaultBookingSteps():
-                        // keep the application row, swap the meeting-spot row for the
-                        // group-chat trust step, settle the balance at the venue. Keep
-                        // the two definitions in sync.
-                        ? [
-                            { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
-                            { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
-                            { label: 'you\'ll receive',                   value: 'plan group-chat link',    date: '' },
-                            { label: 'remaining balance',                 value: '{balance}',               date: '' },
-                            { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
-                          ]
-                        : [
-                            { label: 'vibe check',                       value: 'Request Invitation',      date: '' },
-                            { label: 'if you\'re invited (advance)',      value: '{advance}',               date: '' },
-                            { label: 'remaining balance',                 value: '{balance}',               date: '' },
-                            { label: 'you\'ll receive exact',             value: 'Meeting Spot Details 📍', date: '' },
-                            { label: '{application_count} ppl have requested invitation', value: 'Your Plan Name',      date: '' },
-                          ];
-                      // Open events: no invitation step. Single (3): Payment → Meeting Point
-                      // Details → Event Date. Split (4): Advance → Balance → Meeting Point
-                      // Details → Event Date. The last row carries {application_count} so the
-                      // customer timeline pulls it out as the yellow Event Date card (its
-                      // count line is hidden for open — gated on isNativeApplicationFlow).
-                      const openDefaultSteps = isFullPay
-                        ? [
-                            { label: 'settle payment',       value: '{price}',                  date: '' },
-                            { label: "you'll receive exact", value: 'Meeting Spot Details 📍',   date: '' },
-                            { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
-                          ]
-                        : trip.pay_at_venue
-                        // Pay at venue tells a simpler story, so it gets its own four rows:
-                        // pay a small advance → you're in the group chat immediately → the rest
-                        // is settled in person → event day. The meeting-spot row is dropped
-                        // deliberately: details now arrive via the group chat the guest just
-                        // joined, so promising them separately is a step the guest doesn't need.
-                        // Balance stays third so booking_steps[2] still means "balance".
-                        ? [
-                            { label: 'pay advance',          value: '{advance}',                date: '' },
-                            { label: "you'll receive",       value: 'plan group-chat link',     date: '' },
-                            { label: 'remaining balance',    value: '{balance}',                date: '' },
-                            { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
-                          ]
-                        : [
-                            { label: 'Advance',              value: '{advance}',                date: '' },
-                            { label: 'remaining balance',    value: '{balance}',                date: '' },
-                            { label: "you'll receive exact", value: 'Meeting Point Details 📍',  date: '' },
-                            { label: '{application_count} going', value: 'Your Plan Name',        date: '' },
-                          ];
-                      // Auto-heal: only reuse stored steps if they match the current
-                      // payment mode (split needs a {balance} row, single must not).
-                      // Steps left over from a mode switch fall back to the mode default.
-                      const defaultSteps = isNativeApp
-                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay, !!trip.pay_at_venue, 'require') ? trip.booking_steps! : nativeDefaultSteps)
-                        : isOpenApp
-                        ? (bookingStepsMatchMode(trip.booking_steps, isFullPay, !!trip.pay_at_venue, 'forbid') ? trip.booking_steps! : openDefaultSteps)
-                        : trip.booking_steps ?? [
-                          { label: 'Advance', value: '{advance}', date: '' },
-                          { label: 'Remaining Balance', value: '{balance}', date: '' },
-                          { label: 'Receive', value: 'Pickup, stay & trip details', date: '' },
-                        ];
-                      const healedPerDateSteps = isFixedTimeline && !bookingStepsMatchMode(perDateSteps, isFullPay, !!trip.pay_at_venue, isNativeApp ? 'require' : 'forbid') ? undefined : perDateSteps;
+                      const modelDefaultSteps = defaultBookingSteps(model, trip.title ?? '') as Array<{ label: string; value: string; date: string }>;
+                      // Auto-heal: only reuse stored steps if they still describe this
+                      // event (an open event must not keep an invite event's application
+                      // row, a split one needs a balance row, pay-at-venue needs the
+                      // group-chat row). Steps left over from a mode switch or a copied
+                      // event fall back to the model's own table.
+                      const defaultSteps = stepsMatchModel(trip.booking_steps, model) ? trip.booking_steps! : modelDefaultSteps;
+                      const healedPerDateSteps = stepsMatchModel(perDateSteps, model) ? perDateSteps : undefined;
                       const rawStepsAll: Array<{ label: string; value: string; date: string }> =
                         timelineEdits[editKey] ?? (saveTimelineForDate ? (healedPerDateSteps ?? defaultSteps) : defaultSteps);
                       // Single-payment events drop the remaining-balance step in the editor too,
@@ -3930,17 +3800,12 @@ export default function AdminPanel() {
                       const rawSteps = isFullPay
                         ? rawStepsAll.filter(s => !/balance/i.test(`${s.label} ${s.value}`))
                         : rawStepsAll;
-                      // Native app events show a fixed row count — 4 for single-payment, else 5 —
-                      // padding missing steps from defaults. The last row defaults to the event title.
-                      // Fixed row count: invite full=4/split=5; open full=3/split=4.
-                      const fixedDefaults = isOpenApp ? openDefaultSteps : nativeDefaultSteps;
-                      const fixedRowCount = isOpenApp ? (isFullPay ? 3 : 4) : (isFullPay ? 4 : 5);
+                      // Fixed timelines show exactly the rows their model defines —
+                      // invite full=4/split=5, open full=3/split=4 — padding anything
+                      // missing from that model's own table rather than a hand-kept copy.
+                      const fixedRowCount = modelDefaultSteps.length;
                       const currentSteps: Array<{ label: string; value: string; date: string }> = isFixedTimeline
-                        ? Array.from({ length: fixedRowCount }, (_, i) => {
-                            if (rawSteps[i]) return rawSteps[i];
-                            const def = fixedDefaults[i];
-                            return i === fixedRowCount - 1 ? { ...def, value: trip.title ?? def.value } : def;
-                          })
+                        ? Array.from({ length: fixedRowCount }, (_, i) => rawSteps[i] ?? modelDefaultSteps[i])
                         : rawSteps;
                       // Open single-payment events always have two editable booking steps
                       // (pay now + meeting details). Their third stored row is the event-date
@@ -3997,12 +3862,14 @@ export default function AdminPanel() {
                                   disabled={savingTimeline === trip.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    // Pay at venue: strip any date left on the balance row so a
-                                    // value set before the toggle was switched on can't survive
-                                    // and feed a "pay by ..." date into the advance WhatsApp.
-                                    const stepsToSave = trip.pay_at_venue && !isFullPay
-                                      ? currentSteps.map(s => /\{balance\}/i.test(`${s.label} ${s.value}`) ? { ...s, date: '' } : s)
-                                      : currentSteps;
+                                    // Strip every date the customer will never see — the
+                                    // pay-at-venue balance row, the group-chat row, an invite
+                                    // event's payment row. They were editable for a long time,
+                                    // so real values are sitting in the database; leaving them
+                                    // there lets something that matches by wording (the "pay
+                                    // by …" and "details by …" WhatsApp parameters both do)
+                                    // pick up a date that no screen ever showed.
+                                    const stepsToSave = stripDeadStepDates(currentSteps, model) as Array<{ label: string; value: string; date: string }>;
                                     saveTimeline(trip, stepsToSave, saveTimelineForDate ? selectedDate : undefined, ctaEdits[trip.id!]);
                                   }}
                                 >
@@ -4019,16 +3886,20 @@ export default function AdminPanel() {
                             <div onClick={e => e.stopPropagation()}>
                           {editableSteps.map((step, i) => {
                             const isNowRow = i === 0;
-                            // Fixed-timeline (invite/open): first row (pay now / vibe check)
-                            // and last row (Event Date card) have no free date input.
-                            const nativeNoDate = isFixedTimeline && (i === 0 || (!isOpenSingleTimeline && i === currentSteps.length - 1));
-                            // Pay-at-venue collects the balance at the door, so the balance row
-                            // has no due date to set. Leaving the input here isn't just noise —
-                            // this date is what pickBalanceDueStep feeds into the "pay by ..."
-                            // parameter of the advance WhatsApp, so a stale value would tell the
-                            // guest to pay before the event. Show a static pill instead.
-                            const isVenueBalanceRow = !!trip.pay_at_venue && !isFullPay
-                              && /\{balance\}/i.test(`${step.label} ${step.value}`);
+                            // THE contract with the customer timeline: ask the shared module
+                            // what pill this row gets, and only offer a date input when the
+                            // answer is 'date'. Every other pill means the guest never sees a
+                            // date here, so an input would invite the admin to type one that
+                            // silently does nothing — which is exactly what the group-chat row
+                            // and every invite event's payment row used to do.
+                            const badge = stepBadge(step, i, model);
+                            // The last row of a fixed timeline is the gold event-date card, and
+                            // its date is the event date itself — picked with the dropdown, not
+                            // typed. Keyed on POSITION, not on the {application_count} marker:
+                            // the label is a live text input, so a marker-based test would swap
+                            // the date dropdown for a date picker mid-keystroke while the admin
+                            // is rewriting that row's wording.
+                            const isEventDateRow = isFixedTimeline && !isOpenSingleTimeline && i === currentSteps.length - 1;
                             return (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f9f9f7', border: `1px solid ${isFixedTimeline ? '#e0e7ff' : '#ebebeb'}`, borderRadius: 10, marginBottom: 6 }}>
                                 {/* Left: label + value stacked */}
@@ -4041,32 +3912,49 @@ export default function AdminPanel() {
                                   />
                                   <input
                                     style={{ display: 'block', width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 15, fontWeight: 700, color: '#111', padding: 0 }}
-                                    placeholder={i === (isOpenApp ? 0 : 1) ? (isFullPay ? '{price}' : '{advance}') : (!isFullPay && i === (isOpenApp ? 1 : 2)) ? '{balance}' : 'Value or text'}
+                                    placeholder={modelDefaultSteps[i]?.value || 'Value or text'}
                                     value={step.value}
                                     onChange={e => setStep(i, { value: e.target.value })}
                                   />
                                 </div>
                                 {/* Right: date or fixed pill */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                                  {nativeNoDate
-                                    ? i === 0
-                                      ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
-                                      : <select
-                                          value={selectedDate}
-                                          onChange={e => setSelectedTimelineDates(prev => ({ ...prev, [trip.id!]: e.target.value }))}
-                                          style={{ border: '1.5px solid #FFD700', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 700, color: '#111', background: '#FFF9D6', outline: 'none', appearance: 'none', WebkitAppearance: 'none', cursor: hasMultipleDates ? 'pointer' : 'default', opacity: hasMultipleDates ? 1 : 0.85 }}
-                                          disabled={!hasMultipleDates}
-                                        >
-                                          {sortedDates.map(d => (
-                                            <option key={d.start_date} value={d.start_date}>
-                                              {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                            </option>
-                                          ))}
-                                        </select>
-                                    : isNowRow && !isFixedTimeline
-                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>Now</span>
-                                    : isVenueBalanceRow
-                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>At the Venue</span>
+                                  {isEventDateRow
+                                    // Gold dropdown: the event date, and the switch that
+                                    // chooses WHICH date's timeline is being edited.
+                                    ? <select
+                                        value={selectedDate}
+                                        onChange={e => setSelectedTimelineDates(prev => ({ ...prev, [trip.id!]: e.target.value }))}
+                                        style={{ border: '1.5px solid #FFD700', borderRadius: 8, padding: '5px 28px 5px 10px', fontSize: 12, fontWeight: 700, color: '#111', background: '#FFF9D6', outline: 'none', appearance: 'none', WebkitAppearance: 'none', cursor: hasMultipleDates ? 'pointer' : 'default', opacity: hasMultipleDates ? 1 : 0.85 }}
+                                        disabled={!hasMultipleDates}
+                                      >
+                                        {sortedDates.map(d => (
+                                          <option key={d.start_date} value={d.start_date}>
+                                            {new Date(`${d.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    : badge === 'now'
+                                    // Same iOS-green as the live timelines' "Now" pill (#34C759 @ 10%/30%).
+                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#34C759', background: 'rgba(52,199,89,0.1)', border: '1px solid rgba(52,199,89,0.3)', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>{BADGE_LABEL.now}</span>
+                                    : badge === 'after-invitation'
+                                    // The guest cannot pay before an invitation arrives, so this
+                                    // row has no deadline — the live timeline shows this exact pill.
+                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>{BADGE_LABEL['after-invitation']}</span>
+                                    : badge === 'after-advance'
+                                    // The group chat opens the moment the advance lands. A date
+                                    // typed here was never shown to anyone, and worse, the
+                                    // "you'll get details by …" WhatsApp parameter matches on
+                                    // "you'll receive" — which this row also says.
+                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>{BADGE_LABEL['after-advance']}</span>
+                                    : badge === 'at-venue'
+                                    // Pay-at-venue collects the balance at the door. This date is
+                                    // what pickBalanceDueStep feeds into the "pay by …" parameter
+                                    // of the advance WhatsApp, so a stale value would tell the
+                                    // guest to pay before the event.
+                                    // Grey, exactly like the live /plans and /invite timelines —
+                                    // "At the Venue" is a plain status pill there, not a coloured one.
+                                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>{BADGE_LABEL['at-venue']}</span>
                                     : <input
                                         type="date"
                                         style={{ border: '1px solid #ddd', borderRadius: 8, padding: '5px 8px', fontSize: 12, color: '#111', background: '#fff', outline: 'none', cursor: 'pointer', fontWeight: 600 }}

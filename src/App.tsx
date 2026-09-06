@@ -8,6 +8,10 @@ import AdminPanel from './AdminPanel';
 import CreatorDashboard from './CreatorDashboard';
 import TeamOnboarding from './TeamOnboarding';
 import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
+import {
+  timelineModel, resolveBookingStepsForDate, isFixedTimeline as isFixedTimelineModel,
+  stepRole, stepBadge, BADGE_LABEL,
+} from './bookingTimeline';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
 import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
@@ -1413,16 +1417,19 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
     const includedList: string[] = Array.isArray(_cd?.included) ? _cd.included : (Array.isArray(event.included) ? event.included : []);
     const itinerary: any[] = Array.isArray(_cd?.itinerary) ? _cd.itinerary : (Array.isArray(event.itinerary) ? event.itinerary : []);
 
-    const dateBookingSteps = Array.isArray((matchedDateRow as any)?.booking_steps)
-      ? (matchedDateRow as any).booking_steps.filter((s: any) =>
-          String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
-        )
+    const nonBlank = (steps: any) => Array.isArray(steps)
+      ? steps.filter((s: any) => String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== '')
       : [];
-    const eventBookingSteps = Array.isArray(event.booking_steps)
-      ? event.booking_steps.filter((s: any) =>
-          String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
-        )
-      : [];
+    const dateBookingSteps = nonBlank((matchedDateRow as any)?.booking_steps);
+    const eventBookingSteps = nonBlank(event.booking_steps);
+    // Heal steps that no longer describe this event before anything reads them —
+    // the same check the admin editor runs. Without it, an event whose payment
+    // mode or pay-at-venue toggle changed after its timeline was last saved
+    // serves the OLD shape here while the editor previews the new one.
+    const timelineM = timelineModel(event);
+    const resolvedBookingSteps = isFixedTimelineModel(timelineM)
+      ? resolveBookingStepsForDate(dateBookingSteps, eventBookingSteps, timelineM, event.title ?? '')
+      : (dateBookingSteps.length > 0 ? dateBookingSteps : eventBookingSteps);
 
     setNativeEventData({
       // Amount to pay now: full price for single-payment events, otherwise the
@@ -1452,9 +1459,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
       // Prefer the per-date booking_steps (admins set different settle/balance
       // dates per cohort). Falls back to the event-level steps when a date
       // hasn't been customised yet.
-      bookingSteps: dateBookingSteps.length > 0
-        ? dateBookingSteps
-        : eventBookingSteps.length > 0 ? eventBookingSteps : undefined,
+      bookingSteps: resolvedBookingSteps.length > 0 ? resolvedBookingSteps : undefined,
       announcements: Array.isArray(event.announcements) ? event.announcements.filter(Boolean) : [],
       planDetails: {
         quickInfo: Array.isArray(event.quick_info) ? event.quick_info : [],
@@ -2638,8 +2643,13 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               : null;
             const applicationPhrase = socialProofCount !== null ? String(socialProofCount) : 'all';
 
-            // Step index 3 is always "Get Meeting Point Details" in native application events
-            const meetingPointDate = nativeEventData?.bookingSteps?.[3]?.date ?? null;
+            // Located by ROLE, never by index. Index 3 is the meeting-spot row on an
+            // invite SPLIT event but the gold event-date row on an invite
+            // single-payment one — so reading position 3 silently blanked this date
+            // for every single-payment event, and the greeting fell back to "soon"
+            // even though the admin had filled the date in.
+            const meetingPointDate = (nativeEventData?.bookingSteps ?? [])
+              .find(s => stepRole(s) === 'meeting')?.date || null;
             const formatMeetingDate = (iso: string): string => {
               const d = new Date(`${iso}T00:00:00`);
               if (isNaN(d.getTime())) return iso;
@@ -2650,9 +2660,12 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               return `${dayName}, ${month} ${day}${suffix}`;
             };
             const meetingPointDateFormatted = meetingPointDate ? formatMeetingDate(meetingPointDate) : null;
-            // Step index 2 is the balance-settle step — used for the "settle balance
-            // by {date}" line an open-event advance-paid lead sees.
-            const balanceDate = nativeEventData?.bookingSteps?.[2]?.date ?? null;
+            // The balance-settle row — used for the "settle balance by {date}" line an
+            // advance-paid lead sees. By role for the same reason as above: index 2
+            // is the balance row on a split invite event and the meeting-spot row on
+            // a single-payment one.
+            const balanceDate = (nativeEventData?.bookingSteps ?? [])
+              .find(s => stepRole(s) === 'balance')?.date || null;
             const balanceDateFormatted = balanceDate ? formatMeetingDate(balanceDate) : null;
             // The plan's own date — pay-at-venue copy anchors "details a few days
             // before ..." to the event itself rather than to a balance deadline,
@@ -3108,6 +3121,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               isBalancePayment={nativeEventData.isBalancePayment}
               isFullPay={nativeEventData.paymentMode === 'full'}
               payAtVenue={nativeEventData.payAtVenue ?? false}
+              isOpenEvent={nativeEventData.isOpenEvent ?? false}
               inviteSlug={nativeEventData.inviteSlug}
               eventSlug={nativeEventData.eventSlug}
               inviteSpots={nativeEventData.inviteSpots}
@@ -3493,6 +3507,7 @@ function NativeBookingTimeline({
   isBalancePayment = false,
   isFullPay = false,
   payAtVenue = false,
+  isOpenEvent = false,
   inviteSlug,
   eventSlug,
   inviteSpots,
@@ -3513,6 +3528,10 @@ function NativeBookingTimeline({
   isFullPay?: boolean;
   // Balance is settled in person at the event: no due date, no countdown.
   payAtVenue?: boolean;
+  // Open events reach this sheet through a cart-abandon / recovery deep-link.
+  // Passed so the shared badge rules know which flow this timeline belongs to
+  // rather than assuming every sheet here is an invite.
+  isOpenEvent?: boolean;
   inviteSlug?: string;
   eventSlug?: string;
   inviteSpots?: number | null;
@@ -3562,6 +3581,14 @@ function NativeBookingTimeline({
      .replace(/\{price\}/gi, priceStr)
      .replace(/\{application_count\}/gi, countStr ?? '__')
      .replace(/\b__\b/g, countStr ?? '__');
+  // Same model the admin editor and the /plans timeline use, so the pills on
+  // this sheet cannot disagree with either of them.
+  const timelineM = timelineModel({
+    booking_url: isOpenEvent ? 'payu-hosted' : 'native-application',
+    payment_mode: isFullPay ? 'full' : 'split',
+    pay_at_venue: payAtVenue,
+  });
+
   const isTimelineMetaStep = (step: { label?: string; value?: string }) => {
     const label = String(step.label ?? '').trim();
     const value = String(step.value ?? '').trim();
@@ -3785,14 +3812,17 @@ function NativeBookingTimeline({
               // Balance row before the advance is paid (the isBalanceDueRow branch
               // above only covers the post-advance bill). Without this the row
               // renders bare, since pay-at-venue rows carry no date.
-              const isVenueBalanceRow = !isNowRow && payAtVenue && !isFullPay
-                && /balance/i.test(`${step.label} ${step.value}`);
+              // The shared badge rules — the same call the admin editor makes, so a
+              // row it shows as "At the Venue" or "After Advance" can never grow a
+              // date here. Rows 0 and 1 of a balance bill keep their own stage
+              // badges (✓ Paid / the countdown), which are checked first below.
+              const badge = stepBadge(step, si, timelineM);
+              const isVenueBalanceRow = badge === 'at-venue';
               // Pay-at-venue group-chat row (kept in the invited/unpaid timeline):
               // it opens right after the advance, so it gets the same "After Advance"
               // pill and WhatsApp mark as the /plans timeline.
-              const isGroupChatRow = !isNowRow && payAtVenue
-                && /group[\s-]?chat/i.test(`${step.label} ${step.value}`);
-              const stepDateLabel = !isNowRow && step.date && !isBalanceDueRow && !isVenueBalanceRow
+              const isGroupChatRow = badge === 'after-advance';
+              const stepDateLabel = badge === 'date' && step.date && !isBalanceDueRow
                 ? `by ${new Date(`${step.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                 : null;
               return (
@@ -3811,15 +3841,19 @@ function NativeBookingTimeline({
                     </span>
                   ) : isNowRow ? (
                     <span className="text-[11px] font-semibold text-[#34C759] bg-[#34C759]/10 border border-[#34C759]/30 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                      Now
+                      {BADGE_LABEL.now}
                     </span>
                   ) : isGroupChatRow ? (
                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                      After Advance
+                      {BADGE_LABEL['after-advance']}
                     </span>
                   ) : isVenueBalanceRow ? (
                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
-                      At the Venue
+                      {BADGE_LABEL['at-venue']}
+                    </span>
+                  ) : badge === 'after-invitation' ? (
+                    <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
+                      {BADGE_LABEL['after-invitation']}
                     </span>
                   ) : stepDateLabel ? (
                     <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-3">
@@ -3930,16 +3964,16 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
           const sortedDates = [...dates].sort((a: any, b: any) => String(a.start_date ?? '').localeCompare(String(b.start_date ?? '')));
           const firstDateRow = sortedDates.find((d: any) => String(d.start_date ?? '')) ?? null;
           const firstDate = String(firstDateRow?.start_date ?? '');
-          const dateBookingSteps = Array.isArray(firstDateRow?.booking_steps)
-            ? firstDateRow.booking_steps.filter((s: any) =>
-                String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
-              )
+          const nonBlank = (steps: any) => Array.isArray(steps)
+            ? steps.filter((s: any) => String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== '')
             : [];
-          const eventBookingSteps = Array.isArray(data.booking_steps)
-            ? data.booking_steps.filter((s: any) =>
-                String(s?.label ?? '').trim() !== '' || String(s?.value ?? '').trim() !== ''
-              )
-            : [];
+          const dateBookingSteps = nonBlank(firstDateRow?.booking_steps);
+          const eventBookingSteps = nonBlank(data.booking_steps);
+          // Same heal-on-read as the invite chat loader above.
+          const timelineM = timelineModel(data);
+          const resolvedBookingSteps = isFixedTimelineModel(timelineM)
+            ? resolveBookingStepsForDate(dateBookingSteps, eventBookingSteps, timelineM, data.title ?? '')
+            : (dateBookingSteps.length > 0 ? dateBookingSteps : eventBookingSteps);
           setEventInfo({
             bookingUrl: data.booking_url ?? '',
             priceAdvance: Number(data.price_advance ?? 0),
@@ -3948,9 +3982,7 @@ function InviteFlow({ slug, initialPosterLoaded = false }: { slug: string; initi
             payAtVenue: data.pay_at_venue ?? false,
             title: data.title ?? '',
             firstDate,
-            bookingSteps: dateBookingSteps.length > 0
-              ? dateBookingSteps
-              : eventBookingSteps.length > 0 ? eventBookingSteps : undefined,
+            bookingSteps: resolvedBookingSteps.length > 0 ? resolvedBookingSteps : undefined,
             inviteSpots: data.invite_spots ?? null,
             eventSlug: data.slug ?? slug,
             inviteSlug: data.invite_slug ?? data.slug ?? slug,
@@ -4347,11 +4379,10 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
       const steps: any[] = (Array.isArray(perDate) && perDate.length > 0)
         ? perDate
         : (Array.isArray(ev?.bookingSteps) ? ev.bookingSteps : []);
-      const isOpen = ev?.bookingUrl === 'payu-hosted';
       const isFull = (ev?.paymentMode ?? 'split') === 'full';
-      // Pay at venue reshapes the timeline (group-chat row replaces meeting-spot,
-      // balance moves to index 2) and carries no dates at all, so these fixed
-      // indexes don't apply — they'd read the wrong rows. The copy needs neither.
+      // Pay at venue carries no dates at all — the balance is settled at the door
+      // and the group chat opens on payment — so this warm note has neither a
+      // balance deadline nor a details date to quote.
       const isPayAtVenue = !!(ev as any)?.payAtVenue && !isFull;
       setWarmPayAtVenue(isPayAtVenue);
       // Group-chat link on the receipt — pay-at-venue events, on the advance.
@@ -4373,10 +4404,13 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
       const groupUnlocked = isPayAtVenue && payment?.payment_type === 'advance';
       setGroupUrl(groupUnlocked ? String(groupDateRow?.whatsappGroupUrl ?? '') : '');
       if (isPayAtVenue) { setBalanceDate(''); setDetailsDate(''); return; }
-      const balanceIdx = isFull ? -1 : (isOpen ? 1 : 2);          // full-pay flows have no balance step
-      const detailsIdx = isOpen ? (isFull ? 1 : 2) : (isFull ? 2 : 3);
-      setBalanceDate(balanceIdx >= 0 ? fmt(steps[balanceIdx]?.date) : '');
-      setDetailsDate(fmt(steps[detailsIdx]?.date));
+      // By role, not by index: those indexes were a table of six positions that had
+      // to be kept in step with every shape change, and the shapes have changed
+      // twice since it was written.
+      const dateForRole = (role: 'balance' | 'meeting') =>
+        fmt(steps.find((s: any) => stepRole(s) === role)?.date ?? '');
+      setBalanceDate(isFull ? '' : dateForRole('balance'));   // full-pay flows have no balance step
+      setDetailsDate(dateForRole('meeting'));
     })
       .catch(() => { /* silent — warm note just drops the date clause */ })
       .finally(() => { if (!cancelled) setLookupDoneFor(String(slug)); });
