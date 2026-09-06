@@ -190,10 +190,26 @@ async function sendOtpViaWhatsApp(phone: string, otp: string, name: string): Pro
 // allowed to throw -- logging must not be able to fail a booking.
 // The OTP itself is deliberately NOT logged.
 async function logOtpSend(supabase: any, args: {
-  provider: string; messageId: string | null; phone: string;
+  provider: string; messageId: string | null; phone: string; eventSlug: string;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
+  // Attach the send to this event's booking when one already exists. Without it
+  // the row is attributed by phone alone, and a guest with more than one booking
+  // has that ignored entirely by the reader -- so their verification lane would
+  // show nothing rather than the truth.
+  //
+  // Often there IS no application yet: on open events the row is created around
+  // payment, and the code goes out before that. Null is the honest answer then,
+  // and the backfill rule picks it up later for single-booking numbers.
+  let applicationId: string | null = null;
+  try {
+    const { data: row } = await supabase
+      .from('applications').select('id')
+      .eq('event_slug', args.eventSlug).eq('phone', args.phone)
+      .maybeSingle();
+    applicationId = row?.id ?? null;
+  } catch { /* best effort: never allowed to fail a booking */ }
   try {
     await supabase.rpc('log_whatsapp_send', {
       p_secret: secret,
@@ -205,9 +221,44 @@ async function logOtpSend(supabase: any, args: {
       p_ok: true,
       p_http_status: 200,
       p_raw: null,
+      p_application_id: applicationId,
     });
   } catch (err) {
     console.error('[open-event-otp] send log failed', err);
+  }
+}
+
+// The email twin of logOtpSend. Verification codes are deliberately claimed with
+// NO application id: a resend is legitimate (rate limited to 2 per 10 minutes
+// elsewhere), so this kind is excluded from the one-shot index in email_sends.
+// Claiming it against a lead would block the second code and kill the booking.
+//
+// The OTP itself is never logged -- only that a code went out, and where to.
+async function logOtpEmail(supabase: any, args: {
+  email: string; messageId: string | null; ok: boolean; httpStatus: number;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return;
+  try {
+    const { data, error } = await supabase.rpc('claim_email_send', {
+      p_secret: secret,
+      p_kind: 'verification_code',
+      p_to_email: args.email,
+      p_application_id: null,
+      p_bill_open_id: null,
+      p_subject: 'Verification code',
+      p_sent_by: null,
+    });
+    if (error || data === null) {
+      if (error) console.error('[open-event-otp] email claim failed', error);
+      return;
+    }
+    await supabase.rpc('log_email_send', {
+      p_secret: secret, p_id: data, p_message_id: args.messageId,
+      p_ok: args.ok, p_http_status: args.httpStatus, p_raw: null,
+    });
+  } catch (err) {
+    console.error('[open-event-otp] email send log failed', err);
   }
 }
 
@@ -343,7 +394,7 @@ Deno.serve(async (req) => {
           return reply(502, { error: 'We could not send your WhatsApp code. Please try again.' }, cors);
         }
         console.log('[open-event-otp] OTP sent via', sent.provider);
-        await logOtpSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone });
+        await logOtpSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone, eventSlug: event.slug });
       } else {
         const apiKey = Deno.env.get('BREVO_API_KEY');
         if (!apiKey) {
@@ -374,6 +425,12 @@ Deno.serve(async (req) => {
           await supabase.from('open_event_otp_sessions').delete().eq('verification_token', verificationToken);
           return reply(502, { error: 'We could not send your verification email. Please try again.' }, cors);
         }
+        // Logged only after Brevo accepted it, so a rejected code leaves no row.
+        let otpMessageId: string | null = null;
+        try { otpMessageId = responseText ? (JSON.parse(responseText)?.messageId ?? null) : null; } catch { /* keep raw for logs */ }
+        await logOtpEmail(supabase, {
+          email, messageId: otpMessageId, ok: true, httpStatus: emailRes.status,
+        });
       }
     } catch (error) {
       console.error(`[open-event-otp] ${delivery} request failed`, error);

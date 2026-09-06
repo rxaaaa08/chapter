@@ -206,7 +206,7 @@ async function sendCartAbandonWhatsApp(args: {
 // Optional: skipped when the secret is unset, and never allowed to throw --
 // logging must not be able to fail or delay a nudge.
 async function logCartAbandonSend(supabase: any, args: {
-  provider: string; messageId: string | null; phone: string;
+  provider: string; messageId: string | null; phone: string; applicationId?: string | null;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
@@ -215,6 +215,9 @@ async function logCartAbandonSend(supabase: any, args: {
       p_secret: secret, p_provider: args.provider, p_message_id: args.messageId,
       p_to: args.phone, p_template: 'cart_abandon', p_variables: null,
       p_ok: true, p_http_status: 200, p_raw: null,
+      // Attribute to the booking, not just the phone -- a repeat guest would
+      // otherwise show this nudge on every lead they have.
+      p_application_id: args.applicationId ?? null,
     });
   } catch (err) {
     console.error('[cart-abandonment] send log failed:', err);
@@ -223,11 +226,11 @@ async function logCartAbandonSend(supabase: any, args: {
 
 async function sendCartAbandonEmail(args: {
   email: string; userName: string; eventName: string; contactUrl: string;
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; messageId: string | null; status: number }> {
   const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
   if (!BREVO_API_KEY) {
     console.warn('[cart-abandonment] BREVO_API_KEY not set, skipping email');
-    return false;
+    return { ok: false, messageId: null, status: 0 };
   }
   const contactUrl  = args.contactUrl;
   const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
@@ -246,28 +249,112 @@ async function sendCartAbandonEmail(args: {
     });
     const ok = res.status >= 200 && res.status < 300;
     const body = await res.text().catch(() => '');
+    // Brevo's messageId is what the delivery callbacks attach to. Without it an
+    // event can only be matched back by guessing at the address.
+    let messageId: string | null = null;
+    try { messageId = body ? (JSON.parse(body)?.messageId ?? null) : null; } catch { /* keep raw for logs */ }
     console.log('[cart-abandonment] brevo email:', { to_tail: args.email.slice(-8), status: res.status, ok, body: body.slice(0, 120) });
-    return ok;
+    return { ok, messageId, status: res.status };
   } catch (err) {
     console.error('[cart-abandonment] brevo email failed:', err);
-    return false;
+    return { ok: false, messageId: null, status: 0 };
+  }
+}
+
+// ── Email send log ───────────────────────────────────────────────────────────
+// The email twin of logCartAbandonSend above. Claim a row in email_sends, send,
+// then stamp it with Brevo's message id so delivery callbacks have something to
+// attach to. Nudges are claimed against the BILL OPEN, not the application: the
+// same person can abandon the same event twice and should be nudged twice.
+//
+// Duplicated per function rather than shared: _shared/ is bundled at DEPLOY
+// time, so editing it leaves already-deployed callers on an old copy, silently.
+//
+// Best-effort throughout -- logging must never delay or fail a nudge.
+async function claimEmailSend(supabase: any, args: {
+  kind: string; toEmail: string; applicationId?: string | null;
+  billOpenId?: string | null; subject?: string | null;
+}): Promise<number | null> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return null;
+  try {
+    const { data, error } = await supabase.rpc('claim_email_send', {
+      p_secret: secret,
+      p_kind: args.kind,
+      p_to_email: args.toEmail,
+      p_application_id: args.applicationId ?? null,
+      p_bill_open_id: args.billOpenId ?? null,
+      p_subject: args.subject ?? null,
+      p_sent_by: null,
+    });
+    if (error) { console.error('[cart-abandonment] email claim failed:', error); return null; }
+    // null means someone already claimed this send, so the row exists. Not an
+    // error, and not a reason to skip: cart_abandon_email_sent still decides.
+    return (data as number | null) ?? null;
+  } catch (err) {
+    console.error('[cart-abandonment] email claim threw:', err);
+    return null;
+  }
+}
+
+async function logEmailSend(supabase: any, args: {
+  id: number | null; messageId: string | null; ok: boolean; httpStatus: number;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret || args.id === null) return;
+  try {
+    await supabase.rpc('log_email_send', {
+      p_secret: secret, p_id: args.id, p_message_id: args.messageId,
+      p_ok: args.ok, p_http_status: args.httpStatus, p_raw: null,
+    });
+  } catch (err) {
+    console.error('[cart-abandonment] email send log failed:', err);
+  }
+}
+
+async function releaseEmailSend(supabase: any, id: number | null): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret || id === null) return;
+  try {
+    await supabase.rpc('release_email_send', { p_secret: secret, p_id: id });
+  } catch (err) {
+    console.error('[cart-abandonment] email release failed:', err);
   }
 }
 
 async function maybeSendCartAbandonEmail(
   supabase: ReturnType<typeof createClient>,
   row: { id: string; event_title?: string | null; cart_abandon_email_sent?: boolean; phone: string },
-  args: { email: string; userName: string },
+  args: { email: string; userName: string; applicationId?: string | null },
 ): Promise<void> {
   if (!args.email || row.cart_abandon_email_sent) return;
   const baseUrl = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
   const contactUrl = buildInviteContactUrl(baseUrl, row.phone, args.userName);
-  const emailed = await sendCartAbandonEmail({
+  const eventName = row.event_title || 'our next experience';
+  // cart_abandon_email_sent above is still the authority on whether to send.
+  // This claim only creates the log row, so a logging outage cannot swallow a
+  // nudge. Phase 5c flips the authority to this table.
+  const logId = await claimEmailSend(supabase, {
+    kind: 'nudge',
+    toEmail: args.email,
+    applicationId: args.applicationId ?? null,
+    billOpenId: row.id,
+    subject: `We don't want you to miss our ${eventName}…`,
+  });
+  const sent = await sendCartAbandonEmail({
     email: args.email,
     userName: args.userName,
-    eventName: row.event_title || 'our next experience',
+    eventName,
     contactUrl,
   });
+  const emailed = sent.ok;
+  if (emailed) {
+    await logEmailSend(supabase, {
+      id: logId, messageId: sent.messageId, ok: true, httpStatus: sent.status,
+    });
+  } else {
+    await releaseEmailSend(supabase, logId);
+  }
   if (emailed) {
     await supabase
       .from('bill_opens')
@@ -360,12 +447,12 @@ Deno.serve(async (req) => {
     // Application row drives skip logic and template params (name, date, email).
     const { data: appRows } = await supabase
       .from('applications')
-      .select('name, selected_date, email, status, aisensy_payment_failed_sent')
+      .select('id, name, selected_date, email, status, aisensy_payment_failed_sent')
       .eq('phone', row.phone)
       .eq('event_slug', row.event_slug)
       .limit(1);
     const app = appRows?.[0] as {
-      name?: string; selected_date?: string | null; email?: string | null;
+      id?: string; name?: string; selected_date?: string | null; email?: string | null;
       status?: string; aisensy_payment_failed_sent?: boolean;
     } | undefined;
 
@@ -450,7 +537,7 @@ Deno.serve(async (req) => {
         if (sent_) {
           await supabase.from('bill_opens').update({ cart_abandonment_sent: true }).eq('id', row.id);
           sent++;
-          await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone });
+          await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone, applicationId: app?.id ?? null });
         }
       }
       // Email channel (open events with an email on file). Runs AFTER WhatsApp
@@ -458,6 +545,7 @@ Deno.serve(async (req) => {
       await maybeSendCartAbandonEmail(supabase, row, {
         email: applicantEmail,
         userName: displayName,
+        applicationId: app?.id ?? null,
       });
       continue;
     }
@@ -477,7 +565,7 @@ Deno.serve(async (req) => {
       if (sent_) {
         await supabase.from('bill_opens').update({ cart_abandonment_sent: true }).eq('id', row.id);
         sent++;
-        await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone });
+        await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone, applicationId: app?.id ?? null });
       }
     }
 
@@ -488,6 +576,7 @@ Deno.serve(async (req) => {
     await maybeSendCartAbandonEmail(supabase, row, {
       email: applicantEmail,
       userName: displayName,
+      applicationId: app?.id ?? null,
     });
   }
 

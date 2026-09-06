@@ -242,11 +242,11 @@ function paymentFailureEmailHtml(args: {
 
 async function sendPaymentFailureEmail(args: {
   email: string; userName: string; amount: string; contactUrl: string; source: string;
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; messageId: string | null; status: number }> {
   const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
   if (!BREVO_API_KEY) {
     console.warn(`[${args.source} payment_failed_email] BREVO_API_KEY not set, skipping email`);
-    return false;
+    return { ok: false, messageId: null, status: 0 };
   }
   const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'info@chaptera.in';
   const senderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'chapter அ';
@@ -264,11 +264,82 @@ async function sendPaymentFailureEmail(args: {
     });
     const ok = res.status >= 200 && res.status < 300;
     const body = await res.text().catch(() => '');
+    // Brevo returns { messageId } on accept. Nothing used to read it, which is
+    // exactly why email had no equivalent of the WhatsApp delivery chain: with
+    // no id, a callback can only be matched back by guessing at the address.
+    let messageId: string | null = null;
+    try { messageId = body ? (JSON.parse(body)?.messageId ?? null) : null; } catch { /* keep raw for logs */ }
     console.log(`[${args.source} payment_failed_email] brevo response:`, { to_tail: args.email.slice(-8), status: res.status, ok, body: body.slice(0, 120) });
-    return ok;
+    return { ok, messageId, status: res.status };
   } catch (err) {
     console.error(`[${args.source} payment_failed_email] brevo failed:`, err);
-    return false;
+    return { ok: false, messageId: null, status: 0 };
+  }
+}
+
+// ── Email send log ─────────────────────────────────────────────────────
+// The email half of the delivery chain, mirroring logPaidSend above: claim a row
+// in email_sends, send, then stamp it with Brevo's message id so the delivery
+// callbacks have something to attach to.
+//
+// Deliberately duplicated across payu-callback, payu-webhook and
+// verify-pending-payments rather than living in _shared/: that folder is bundled
+// at DEPLOY time, so editing it silently leaves already-deployed callers on an
+// old copy. Three visible copies beat one invisible drift.
+//
+// Every function here is best-effort and swallows its own errors. Logging must
+// never be able to fail or delay a payment notification.
+async function claimEmailSend(supabase: any, args: {
+  kind: string; toEmail: string; applicationId?: string | null;
+  billOpenId?: string | null; subject?: string | null; source: string;
+}): Promise<number | null> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return null;
+  try {
+    const { data, error } = await supabase.rpc('claim_email_send', {
+      p_secret: secret,
+      p_kind: args.kind,
+      p_to_email: args.toEmail,
+      p_application_id: args.applicationId ?? null,
+      p_bill_open_id: args.billOpenId ?? null,
+      p_subject: args.subject ?? null,
+      p_sent_by: null,
+    });
+    if (error) { console.error(`[${args.source} email log] claim failed:`, error); return null; }
+    // A null id means another caller already claimed this exact send, so the row
+    // already exists. That is not an error here, and NOT a reason to skip the
+    // send: the legacy flag is still the authority until Phase 5c.
+    return (data as number | null) ?? null;
+  } catch (err) {
+    console.error(`[${args.source} email log] claim threw:`, err);
+    return null;
+  }
+}
+
+async function logEmailSend(supabase: any, args: {
+  id: number | null; messageId: string | null; ok: boolean; httpStatus: number; source: string;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret || args.id === null) return;
+  try {
+    await supabase.rpc('log_email_send', {
+      p_secret: secret, p_id: args.id, p_message_id: args.messageId,
+      p_ok: args.ok, p_http_status: args.httpStatus, p_raw: null,
+    });
+  } catch (err) {
+    console.error(`[${args.source} email log] send log failed:`, err);
+  }
+}
+
+async function releaseEmailSend(supabase: any, args: {
+  id: number | null; source: string;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret || args.id === null) return;
+  try {
+    await supabase.rpc('release_email_send', { p_secret: secret, p_id: args.id });
+  } catch (err) {
+    console.error(`[${args.source} email log] release failed:`, err);
   }
 }
 
@@ -292,13 +363,31 @@ async function maybeSendPaymentFailureEmail(supabase: any, app: any, args: {
   if (!claimed) return;
 
   const baseUrl = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
-  const emailed = await sendPaymentFailureEmail({
+  // The legacy flag claimed above is still the authority on whether to send.
+  // This claim only creates the log row, so a logging outage can never stop a
+  // customer being told their payment failed. Phase 5c flips the authority over.
+  const logId = await claimEmailSend(supabase, {
+    kind: 'retry',
+    toEmail: email,
+    applicationId: app.id,
+    subject: `Payment failed for ${args.amount}`,
+    source: args.source,
+  });
+  const sent = await sendPaymentFailureEmail({
     email,
     userName: args.userName,
     amount: args.amount,
     contactUrl: buildInviteContactUrl(baseUrl, args.phone, args.userName),
     source: args.source,
   });
+  const emailed = sent.ok;
+  if (emailed) {
+    await logEmailSend(supabase, {
+      id: logId, messageId: sent.messageId, ok: true, httpStatus: sent.status, source: args.source,
+    });
+  } else {
+    await releaseEmailSend(supabase, { id: logId, source: args.source });
+  }
   if (!emailed) {
     const { error: releaseError } = await supabase
       .from('applications')
@@ -390,6 +479,7 @@ async function sendPaidWhatsApp(args: {
 // Never allowed to throw: logging must not be able to fail a payment confirmation.
 async function logPaidSend(supabase: any, args: {
   provider: string; messageId: string | null; phone: string; template: string;
+  applicationId?: string | null;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
@@ -398,6 +488,9 @@ async function logPaidSend(supabase: any, args: {
       p_secret: secret, p_provider: args.provider, p_message_id: args.messageId,
       p_to: args.phone, p_template: args.template, p_variables: null,
       p_ok: true, p_http_status: 200, p_raw: null,
+      // Without this the send is attributed by phone alone, and a guest with two
+      // bookings gets one lead's delivery state shown on the other.
+      p_application_id: args.applicationId ?? null,
     });
   } catch (err) {
     console.error('[paid send log] failed:', err);
@@ -452,7 +545,7 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
       eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
       source: 'payu-callback',
     });
-    if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: payAtVenue ? 'advancepaid' : 'advance_success_dpl' });
+    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: payAtVenue ? 'advancepaid' : 'advance_success_dpl' });
     // Shim: leaves every non-ok / claim-release block below byte-identical,
     // so the dedup semantics around these sends are provably unchanged.
     const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
@@ -512,7 +605,7 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
       eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
       source: 'payu-callback',
     });
-    if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'balance_success' });
+    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'balance_success' });
     // Shim: leaves every non-ok / claim-release block below byte-identical,
     // so the dedup semantics around these sends are provably unchanged.
     const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
@@ -564,7 +657,7 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
       eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
       source: 'payu-callback',
     });
-    if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'single_payment_sucess_dpl' });
+    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'single_payment_sucess_dpl' });
     // Shim: leaves every non-ok / claim-release block below byte-identical,
     // so the dedup semantics around these sends are provably unchanged.
     const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
@@ -613,7 +706,7 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
         eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
         source: 'payu-callback',
       });
-      if (sent) await logPaidSend(supabase, { provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'payment_failed' });
+      if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'payment_failed' });
       // Shim: leaves every non-ok / claim-release block below byte-identical,
       // so the dedup semantics around these sends are provably unchanged.
       const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };

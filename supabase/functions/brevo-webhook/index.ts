@@ -1,7 +1,23 @@
 // brevo-webhook
 //
-// Receives Brevo transactional webhook events. We currently care about invite
-// mail opens/unsubscribes, recovery mail opens, and resend-details clicks.
+// Receives Brevo transactional webhook events.
+//
+// Two paths, deliberately independent:
+//
+//   1. email_sends, keyed by Brevo's message-id. Handles EVERY email and every
+//      event type -- delivered, opened, clicked, bounced. This is the path the
+//      admin panel's delivery ticks read.
+//
+//   2. The legacy columns on applications, matched by email address and tag.
+//      Only knows invite / cart-abandon / resend-details, and only opens,
+//      clicks and unsubscribes. Kept until Phase 5c of the delivery-logging
+//      handoff retires it, so the current UI keeps working meanwhile.
+//
+// Path 1 exists because path 2 cannot be fixed: with no message id, an event can
+// only be matched back by guessing at the address plus "which column is still
+// null". That guess is why three of our six emails -- the OTP fallback, the
+// payment-failure mail and the open-event details mail -- had their events
+// received and silently discarded.
 //
 // Deploy with --no-verify-jwt because Brevo cannot send a Supabase JWT.
 // Protect the endpoint with BREVO_WEBHOOK_TOKEN and configure Brevo to send:
@@ -101,6 +117,61 @@ function isClickEvent(event: any): boolean {
   return kind === 'click' || kind === 'clicked';
 }
 
+// Brevo stamps its own id on the send response and echoes it on every event, so
+// this is what joins a callback to the row we wrote when we sent the mail.
+function messageIdOf(event: any): string | null {
+  const raw = event?.['message-id'] ?? event?.messageId ?? event?.message_id ?? null;
+  const id = raw === null || raw === undefined ? '' : String(raw).trim();
+  return id || null;
+}
+
+// The log RPCs are guarded by a shared secret. Read it once per invocation with
+// the service-role key already in hand, rather than depending on a per-function
+// env var: a missing env var would turn delivery logging off silently, which is
+// the exact failure this whole piece of work exists to stop.
+let cachedSecret: string | null | undefined;
+async function logSecret(supabase: any): Promise<string | null> {
+  if (cachedSecret !== undefined) return cachedSecret;
+  const envSecret = Deno.env.get('WHATSAPP_LOG_SECRET')?.trim();
+  if (envSecret) { cachedSecret = envSecret; return cachedSecret; }
+  try {
+    const { data } = await supabase
+      .from('app_secrets').select('value').eq('name', 'whatsapp_log_secret').maybeSingle();
+    cachedSecret = String(data?.value ?? '').trim() || null;
+  } catch (err) {
+    console.error('[brevo-webhook] could not read log secret:', err);
+    cachedSecret = null;
+  }
+  return cachedSecret;
+}
+
+// Never allowed to throw: an exception here would lose the rest of the batch,
+// and Brevo does not re-send an event we already answered 200 to.
+async function recordDeliveryEvent(supabase: any, event: any): Promise<boolean> {
+  const messageId = messageIdOf(event);
+  if (!messageId) return false;
+  const secret = await logSecret(supabase);
+  if (!secret) return false;
+  try {
+    const { error } = await supabase.rpc('log_email_status', {
+      p_secret: secret,
+      p_message_id: messageId,
+      p_event: String(event?.event ?? event?.eventType ?? event?.type ?? ''),
+      p_occurred_at: eventTimestamp(event),
+      p_email: String(event?.email ?? event?.recipient ?? '').trim() || null,
+      p_error_code: event?.reason ? String(event.reason).slice(0, 120) : null,
+      p_error_message: event?.error ? String(event.error).slice(0, 300) : null,
+      p_provider: 'brevo',
+      p_raw: event ?? null,
+    });
+    if (error) { console.error('[brevo-webhook] delivery log failed:', error.message); return false; }
+    return true;
+  } catch (err) {
+    console.error('[brevo-webhook] delivery log threw:', err);
+    return false;
+  }
+}
+
 function eventTimestamp(event: any): string {
   const rawTs = Number(event?.ts_event ?? event?.ts_epoch ?? event?.ts);
   if (Number.isFinite(rawTs)) {
@@ -129,6 +200,7 @@ Deno.serve(async (req) => {
   );
 
   let processed = 0;
+  let logged = 0;
   let opened = 0;
   let recoveryOpened = 0;
   let unsubscribed = 0;
@@ -137,6 +209,11 @@ Deno.serve(async (req) => {
 
   for (const event of events) {
     processed++;
+
+    // Path 1 first, and for every event regardless of tag or type: this is the
+    // one that must not miss anything. Its result never gates path 2.
+    if (await recordDeliveryEvent(supabase, event)) logged++;
+
     const openedEvent = isOpenedEvent(event);
     const unsubscribedEvent = isUnsubscribedEvent(event);
     const clickEvent = isClickEvent(event);
@@ -217,5 +294,5 @@ Deno.serve(async (req) => {
     updated++;
   }
 
-  return json(200, { ok: true, processed, opened, recoveryOpened, unsubscribed, detailsClicked, updated });
+  return json(200, { ok: true, processed, logged, opened, recoveryOpened, unsubscribed, detailsClicked, updated });
 });

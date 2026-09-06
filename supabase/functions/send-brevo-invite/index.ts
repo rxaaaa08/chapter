@@ -216,6 +216,89 @@ async function resolveIsGalcodeEmail(supabase: any, eventName: string): Promise<
   return eventLooksGalcode(byResolvedSlug);
 }
 
+// ── Email send log ───────────────────────────────────────────────────────────
+// Claim a row in email_sends, send, then stamp it with Brevo's message id so the
+// delivery callbacks have something to attach to. Best-effort throughout: an
+// admin pressing Approve must never see a failure because logging was down.
+//
+// Duplicated per function rather than shared: _shared/ is bundled at DEPLOY
+// time, so editing it leaves already-deployed callers on an old copy, silently.
+async function claimEmailSend(supabase: any, args: {
+  kind: string; toEmail: string; applicationId?: string | null;
+  subject?: string | null; sentBy?: string | null;
+}): Promise<number | null> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret) return null;
+  try {
+    const { data, error } = await supabase.rpc('claim_email_send', {
+      p_secret: secret,
+      p_kind: args.kind,
+      p_to_email: args.toEmail,
+      p_application_id: args.applicationId ?? null,
+      p_bill_open_id: null,
+      p_subject: args.subject ?? null,
+      p_sent_by: args.sentBy ?? null,
+    });
+    if (error) { console.error('[send-brevo-invite] email claim failed:', error); return null; }
+    // null means this exact email was already claimed, so its row exists. Not an
+    // error: the legacy flags still decide whether the send happens.
+    return (data as number | null) ?? null;
+  } catch (err) {
+    console.error('[send-brevo-invite] email claim threw:', err);
+    return null;
+  }
+}
+
+async function logEmailSend(supabase: any, args: {
+  id: number | null; messageId: string | null; ok: boolean; httpStatus: number;
+}): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret || args.id === null) return;
+  try {
+    await supabase.rpc('log_email_send', {
+      p_secret: secret, p_id: args.id, p_message_id: args.messageId,
+      p_ok: args.ok, p_http_status: args.httpStatus, p_raw: null,
+    });
+  } catch (err) {
+    console.error('[send-brevo-invite] email send log failed:', err);
+  }
+}
+
+async function releaseEmailSend(supabase: any, id: number | null): Promise<void> {
+  const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
+  if (!secret || id === null) return;
+  try {
+    await supabase.rpc('release_email_send', { p_secret: secret, p_id: id });
+  } catch (err) {
+    console.error('[send-brevo-invite] email release failed:', err);
+  }
+}
+
+// The auto invite email is fired by send-aisensy-invite with only an address and
+// an event NAME -- no phone, no slug -- so the lead has to be found before the
+// log row can point at it. Resolve by slug when we can, because one address can
+// appear on several events and the wrong link is worse than no link.
+async function resolveLoggedApplicationId(supabase: any, args: {
+  known: string; email: string; phone: string; eventSlug: string; eventName: string;
+}): Promise<string | null> {
+  if (args.known) return args.known;
+  try {
+    let slug = args.eventSlug;
+    if (!slug && args.eventName) {
+      const { data } = await supabase.rpc('resolve_event_slug', { p_title: args.eventName });
+      slug = String(data ?? '').toLowerCase();
+    }
+    if (!slug) return null;
+    let q = supabase.from('applications').select('id').eq('event_slug', slug);
+    const phone10 = args.phone.replace(/\D/g, '').slice(-10);
+    q = phone10.length === 10 ? q.eq('phone', phone10) : q.ilike('email', args.email);
+    const { data: row } = await q.order('created_at', { ascending: false }).limit(1).maybeSingle();
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   const cors = corsFor(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -339,7 +422,24 @@ Deno.serve(async (req) => {
     const buttonColor = isGalcode ? '#FF1493' : '#000000';
     const buttonTextColor = isGalcode ? '#111827' : '#ffffff';
 
-    // 3. Forward to Brevo
+    // 3. Claim the log row, then forward to Brevo. The claim is advisory in this
+    // phase -- the legacy sent flags still decide whether a send happens -- so a
+    // logging outage cannot stop an invite going out.
+    const loggedKind = isResend || isOpenDetails ? 'details' : 'invite';
+    const loggedSubject = isOpenDetails
+      ? `Re-check ${eventName} details & reserve your spot`
+      : `You're invited to our ${eventName}!`;
+    const loggedApplicationId = await resolveLoggedApplicationId(supabase, {
+      known: resendApplication?.id ?? applicationId ?? '',
+      email, phone, eventSlug, eventName,
+    });
+    const emailLogId = await claimEmailSend(supabase, {
+      kind: loggedKind,
+      toEmail: email,
+      applicationId: loggedApplicationId,
+      subject: loggedSubject,
+      sentBy: callerEmail,
+    });
     const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -360,6 +460,17 @@ Deno.serve(async (req) => {
       }),
     });
     const brevoBody = await brevoRes.text().catch(() => '');
+
+    // Brevo's messageId is what every later delivery event attaches to.
+    let brevoMessageId: string | null = null;
+    try { brevoMessageId = brevoBody ? (JSON.parse(brevoBody)?.messageId ?? null) : null; } catch { /* keep raw for logs */ }
+    if (brevoRes.ok) {
+      await logEmailSend(supabase, {
+        id: emailLogId, messageId: brevoMessageId, ok: true, httpStatus: brevoRes.status,
+      });
+    } else {
+      await releaseEmailSend(supabase, emailLogId);
+    }
 
     let trackingSaved = !isResend;
     let sentAt: string | null = null;
