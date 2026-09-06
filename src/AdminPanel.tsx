@@ -309,8 +309,8 @@ export default function AdminPanel() {
     () => rememberedTab === 'content' ? 'creators' : rememberedTab === 'manager' ? 'managers' : 'money'
   );
   // Growth ▸ Overview (the funnel snapshot) · Trends (the same numbers per day,
-  // plotted against the release log).
-  const [growthMode, setGrowthMode] = useState<'overview' | 'trends'>(() => rememberedTab === 'experiments' ? 'trends' : 'overview');
+  // plotted against the release log) · Ads (Meta spend joined to our own cash).
+  const [growthMode, setGrowthMode] = useState<'overview' | 'trends' | 'ads'>(() => rememberedTab === 'experiments' ? 'trends' : 'overview');
   const [peopleSearch, setPeopleSearch] = useState('');
   // Normalize city_details keys to match the casing in the cities array.
   // Older saves may have stored keys like "delhi" when the city is "Delhi".
@@ -462,6 +462,10 @@ export default function AdminPanel() {
   const [ctaEdits, setCtaEdits] = useState<Record<string, string>>({});
   const [savingDateId, setSavingDateId] = useState<string | null>(null);
   const [analyticsSummary, setAnalyticsSummary] = useState<any | null>(null);
+  // Growth ▸ Ads. One RPC payload: per_ad, daily, totals, diagnostics.
+  const [metaAds, setMetaAds] = useState<any | null>(null);
+  const [metaAdsLoading, setMetaAdsLoading] = useState(false);
+  const [metaAdsDays, setMetaAdsDays] = useState<7 | 30 | 90>(30);
   const [conversionFunnel, setConversionFunnel] = useState<any | null>(null);
   // Most recent weekly DB-storage snapshot (cron writes one every Monday).
   // Used by the small footer line in the analytics tab so the admin can
@@ -986,8 +990,9 @@ export default function AdminPanel() {
   useEffect(() => {
     if (adminRole !== 'admin' || tab !== 'analytics') return;
     if (growthMode === 'trends') loadExperiments();
+    else if (growthMode === 'ads') loadMetaAds();
     else loadAnalytics();
-  }, [adminRole, tab, growthMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adminRole, tab, growthMode, metaAdsDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Website doubts, by phone. Someone filling the "Other topic" form IS writing
   // to us — they just did not do it on WhatsApp — so Chat carries the question
@@ -1724,7 +1729,9 @@ export default function AdminPanel() {
     const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }, { data: marketerRows }, { data: boardRows }, { data: waInboundRows }, { data: waSendRows }, { data: emailSendRows }, { data: waFreeformRows }] = await Promise.all([
       fetchAllRows('applications', 'created_at'),
       fetchAllRows('doubt_submissions', 'submitted_at'),
-      supabase.from('events').select('slug, invite_slug'),
+      // `title` is here so a /plans doubt can be matched to its plan by title when
+      // the slug it stored is no longer recognisable — see the doubt index below.
+      supabase.from('events').select('slug, invite_slug, title'),
       fetchAllRows('plan_doubts', 'created_at'),
       // Roster (id → name) so the admin Call view can tag each lead's marketer.
       // RLS returns all rows to admins, just the caller's own row to a marketer.
@@ -1789,18 +1796,55 @@ export default function AdminPanel() {
         eventSlugAliases.set(slug, aliases);
       });
 
-      // Index doubts by (phone, event_slug) so each application can carry its latest doubts.
-      // plan_doubts (from invite "Other Topic" form) have phone + event_slug + message + status.
-      // doubt_submissions (from booking "Other topic" form) have no event_slug, so they don't
-      // attach here — they show in the standalone Doubts tab instead.
+      // Index doubts by (phone, event_slug) so each application can carry its
+      // latest doubts. BOTH forms land here, normalised to one shape, because
+      // both are the same thing to a caller: a question this person asked about
+      // this plan.
+      //
+      // They differ only in storage. /invite writes plan_doubts (event_slug,
+      // message, created_at, status). /plans writes doubt_submissions, which
+      // asks its question only AFTER the guest has chosen the plan, the date and
+      // the meeting spot — so the event is very much known, it is just stored in
+      // `event_id` with the question in `doubt` and the time in `submitted_at`.
+      // That column-name difference is the entire reason these used to miss the
+      // Call tab and show up only under People ▸ Doubts.
+      const canonicalSlugFor = new Map<string, string>();
+      (eventRows ?? []).forEach((event: any) => {
+        const slug = String(event.slug ?? '').trim();
+        if (!slug) return;
+        [event.slug, event.invite_slug, event.title].forEach((value: any) => {
+          const k = String(value ?? '').trim().toLowerCase();
+          if (k) canonicalSlugFor.set(k, slug);
+        });
+      });
       const doubtsByKey = new Map<string, any[]>();
-      (planDoubtsRows ?? []).forEach((d: any) => {
-        // Normalize phone to last 10 digits to be resilient to country-code prefixes
-        const normPhone = String(d.phone ?? '').replace(/\D/g, '').slice(-10);
-        const key = `${normPhone}__${d.event_slug}`;
+      // Normalize phone to last 10 digits to be resilient to country-code prefixes
+      const addDoubt = (phone: any, slug: string, doubt: any) => {
+        const normPhone = String(phone ?? '').replace(/\D/g, '').slice(-10);
+        if (!normPhone || !slug) return;
+        const key = `${normPhone}__${slug}`;
         const arr = doubtsByKey.get(key) ?? [];
-        arr.push(d);
+        arr.push(doubt);
         doubtsByKey.set(key, arr);
+      };
+      (planDoubtsRows ?? []).forEach((d: any) => {
+        addDoubt(d.phone, String(d.event_slug ?? '').trim(), {
+          id: `invite-${d.id}`, message: d.message, created_at: d.created_at, status: d.status,
+        });
+      });
+      (doubtsRows ?? []).forEach((d: any) => {
+        // Prefer the stored id — it survives an event being renamed, which is
+        // what stranded doubts before. Fall back to the title only when that id
+        // matches no plan we know (an older row storing a uuid, say).
+        const stored = String(d.event_id ?? '').trim().toLowerCase();
+        const slug = canonicalSlugFor.get(stored)
+          ?? canonicalSlugFor.get(String(d.event_title ?? '').trim().toLowerCase())
+          ?? stored;
+        addDoubt(d.phone, slug, {
+          // doubt_submissions carries no status column, so these are always
+          // open until the derived "answered" rule on the row closes them.
+          id: `plans-${d.id}`, message: d.doubt, created_at: d.submitted_at, status: null,
+        });
       });
       // Replies are keyed by phone ALONE — a WhatsApp message carries no event, so
       // someone with two applications sees the same reply on both. That is the
@@ -2992,6 +3036,25 @@ export default function AdminPanel() {
       setExpDaily(Array.isArray(dailyRes.data) ? dailyRes.data : []);
     }
     setExpLoading(false);
+  };
+
+  // Growth ▸ Ads. Everything is computed server-side by get_meta_ads_performance
+  // (founder-gated): joining spend to bookings in the client would mean shipping
+  // the whole applications table to the browser.
+  const loadMetaAds = async (days: 7 | 30 | 90 = metaAdsDays) => {
+    setMetaAdsLoading(true);
+    const until = new Date();
+    const since = new Date(until.getTime() - (days - 1) * 86400000);
+    const iso = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const { data, error } = await supabase.rpc('get_meta_ads_performance', {
+      p_since: iso(since),
+      p_until: iso(until),
+    });
+    if (error) showToast(`❌ Failed to load ad performance: ${error.message}`);
+    // NULL is the founder gate answering "not you", not an empty report — keep
+    // them distinguishable so the page can say which one happened.
+    setMetaAds(error ? null : data);
+    setMetaAdsLoading(false);
   };
 
   const saveExpRelease = async () => {
@@ -6694,13 +6757,12 @@ export default function AdminPanel() {
                         const liveDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
                         const doubtAnswered = (d: any) =>
                           new Date(d.created_at).getTime() < (app.waHumanReplyAt ?? 0);
+                        // Answered ones leave the row entirely rather than fading
+                        // to grey. A card here is a thing to act on, so a card
+                        // that needs nothing is clutter — the question itself is
+                        // still in the Chat thread and under People ▸ Doubts for
+                        // anyone who wants to read it back.
                         const openDoubts = liveDoubts.filter((d: any) => !doubtAnswered(d));
-                        // Answered ones stay on the row, in grey: knowing what
-                        // someone asked is worth having in front of you on a
-                        // call even once it is handled. They just no longer
-                        // tint the row or count in the badge, which is what
-                        // makes the amber mean "still open".
-                        const shownDoubts = [...openDoubts, ...liveDoubts.filter(doubtAnswered)];
                         const waReplies = (app.waReplies ?? []) as any[];
                         // Meeting point sub-line under the event title — useful for events
                         // with pickups in multiple cities (e.g. "Koyambedu, Chennai") so the
@@ -6712,8 +6774,15 @@ export default function AdminPanel() {
                         const meetingLine = pickupSpot && pickupCity
                           ? `${pickupSpot}, ${pickupCity}`
                           : pickupSpot || pickupCity || '';
+                        // Green outranks amber on the row deliberately. Amber means
+                        // a question is open; green means their WhatsApp window is
+                        // open too, so it can be answered right now, for free, in a
+                        // thread they will actually read. That is both the more
+                        // urgent row and the cheaper one to work, so it wins. Amber
+                        // is what is left when there is a question but no
+                        // conversation to answer it in.
                         if (peopleMode === 'call') return (
-                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : (app.waAwaitingReply ? '#f0fdf4' : undefined) }}>
+                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: app.waAwaitingReply ? '#f0fdf4' : (openDoubts.length > 0 ? '#fffbeb' : undefined) }}>
                             <td style={{ padding: '11px 12px', maxWidth: 280, minWidth: 200 }} title={app.why_join ? `${app.name || '—'}\n${app.why_join}` : (app.name || '—')}>
                               <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {app.name || '—'}
@@ -6780,14 +6849,12 @@ export default function AdminPanel() {
                               )}
                             </td>
                             <td style={{ padding: '11px 12px', width: 150 }}>
-                              {shownDoubts.length > 0 && (
+                              {openDoubts.length > 0 && (
                                 <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {shownDoubts.slice(0, 3).map((d: any) => {
-                                    const answered = doubtAnswered(d);
-                                    return (
-                                    <div key={d.id} style={{ background: answered ? '#f4f4f2' : '#fef3c7', borderLeft: `3px solid ${answered ? '#c9c9c4' : '#f59e0b'}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, color: answered ? '#777' : '#78350f', lineHeight: 1.4 }}>
-                                      <div style={{ fontSize: 10, color: answered ? '#999' : '#92400e', fontWeight: 600, marginBottom: 2 }}>
-                                        {answered ? '✓' : '💬'} {formatAdminDateTime(d.created_at)}
+                                  {openDoubts.slice(0, 3).map((d: any) => (
+                                    <div key={d.id} style={{ background: '#fef3c7', borderLeft: '3px solid #f59e0b', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#78350f', lineHeight: 1.4 }}>
+                                      <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600, marginBottom: 2 }}>
+                                        💬 {formatAdminDateTime(d.created_at)}
                                       </div>
                                       {d.message}
                                       {/* Shown to exactly who can use it — founders and
@@ -6795,7 +6862,7 @@ export default function AdminPanel() {
                                           pill and whatsapp-reply accept — so nobody is
                                           offered a button that lands on a tab they
                                           cannot open. */}
-                                      {!answered && (adminRole === 'admin' || !!currentMarketer) && (
+                                      {(adminRole === 'admin' || !!currentMarketer) && (
                                         <button
                                           type="button"
                                           title="Reply on WhatsApp"
@@ -6812,10 +6879,9 @@ export default function AdminPanel() {
                                         </button>
                                       )}
                                     </div>
-                                    );
-                                  })}
-                                  {shownDoubts.length > 3 && (
-                                    <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600 }}>+{shownDoubts.length - 3} more</div>
+                                  ))}
+                                  {openDoubts.length > 3 && (
+                                    <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600 }}>+{openDoubts.length - 3} more</div>
                                   )}
                                 </div>
                               )}
@@ -7215,7 +7281,7 @@ export default function AdminPanel() {
         {tab === 'analytics' && (
           <div style={s.subTabBar}>
             {/* Named after the heading each page shows, as in the Team tab. */}
-            {([['overview', 'Analytics'], ['trends', 'Experiments']] as const).map(([mode, label]) => (
+            {([['overview', 'Analytics'], ['trends', 'Experiments'], ['ads', 'Ads']] as const).map(([mode, label]) => (
               <button key={mode} onClick={() => setGrowthMode(mode)} style={s.subTab(growthMode === mode)}>{label}</button>
             ))}
           </div>
@@ -10170,6 +10236,256 @@ export default function AdminPanel() {
                   </div>
                 )}
               </div>
+            </div>
+          );
+        })()}
+
+        {/* ── GROWTH ▸ ADS (Meta spend joined to our own cash) ──────────────── */}
+        {tab === 'analytics' && growthMode === 'ads' && (() => {
+          const rep: any = metaAds;
+          const perAd: any[] = rep?.per_ad ?? [];
+          const daily: any[] = rep?.daily ?? [];
+          const totals: any = rep?.totals ?? {};
+          const diag: any = rep?.diagnostics ?? {};
+          const money = (n: any) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
+          const neverSynced = !diag.last_synced_at;
+
+          // ── Cost-per-booking over time ───────────────────────────────────
+          // Plots OUR cost per booking, not Meta's cost per result: the point of
+          // this page is the gap between the two.
+          const pts = daily.map((d: any, i: number) => ({
+            i, day: String(d.day),
+            v: d.cost_per_booking == null ? null : Number(d.cost_per_booking),
+          }));
+          const vals = pts.filter(p => p.v != null).map(p => p.v as number);
+          const maxV = vals.length ? Math.max(...vals) : 0;
+          const minV = vals.length ? Math.min(...vals) : 0;
+          const W = 760, H = 200, PADL = 58, PADR = 14, PADT = 16, PADB = 28;
+          const px = (i: number) => PADL + (pts.length <= 1 ? (W - PADL - PADR) / 2 : (i * (W - PADL - PADR)) / (pts.length - 1));
+          const py = (v: number) => (maxV === minV)
+            ? PADT + (H - PADT - PADB) / 2
+            : PADT + (1 - (v - minV) / (maxV - minV)) * (H - PADT - PADB);
+
+          // Contiguous runs only. A day with spend but no booking has no cost
+          // per booking — joining across it would draw a straight line through
+          // a number that does not exist.
+          const runs: { i: number; v: number }[][] = [];
+          let cur: { i: number; v: number }[] = [];
+          pts.forEach(pt => {
+            if (pt.v == null) { if (cur.length) runs.push(cur); cur = []; }
+            else cur.push({ i: pt.i, v: pt.v as number });
+          });
+          if (cur.length) runs.push(cur);
+
+          // Direction, stated plainly. Halves rather than first-vs-last so one
+          // freak day cannot flip the verdict.
+          const half = Math.floor(vals.length / 2);
+          const avg = (a: number[]) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+          const firstAvg = avg(vals.slice(0, half));
+          const lastAvg = avg(vals.slice(half));
+          const trendPct = firstAvg > 0 ? Math.round(((lastAvg - firstAvg) / firstAvg) * 100) : 0;
+          const improving = trendPct < 0;
+
+          const stat = (label: string, value: string, sub?: string, colour?: string) => (
+            <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+              <span style={s.label}>{label}</span>
+              <div style={{ fontSize: 24, fontWeight: 800, color: colour ?? '#111', lineHeight: 1.15 }}>{value}</div>
+              {sub && <div style={{ fontSize: 11.5, color: '#888', marginTop: 3 }}>{sub}</div>}
+            </div>
+          );
+
+          return (
+            <div>
+              {/* Window switcher */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                {([7, 30, 90] as const).map(d => (
+                  <button key={d} onClick={() => setMetaAdsDays(d)}
+                    style={{ ...s.subTab(metaAdsDays === d), background: metaAdsDays === d ? '#111' : '#fff' }}>
+                    {d} days
+                  </button>
+                ))}
+                <button onClick={() => loadMetaAds()} style={{ ...s.outlineBtn, marginLeft: 'auto' }}>
+                  {metaAdsLoading ? 'Loading…' : 'Refresh'}
+                </button>
+              </div>
+
+              {/* Setup state. Shown until the sync has ever run — an empty table
+                  would otherwise read as "your ads produced nothing". */}
+              {neverSynced && (
+                <div style={{ ...s.card, borderLeft: '4px solid #f59e0b' }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>Not connected to Meta yet</div>
+                  <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.65 }}>
+                    Two things switch this page on, and the first one has a deadline:
+                    <ol style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+                      <li style={{ marginBottom: 8 }}>
+                        In Ads Manager, set every ad's <b>URL parameters</b> field to:
+                        <code style={{ display: 'block', marginTop: 6, padding: '9px 11px', background: '#f5f5f0', borderRadius: 8, fontSize: 11.5, wordBreak: 'break-all', lineHeight: 1.55 }}>
+                          utm_source=meta&amp;utm_medium=paid&amp;utm_campaign=&#123;&#123;campaign.name&#125;&#125;&amp;utm_term=&#123;&#123;adset.id&#125;&#125;&amp;utm_content=&#123;&#123;ad.id&#125;&#125;
+                        </code>
+                        <span style={{ display: 'block', marginTop: 6, color: '#92400e' }}>
+                          Traffic that arrives before this is set can never be matched to an ad, no matter what we build later.
+                        </span>
+                      </li>
+                      <li>Set the <code>META_ADS_ACCESS_TOKEN</code> and <code>META_AD_ACCOUNT_ID</code> secrets in Supabase, then the daily sync fills this page on its own.</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+
+              {/* Headline numbers */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  {stat('Spent', money(totals.spend))}
+                  {stat('Bookings', String(totals.bookings ?? 0), `${totals.leads ?? 0} leads · ${totals.completed ?? 0} fully paid`)}
+                  {stat('Cost per booking',
+                    totals.cost_per_booking == null ? '—' : money(totals.cost_per_booking),
+                    'what one advance-paid ticket cost')}
+                  {stat('Money received', money(totals.revenue), 'actually in the bank')}
+                  {stat('True ROAS',
+                    totals.true_roas == null ? '—' : `${Number(totals.true_roas).toFixed(2)}×`,
+                    'cash received ÷ spend',
+                    Number(totals.true_roas) >= 1 ? '#16a34a' : '#dc2626')}
+                </div>
+              </div>
+
+              {/* The graph */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 800, fontSize: 15 }}>Cost per booking over time</span>
+                  {vals.length >= 4 && (
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: improving ? '#16a34a' : '#dc2626' }}>
+                      {improving ? '▼' : '▲'} {Math.abs(trendPct)}% {improving ? 'cheaper' : 'dearer'} vs the first half
+                    </span>
+                  )}
+                </div>
+                {vals.length === 0 ? (
+                  <div style={{ padding: '26px 0', color: '#999', fontSize: 13.5 }}>
+                    Nothing to plot yet — this needs at least one day with both spend and a booking.
+                  </div>
+                ) : (
+                  <>
+                    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 6 }}>
+                      {[0, 0.5, 1].map(f => {
+                        const v = minV + (maxV - minV) * (1 - f);
+                        const yy = PADT + f * (H - PADT - PADB);
+                        return (
+                          <g key={f}>
+                            <line x1={PADL} x2={W - PADR} y1={yy} y2={yy} stroke="#eee" strokeWidth={1} />
+                            <text x={PADL - 8} y={yy + 4} textAnchor="end" fontSize={10.5} fill="#999">{money(v)}</text>
+                          </g>
+                        );
+                      })}
+                      {runs.map((run, ri) => (
+                        <polyline key={ri} fill="none" stroke="#111" strokeWidth={2}
+                          strokeLinejoin="round" strokeLinecap="round"
+                          points={run.map(pt => `${px(pt.i)},${py(pt.v)}`).join(' ')} />
+                      ))}
+                      {runs.flat().map((pt, k) => (
+                        <circle key={k} cx={px(pt.i)} cy={py(pt.v)} r={3} fill="#111" />
+                      ))}
+                      {pts.length > 0 && [0, pts.length - 1].filter((v, i, a) => a.indexOf(v) === i).map(i => (
+                        <text key={i} x={px(i)} y={H - 8} textAnchor={i === 0 ? 'start' : 'end'} fontSize={10.5} fill="#999">
+                          {pts[i].day.slice(5)}
+                        </text>
+                      ))}
+                    </svg>
+                    <div style={{ fontSize: 11.5, color: '#999', marginTop: 2, lineHeight: 1.55 }}>
+                      Each booking is counted on the day the person <b>clicked the ad</b>, not the day they paid — so cost and
+                      outcome sit in the same column. Days with spend but no booking leave a gap rather than a false line.
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Per-ad table */}
+              <div style={s.card}>
+                <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>By ad</div>
+                {perAd.length === 0 ? (
+                  <div style={{ color: '#999', fontSize: 13.5, padding: '10px 0' }}>
+                    {metaAdsLoading ? 'Loading…' : 'No ads with spend or bookings in this window.'}
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 860 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                          <th style={{ padding: '6px 10px 8px 0' }}>Ad</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Spend</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Clicks</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Leads</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Bookings</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Fully paid</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Cost / booking</th>
+                          <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Cost / customer</th>
+                          <th style={{ padding: '6px 0 8px 10px', textAlign: 'right' }}>ROAS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perAd.map((a: any) => (
+                          <tr key={a.ad_id} style={{ borderTop: '1px solid #f0f0ea' }}>
+                            <td style={{ padding: '9px 10px 9px 0', maxWidth: 250 }}>
+                              <div style={{ fontWeight: 700 }}>{a.ad_name ?? `Ad ${a.ad_id}`}</div>
+                              <div style={{ fontSize: 11, color: '#999' }}>{a.campaign_name ?? '—'}</div>
+                            </td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right' }}>{money(a.spend)}</td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{a.link_clicks ?? 0}</td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{a.our_leads ?? 0}</td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>{a.our_bookings ?? 0}</td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right' }}>{a.our_completed ?? 0}</td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>
+                              {a.cost_per_booking == null ? '—' : money(a.cost_per_booking)}
+                            </td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right' }}>
+                              {a.cost_per_customer == null ? '—' : money(a.cost_per_customer)}
+                            </td>
+                            <td style={{ padding: '9px 0 9px 10px', textAlign: 'right' }}>
+                              <div style={{ fontWeight: 800, color: Number(a.true_roas) >= 1 ? '#16a34a' : '#dc2626' }}>
+                                {a.true_roas == null ? '—' : `${Number(a.true_roas).toFixed(2)}×`}
+                              </div>
+                              {/* Meta's own figure, for the same ad and window. It counts
+                                  a full ticket the moment an advance is paid, so it reads
+                                  high — seeing both side by side is the point. */}
+                              {a.meta_roas != null && (
+                                <div style={{ fontSize: 10.5, color: '#999' }}>Meta says {Number(a.meta_roas).toFixed(2)}×</div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Diagnostics. The join between Meta spend and our bookings can only
+                  break silently, so it is reported as numbers rather than left to
+                  show up as an inexplicably empty table. */}
+              {!neverSynced && (
+                <div style={{ ...s.card, background: '#fafaf7' }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>Tracking health</div>
+                  <div style={{ fontSize: 12.5, color: '#555', lineHeight: 1.85 }}>
+                    <div>Ads with spend: <b>{diag.ads_with_spend ?? 0}</b></div>
+                    {Number(diag.spend_with_no_bookings) > 0 && (
+                      <div style={{ color: '#b45309' }}>
+                        {money(diag.spend_with_no_bookings)} spent on ads with no booking we can see —
+                        normal early on, but if it persists check that ad's URL parameters.
+                      </div>
+                    )}
+                    {Number(diag.meta_visits_without_ad_id) > 0 && (
+                      <div style={{ color: '#dc2626' }}>
+                        <b>{diag.meta_visits_without_ad_id}</b> visitors arrived tagged as Meta traffic but carried no ad id —
+                        the <code>&#123;&#123;ad.id&#125;&#125;</code> macro is missing on at least one ad.
+                      </div>
+                    )}
+                    {Number(diag.bookings_with_no_spend_row) > 0 && (
+                      <div>{diag.bookings_with_no_spend_row} bookings matched an ad we have no spend row for — the sync has not caught up yet.</div>
+                    )}
+                    <div style={{ color: '#999' }}>
+                      Last synced from Meta: {diag.last_synced_at ? new Date(diag.last_synced_at).toLocaleString('en-IN') : 'never'}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
