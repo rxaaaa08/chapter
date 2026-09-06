@@ -5027,166 +5027,304 @@ function PayUReturnScreen({ status, txnid, onDone, isOpen = false }: { status: '
 }
 
 // ─── PRIVACY SCREEN ────────────────────────────────────────────────────────────
+// ─── LEGAL PAGE SHELL ─────────────────────────────────────────────────────────
+// /privacy, /termsofservice and /data-deletion all render as ordinary documents
+// rather than inside the phone shell the booking flow uses. These three are
+// opened on a desktop far more often than they are on a phone — by Meta's app
+// reviewers, by payment partners, by anyone following a footer link — and a
+// 448px column floating in the middle of a 1440px screen reads as a broken page
+// rather than a policy. One shell, so the three cannot drift apart.
+function LegalShell({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-[#F2F2F7] font-sans">
+      <header className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-100">
+        <div className="mx-auto w-full max-w-3xl flex items-center gap-3 px-4 sm:px-6 pt-12 sm:pt-5 pb-4">
+          <a href="/lifestyle" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] hover:bg-gray-200 active:opacity-60 transition-all flex-shrink-0" aria-label="Back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </a>
+          <div>
+            <h1 className="text-[17px] sm:text-[20px] font-bold text-gray-900 leading-tight">{title}</h1>
+            <p className="text-[12px] sm:text-[13px] text-gray-400">chapter அ</p>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-3">
+        {children}
+      </main>
+    </div>
+  );
+}
+
+function LegalCard({ title, id, children }: { title?: string; id?: string; children: React.ReactNode }) {
+  return (
+    // scroll-mt keeps an #anchor target clear of the sticky header.
+    <div id={id} className="bg-white rounded-2xl px-4 py-4 sm:px-6 sm:py-5 border border-black/[0.04] scroll-mt-24">
+      {title && <p className="text-[13px] sm:text-[15px] font-bold text-gray-900 mb-1 sm:mb-1.5">{title}</p>}
+      <div className="text-[13px] sm:text-[14.5px] text-gray-500 leading-relaxed sm:leading-[1.7]">{children}</div>
+    </div>
+  );
+}
+
+function LegalHeading({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] sm:text-[12px] font-bold text-gray-400 uppercase tracking-widest px-1 mt-3 sm:mt-5">{children}</p>;
+}
+
+function LegalFooter({ updated }: { updated: string }) {
+  return <p className="text-center text-[11px] sm:text-[12px] text-gray-400 py-4">Last updated: {updated} · chaptera.in</p>;
+}
+
 function PrivacyScreen() {
   return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
-          <a href="/lifestyle" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          </a>
-          <div>
-            <p className="text-[17px] font-bold text-gray-900 leading-tight">Privacy Policy</p>
-            <p className="text-[12px] text-gray-400">chapter அ</p>
-          </div>
+    <LegalShell title="Privacy Policy">
+      <LegalCard>
+        This Privacy Policy describes how chapter அ collects, uses and protects information provided by
+        customers when booking experiences, activities, group trips and social events.
+      </LegalCard>
+
+      <LegalCard title="Information We Collect">
+        We may collect customer information such as name, phone number, email address and booking details
+        when a customer fills out a form or makes a booking.
+      </LegalCard>
+      <LegalCard title="How We Use It">
+        This information is used to confirm bookings, provide customer support, share logistical details,
+        send payment reminders where applicable and manage the booked experience.
+      </LegalCard>
+      <LegalCard title="Payment Data">
+        Payments are processed through secure third-party payment gateways. chapter அ does not store
+        customer card details, UPI PINs or other sensitive payment credentials.
+      </LegalCard>
+      <LegalCard title="Limited Sharing">
+        Customer information may be shared only where reasonably required to fulfil an experience, such as
+        with transport, accommodation or activity partners, and only to the extent necessary.
+      </LegalCard>
+      <LegalCard title="Google Sign-In">
+        When you sign in with Google, we receive your name and email address to confirm your booking
+        identity. We do not access your Google account beyond these basic profile details.
+      </LegalCard>
+      <LegalCard title="WhatsApp Messaging">
+        Booking confirmations, reminders and one-time verification codes are sent over WhatsApp. To do this
+        your phone number is shared with our authorised WhatsApp Business messaging provider, which
+        processes it solely to deliver those messages on our behalf.
+      </LegalCard>
+
+      <LegalHeading>Cookies and Tracking</LegalHeading>
+
+      <LegalCard title="Cookies We Use">
+        <p className="mb-2">We use a small number of cookies and similar technologies:</p>
+        <ul className="list-disc pl-4 space-y-1.5">
+          <li><span className="text-gray-800 font-medium">Essential</span> — keep your booking session working as you move between pages. The site cannot function without these.</li>
+          <li><span className="text-gray-800 font-medium">Analytics</span> — Google Analytics, and Contentsquare for anonymised session recordings, so we can see where the booking flow confuses people.</li>
+          <li><span className="text-gray-800 font-medium">Advertising</span> — Meta sets <span className="font-mono text-[12px] text-gray-700">_fbp</span> and <span className="font-mono text-[12px] text-gray-700">_fbc</span> to recognise visits that came from our ads.</li>
+        </ul>
+        <p className="mt-2">You can clear or block cookies in your browser settings at any time. Blocking essential cookies will prevent bookings from completing.</p>
+      </LegalCard>
+
+      <LegalCard title="Advertising and Measurement">
+        <p className="mb-2">
+          We advertise on Meta platforms (Facebook and Instagram) and use Meta&rsquo;s business tools — the
+          Meta Pixel on our website and the Meta Conversions API on our servers — to understand which ads
+          actually lead to bookings.
+        </p>
+        <p className="mb-2">
+          To match a booking to an ad, we send Meta a limited set of identifiers: your email address, phone
+          number, name and city. <span className="text-gray-800 font-medium">These are cryptographically hashed
+          before they leave our servers</span> and are never sent to Meta in readable form. We also send the
+          fact that a booking or enquiry happened, and its value.
+        </p>
+        <p>
+          We use this only to measure our own advertising and to avoid showing ads to people who have already
+          booked. We do not sell your data, and we do not use it to build profiles for anyone else. You can
+          control how Meta uses your information for ads in your{' '}
+          <a href="https://www.facebook.com/adpreferences/ad_settings" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Meta ad preferences</a>,
+          or ask us to stop by emailing the address below.
+        </p>
+      </LegalCard>
+
+      <LegalHeading>Your Rights Under the DPDP Act</LegalHeading>
+
+      <LegalCard title="Right to Access & Correction">
+        You can request a copy of the personal data we hold about you, or ask us to correct any information
+        that is inaccurate. Email <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> from
+        the email address linked to your booking, or message us on WhatsApp at {BUSINESS_WHATSAPP_DISPLAY}.
+      </LegalCard>
+      <LegalCard title="Right to Erasure (Delete My Data)" id="delete-my-data">
+        You can request deletion of your personal data once your booking obligations are complete. Full
+        step-by-step instructions are on our{' '}
+        <a href="/data-deletion" className="text-blue-600 underline">data deletion page</a>. In short: email{' '}
+        <a href="mailto:chapteraaa.official@gmail.com?subject=Delete%20My%20Data" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> with
+        the subject &ldquo;Delete My Data&rdquo; and your registered phone number. We action requests within 30 days.
+      </LegalCard>
+      <LegalCard title="Right to Withdraw Consent">
+        You may withdraw consent for non-essential communications (marketing, reminders) at any time by
+        emailing us. Withdrawing consent does not affect the legality of processing carried out before
+        withdrawal.
+      </LegalCard>
+
+      <LegalCard title="Data Retention">
+        Booking and contact records are retained for up to 36 months after the completed experience to
+        support refunds, customer service, and statutory requirements. Payment records are retained as long
+        as required by Indian tax and accounting law (typically 8 years). After these periods, data is
+        deleted or anonymised.
+      </LegalCard>
+      <LegalCard title="Where Your Data Is Stored">
+        Our primary database is hosted in India (Mumbai region). Some operational tools — including error
+        monitoring (Sentry), analytics (Google Analytics), customer experience tracking (Contentsquare), our
+        WhatsApp messaging provider, and Meta for advertising measurement — may process limited data on
+        servers outside India. We only share what is necessary for these services to function, and these
+        providers act under their own privacy commitments.
+      </LegalCard>
+      <LegalCard title="Children & Minors">
+        Our experiences are intended for adults aged 18 and above. If we discover that we have collected
+        information from anyone under 18 without verifiable parental consent, we will delete that
+        information promptly. If you believe we hold information about a minor, contact us immediately.
+      </LegalCard>
+      <LegalCard title="DND / Opt-Out">
+        If you wish to stop receiving SMS, email alerts or any other communication from us, send an email to{' '}
+        <span className="text-gray-800 font-medium">chapteraaa.official@gmail.com</span> with your mobile
+        number and you will be removed from our alerts list.
+      </LegalCard>
+
+      <LegalHeading>Grievance Officer</LegalHeading>
+
+      <LegalCard title="For DPDP Complaints">
+        <p>
+          As required by the Digital Personal Data Protection Act, 2023, we have designated a Grievance
+          Officer to receive privacy complaints.
+        </p>
+        <div className="mt-3 space-y-1">
+          <p className="text-gray-700"><span className="text-gray-400">Email:</span> <a href="mailto:chapteraaa.official@gmail.com?subject=DPDP%20Grievance" className="text-blue-600 underline">chapteraaa.official@gmail.com</a></p>
+          <p className="text-gray-700"><span className="text-gray-400">WhatsApp:</span> <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a></p>
         </div>
+        <p className="text-[12px] sm:text-[13px] text-gray-400 leading-relaxed mt-3">
+          We will acknowledge your complaint within 7 working days and respond substantively within 30 days.
+          If you are not satisfied with our response, you may approach the Data Protection Board of India.
+        </p>
+      </LegalCard>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto bg-[#F2F2F7]">
-          <div className="px-4 py-5 flex flex-col gap-3">
+      <LegalCard title="Changes to this Policy">
+        chapter அ reserves the right to modify this privacy policy at any time. Changes are effective
+        immediately upon being published here.
+      </LegalCard>
+      <LegalCard title="Contact">
+        For privacy-related questions, email us at <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> or
+        WhatsApp us at <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a>.
+      </LegalCard>
 
-            {/* Intro */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] text-gray-500 leading-relaxed">This Privacy Policy describes how chapter அ collects, uses and protects information provided by customers when booking experiences, activities, group trips and social events.</p>
-            </div>
-
-            {/* Privacy items */}
-            {[
-              ['Information We Collect', 'We may collect customer information such as name, phone number, email address and booking details when a customer fills out a form or makes a booking.'],
-              ['How We Use It', 'This information is used to confirm bookings, provide customer support, share logistical details, send payment reminders where applicable and manage the booked experience.'],
-              ['Payment Data', 'Payments are processed through secure third-party payment gateways. chapter அ does not store customer card details, UPI PINs or other sensitive payment credentials.'],
-              ['Limited Sharing', 'Customer information may be shared only where reasonably required to fulfil an experience, such as with transport, accommodation or activity partners, and only to the extent necessary.'],
-              ['Google Sign-In', 'When you sign in with Google, we receive your name and email address to confirm your booking identity. We do not access your Google account beyond these basic profile details.'],
-            ].map(([title, body]) => (
-              <div key={title} className="bg-white rounded-2xl px-4 py-4">
-                <p className="text-[13px] font-bold text-gray-900 mb-1">{title}</p>
-                <p className="text-[13px] text-gray-500 leading-relaxed">{body}</p>
-              </div>
-            ))}
-
-            {/* DPDP rights */}
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-1 mt-2">Your Rights Under the DPDP Act</p>
-
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Access &amp; Correction</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">You can request a copy of the personal data we hold about you, or ask us to correct any information that is inaccurate. Email <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> from the email address linked to your booking, or message us on WhatsApp at {BUSINESS_WHATSAPP_DISPLAY}.</p>
-            </div>
-
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Erasure (Delete My Data)</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">You can request deletion of your personal data once your booking obligations are complete. Send an email titled <span className="text-gray-800 font-medium">&ldquo;Delete My Data&rdquo;</span> to <a href="mailto:chapteraaa.official@gmail.com?subject=Delete%20My%20Data" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> with your registered phone number. We will action the request within 30 days. Note: information required for legal/financial recordkeeping (e.g. payment receipts) may be retained for the period mandated by Indian tax and consumer protection law.</p>
-            </div>
-
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Right to Withdraw Consent</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">You may withdraw consent for non-essential communications (marketing, reminders) at any time by emailing us. Withdrawing consent does not affect the legality of processing carried out before withdrawal.</p>
-            </div>
-
-            {/* Retention */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Data Retention</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">Booking and contact records are retained for up to 36 months after the completed experience to support refunds, customer service, and statutory requirements. Payment records are retained as long as required by Indian tax and accounting law (typically 8 years). After these periods, data is deleted or anonymised.</p>
-            </div>
-
-            {/* Cross-border transfer */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Where Your Data Is Stored</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">Our primary database is hosted in India (Mumbai region). Some operational tools — including error monitoring (Sentry), analytics (Google Analytics), and customer experience tracking (Contentsquare) — may process limited data on servers outside India. We only share what is necessary for these services to function, and these providers act under their own privacy commitments.</p>
-            </div>
-
-            {/* Children */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Children &amp; Minors</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">Our experiences are intended for adults aged 18 and above. If we discover that we have collected information from anyone under 18 without verifiable parental consent, we will delete that information promptly. If you believe we hold information about a minor, contact us immediately.</p>
-            </div>
-
-            {/* DND */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">DND / Opt-Out</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">If you wish to stop receiving SMS, email alerts or any other communication from us, send an email to <span className="text-gray-800 font-medium">chapteraaa.official@gmail.com</span> with your mobile number and you will be removed from our alerts list.</p>
-            </div>
-
-            {/* Grievance Officer */}
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-1 mt-2">Grievance Officer</p>
-
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">For DPDP Complaints</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">As required by the Digital Personal Data Protection Act, 2023, we have designated a Grievance Officer to receive privacy complaints.</p>
-              <div className="mt-3 space-y-1">
-                <p className="text-[13px] text-gray-700"><span className="text-gray-400">Email:</span> <a href="mailto:chapteraaa.official@gmail.com?subject=DPDP%20Grievance" className="text-blue-600 underline">chapteraaa.official@gmail.com</a></p>
-                <p className="text-[13px] text-gray-700"><span className="text-gray-400">WhatsApp:</span> <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a></p>
-              </div>
-              <p className="text-[12px] text-gray-400 leading-relaxed mt-3">We will acknowledge your complaint within 7 working days and respond substantively within 30 days. If you are not satisfied with our response, you may approach the Data Protection Board of India.</p>
-            </div>
-
-            {/* Changes */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Changes to this Policy</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">chapter அ reserves the right to modify this privacy policy at any time. Changes are effective immediately upon being published here.</p>
-            </div>
-
-            {/* Contact */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Contact</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">For privacy-related questions, email us at <a href="mailto:chapteraaa.official@gmail.com" className="text-blue-600 underline">chapteraaa.official@gmail.com</a> or WhatsApp us at <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a>.</p>
-            </div>
-
-            {/* Footer note */}
-            <p className="text-center text-[11px] text-gray-400 pb-4">Last updated: June 2026 · chaptera.in</p>
-          </div>
-        </div>
-      </div>
-    </div>
+      <LegalFooter updated="September 2026" />
+    </LegalShell>
   );
 }
 
-// ─── TERMS OF SERVICE SCREEN ───────────────────────────────────────────────────
+// ─── DATA DELETION SCREEN ─────────────────────────────────────────────────────
+// Meta requires a "Data deletion instructions URL" for every app: a page telling
+// a person, in plain steps, how to get their data removed. Deliberately its own
+// route rather than an anchor into the privacy policy, so a reviewer following
+// the link lands on instructions and nothing else.
+function DataDeletionScreen() {
+  return (
+    <LegalShell title="Delete My Data">
+      <LegalCard>
+        You can ask us to delete the personal information we hold about you at any time. This page explains
+        exactly how, what gets removed, and what we are legally required to keep.
+      </LegalCard>
+
+      <LegalHeading>How to request deletion</LegalHeading>
+
+      <LegalCard title="By email — the fastest way">
+        <p className="mb-2">
+          Send an email to{' '}
+          <a href="mailto:chapteraaa.official@gmail.com?subject=Delete%20My%20Data" className="text-blue-600 underline">chapteraaa.official@gmail.com</a>{' '}
+          with:
+        </p>
+        <ul className="list-disc pl-4 space-y-1.5">
+          <li>Subject line: <span className="text-gray-800 font-medium">Delete My Data</span></li>
+          <li>The mobile number you used to book</li>
+          <li>Sent from the email address linked to your booking, so we can confirm it is you</li>
+        </ul>
+      </LegalCard>
+
+      <LegalCard title="By WhatsApp">
+        Message <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a> from
+        your registered number with the words &ldquo;Delete My Data&rdquo;. We may ask one question to confirm
+        your identity before acting.
+      </LegalCard>
+
+      <LegalHeading>What happens next</LegalHeading>
+
+      <LegalCard title="Timeline">
+        We acknowledge every request within 7 working days and complete deletion within 30 days, as required
+        by the Digital Personal Data Protection Act, 2023.
+      </LegalCard>
+
+      <LegalCard title="What we delete">
+        Your name, phone number, email address, booking records, and any messages exchanged with us — along
+        with the identifiers we hold for advertising measurement.
+      </LegalCard>
+
+      <LegalCard title="What we must keep, and why">
+        Payment and invoice records are retained for the period required by Indian tax and accounting law
+        (typically 8 years). We cannot delete these on request, because keeping them is a legal obligation
+        rather than a choice. They are kept for that purpose only and are not used for marketing.
+      </LegalCard>
+
+      <LegalHeading>Advertising data held by Meta</LegalHeading>
+
+      <LegalCard title="Deleting our records does not clear Meta's">
+        <p className="mb-2">
+          Where you reached us through a Facebook or Instagram ad, Meta holds its own record of that,
+          separately from ours. Deleting your data with us does not remove Meta&rsquo;s copy.
+        </p>
+        <p>
+          To control that, use your{' '}
+          <a href="https://www.facebook.com/adpreferences/ad_settings" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Meta ad preferences</a>{' '}
+          or Meta&rsquo;s{' '}
+          <a href="https://accountscenter.facebook.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Accounts Centre</a>.
+          What we can and do stop is sending Meta anything further about you.
+        </p>
+      </LegalCard>
+
+      <LegalCard title="Questions">
+        If a request has not been actioned within 30 days, or you are unhappy with our response, contact our
+        Grievance Officer at{' '}
+        <a href="mailto:chapteraaa.official@gmail.com?subject=DPDP%20Grievance" className="text-blue-600 underline">chapteraaa.official@gmail.com</a>.
+        You may also approach the Data Protection Board of India. Our full{' '}
+        <a href="/privacy" className="text-blue-600 underline">Privacy Policy</a> explains what we collect and why.
+      </LegalCard>
+
+      <LegalFooter updated="September 2026" />
+    </LegalShell>
+  );
+}
+
 function TermsScreen() {
   return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
-      <div className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
-          <a href="/lifestyle" className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F2F7] active:opacity-60 transition-all">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          </a>
-          <div>
-            <p className="text-[17px] font-bold text-gray-900 leading-tight">Terms of Service</p>
-            <p className="text-[12px] text-gray-400">chapter அ</p>
-          </div>
-        </div>
+    <LegalShell title="Terms of Service">
+      <LegalCard>
+        These terms apply to bookings made through chapter அ for experiences, activities, group trips and
+        social events. By completing a booking, you agree to these terms.
+      </LegalCard>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto bg-[#F2F2F7]">
-          <div className="px-4 py-5 flex flex-col gap-3">
+      {/* Full Terms & Conditions (single-source shared content) */}
+      <LegalCard>
+        <TermsContent />
+      </LegalCard>
 
-            {/* Intro */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] text-gray-500 leading-relaxed">These terms apply to bookings made through chapter அ for experiences, activities, group trips and social events. By completing a booking, you agree to these terms.</p>
-            </div>
+      <LegalCard title="Governing Terms">
+        This online payment system is provided by CHAPTER. CHAPTER may update these terms from time to time
+        and any changes will be effective immediately on being set out here. The country of domicile for
+        CHAPTER is India.
+      </LegalCard>
 
-            {/* Full Terms & Conditions (single-source shared content) */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <TermsContent />
-            </div>
+      <LegalCard title="Privacy and Your Data">
+        How we collect, use and protect your information — including the cookies and advertising tools we
+        use — is set out in our <a href="/privacy" className="text-blue-600 underline">Privacy Policy</a>.
+        To have your data removed, see <a href="/data-deletion" className="text-blue-600 underline">Delete My Data</a>.
+      </LegalCard>
 
-            {/* General note */}
-            <div className="bg-white rounded-2xl px-4 py-4">
-              <p className="text-[13px] font-bold text-gray-900 mb-1">Governing Terms</p>
-              <p className="text-[13px] text-gray-500 leading-relaxed">This online payment system is provided by CHAPTER. CHAPTER may update these terms from time to time and any changes will be effective immediately on being set out here. The country of domicile for CHAPTER is India.</p>
-            </div>
-
-            {/* Footer note */}
-            <p className="text-center text-[11px] text-gray-400 pb-4">Last updated: May 2026 · chaptera.in</p>
-          </div>
-        </div>
-      </div>
-    </div>
+      <LegalFooter updated="September 2026" />
+    </LegalShell>
   );
 }
-
-
 // ─── IN-APP BROWSER NUDGE ─────────────────────────────────────────────────────
 // Only the two Google-login surfaces (/creator and /team) still render this.
 // Every customer route — homepage, /plans, /lifestyle, /galcode, /invite —
@@ -5355,6 +5493,9 @@ export default function App() {
   const isInvitePage = routePath.startsWith('/invite/');
   const isPrivacyPage = routePath === '/privacy';
   const isTermsPage = routePath === '/termsofservice';
+  // Meta requires a data-deletion instructions URL for the app. Its own route
+  // rather than an anchor into /privacy, so the link lands on instructions only.
+  const isDataDeletionPage = routePath === '/data-deletion';
   const inviteSlug = isInvitePage ? routePath.replace('/invite/', '').split('/')[0] : '';
   const hasPreviewParam = routeSearch.includes('preview_event');
   // Latch PayU return params on mount — must happen before the URL gets replaced by the route sync effect
@@ -5370,7 +5511,7 @@ export default function App() {
   const isMyPlansPage = routePath === '/myplans';
   // /plans and /myplans both suppress the homepage (myplans redirects to /invite, plans renders AppFlow)
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
-  const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !isCreatorPage && !isTeamPage && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage);
+  const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !isCreatorPage && !isTeamPage && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage && !isDataDeletionPage);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -5480,7 +5621,13 @@ export default function App() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const isLetterPage = (isLifestylePage || isGalcodePage) && !hasPreviewParam;
-    if (isAdmin || showHomepage || isLetterPage || isSharedInvitePage || isInvitePage) {
+    // The legal pages (/privacy, /termsofservice, /data-deletion) are ordinary
+    // documents that scroll the page, not fixed-height mobile screens with an
+    // inner scroller. They used to be the latter, so they were happy under the
+    // lock below; once they became real documents the lock left them 3,000px
+    // tall inside an 830px viewport with no way to reach the bottom.
+    if (isAdmin || showHomepage || isLetterPage || isSharedInvitePage || isInvitePage
+        || isPrivacyPage || isTermsPage || isDataDeletionPage) {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
       return;
@@ -5492,7 +5639,8 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam]);
+  }, [showHomepage, isAdmin, isLifestylePage, isGalcodePage, isSharedInvitePage, isInvitePage, hasPreviewParam,
+      isPrivacyPage, isTermsPage, isDataDeletionPage]);
 
   if (isPayUReturn) return (
     <PayUReturnScreen
@@ -5529,6 +5677,7 @@ export default function App() {
   }
   if (isPrivacyPage) return <PrivacyScreen />;
   if (isTermsPage) return <TermsScreen />;
+  if (isDataDeletionPage) return <DataDeletionScreen />;
 
   if (isAdmin) return <AdminPanel />;
   if (isCreatorPage) {
