@@ -4171,7 +4171,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                         if (!doubtFormValid) { e.preventDefault(); return; }
                         void handleDoubtSubmit();
                       }}
-                      className={`w-full bg-[#FFD700] text-black font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden flex items-center justify-center gap-2.5 ${doubtFormValid ? '' : 'opacity-50 pointer-events-none'}`}
+                      className={`w-full bg-[#25D366] text-white font-semibold py-[17px] rounded-2xl text-[17px] transition-colors active:opacity-80 relative overflow-hidden flex items-center justify-center gap-2.5 ${doubtFormValid ? '' : 'opacity-50 pointer-events-none'}`}
                     >
                       <motion.div
                         className="absolute inset-0 -skew-x-12 pointer-events-none"
