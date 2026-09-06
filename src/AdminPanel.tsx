@@ -4016,10 +4016,13 @@ export default function AdminPanel() {
                               <label style={{ ...s.label, marginBottom: 4, display: 'block' }}>Booking CTA Label</label>
                               <input
                                 style={{ ...s.input, fontSize: 13 }}
-                                placeholder="e.g. Request Invitation, Pay Now…"
+                                placeholder={trip.invite_only ? 'Request Invitation' : 'Book Now'}
                                 value={ctaEdits[trip.id!] !== undefined ? ctaEdits[trip.id!] : (trip.cta_label ?? '')}
                                 onChange={e => setCtaEdits(prev => ({ ...prev, [trip.id!]: e.target.value }))}
                               />
+                              <span style={{ fontSize: 11, color: '#999', display: 'block', marginTop: 4 }}>
+                                Confirm button on the timeline sheet (after a date is picked) — separate from the calendar button. Blank = default ({trip.invite_only ? 'Request Invitation' : 'Book Now'}).
+                              </span>
                             </div>
                           </div>
                             </div>
@@ -8978,7 +8981,15 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
   const youllMeetValue = getPlanValue(["You'll Meet", 'Made For']);
   const gangSizeValue = getPlanValue(['Group Size']);
   const gangSizeNumber = (gangSizeValue.match(/\d+/)?.[0] ?? '');
-  const calendarCtaValue = getPlanValue(['Calendar CTA']) || trip.cta_label || '';
+  // The box shows ONLY its own stored override — never a fallback to cta_label.
+  // That fallback did two bad things: it displayed a word the box can't actually
+  // save (cta_label lives behind the Flow ▸ Timelines field), and it made this
+  // field un-clearable — deleting the text dropped the quick_info entry and the
+  // fallback snapped the old word straight back. When it's blank the live calendar
+  // button already uses the type default shown in the placeholder below, so the
+  // box now mirrors exactly what the customer sees.
+  const calendarCtaValue = getPlanValue(['Calendar CTA']);
+  const calendarCtaDefault = trip.invite_only ? 'Apply Now' : 'Book Now';
   const secretOfferPhoneValue = getPlanValue(['Secret Offer Number', 'Secret Offer Phone', 'Secret Offer WhatsApp']);
   const secretOfferMessageValue = getPlanValue(['Secret Offer Message']);
   const acc = trip.accommodation ?? {};
@@ -9612,12 +9623,16 @@ function TripForm({ trip, onChange, onSave, onCancel, saving, s }: {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>Calendar CTA Text (e.g. Book Now)</label>
+            <label style={s.label}>Calendar CTA Text</label>
             <input
               style={s.input}
+              placeholder={calendarCtaDefault}
               value={calendarCtaValue}
               onChange={e => setPlanValue(['Calendar CTA'], 'Calendar CTA', e.target.value, 'ticket')}
             />
+            <span style={{ fontSize: 12, color: '#999', display: 'block', marginTop: 4 }}>
+              Button on the date-picker calendar. Leave blank to use this event type's default ({calendarCtaDefault}).
+            </span>
           </div>
           <div style={{ gridColumn: '1/-1', marginBottom: 14 }}>
             <label style={s.label}>Hero Images (up to 4)</label>
