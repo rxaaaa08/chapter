@@ -30,6 +30,115 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const API_VERSION = 'v25.0';
 
+// Meta deprecates a version roughly every 90 days. Keeping the version in one
+// named constant is the documented way to survive that: when a version is
+// retired this is the single line to move, and the failure is a clean error
+// rather than fields quietly disappearing from the response.
+
+// ── Error classification ────────────────────────────────────────────────────
+// Meta's own guidance: an error carrying "is_transient": true resolves on its
+// own and should be retried after a wait, and rate limits should be handled
+// with exponential back-off rather than immediate re-requests.
+//
+// 4  = app request limit reached
+// 17 = user request limit reached
+// 80000-80004 = business-use-case rate limits
+// 1, 2 = unknown/internal, which Meta documents as usually temporary
+const RETRYABLE_CODES = new Set([1, 2, 4, 17, 341, 80000, 80001, 80002, 80003, 80004]);
+
+// Retrying these only burns quota and delays the real fix:
+// 190 = invalid/expired OAuth token   200/10/294 = missing permission
+// 100 = invalid parameter (our bug, not Meta's weather)
+const PERMANENT_CODES = new Set([10, 100, 102, 104, 190, 200, 294]);
+
+// Back-off between attempts. Kept short because an edge function has a wall
+// clock: four attempts totalling ~30s still fits, and the 6-hourly cron gives
+// us another go long before the data matters.
+const RETRY_DELAYS_MS = [2000, 6000, 20000];
+
+type MetaError = {
+  code?: number;
+  error_subcode?: number;
+  message?: string;
+  is_transient?: boolean;
+  error_user_msg?: string;
+  error_data?: { blame_field_specs?: unknown };
+};
+
+// Negative codes are internal Meta errors where the real cause is in
+// error_subcode, so the subcode is always carried through. code 1 subcode 99
+// is specifically a wrong `level` value — a config bug of ours, never transient.
+function classify(err: MetaError | null | undefined, httpStatus: number): 'retry' | 'permanent' {
+  if (!err) return httpStatus >= 500 ? 'retry' : 'permanent';
+  const code = Number(err.code);
+  const sub = Number(err.error_subcode);
+  if (code === 1 && sub === 99) return 'permanent';
+  if (PERMANENT_CODES.has(code)) return 'permanent';
+  if (err.is_transient === true) return 'retry';
+  if (RETRYABLE_CODES.has(code)) return 'retry';
+  return httpStatus >= 500 ? 'retry' : 'permanent';
+}
+
+function errorSummary(err: MetaError | null | undefined) {
+  return {
+    meta_code: err?.code ?? null,
+    meta_subcode: err?.error_subcode ?? null,
+    meta_message: err?.message ?? null,
+    meta_user_message: err?.error_user_msg ?? null,
+    is_transient: err?.is_transient ?? null,
+    // Present on validation errors; names the exact field Meta rejected.
+    blame_field_specs: err?.error_data?.blame_field_specs ?? null,
+  };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// One page, with back-off. Returns the parsed body or a classified failure.
+async function fetchPage(url: string): Promise<
+  { ok: true; body: any; usage: string | null } |
+  { ok: false; status: number; attempts: number; summary: ReturnType<typeof errorSummary> }
+> {
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    attempt++;
+    let res: Response;
+    let body: any = null;
+    try {
+      res = await fetch(url);
+      body = await res.json().catch(() => null);
+    } catch (e) {
+      // Network-level failure is transient by definition.
+      if (attempt <= RETRY_DELAYS_MS.length) {
+        console.warn(`[meta-ads-sync] network error, retry ${attempt}`, e instanceof Error ? e.message : String(e));
+        await sleep(RETRY_DELAYS_MS[attempt - 1]);
+        continue;
+      }
+      return { ok: false, status: 0, attempts: attempt, summary: errorSummary(null) };
+    }
+
+    // Meta reports how much of the rate budget we have consumed. At four calls
+    // a day this will never bind, but logging it means we find out from a log
+    // line rather than from a sync that silently stopped.
+    const usage = res.headers.get('x-business-use-case-usage') ?? res.headers.get('x-app-usage');
+
+    if (res.ok && body && !body.error) return { ok: true, body, usage };
+
+    const err: MetaError | null = body?.error ?? null;
+    const verdict = classify(err, res.status);
+    const summary = errorSummary(err);
+
+    if (verdict === 'retry' && attempt <= RETRY_DELAYS_MS.length) {
+      console.warn(`[meta-ads-sync] transient Meta error, retry ${attempt}`, JSON.stringify(summary));
+      await sleep(RETRY_DELAYS_MS[attempt - 1]);
+      continue;
+    }
+
+    console.error('[meta-ads-sync] Meta API error', res.status, JSON.stringify(summary));
+    return { ok: false, status: res.status, attempts: attempt, summary };
+  }
+}
+
 // Wider than Meta's ~7-day restatement window, so a couple of missed cron runs
 // still self-heal instead of leaving a permanent hole.
 const LOOKBACK_DAYS = 14;
@@ -139,24 +248,22 @@ Deno.serve(async (req) => {
 
     while (next && pages < 40) {
       pages++;
-      const res = await fetch(next);
-      const body = await res.json().catch(() => null);
+      const page = await fetchPage(next);
 
-      if (!res.ok || !body || body.error) {
-        const err = body?.error;
-        console.error('[meta-ads-sync] Meta API error', res.status, JSON.stringify(err ?? body));
+      if (!page.ok) {
         return new Response(
           JSON.stringify({
             ok: false,
             error: 'meta_api_error',
-            status: res.status,
-            // code 190 = token expired/revoked; 4/17/80004 = rate limited.
-            meta_code: err?.code ?? null,
-            meta_message: err?.message ?? null,
+            status: page.status,
+            attempts: page.attempts,
+            ...page.summary,
           }),
           { status: 502, headers: { 'Content-Type': 'application/json' } },
         );
       }
+      if (page.usage) console.log('[meta-ads-sync] rate budget', page.usage);
+      const body = page.body;
 
       for (const r of body.data ?? []) {
         rows.push({
