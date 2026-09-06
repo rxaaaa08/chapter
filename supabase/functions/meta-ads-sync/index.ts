@@ -152,7 +152,14 @@ const FIELDS = [
   'adset_id', 'adset_name',
   'campaign_id', 'campaign_name',
   'spend', 'impressions', 'clicks', 'inline_link_clicks', 'reach', 'frequency',
-  'actions', 'action_values',
+  // Derived rates. Meta computes these itself, and its arithmetic is the one
+  // Ads Manager shows — recomputing them from spend/clicks here would produce
+  // numbers that disagree with Meta's in the fourth decimal for no reason.
+  'cpc', 'cpm', 'ctr', 'unique_clicks', 'outbound_clicks',
+  // Ad relevance diagnostics: how this ad compares with others competing for
+  // the same audience. Strings, not numbers.
+  'quality_ranking', 'engagement_rate_ranking', 'conversion_rate_ranking',
+  'actions', 'action_values', 'cost_per_action_type',
   'date_start',
 ].join(',');
 
@@ -174,6 +181,14 @@ function pickAction(actions: Action[] | undefined, names: string[]): number {
     if (hit) return Number(hit.value) || 0;
   }
   return 0;
+}
+
+// Meta returns every numeric as a string, and omits a metric entirely rather
+// than sending zero when it does not apply. Null preserves that distinction.
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function isoDate(d: Date): string {
@@ -304,6 +319,23 @@ Deno.serve(async (req) => {
           inline_link_clicks: Number(r.inline_link_clicks) || 0,
           reach: Number(r.reach) || 0,
           frequency: r.frequency != null ? Number(r.frequency) : null,
+          // num() rather than Number(x)||0: a metric Meta omits entirely means
+          // "not applicable to this ad", which is not the same as zero, and a
+          // chart must not draw a zero where there was no measurement.
+          cpc: num(r.cpc),
+          cpm: num(r.cpm),
+          ctr: num(r.ctr),
+          unique_clicks: num(r.unique_clicks),
+          outbound_clicks: Array.isArray(r.outbound_clicks)
+            ? pickAction(r.outbound_clicks, ['outbound_click'])
+            : num(r.outbound_clicks),
+          quality_ranking: r.quality_ranking ?? null,
+          engagement_rate_ranking: r.engagement_rate_ranking ?? null,
+          conversion_rate_ranking: r.conversion_rate_ranking ?? null,
+          // Kept whole alongside the extracted figures — see the column comment.
+          actions: r.actions ?? null,
+          action_values: r.action_values ?? null,
+          cost_per_action_type: r.cost_per_action_type ?? null,
           meta_leads: pickAction(r.actions, LEAD_ACTIONS),
           meta_purchases: pickAction(r.actions, PURCHASE_ACTIONS),
           meta_purchase_value: pickAction(r.action_values, PURCHASE_ACTIONS),
