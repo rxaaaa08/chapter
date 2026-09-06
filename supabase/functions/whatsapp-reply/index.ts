@@ -73,6 +73,30 @@ Deno.serve(async (req) => {
   const phone = String(body.phone ?? '').replace(/\D/g, '').slice(-10);
   if (!/^\d{10}$/.test(phone)) return json(400, { error: 'invalid phone' }, cors);
 
+  // A marketer's People ▸ Chat only ever shows their OWN leads' phones (RLS on
+  // whatsapp_inbound/whatsapp_sends), but that is a read-time filter -- this
+  // endpoint is the real boundary, since a phone number is just a request
+  // field. Founders (role='admin') stay unrestricted; anyone else must have
+  // an active, own lead on this phone or they cannot message it.
+  if (adminRow.role !== 'admin') {
+    const { data: marketer } = await supabase
+      .from('call_marketers')
+      .select('id')
+      .eq('email', callerEmail)
+      .eq('active', true)
+      .maybeSingle();
+    const ownLead = marketer
+      ? await supabase
+          .from('applications')
+          .select('id')
+          .eq('assigned_marketer_id', marketer.id)
+          .eq('phone', phone)
+          .limit(1)
+          .maybeSingle()
+      : null;
+    if (!marketer || !ownLead?.data) return json(403, { error: 'not authorized for this conversation' }, cors);
+  }
+
   // 2. Is the customer-service window open?
   if (action === 'window') {
     try {

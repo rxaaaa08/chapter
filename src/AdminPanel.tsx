@@ -1,5 +1,5 @@
 // chaptera admin panel
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { supabase, parseHeroImages, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut } from './supabase';
 import { dateKeyInTimeZone, isoDateKey, payuTripDateKey } from './dateKeys';
 import {
@@ -295,7 +295,10 @@ export default function AdminPanel() {
       .catch(() => setPayuMode('unknown'));
   }, []);
   const [flowMode, setFlowMode] = useState<'media' | 'timelines' | 'faqs'>('media');
-  const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts'>('approval');
+  // People ▸ Call · Approval · Payments · Doubts · Chat. Chat is the WhatsApp
+  // desk (inbound replies + what we sent + delivery state); it lives here rather
+  // than on the Call rows so a caller's row stays a caller's row.
+  const [peopleMode, setPeopleMode] = useState<'call' | 'approval' | 'payments' | 'doubts' | 'chat'>('approval');
   // Team ▸ Performance (forecast, unit economics, payouts, fixed costs) ·
   // Marketers (roster + hiring) · Managers (the daily briefing engine, then the
   // human manager roster) · Creators (video review queue + creator roster).
@@ -650,14 +653,37 @@ export default function AdminPanel() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approvingDoubtId, setApprovingDoubtId] = useState<string | null>(null);
   const [resendingDetailsId, setResendingDetailsId] = useState<string | null>(null);
-  // Free-form WhatsApp reply, per application row. `replyWindow` caches the
-  // 24-hour customer-service window check so opening a box does not re-hit
-  // Wamafy on every render.
-  const [replyOpenFor, setReplyOpenFor] = useState<string | null>(null);
+  // Free-form WhatsApp reply. Keyed by the customer's 10-digit phone, not by an
+  // application id: a WhatsApp conversation belongs to a person, and the same
+  // person can hold several bookings. `replyWindow` caches the 24-hour
+  // customer-service window check so opening a box does not re-hit Wamafy on
+  // every render.
   const [replyText, setReplyText] = useState<Record<string, string>>({});
   const [replySendingId, setReplySendingId] = useState<string | null>(null);
   const [replyWindow, setReplyWindow] = useState<Record<string, { checking?: boolean; open?: boolean; expiresAt?: string | null; error?: string }>>({});
-  const [replySentFor, setReplySentFor] = useState<Record<string, string>>({});
+  // People ▸ Chat. Inbound replies and outbound sends live in two tables; the
+  // Chat view merges them by phone into one conversation. Founders see every
+  // conversation; a marketer's RLS (whatsapp_*_marketer_select) scopes them to
+  // their own leads only.
+  const [waInbound, setWaInbound] = useState<any[]>([]);
+  const [waSends, setWaSends] = useState<any[]>([]);
+  const [waChatLoading, setWaChatLoading] = useState(false);
+  const [waChatError, setWaChatError] = useState('');
+  const [waOpenPhone, setWaOpenPhone] = useState<string | null>(null);
+  // Answering outside the 24-hour window, via the `doubt_assisstance` template:
+  // it quotes their question and carries our answer, so it delivers a specific
+  // reply rather than an announcement. Keyed by phone like the free-form reply.
+  const [doubtQuestion, setDoubtQuestion] = useState<Record<string, string>>({});
+  const [doubtAnswer, setDoubtAnswer] = useState<Record<string, string>>({});
+  const [doubtQuestionEditing, setDoubtQuestionEditing] = useState<Record<string, boolean>>({});
+  // Composer focus. Needed because the outline is on the wrapper that holds both
+  // the field and the Send button, so the textarea's own :focus cannot show it.
+  const [composerFocused, setComposerFocused] = useState(false);
+  // The thread scroller. A conversation opens at its newest message, the way
+  // every chat app does — landing at the top of a long history means scrolling
+  // down past weeks of it to reach the message you came to answer.
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [doubtSendingId, setDoubtSendingId] = useState<string | null>(null);
   const [callStatusEdits, setCallStatusEdits] = useState<Record<string, string>>({});
   const [callNotesEdits, setCallNotesEdits] = useState<Record<string, string>>({});
   const [qnaCityFilter, setQnaCityFilter] = useState<'all' | string>('all');
@@ -937,6 +963,110 @@ export default function AdminPanel() {
     if (growthMode === 'trends') loadExperiments();
     else loadAnalytics();
   }, [adminRole, tab, growthMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Website doubts, by phone. Someone filling the "Other topic" form IS writing
+  // to us — they just did not do it on WhatsApp — so Chat carries the question
+  // as the opening message of their conversation. Without this a person who
+  // only ever asked through the site has no thread at all, and the amber card's
+  // "Reply on WhatsApp" button would silently land on somebody else's.
+  //
+  // Read off the loaded applications, which is exactly the set the amber cards
+  // are drawn from, and deduped by id: an event whose invite_slug aliases
+  // another's slug can attach one doubt to two leads.
+  const webDoubtsByPhone = useMemo(() => {
+    const byPhone = new Map<string, any[]>();
+    const seen = new Set<string>();
+    applications.forEach((a: any) => {
+      const phone = String(a.phone ?? '').replace(/\D/g, '').slice(-10);
+      if (!phone) return;
+      (a.doubts ?? []).forEach((d: any) => {
+        const id = String(d?.id ?? '');
+        if (!id || d.status === 'closed' || seen.has(id)) return;
+        seen.add(id);
+        const arr = byPhone.get(phone) ?? [];
+        arr.push(d);
+        byPhone.set(phone, arr);
+      });
+    });
+    return byPhone;
+  }, [applications]);
+
+  // The Chat list, in order: phones that have written to us at least once, most
+  // recent first. Lifted out of the render so selection and the window check can
+  // key on it — the render still builds the full threads for display.
+  const chatPhones = useMemo(() => {
+    const ms = (v: any) => { const t = new Date(String(v ?? '')).getTime(); return Number.isNaN(t) ? 0 : t; };
+    const last = new Map<string, number>();
+    const hasInbound = new Set<string>();
+    waInbound.forEach((m: any) => {
+      const p = String(m.from_phone ?? '').replace(/\D/g, '').slice(-10);
+      if (!p) return;
+      hasInbound.add(p);
+      last.set(p, Math.max(last.get(p) ?? 0, ms(m.sent_at || m.received_at)));
+    });
+    // Before the sends pass, so a doubt-only person's outgoing messages still
+    // count towards where their conversation sorts.
+    webDoubtsByPhone.forEach((doubts, p) => {
+      hasInbound.add(p);
+      doubts.forEach((d: any) => last.set(p, Math.max(last.get(p) ?? 0, ms(d.created_at))));
+    });
+    waSends.forEach((m: any) => {
+      const p = String(m.to_phone ?? '').replace(/\D/g, '').slice(-10);
+      if (!p || !hasInbound.has(p)) return;
+      last.set(p, Math.max(last.get(p) ?? 0, ms(m.sent_at || m.created_at)));
+    });
+    return Array.from(hasInbound).sort((a, b) => (last.get(b) ?? 0) - (last.get(a) ?? 0));
+  }, [waInbound, waSends, webDoubtsByPhone]);
+
+  // Keep a conversation selected, and check its reply window the moment it
+  // opens. Deliberately not keyed on the SEARCH-filtered list: searching the
+  // sidebar finds a conversation, it does not close the one you are reading.
+  useEffect(() => {
+    if (!(adminRole === 'admin' || currentMarketer) || tab !== 'people' || peopleMode !== 'chat') return;
+    if (!chatPhones.length) return;
+    const active = waOpenPhone && chatPhones.includes(waOpenPhone) ? waOpenPhone : chatPhones[0];
+    if (active !== waOpenPhone) setWaOpenPhone(active);
+    ensureReplyWindow(active);
+  }, [adminRole, currentMarketer, tab, peopleMode, chatPhones, waOpenPhone]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pin the open thread to its newest message: on open, on switching person, and
+  // whenever a reload brings new rows in. Layout effect so it lands before paint
+  // rather than as a visible jump.
+  useLayoutEffect(() => {
+    if (tab !== 'people' || peopleMode !== 'chat') return;
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [tab, peopleMode, waOpenPhone, waInbound, waSends]);
+
+  // Chat draws on two independent fetches, so its refresh has to run both:
+  // messages from whatsapp_inbound/whatsapp_sends, and the header's bookings plus
+  // the list card's marketer name from `applications`. Refreshing only the first
+  // left the header reading "No booking" for someone who plainly had two.
+  const refreshChat = () => { loadWhatsAppChats(); loadApplications(); };
+
+  // `applications` is otherwise loaded only by the People TAB BUTTON's onClick,
+  // which never runs when a remembered tab lands you on People at page load, or
+  // when you move between sub-view pills. Chat reads it for every booking fact it
+  // shows, so without this it opened empty and stayed empty until you clicked
+  // away to Call, refreshed there, and came back.
+  useEffect(() => {
+    if (!adminRole || tab !== 'people') return;
+    if (applications.length || applicationsLoading) return;
+    loadApplications();
+  }, [adminRole, tab, peopleMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // People ▸ Chat carries its own data — the WhatsApp send + reply log, which no
+  // other sub-view reads — so it is fetched from an effect keyed on the sub-view
+  // like Team and Growth are, not from the pill's onClick. Chat itself is open
+  // to marketers (RLS scopes their rows to their own leads); Growth ▸ Analytics
+  // stays founder-only since that whole tab is founder-only.
+  useEffect(() => {
+    const wantedByChat   = tab === 'people'    && peopleMode === 'chat' && (adminRole === 'admin' || !!currentMarketer);
+    const wantedByGrowth = tab === 'analytics' && growthMode === 'overview' && adminRole === 'admin';
+    if (!wantedByChat && !wantedByGrowth) return;
+    loadWhatsAppChats();
+  }, [adminRole, currentMarketer, tab, peopleMode, growthMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch ALL rows from a table, paging past PostgREST's 1000-row response
   // cap. Without this the People tab silently showed only the most recent
@@ -1563,7 +1693,7 @@ export default function AdminPanel() {
 
   const loadApplications = async () => {
     setApplicationsLoading(true);
-    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }, { data: marketerRows }, { data: boardRows }, { data: waInboundRows }] = await Promise.all([
+    const [{ data, error }, { data: doubtsRows, error: doubtsErr }, { data: eventRows }, { data: planDoubtsRows }, { data: marketerRows }, { data: boardRows }, { data: waInboundRows }, { data: waSendRows }, { data: emailSendRows }, { data: waFreeformRows }] = await Promise.all([
       fetchAllRows('applications', 'created_at'),
       fetchAllRows('doubt_submissions', 'submitted_at'),
       supabase.from('events').select('slug, invite_slug'),
@@ -1581,6 +1711,32 @@ export default function AdminPanel() {
         .gte('received_at', new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString())
         .order('received_at', { ascending: false })
         .limit(500),
+      // Delivery state for the two lanes under each lead's status. email_sends
+      // is is_admin_strict, so ops/marketers get an empty array and simply see
+      // no mail ticks -- deliberately not an error. whatsapp_sends now also
+      // returns a marketer's own-lead rows (application_id-attributed only,
+      // see the phonesWithOneApp note below).
+      supabase
+        .from('whatsapp_sends')
+        .select('to_phone, application_id, template_name, sent_at, delivered_at, read_at, clicked_at, failed_at, error_message')
+        .not('template_name', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(3000),
+      supabase
+        .from('email_sends')
+        .select('kind, application_id, to_email, sent_at, delivered_at, opened_at, clicked_at, failed_at, error_message')
+        .order('created_at', { ascending: false })
+        .limit(3000),
+      // Free-form staff replies -- the exact complement of the template-only
+      // query above, so between them every send is covered with no overlap.
+      // Needed to tell whether a customer's newest message has been answered.
+      supabase
+        .from('whatsapp_sends')
+        .select('to_phone, sent_at, created_at')
+        .is('template_name', null)
+        .gte('created_at', new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1000),
     ]);
     if (marketerRows) setMarketerNameById(Object.fromEntries(marketerRows.map((m: any) => [m.id, m.name])));
     if (boardRows) setMarketerBoard(boardRows as any);
@@ -1630,14 +1786,100 @@ export default function AdminPanel() {
         waByPhone.set(normPhone, arr);
       });
 
+      // Outbound WhatsApp, attributed two ways.
+      //
+      // Sends from 2026-09-02 carry application_id and are matched exactly.
+      // Older ones have only a phone, and a phone is NOT a booking: attaching
+      // them to every lead on that number put one lead's click on another's row
+      // (found 2026-09-02 on a test number invited to two events). Phone
+      // matching is therefore only used where that number has exactly ONE
+      // booking, which is the only case where it cannot be wrong.
+      //
+      // The rest are dropped rather than guessed at. A lead showing nothing is
+      // recoverable; a lead showing an engagement that never happened sends
+      // someone to the wrong conversation.
+      // ⚠️ This count is only trustworthy for a founder, who sees every
+      // application for a phone so "this phone has one booking" is a fact
+      // rather than a view of one. Marketer RLS on whatsapp_sends now scopes
+      // rows to their own leads (2026-09-04, for People ▸ Chat), but `data`
+      // here is ALSO scoped to just their own leads -- so a phone shared with
+      // another marketer's lead would look like "one booking" from here and
+      // silently inherit that other lead's delivery state. Left empty for
+      // anyone but a founder, so the fallback below never fires for them:
+      // attribute by application_id or show nothing; never widen this fallback.
+      const phonesWithOneApp = new Map<string, number>();
+      if (adminRole === 'admin') {
+        (data ?? []).forEach((a: any) => {
+          const ph = String(a.phone ?? '').replace(/\D/g, '').slice(-10);
+          if (ph) phonesWithOneApp.set(ph, (phonesWithOneApp.get(ph) ?? 0) + 1);
+        });
+      }
+      const waSendsByApp = new Map<string, any[]>();
+      const waSendsByPhone = new Map<string, any[]>();
+      (waSendRows ?? []).forEach((m: any) => {
+        const appId = String(m.application_id ?? '');
+        if (appId) {
+          const arr = waSendsByApp.get(appId) ?? [];
+          arr.push(m);
+          waSendsByApp.set(appId, arr);
+          return;
+        }
+        const normPhone = String(m.to_phone ?? '').replace(/\D/g, '').slice(-10);
+        if (!normPhone || (phonesWithOneApp.get(normPhone) ?? 0) !== 1) return;
+        const arr = waSendsByPhone.get(normPhone) ?? [];
+        arr.push(m);
+        waSendsByPhone.set(normPhone, arr);
+      });
+      // When a PERSON last wrote back, per phone. Automatic sends deliberately do
+      // not count: an OTP going out because someone started a booking answers
+      // nothing they asked, and letting it clear the flag would hide a real
+      // question. A human reply is a free-form message or a doubt answer.
+      const humanReplyAt = new Map<string, number>();
+      const noteHumanReply = (phone: any, at: any) => {
+        const normPhone = String(phone ?? '').replace(/\D/g, '').slice(-10);
+        const ts = new Date(at).getTime();
+        if (!normPhone || Number.isNaN(ts)) return;
+        humanReplyAt.set(normPhone, Math.max(humanReplyAt.get(normPhone) ?? 0, ts));
+      };
+      (waFreeformRows ?? []).forEach((m: any) => noteHumanReply(m.to_phone, m.sent_at || m.created_at));
+      (waSendRows ?? []).forEach((m: any) => {
+        if (m.template_name === 'doubt_assisstance') noteHumanReply(m.to_phone, m.sent_at);
+      });
+
+      // Email is keyed by the application id it was claimed against, which is
+      // exact -- no address guessing, which is the whole point of email_sends.
+      const emailSendsByApp = new Map<string, any[]>();
+      (emailSendRows ?? []).forEach((m: any) => {
+        const appId = String(m.application_id ?? '');
+        if (!appId) return;
+        const arr = emailSendsByApp.get(appId) ?? [];
+        arr.push(m);
+        emailSendsByApp.set(appId, arr);
+      });
+
       const enriched = (data ?? []).map((a: any) => {
         const normPhone = String(a.phone ?? '').replace(/\D/g, '').slice(-10);
         const aliases = eventSlugAliases.get(String(a.event_slug ?? '').trim()) ?? new Set<string>([a.event_slug]);
         const doubts = Array.from(aliases).flatMap(slug => doubtsByKey.get(`${normPhone}__${slug}`) ?? []);
+        const waReplies = waByPhone.get(normPhone) ?? [];
+        // Their newest message, and whether a human has answered it since.
+        const latestInboundAt = waReplies.reduce(
+          (max: number, m: any) => Math.max(max, new Date(m.sent_at || m.received_at).getTime() || 0), 0);
         return {
           ...a,
           doubts,
-          waReplies: waByPhone.get(normPhone) ?? [],
+          waReplies,
+          waAwaitingReply: latestInboundAt > 0 && (humanReplyAt.get(normPhone) ?? 0) < latestInboundAt,
+          // The same timestamp, exposed on its own: a website doubt has no
+          // answered flag of any kind (nothing has ever written
+          // plan_doubts.status), so the Call row derives one by asking whether
+          // a person has written to this number since the question was asked.
+          waHumanReplyAt: humanReplyAt.get(normPhone) ?? 0,
+          waSends: [
+            ...(waSendsByApp.get(String(a.id)) ?? []),
+            ...(waSendsByPhone.get(normPhone) ?? []),
+          ],
+          emailSends: emailSendsByApp.get(String(a.id)) ?? [],
         };
       });
       const totalDoubtsAttached = enriched.reduce((sum, a) => sum + (a.doubts?.length ?? 0), 0);
@@ -1704,12 +1946,49 @@ export default function AdminPanel() {
     return `${dayName}, ${month} ${day}${suffix}`;
   };
 
+  // People ▸ Chat: the WhatsApp desk. Two tables, one conversation — inbound
+  // replies (what customers said) and outbound sends (templates the product
+  // fired, plus free-form staff replies, with their delivery state).
+  //
+  // Bounded to 60 days on purpose: both tables grow forever, and a WhatsApp
+  // thread stops being useful long before it stops being stored.
+  const loadWhatsAppChats = async () => {
+    setWaChatLoading(true);
+    const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const [{ data: inboundRows, error: inErr }, { data: sendRows, error: outErr }] = await Promise.all([
+      supabase
+        .from('whatsapp_inbound')
+        .select('id, provider, from_phone, from_name, body_text, msg_type, interactive_reply_id, media_caption, sent_at, received_at')
+        .gte('received_at', since)
+        .order('received_at', { ascending: false })
+        .limit(1000),
+      supabase
+        .from('whatsapp_sends')
+        .select('id, provider, to_phone, template_name, variables, body_text, sent_by_email, application_id, sent_at, delivered_at, read_at, failed_at, error_code, error_message, send_ok, raw_send, created_at')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(2000),
+    ]);
+    const err = inErr ?? outErr;
+    if (err) console.error('[loadWhatsAppChats]', err);
+    setWaChatError(err ? `${err.message}${err.hint ? ` — ${err.hint}` : ''}` : '');
+    setWaInbound(inboundRows ?? []);
+    setWaSends(sendRows ?? []);
+    setWaChatLoading(false);
+  };
+
   // Free-form replies only work inside WhatsApp's 24-hour window (Meta's rule).
-  // Check before showing the box so nobody types a careful answer that bounces.
-  const openWhatsAppReply = async (app: any) => {
-    setReplyOpenFor(app.id);
-    if (replyWindow[app.id]?.open !== undefined) return;
-    setReplyWindow(w => ({ ...w, [app.id]: { checking: true } }));
+  // The composer is always visible, so this runs when a thread is opened rather
+  // than behind a button: the answer decides whether Send writes free-form text
+  // or an approved template, and it must be known before anyone has typed.
+  //
+  // Keyed by phone: the edge function is phone-addressed, and one person's
+  // thread must not open a second, separate box on their second booking.
+  const ensureReplyWindow = async (phone: string, force = false) => {
+    const key = String(phone ?? '').replace(/\D/g, '').slice(-10);
+    if (!key) return;
+    if (!force && replyWindow[key] !== undefined) return;
+    setReplyWindow(w => ({ ...w, [key]: { checking: true } }));
     try {
       const { data: sess } = await supabase.auth.getSession();
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-reply`, {
@@ -1718,23 +1997,24 @@ export default function AdminPanel() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
         },
-        body: JSON.stringify({ action: 'window', phone: app.phone }),
+        body: JSON.stringify({ action: 'window', phone: key }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setReplyWindow(w => ({ ...w, [app.id]: { error: j?.error ?? 'could not check' } }));
+        setReplyWindow(w => ({ ...w, [key]: { error: j?.error ?? 'could not check' } }));
         return;
       }
-      setReplyWindow(w => ({ ...w, [app.id]: { open: !!j.windowOpen, expiresAt: j.expiresAt ?? null } }));
+      setReplyWindow(w => ({ ...w, [key]: { open: !!j.windowOpen, expiresAt: j.expiresAt ?? null } }));
     } catch {
-      setReplyWindow(w => ({ ...w, [app.id]: { error: 'could not check' } }));
+      setReplyWindow(w => ({ ...w, [key]: { error: 'could not check' } }));
     }
   };
 
-  const sendWhatsAppReply = async (app: any) => {
-    const text = (replyText[app.id] ?? '').trim();
-    if (!text) return;
-    setReplySendingId(app.id);
+  const sendWhatsAppReply = async (phone: string) => {
+    const key = String(phone ?? '').replace(/\D/g, '').slice(-10);
+    const text = (replyText[key] ?? '').trim();
+    if (!key || !text) return;
+    setReplySendingId(key);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-reply`, {
@@ -1743,24 +2023,64 @@ export default function AdminPanel() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
         },
-        body: JSON.stringify({ action: 'send', phone: app.phone, text }),
+        body: JSON.stringify({ action: 'send', phone: key, text }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 409) {
-        // Window shut between the check and the send.
-        setReplyWindow(w => ({ ...w, [app.id]: { open: false } }));
-        showToast(j?.message ?? 'Their reply window has closed.');
+        // Window shut between the check and the send. Flipping the composer to
+        // template mode would otherwise drop what they just typed, so carry the
+        // text across — they wrote it to answer this person either way.
+        setReplyWindow(w => ({ ...w, [key]: { open: false } }));
+        setDoubtAnswer(a => ({ ...a, [key]: a[key]?.trim() ? a[key] : text }));
+        showToast(j?.message ?? 'Their reply window has closed — send it as a template instead.');
         return;
       }
       if (!res.ok) { showToast(`Not sent: ${j?.error ?? res.status}`); return; }
-      setReplySentFor(m => ({ ...m, [app.id]: text }));
-      setReplyText(t => ({ ...t, [app.id]: '' }));
-      setReplyOpenFor(null);
+      setReplyText(t => ({ ...t, [key]: '' }));
       showToast('Reply sent on WhatsApp');
+      // Re-read rather than paint an optimistic bubble: the edge function logs
+      // the reply before it answers, so the reload shows what was actually
+      // recorded — and picks up the delivery ticks as they land.
+      loadWhatsAppChats();
     } catch (err: any) {
       showToast(`Not sent: ${err?.message ?? 'network error'}`);
     } finally {
       setReplySendingId(null);
+    }
+  };
+
+  // Answer someone whose 24-hour window has closed. Free-form text is blocked
+  // there, so this goes through the approved `doubt_assisstance` template, which
+  // carries their question in {{1}} and our answer in {{2}}.
+  //
+  // The template is MARKETING and stays that way (Meta reclassifies anything not
+  // strictly transactional), so a guest who opted out of marketing will not
+  // receive it — which shows up as a failed status with a reason on the message,
+  // not as silence.
+  const sendDoubtAnswer = async (phone: string, name: string, question: string, answer: string) => {
+    const key = String(phone ?? '').replace(/\D/g, '').slice(-10);
+    if (!key || !question.trim() || !answer.trim()) return;
+    setDoubtSendingId(key);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+        },
+        body: JSON.stringify({ action: 'send_doubt', phone: key, name, question: question.trim(), answer: answer.trim() }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(`Not sent: ${j?.error ?? res.status}`); return; }
+      setDoubtQuestion(q => { const next = { ...q }; delete next[key]; return next; });
+      setDoubtAnswer(a => ({ ...a, [key]: '' }));
+      showToast('Answer sent on WhatsApp');
+      loadWhatsAppChats();
+    } catch (err: any) {
+      showToast(`Not sent: ${err?.message ?? 'network error'}`);
+    } finally {
+      setDoubtSendingId(null);
     }
   };
 
@@ -4313,6 +4633,13 @@ export default function AdminPanel() {
           const openEventSlugs = new Set(
             trips.filter(t => t.booking_url === 'payu-hosted' && t.slug).map(t => t.slug as string)
           );
+          // Pay-at-venue events settle the balance in person, so they send NO
+          // paid-in-full message at all -- the guest is standing in front of us
+          // and the bill's success screen is the confirmation. Their fully-paid
+          // leads must therefore read as "nothing owed", not as a missing send.
+          const payAtVenueSlugs = new Set(
+            trips.filter(t => t.pay_at_venue && t.slug).map(t => t.slug as string)
+          );
 
           // Build a phone+event → payu payment index
           const normalizePhone10 = (phone: any) => String(phone ?? '').replace(/\D/g, '').slice(-10);
@@ -4372,6 +4699,14 @@ export default function AdminPanel() {
           // shown as muted sub-labels under the main lifecycle state.
           // status itself stays 'invited' (so payment + invite-flow auth
           // keep working); we only surface it differently in this admin view.
+          // True once a resend has gone out on either channel. The button's own
+          // stamps are authoritative; the send logs are a fallback so a resend
+          // made before this logging existed still counts.
+          const detailsResent = (a: any): boolean =>
+            !!(a.resend_details_email_sent_at || a.resend_details_whatsapp_sent_at)
+            || (a.emailSends ?? []).some((m: any) => String(m.kind ?? '') === 'details')
+            || (a.waSends ?? []).some((m: any) => ['resend_details', 'send_details_dpl'].includes(String(m.template_name ?? '')));
+
           const displayStatus = (a: any): string => {
             // Open-event leads sit at 'pending' until they pay. Surface that as
             // "in progress", or "cart abandoned" once the bill was opened and
@@ -4382,7 +4717,12 @@ export default function AdminPanel() {
             }
             if (a.status !== 'invited') return a.status;
             if (a.cart_abandoned) return 'cart_abandoned';
-            if (a.re_target) return 're_target';
+            // Re-target splits in two the moment a resend goes out, so the
+            // pill itself names which message the ticks below refer to. That
+            // keeps the notation strictly 1:1 without a label under the icons:
+            // Re-Target means "the invite is the live question", Resent Details
+            // means "the invite is moot, the resend is the live question".
+            if (a.re_target) return detailsResent(a) ? 'resent_details' : 're_target';
             return a.status;
           };
           // Effective lead scope. Dual-role (marketer AND manager) users get a
@@ -4420,9 +4760,8 @@ export default function AdminPanel() {
           // Newest lead first, full stop — the order the rows arrive in from
           // loadApplications (created_at descending). There used to be a
           // "needs a human" float here that lifted unanswered doubts, cart
-          // abandons and failed payments to the top, but neither signal is
-          // ever cleared (no doubt is ever marked answered, and cart_abandoned
-          // sticks for life), so the float turned into a permanent archive:
+          // abandons and failed payments to the top, but no signal it floated
+          // on was ever cleared, so the float turned into a permanent archive:
           // on 2026-08-09 it buried a lead created that morning under 21 older
           // rows, the oldest from 10 June. Callers who want that cohort can
           // pick it from the status filter chips instead, which is a choice
@@ -4475,18 +4814,6 @@ export default function AdminPanel() {
               ]
             : filteredApps;
 
-          // A WhatsApp conversation belongs to a PERSON, but this table is one row
-          // per booking — so someone with two bookings would otherwise see the same
-          // thread printed twice, with two reply boxes that do the same thing.
-          // Render the thread on their topmost row only; the badge still marks the
-          // rest, so nothing is hidden, it just is not said twice.
-          const waThreadRowByPhone = new Map<string, string>();
-          rowItems.forEach((r: any) => {
-            if (!r?.id || !r?.phone) return;
-            const p = String(r.phone).replace(/\D/g, '').slice(-10);
-            if (!p || waThreadRowByPhone.has(p)) return;
-            waThreadRowByPhone.set(p, r.id);
-          });
           // Dates that actually have leads (respecting the current event filter),
           // so the date dropdown only ever offers dates worth picking. Formatted
           // for the option labels; sorted chronologically.
@@ -4581,7 +4908,11 @@ export default function AdminPanel() {
             if (status === 'invited')        return '#2196f3';
             if (status === 'cart_abandoned') return '#b45309';
             if (status === 'payment_failed') return '#dc2626';
-            if (status === 're_target')      return '#7c3aed';
+            // Same violet as re_target, deliberately. These are one operational
+            // state -- a lead being chased -- at two points in it. The pill text
+            // carries the difference; a second shade would imply a second state
+            // and make the two look like separate cohorts in the footer counts.
+            if (status === 're_target' || status === 'resent_details') return '#7c3aed';
             if (status === 'waitlist')       return '#a855f7';
             if (status === 'in_progress')    return '#0891b2';
             if (status === 'pending')        return '#f97316';
@@ -4636,45 +4967,341 @@ export default function AdminPanel() {
             );
           };
 
-          // Secondary signals shown below the main lifecycle chip. They do not
-          // replace the status or create separate status filters.
+          // ── Delivery ticks ──────────────────────────────────────────────
+          // One notation for both channels, borrowed from WhatsApp because
+          // everyone already reads it. Three states stack up the ladder, two
+          // replace it outright:
+          //
+          //   accepted   single grey tick    provider took the request
+          //   delivered  double grey tick    on the phone / in the inbox
+          //   read       double COLOURED     blue for chat, amber for mail
+          //   clicked    Claude sunburst     a link in the mail was clicked
+          //   failed     prohibition mark    blocked, opted out, bounced, never sent
+          //
+          // Clicked and failed are terminal, so they stand alone rather than
+          // decorating the ticks -- which also gives the two states that need
+          // action a silhouette you can find without reading colour.
+          //
+          // A click sets clicked even with no recorded open: image-blocked mail
+          // clients fire a click and no open, and requiring both would downgrade
+          // the strongest signal email gives us.
+          const WA_BLUE = '#34b7f1';
+          // Tailwind v4 amber-500, the exact colour the open-event booking form
+          // uses for its "Invalid Number" hint. Borrowed rather than invented so
+          // the product has one amber, not two that almost match.
+          const MAIL_AMBER = '#FE9A00';
+
+          // 'none' and 'unknown' both draw a dash, because in both cases there is
+          // nothing to report about delivery. They are separate states because
+          // the REASON differs and the hover text has to say which:
+          //   none    -- no message of this kind is ever sent here, by design
+          //   unknown -- one was sent, but before we logged deliveries
+          // Collapsing them would tell an admin "nothing was sent" about a
+          // message that definitely was.
+          type LaneState = 'missing' | 'accepted' | 'delivered' | 'read' | 'clicked' | 'failed' | 'none' | 'unknown';
+          const LANE_RANK: Record<LaneState, number> = {
+            none: -1, unknown: -1, missing: 0, failed: 1, accepted: 2, delivered: 3, read: 4, clicked: 5,
+          };
+
+          // Which message a lead's CURRENT status implies. The status decides
+          // which message to surface; the send log decides what the ticks say.
+          //
+          // waAuto / emailAuto are what make the red "never sent" mark
+          // trustworthy. They mark the channels that fire on their own, so a
+          // gap is genuinely a fault. Without them the alert fires on the
+          // majority of rows and stops meaning anything:
+          //
+          //   * Details is an admin pressing a button. 110 of 134 re-target
+          //     leads have never had one sent, and that is normal, not broken.
+          //   * The verification EMAIL is a fallback that only sends when the
+          //     WhatsApp code fails. Absent is its usual state.
+          //
+          // Anything not listed here sends nothing at that stage, which is a
+          // real answer and renders as a dash rather than a blank.
+          type MessageSpec = {
+            label: string; templates: string[]; emailKind: string | null;
+            waAuto: boolean; emailAuto: boolean;
+          };
+          const MESSAGE_FOR_STATUS: Record<string, MessageSpec> = {
+            in_progress:    { label: 'Verification code', templates: ['otp'], emailKind: 'verification_code', waAuto: true,  emailAuto: false },
+            cart_abandoned: { label: 'Nudge',             templates: ['cart_abandon'], emailKind: 'nudge',     waAuto: true,  emailAuto: true  },
+            payment_failed: { label: 'Retry',             templates: ['payment_failed'], emailKind: 'retry',   waAuto: true,  emailAuto: true  },
+            invited:        { label: 'Invite',            templates: ['invitation_with_contact', 'invitation_with_tracking'], emailKind: 'invite', waAuto: true, emailAuto: true },
+            // Re-target is the one slot whose meaning CHANGES, and it is still
+            // 1:1 -- it just points at a different message before and after the
+            // Resend Details button.
+            //
+            //   before: the invite is the only thing that matters. Re-target
+            //           means invited 24h+ ago and the bill never opened, so
+            //           "did it even land?" decides whether to pick up the
+            //           phone. It is an automatic send, so a gap is a real alert.
+            //   after:  the resend supersedes it. Whether they engaged with the
+            //           original invite is moot once a fresh one has gone out;
+            //           the only live question is whether THAT one landed. It is
+            //           admin-triggered, so a gap is never an alert.
+            //
+            // Open events never reach here -- they have no invite step.
+            re_target:      { label: 'Invite',            templates: ['invitation_with_contact', 'invitation_with_tracking'], emailKind: 'invite', waAuto: true, emailAuto: true },
+            resent_details: { label: 'Details',           templates: ['resend_details', 'send_details_dpl'], emailKind: 'details', waAuto: false, emailAuto: false },
+            // One label for four templates: the guest experienced one thing.
+            // The template that actually fired stays in the hover text.
+            advance_paid:   { label: 'Payment success',   templates: ['advancepaid', 'advance_success_dpl', 'advance_success'], emailKind: null, waAuto: true, emailAuto: false },
+            // 'advancepaid' is deliberately NOT here. It matched the ADVANCE
+            // message, so a split lead's fully-paid lane could show the state of
+            // a confirmation sent weeks earlier instead of the balance one.
+            fully_paid:     { label: 'Payment success',   templates: ['balance_success', 'single_payment_sucess_dpl', 'balance_paid_dpl', 'payment_success'], emailKind: null, waAuto: true, emailAuto: false },
+          };
+
+          // WhatsApp delivery logging began with the Wamafy migration. Leads
+          // older than this have no send rows because none were ever written,
+          // not because a message went missing -- so their chat lane shows a
+          // dash. Email needs no such floor: its history was backfilled.
+          const WA_LOG_START = Date.parse('2026-08-28T00:00:00Z');
+
+          // The red mark is an operational signal -- "this broke, go fix it" --
+          // not a historical audit. A gap from three months ago is not
+          // actionable: no cron will retry it and the guest is long gone. Worse,
+          // every message type we have ever added leaves a tail of leads from
+          // before it existed, and flagging those buries the one that matters.
+          // Ticks still render for all history; only the ALERT is windowed.
+          const ALERT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+          const fmtWhen = (iso?: string | null): string => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+          };
+
+          type Lane = { state: LaneState; at: string; why: string; byDesign: boolean };
+
+          const waLaneState = (rows: any[]): { state: LaneState; at: string; why: string } => {
+            let best: { state: LaneState; at: string; why: string } = { state: 'missing', at: '', why: '' };
+            rows.forEach(r => {
+              // clicked outranks read on this lane too, so the sunburst shows
+              // in blue the moment a tracked template starts reporting taps.
+              // Null on every template that is not tracked, which is all of
+              // them today -- see the whatsapp_click_tracking migration.
+              const s: LaneState = r.failed_at ? 'failed'
+                : r.clicked_at ? 'clicked'
+                : r.read_at ? 'read'
+                : r.delivered_at ? 'delivered'
+                : r.sent_at ? 'accepted' : 'missing';
+              const at = r.clicked_at ?? r.read_at ?? r.delivered_at ?? r.sent_at ?? r.failed_at ?? '';
+              if (LANE_RANK[s] >= LANE_RANK[best.state]) best = { state: s, at, why: r.error_message ?? '' };
+            });
+            return best;
+          };
+
+          const mailLaneState = (rows: any[]): { state: LaneState; at: string; why: string } => {
+            let best: { state: LaneState; at: string; why: string } = { state: 'missing', at: '', why: '' };
+            rows.forEach(r => {
+              const s: LaneState = r.failed_at ? 'failed'
+                : r.clicked_at ? 'clicked'
+                : r.opened_at ? 'read'
+                : r.delivered_at ? 'delivered'
+                : r.sent_at ? 'accepted' : 'missing';
+              const at = r.clicked_at ?? r.opened_at ?? r.delivered_at ?? r.sent_at ?? r.failed_at ?? '';
+              if (LANE_RANK[s] >= LANE_RANK[best.state]) best = { state: s, at, why: r.error_message ?? '' };
+            });
+            return best;
+          };
+
+          // The channel is named by an icon, never by a word: the status pill above
+          // already says which message this is, so a label would be repeating
+          // what two other things on the row already say. Muted on purpose --
+          // these are the constant, and the marks beside them are the variable.
+          const channelIcon = (channel: 'whatsapp' | 'mail') => (
+            <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"
+                 style={{ display: 'block', flexShrink: 0, color: '#a8a8a8' }}
+                 fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {channel === 'whatsapp' ? (
+                <>
+                  <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
+                  <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
+                </>
+              ) : (
+                <>
+                  <path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z" />
+                  <path d="M3 7l9 6l9 -6" />
+                </>
+              )}
+            </svg>
+          );
+
+          const laneMark = (state: LaneState, colour: string) => {
+            if (state === 'none' || state === 'unknown') {
+              return <span style={{ width: 15, color: '#c4c4c4', display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>–</span>;
+            }
+            // One mark and one colour for both terminal problems -- a message
+            // that failed, and one that was due and never sent. A triangle read
+            // as "the system errored"; this reads as "it did not get through",
+            // which is what actually happened in both cases. The hover text is
+            // where they separate, and they separate a lot: one is the guest
+            // refusing or a dead address, the other is our own gap.
+            if (state === 'failed' || state === 'missing') {
+              return (
+                <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#ef4444', marginRight: 3 }}>
+                  <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" strokeWidth="2.8" />
+                  <path d="M6 6 18 18" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+                </svg>
+              );
+            }
+            if (state === 'clicked') {
+              // Clicked is the only state with a mark of its own rather than a
+              // tick, because it is the only thing email tells us that is hard
+              // evidence: an open can be a mail client pre-fetching an image,
+              // a click cannot.
+              return (
+                <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: colour, marginRight: 2 }}>
+                  <path d="M14.2 12.0L21.0 12.0M13.8 13.3L19.3 17.3M12.7 14.1L14.8 20.6M11.3 14.1L9.2 20.6M10.2 13.3L4.7 17.3M9.8 12.0L3.0 12.0M10.2 10.7L4.7 6.7M11.3 9.9L9.2 3.4M12.7 9.9L14.8 3.4M13.8 10.7L19.3 6.7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                </svg>
+              );
+            }
+            const tickColour = state === 'read' ? colour : '#b0b0b0';
+            return (
+              <svg width="15" height="10" viewBox="0 0 17 12" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: tickColour }}>
+                <path d={state === 'accepted' ? 'M4 6.6 6.5 9.1 11.7 3.2' : 'M1.5 6.6 4 9.1 9.2 3.2'}
+                      fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                {state !== 'accepted' && (
+                  <path d="M1.5 6.6 4 9.1 9.2 3.2" transform="translate(5 0)" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                )}
+              </svg>
+            );
+          };
+
+          // WhatsApp only reports a read when the RECIPIENT has read receipts
+          // switched on. With them off, a message they opened and acted on still
+          // shows as merely delivered -- confirmed on the founder's own number on
+          // 2026-09-01, which tapped a button and produced no read event, while
+          // a receipts-on number the same week reported reads normally.
+          //
+          // So double grey ticks cannot be read as "they ignored it". Where the
+          // phone has produced a read receipt before we know receipts work and
+          // silence really does mean unread; where it never has, we say so
+          // rather than implying something the data does not support.
+          const receiptsProven = (a: any): boolean =>
+            (a.waSends ?? []).some((m: any) => !!m.read_at);
+
+          const laneTitle = (channel: string, label: string, s: { state: LaneState; at: string; why: string }, readReceiptsSeen = false): string => {
+            if (s.state === 'none') return s.why || `No ${channel} is sent for ${label.toLowerCase()} — by design`;
+            if (s.state === 'unknown') return `${label} on ${channel} — sent before delivery logging began, so no record exists`;
+            if (s.state === 'missing') return `${label} on ${channel} — never sent, no send record`;
+            if (s.state === 'failed') return `${label} on ${channel} — failed${s.why ? `: ${s.why}` : ''}`;
+            const word = s.state === 'clicked' ? 'clicked'
+              : s.state === 'read' ? (channel === 'email' ? 'opened' : 'read')
+              : s.state;
+            const base = `${label} on ${channel} — ${word}${s.at ? ` ${fmtWhen(s.at)}` : ''}`;
+            if (channel === 'WhatsApp' && s.state === 'delivered') {
+              return base + (readReceiptsSeen
+                ? ', not read yet'
+                : '. No read receipt — this number has never sent one, so they may have read receipts off');
+            }
+            return base;
+          };
+
+          // Two fixed lanes, chat above mail, and the mail lane never collapses:
+          // if it did, "no email by design" and "the email failed to send" would
+          // look identical, which is exactly the distinction this is for.
           const secondaryStatusLabels = (a: any) => {
             const state = displayStatus(a);
-            const mailLabel = a.cart_abandoned && a.cart_abandon_email_opened_at
-              ? 'Recovery Mail'
-              : !a.cart_abandoned && (state === 'invited' || state === 're_target') && a.email_opened_at
-              ? 'Mail'
-              : null;
-            const unsubscribedLabel = a.email_unsubscribed_at ? 'Unsubscribed' : null;
-            const detailsLabel = a.resend_details_link_clicked_at || a.resend_details_email_sent_at ? 'Details' : null;
-            if (!mailLabel && !detailsLabel && !unsubscribedLabel) return null;
-            const labels = [mailLabel, detailsLabel, unsubscribedLabel].filter(Boolean);
+            const plan = MESSAGE_FOR_STATUS[state];
+            const unsubscribed = !!a.email_unsubscribed_at;
+            if (!plan) return unsubscribed ? (
+              <div style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500 }}>Unsubscribed</div>
+            ) : null;
+
+            // A gap only becomes an alert when the message was genuinely due:
+            // the channel fires automatically, we hold an address to send to,
+            // and the lead is new enough that a send would have been logged.
+            // Everywhere else a gap is simply "nothing was owed", which is a
+            // dash. Alerting on all of them would fire on most of the list.
+            const createdMs = Date.parse(String(a.created_at ?? '')) || 0;
+            const recent = createdMs >= Date.now() - ALERT_WINDOW_MS;
+            const waLoggingExisted = createdMs >= WA_LOG_START;
+            // The one status whose expectation depends on the event, not the
+            // lead: a pay-at-venue balance is settled in person and sends
+            // nothing, so silence there is the design working.
+            const sendsNothing = state === 'fully_paid' && payAtVenueSlugs.has(a.event_slug);
+            const hasEmail = !!String(a.email ?? '').trim();
+
+            // Resolve one message into its two lanes. Per MESSAGE, not per lead
+            // -- re_target carries two of these and everything else carries one.
+            const resolveBlock = (spec: MessageSpec) => {
+              const waRows = (a.waSends ?? []).filter((m: any) => spec.templates.includes(String(m.template_name ?? '')));
+              const mailRows = spec.emailKind
+                ? (a.emailSends ?? []).filter((m: any) => String(m.kind ?? '') === spec.emailKind)
+                : [];
+
+              // With no rows, WHY there are none decides what the lane says.
+              // Four different answers, one dash between them, and the hover is
+              // where they separate.
+              // byDesign means this channel carries NO message at this status,
+              // ever, for anyone -- so the lane is dropped rather than drawn as
+              // a dash. A constant of the status is not information about this
+              // lead. Everything else keeps its dash, because it varies per
+              // lead and therefore does tell you something: no address on file,
+              // a manual send not made yet, or a send that predates logging.
+              const emptyWa = (): Lane => {
+                if (sendsNothing) return { state: 'none', at: '', why: '', byDesign: true };
+                if (!spec.waAuto) return { state: 'none', at: '', why: `${spec.label} has not been sent on WhatsApp yet`, byDesign: false };
+                if (!waLoggingExisted || !recent) return { state: 'unknown', at: '', why: '', byDesign: false };
+                return { state: 'missing', at: '', why: '', byDesign: false };
+              };
+              const emptyMail = (): Lane => {
+                if (!spec.emailKind) return { state: 'none', at: '', why: '', byDesign: true };
+                if (!hasEmail) return { state: 'none', at: '', why: 'No email address on file for this lead', byDesign: false };
+                if (!spec.emailAuto) return { state: 'none', at: '', why: `${spec.label} has not been emailed yet`, byDesign: false };
+                if (!recent) return { state: 'unknown', at: '', why: '', byDesign: false };
+                return { state: 'missing', at: '', why: '', byDesign: false };
+              };
+
+              return {
+                label: spec.label,
+                wa: waRows.length ? { ...waLaneState(waRows), byDesign: false } : emptyWa(),
+                mail: spec.emailKind && hasEmail && mailRows.length
+                  ? { ...mailLaneState(mailRows), byDesign: false }
+                  : emptyMail(),
+              };
+            };
+
+            // Strictly one message per row now: the pill names it, so the
+            // lanes never carry a label.
+            const blocks = [resolveBlock(plan)];
+            // Pay-at-venue fully-paid sends nothing on either channel, so the
+            // whole block collapses rather than leaving an empty gap in the row.
+            if (blocks.every(b => b.wa.byDesign && b.mail.byDesign) && !unsubscribed) return null;
+
             return (
-            <div style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {labels.map(label => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {label === mailLabel || (label === detailsLabel && a.resend_details_link_clicked_at) ? (
-                    <svg width="15" height="10" viewBox="0 0 17 12" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#34b7f1' }}>
-                      <path d="M1.5 6.6 4 9.1 9.2 3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M1.5 6.6 4 9.1 9.2 3.2" transform="translate(5 0)" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : label === detailsLabel ? (
-                    <svg width="15" height="10" viewBox="0 0 17 12" aria-hidden="true" style={{ display: 'block', flexShrink: 0, color: '#999' }}>
-                      <path d="M4 6.6 6.5 9.1 11.7 3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : (
-                    <span style={{ width: 15, color: '#aaa', display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>-</span>
-                  )}
-                  <span>{label}</span>
-                </div>
-              ))}
-            </div>
+              <div style={{ marginTop: 5, fontSize: 10, color: '#999', fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {blocks.map(b => (
+                  <div key={b.label} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {!b.wa.byDesign && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }} title={laneTitle('WhatsApp', b.label, b.wa, receiptsProven(a))}>
+                        {channelIcon('whatsapp')}
+                        {laneMark(b.wa.state, WA_BLUE)}
+                      </div>
+                    )}
+                    {!b.mail.byDesign && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }} title={laneTitle('email', b.label, b.mail)}>
+                        {channelIcon('mail')}
+                        {laneMark(b.mail.state, MAIL_AMBER)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {unsubscribed && <div style={{ color: '#b45309' }}>Unsubscribed</div>}
+              </div>
             );
           };
 
           const resendDetailsButton = (a: any) => {
             const bothDetailsChannelsSent = !!a.resend_details_email_sent_at && !!a.resend_details_whatsapp_sent_at;
-            if (displayStatus(a) !== 're_target' || !String(a.email ?? '').trim() || bothDetailsChannelsSent) return null;
+            // Keyed to the underlying flag, not the pill: a lead flips to
+            // Resent Details after the FIRST channel goes out, and the button
+            // still has work to do until both have.
+            const isRetargetLead = ['re_target', 'resent_details'].includes(displayStatus(a));
+            if (!isRetargetLead || !String(a.email ?? '').trim() || bothDetailsChannelsSent) return null;
             const busy = resendingDetailsId === a.id;
             const hasUserStatus = !!String(callNotesEdits[a.id] ?? a.call_notes ?? '').trim();
             return (
@@ -4699,6 +5326,20 @@ export default function AdminPanel() {
                 {busy ? 'Sending...' : 'Resend Details'}
               </button>
             );
+          };
+
+          // The amber card's Reply button. A website doubt is answered in
+          // People ▸ Chat like every other conversation — this only carries you
+          // there: open that person's thread, and seed the question the
+          // `doubt_assisstance` template will quote with THIS card's text
+          // rather than the composer's default of their last WhatsApp message,
+          // which is a different question when it exists at all.
+          const openDoubtInChat = (a: any, d: any) => {
+            const phone = String(a.phone ?? '').replace(/\D/g, '').slice(-10);
+            if (!phone) return;
+            setDoubtQuestion(prev => ({ ...prev, [phone]: String(d.message ?? '') }));
+            setWaOpenPhone(phone);
+            setPeopleMode('chat');
           };
 
           const statusLabel = (st: string) =>
@@ -4741,7 +5382,23 @@ export default function AdminPanel() {
 
             let cols: string[];
             let rows: (string | number)[][];
-            if (peopleMode === 'doubts') {
+            if (peopleMode === 'chat') {
+              // The message log, both directions, newest first — the delivery
+              // record AiSensy never gave us, in a form a spreadsheet can read.
+              const inRows = waInbound.map((m: any) => [
+                m.sent_at || m.received_at, 'Received', normalizePhone10(m.from_phone), m.from_name ?? '',
+                '', m.body_text || m.media_caption || (m.interactive_reply_id ? `tapped "${m.interactive_reply_id}"` : (m.msg_type ?? '')),
+                '', '', '',
+              ]);
+              const outRows = waSends.map((m: any) => [
+                m.sent_at || m.created_at, 'Sent', normalizePhone10(m.to_phone), '',
+                m.template_name ?? '', m.body_text ?? '',
+                m.delivered_at ?? '', m.read_at ?? '',
+                m.failed_at ? `${m.error_code ?? ''} ${m.error_message ?? ''}`.trim() : '',
+              ]);
+              cols = ['At', 'Direction', 'Phone', 'Their Name', 'Template', 'Message', 'Delivered At', 'Read At', 'Failure'];
+              rows = [...inRows, ...outRows].sort((a, b) => String(b[0]).localeCompare(String(a[0])));
+            } else if (peopleMode === 'doubts') {
               cols = ['Name', 'Phone', 'Plan', 'City', 'Reporting Date', 'Doubt', 'Why Join', 'Invited'];
               rows = filteredDoubtSubmissions.map((d: any) => [
                 d.name ?? '', d.phone ?? '', getDoubtSubmissionPlanName(d), d.city ?? '',
@@ -4811,20 +5468,33 @@ export default function AdminPanel() {
             cart_abandoned: filteredApps.filter(a => displayStatus(a) === 'cart_abandoned').length,
             payment_failed: filteredApps.filter(a => displayStatus(a) === 'payment_failed').length,
             re_target:      filteredApps.filter(a => displayStatus(a) === 're_target').length,
+            resent_details: filteredApps.filter(a => displayStatus(a) === 'resent_details').length,
             waitlist:       filteredApps.filter(a => a.status === 'waitlist').length,
             advance_paid: filteredApps.filter(a => a.status === 'advance_paid').length,
             fully_paid:   filteredApps.filter(a => a.status === 'fully_paid').length,
           };
 
           // Header columns per mode
+	          // Chat is not a table, so it contributes no header row.
 	          const headers: Record<typeof peopleMode, string[]> =
 	            peopleMode === 'call'
-              ? { call: ['Name', 'Phone', 'Event', 'User Status', 'Date', 'Action'], approval: [], payments: [], doubts: [] }
+              ? { call: ['Name', 'Phone', 'Event', 'User Status', 'Date', 'Action'], approval: [], payments: [], doubts: [], chat: [] }
               : peopleMode === 'approval'
-              ? { call: [], approval: ['Plan Name', 'Why Join', 'Action'], payments: [], doubts: [] }
+              ? { call: [], approval: ['Plan Name', 'Why Join', 'Action'], payments: [], doubts: [], chat: [] }
               : peopleMode === 'payments'
-              ? { call: [], approval: [], payments: ['Name', 'Plan', 'Status', 'Transaction IDs'], doubts: [] }
-              : { call: [], approval: [], payments: [], doubts: ['Name / Doubt', 'Plan', 'City', 'Reporting Date', 'Phone', 'Reply'] };
+              ? { call: [], approval: [], payments: ['Name', 'Plan', 'Status', 'Transaction IDs'], doubts: [], chat: [] }
+              : { call: [], approval: [], payments: [], doubts: ['Name / Doubt', 'Plan', 'City', 'Reporting Date', 'Phone', 'Reply'], chat: [] };
+
+          // Chat reads two different tables from the rest of the People tab, so
+          // both the Download and the Refresh button follow the sub-view.
+          const isTableMode = peopleMode === 'call' || peopleMode === 'approval' || peopleMode === 'payments';
+          const exportCount = peopleMode === 'chat' ? waInbound.length + waSends.length : counts.total;
+          const viewRefreshing = peopleMode === 'chat' ? (waChatLoading || applicationsLoading) : applicationsLoading;
+          const refreshView = () => {
+            if (peopleMode === 'chat') { refreshChat(); return; }
+            loadApplications();
+            refreshPayuPayments();
+          };
 
           return (
             <div>
@@ -4998,20 +5668,24 @@ export default function AdminPanel() {
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 700, fontSize: 22 }}>{effScope === 'team' ? 'Event Leads' : currentMarketer ? 'My Leads' : 'People'}</div>
-                <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
-                  {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
-                  {peopleMode === 'doubts' && (() => {
-                    const appliedCount = filteredDoubtSubmissions.filter(doubtHasApplied).length;
-                    return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} invited</span> : null;
-                  })()}
-                </span>
+                {peopleMode !== 'chat' && (
+                  <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>
+                    {counts.total} {peopleMode === 'doubts' ? (counts.total === 1 ? 'doubt' : 'doubts') : (counts.total === 1 ? 'person' : 'people')}
+                    {peopleMode === 'doubts' && (() => {
+                      const appliedCount = filteredDoubtSubmissions.filter(doubtHasApplied).length;
+                      return appliedCount > 0 ? <span style={{ color: '#16a34a' }}> · {appliedCount} invited</span> : null;
+                    })()}
+                  </span>
+                )}
                 <div style={{ flex: 1 }} />
                 {adminRole === 'admin' && (
                 <button
                   onClick={exportCsv}
-                  disabled={counts.total === 0}
-                  title="Download the current view (active filters applied) as a CSV — opens in Google Sheets / Excel"
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: counts.total === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: counts.total === 0 ? 0.55 : 1 }}
+                  disabled={exportCount === 0}
+                  title={peopleMode === 'chat'
+                    ? 'Download the last 60 days of WhatsApp messages — both directions, with delivery state'
+                    : 'Download the current view (active filters applied) as a CSV — opens in Google Sheets / Excel'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: exportCount === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: exportCount === 0 ? 0.55 : 1 }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
@@ -5020,15 +5694,15 @@ export default function AdminPanel() {
                 </button>
                 )}
                 <button
-                  onClick={() => { loadApplications(); refreshPayuPayments(); }}
-                  disabled={applicationsLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: applicationsLoading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: applicationsLoading ? 0.55 : 1 }}
+                  onClick={refreshView}
+                  disabled={viewRefreshing}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: viewRefreshing ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: viewRefreshing ? 0.55 : 1 }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: applicationsLoading ? 'spin 0.8s linear infinite' : 'none' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: viewRefreshing ? 'spin 0.8s linear infinite' : 'none' }}>
                     <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
                     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                   </svg>
-                  {applicationsLoading ? 'Refreshing…' : 'Refresh'}
+                  {viewRefreshing ? 'Refreshing…' : 'Refresh'}
                 </button>
               </div>
 
@@ -5038,10 +5712,644 @@ export default function AdminPanel() {
                 {modeChip('approval', 'Approval', '✅')}
                 {modeChip('payments', 'Payments', '💰')}
                 {modeChip('doubts', 'Doubts', '💬')}
+                {/* Founders see every conversation; a marketer sees only their
+                    own leads' threads, via the whatsapp_*_marketer_select RLS
+                    policies. Anyone else (plain ops, managers) gets an empty
+                    pane rather than a permission error. */}
+                {(adminRole === 'admin' || !!currentMarketer) && modeChip('chat', 'Chat', '📨')}
               </div>
 
-              {/* Filters row */}
-              {peopleMode !== 'doubts' ? (
+              {/* ── CHAT: the WhatsApp desk ──────────────────────────────────
+                  Every WhatsApp message now goes through Wamafy, which webhooks
+                  back delivery, read and failure — and customer replies. This is
+                  where all of that is read and answered. It lives in its own
+                  sub-view rather than on the Call rows because a conversation
+                  belongs to a PERSON while the Call table is one row per booking:
+                  someone with two bookings would otherwise see the same thread
+                  printed twice, in a place meant for working a call list. */}
+              {peopleMode === 'chat' && (() => {
+                type ThreadMsg = {
+                  key: string;
+                  dir: 'in' | 'out';
+                  ts: number;
+                  at: string;
+                  text: string;
+                  // Came from the doubt form on the site, not from WhatsApp. It
+                  // reads as a message from them and it is one, but it never
+                  // arrived on the number — and answering it is what opens the
+                  // conversation, so the bubble says where it came from.
+                  viaWeb?: boolean;
+                  templateName?: string | null;
+                  sentBy?: string | null;
+                  // Which booking this send was about, stamped by the sender.
+                  // Null on anything sent before the senders started stamping it,
+                  // and on `doubt_assisstance` / free-form replies, which go out
+                  // from `whatsapp-reply` addressed to a phone, not a booking.
+                  applicationId?: string | null;
+                  deliveredAt?: string | null;
+                  readAt?: string | null;
+                  failedAt?: string | null;
+                  errorCode?: string | null;
+                  errorMessage?: string | null;
+                  // false = the provider refused the send call itself, so nothing
+                  // ever left. Distinct from failedAt, which is WhatsApp failing
+                  // to deliver something the provider had already accepted.
+                  sendOk?: boolean | null;
+                  // Set only from the send RESPONSE — its absence means the
+                  // provider never accepted the message, whatever else is on
+                  // the row.
+                  sentAt?: string | null;
+                  // Why a refused send was refused. Only ever in raw_send:
+                  // error_code / error_message are written by the delivery
+                  // webhook, which never fires for a call that was rejected.
+                  rejectReason?: string;
+                  // The values filled into the template, in order.
+                  values?: string[];
+                };
+
+                // Plain English for the approved template names — nobody should
+                // have to remember that `single_payment_sucess_dpl` is a receipt.
+                // Both providers' names are mapped so an AiSensy-era row and a
+                // Wamafy one read the same in the thread.
+                const TEMPLATE_LABELS: Record<string, string> = {
+                  otp: 'Verification code',
+                  cart_abandon: 'Abandoned-cart nudge',
+                  car_abandon_deeplink2: 'Abandoned-cart nudge',
+                  advancepaid: 'Advance paid — confirmation',
+                  advance_success_dpl: 'Advance paid — confirmation',
+                  balance_success: 'Balance paid — confirmation',
+                  balance_paid_dpl: 'Balance paid — confirmation',
+                  fullpaid_dpl: 'Balance paid — confirmation',
+                  single_payment_sucess_dpl: 'Payment confirmation',
+                  payment_failed: 'Payment failed',
+                  payment_failure_dpl: 'Payment failed',
+                  payment_success: 'Payment confirmation',
+                  advance_success: 'Advance paid — confirmation',
+                  doubt_assisstance: 'Answer to their question',
+                  resend_details: 'Plan details',
+                  send_details_dpl: 'Plan details',
+                  invitation_with_contact: 'Invite',
+                };
+                const templateLabel = (name?: string | null) =>
+                  (name && TEMPLATE_LABELS[name]) || name || 'Message';
+
+                // What a template message actually said. We store the template
+                // NAME and the values filled into it, never the rendered text —
+                // that copy lives in Meta. `otp` is the one body captured
+                // verbatim during the trial, so it reads exactly as the customer
+                // saw it. For the rest the bubble shows the message's plain name
+                // and the real values sent, which is honest; inventing the
+                // wording would risk showing copy the customer never got.
+                const OTP_BODY = (code: string) => `${code} is your verification code.`;
+                const varValues = (vars: any): string[] => {
+                  if (!vars || typeof vars !== 'object') return [];
+                  return Object.keys(vars)
+                    .sort((a, b) => Number(a) - Number(b))
+                    .map(k => String(vars[k] ?? '').trim())
+                    .filter(Boolean);
+                };
+                const rejectReason = (raw: any): string => {
+                  const msg = raw?.error?.message ?? raw?.message ?? '';
+                  return typeof msg === 'string' ? msg.trim().slice(0, 240) : '';
+                };
+                // WhatsApp puts the DAY on a centred pill between groups and only
+                // the time under each bubble, so a date is stated once per day
+                // instead of once per message. All in IST, the only timezone the
+                // team works in.
+                const IST = 'Asia/Kolkata';
+                const dayKeyOf = (value?: string | null) => {
+                  const d = new Date(String(value ?? ''));
+                  return Number.isNaN(d.getTime()) ? null : dateKeyInTimeZone(d, IST);
+                };
+                const todayKey = dateKeyInTimeZone(new Date(), IST);
+                const yesterdayKey = dateKeyInTimeZone(new Date(Date.now() - 86400000), IST);
+                const dayLabel = (value: string, key: number | null) => {
+                  if (key !== null && key === todayKey) return 'Today';
+                  if (key !== null && key === yesterdayKey) return 'Yesterday';
+                  const d = new Date(value);
+                  if (Number.isNaN(d.getTime())) return '';
+                  const sameYear = d.getFullYear() === new Date().getFullYear();
+                  return d.toLocaleDateString('en-IN', {
+                    timeZone: IST, day: 'numeric', month: 'long',
+                    ...(sameYear ? {} : { year: 'numeric' }),
+                  });
+                };
+                const msgTime = (value?: string | null) => {
+                  const d = new Date(String(value ?? ''));
+                  if (Number.isNaN(d.getTime())) return '';
+                  return d.toLocaleString('en-IN', { timeZone: IST, hour: 'numeric', minute: '2-digit', hour12: true })
+                    .replace(/\s/g, ' ').toLowerCase();
+                };
+                const msAt = (value?: string | null) => {
+                  const t = new Date(String(value ?? '')).getTime();
+                  return Number.isNaN(t) ? 0 : t;
+                };
+
+                // One conversation per person, keyed by phone ALONE. A WhatsApp
+                // message carries no event, so pinning it to a guessed booking
+                // would be a fabrication — the person is what we actually know.
+                const threads = new Map<string, { phone: string; waName: string; msgs: ThreadMsg[]; inCount: number }>();
+                const threadFor = (phone: string) => {
+                  const found = threads.get(phone);
+                  if (found) return found;
+                  const made = { phone, waName: '', msgs: [] as ThreadMsg[], inCount: 0 };
+                  threads.set(phone, made);
+                  return made;
+                };
+                waInbound.forEach((m: any) => {
+                  const phone = normalizePhone10(m.from_phone);
+                  if (!phone) return;
+                  const t = threadFor(phone);
+                  if (!t.waName && m.from_name) t.waName = String(m.from_name).trim();
+                  t.inCount += 1;
+                  const at = m.sent_at || m.received_at;
+                  t.msgs.push({
+                    key: `in-${m.id}`,
+                    dir: 'in',
+                    ts: msAt(at),
+                    at,
+                    // A tapped button carries no text, and a photo carries none
+                    // either — say which it was rather than draw an empty bubble.
+                    text: m.body_text || m.media_caption
+                      || (m.interactive_reply_id ? `tapped "${m.interactive_reply_id}"` : `sent ${m.msg_type || 'a message'}`),
+                  });
+                });
+                // Questions asked on the site, as the opening messages of the
+                // conversation they belong to. Counted in inCount for the same
+                // reason a WhatsApp message is: this is a person who wrote to us
+                // and is owed an answer, which is precisely what the list is for.
+                webDoubtsByPhone.forEach((doubts, phone) => {
+                  const t = threadFor(phone);
+                  doubts.forEach((d: any) => {
+                    t.inCount += 1;
+                    t.msgs.push({
+                      key: `doubt-${d.id}`,
+                      dir: 'in',
+                      ts: msAt(d.created_at),
+                      at: d.created_at,
+                      text: String(d.message ?? ''),
+                      viaWeb: true,
+                    });
+                  });
+                });
+                waSends.forEach((m: any) => {
+                  const phone = normalizePhone10(m.to_phone);
+                  if (!phone) return;
+                  const t = threadFor(phone);
+                  const at = m.sent_at || m.created_at;
+                  t.msgs.push({
+                    key: `out-${m.id}`,
+                    dir: 'out',
+                    ts: msAt(at),
+                    at,
+                    text: m.body_text ?? '',
+                    templateName: m.template_name,
+                    values: varValues(m.variables),
+                    sentBy: m.sent_by_email,
+                    applicationId: m.application_id,
+                    deliveredAt: m.delivered_at,
+                    readAt: m.read_at,
+                    failedAt: m.failed_at,
+                    errorCode: m.error_code,
+                    errorMessage: m.error_message,
+                    sendOk: m.send_ok,
+                    sentAt: m.sent_at,
+                    rejectReason: rejectReason(m.raw_send),
+                  });
+                });
+
+                // Who the number belongs to. Newest booking first — applications
+                // arrive created_at descending.
+                const appsByPhone = new Map<string, any[]>();
+                applications.forEach((a: any) => {
+                  const phone = normalizePhone10(a.phone);
+                  if (!phone) return;
+                  const arr = appsByPhone.get(phone) ?? [];
+                  arr.push(a);
+                  appsByPhone.set(phone, arr);
+                });
+
+                // Which plan an automatic message was about. The senders stamp
+                // `whatsapp_sends.application_id`, so the booking is known exactly
+                // rather than guessed from the phone — which is the whole point,
+                // since a phone with two bookings is precisely the case where the
+                // template name alone ("Advance paid — confirmation") says nothing.
+                //
+                // Built from every loaded application, NOT the filtered table view:
+                // scoping it to the current event/date filter would blank the label
+                // on exactly the threads a filter is hiding.
+                const eventByAppId = new Map<string, string>();
+                applications.forEach((a: any) => {
+                  if (!a?.id) return;
+                  eventByAppId.set(String(a.id), titleBySlug[a.event_slug] ?? a.event_slug ?? '');
+                });
+
+                const allThreads = Array.from(threads.values()).map(t => {
+                  t.msgs.sort((a, b) => a.ts - b.ts);
+                  const last = t.msgs[t.msgs.length - 1];
+                  const leads = appsByPhone.get(t.phone) ?? [];
+                  const lead = leads[0] ?? null;
+                  return {
+                    ...t,
+                    leads,
+                    lead,
+                    name: String(lead?.name ?? '').trim() || t.waName,
+                    lastTs: last?.ts ?? 0,
+                    lastText: last
+                      ? (last.text || (last.dir === 'out'
+                          ? (last.templateName ? templateLabel(last.templateName) : 'no content recorded')
+                          : ''))
+                      : '',
+                  };
+                }).sort((a, b) => b.lastTs - a.lastTs);
+
+                // Only people who have actually written to us — on WhatsApp or
+                // through the doubt form on the site, which counts for the same
+                // reason. Every OTP ever sent is technically a thread too, and
+                // those buried the handful of conversations that need a human.
+                const replied = allThreads.filter(t => t.inCount > 0);
+                const listed = replied;
+                // Derive the open thread instead of syncing it into state, so a
+                // filter or search that hides the current one just moves on.
+                const openPhone = waOpenPhone && replied.some(t => t.phone === waOpenPhone)
+                  ? waOpenPhone
+                  : (replied[0]?.phone ?? null);
+                const openThread = replied.find(t => t.phone === openPhone) ?? null;
+
+
+                // WhatsApp's own vocabulary: one grey tick sent, two grey
+                // delivered, two blue read. The exact time goes in the tooltip
+                // rather than the line — the bubble already carries a timestamp,
+                // and printing a second one beside it read as a duplicate.
+                const Ticks = ({ double, color }: { double: boolean; color: string }) => (
+                  <svg width={double ? 15 : 10} height="9" viewBox={double ? '0 0 15 9' : '0 0 10 9'} fill="none" style={{ display: 'block' }} aria-hidden="true">
+                    <path d="M0.8 5.1 L3.3 7.6 L8.6 1.2" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    {double && <path d="M6.2 5.1 L8.7 7.6 L14 1.2" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />}
+                  </svg>
+                );
+                // Status of one outbound message. `bad` messages never reached
+                // anyone, so they get words rather than a tick — a tick of any
+                // colour would say the opposite of what happened.
+                const sendState = (m: ThreadMsg): { bad?: string; ticks?: { double: boolean; color: string }; title: string } => {
+                  // Order matters. A refused send call is checked first: nothing
+                  // left, so calling it "sent, awaiting delivery" would be a lie.
+                  if (m.sendOk === false) return { bad: 'Never sent', title: m.rejectReason || 'The provider refused this send.' };
+                  // No send response at all: a half-written row from a send that
+                  // never completed. Not a message anyone received.
+                  if (!m.sentAt) return { bad: 'Never sent', title: 'No send was ever recorded for this message.' };
+                  if (m.failedAt) {
+                    const why = [m.errorCode, m.errorMessage].filter(Boolean).join(' ').trim();
+                    return { bad: 'Failed', title: `WhatsApp could not deliver this — ${why || 'no reason given'}.` };
+                  }
+                  if (m.readAt)      return { ticks: { double: true,  color: '#53bdeb' }, title: `Read · ${formatAdminDateTime(m.readAt)}` };
+                  if (m.deliveredAt) return { ticks: { double: true,  color: '#9aa0a6' }, title: `Delivered · ${formatAdminDateTime(m.deliveredAt)}` };
+                  return { ticks: { double: false, color: '#9aa0a6' }, title: `Sent · ${formatAdminDateTime(m.sentAt)} — no delivery confirmation yet` };
+                };
+
+                if (waChatError) return (
+                  <div style={{ ...s.card, background: '#fff5f5', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, padding: '12px 16px' }}>
+                    <strong>⚠️ Could not load the WhatsApp log</strong><br />
+                    <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{waChatError}</span>
+                  </div>
+                );
+                if (waChatLoading && !waSends.length && !waInbound.length) return (
+                  <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading…</div>
+                );
+
+                return (
+                  <div>
+                    {listed.length === 0 ? (
+                      <div style={{ ...s.card, color: '#888', textAlign: 'center' }}>
+                        Nobody has replied on WhatsApp in the last 60 days, and there are no open questions from the website.
+                      </div>
+                    ) : (
+                      <div style={{ ...s.card, padding: 0, overflow: 'hidden', display: 'flex', alignItems: 'stretch', maxHeight: 620 }}>
+                        {/* Conversation list — identity only: who this is and whose
+                            lead they are. What they booked lives in the header, and the
+                            messages live in the thread; printing either here said the
+                            same thing twice. Rows carry no separator lines: the
+                            selected one is outlined, and whitespace does the rest. */}
+                        {/* Fixed sidebar, never wraps: the merged surface only reads
+                            as one object side by side, and letting these columns wrap
+                            left the divider stopping halfway down. */}
+                        <div style={{ flex: '0 0 236px', background: '#efefec', borderRight: '1px solid #e2e2dd', overflowY: 'auto', padding: '6px 0 6px 6px' }}>
+                          {listed.map(t => {
+                            const active = t.phone === openPhone;
+                            const marketerId = t.lead?.assigned_marketer_id as string | undefined;
+                            const marketer = marketerId ? marketerNameById[marketerId] : '';
+                            return (
+                              <button
+                                key={t.phone}
+                                onClick={() => setWaOpenPhone(t.phone)}
+                                style={{
+                                  display: 'block', textAlign: 'left', border: 'none',
+                                  // The selected row IS the thread pane, continued: same
+                                  // white, rounded only on the left, and one pixel WIDER
+                                  // than the column so it covers the divider rather than
+                                  // stopping at it. A negative margin does not work here
+                                  // — with an explicit width:100% it shifts the row
+                                  // instead of stretching it, leaving a 1px seam.
+                                  width: active ? 'calc(100% + 1px)' : '100%',
+                                  background: active ? '#fff' : 'transparent',
+                                  borderRadius: active ? '8px 0 0 8px' : 8,
+                                  position: 'relative', zIndex: active ? 1 : 0,
+                                  padding: '9px 11px', marginBottom: 2, cursor: 'pointer', fontFamily: 'inherit',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#111', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {t.name || t.phone}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{t.phone}</div>
+                                  </div>
+                                  {/* First three letters, as the Call tab does — enough to
+                                      tell whose lead it is, with the full name on hover. */}
+                                  {marketer && (
+                                    <span title={marketer} style={{ flex: '0 0 auto', fontSize: 11, color: '#999', fontWeight: 600 }}>
+                                      {marketer.slice(0, 3)}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Thread */}
+                        <div style={{ flex: '1 1 auto', minWidth: 0, background: '#fff', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                          {openThread && (
+                            <>
+                              {/* Every booking on this number, one per line: event,
+                                  date, status. A "2 bookings" count next to a single
+                                  event name named one and hid the other — and the two
+                                  can be at completely different stages, which is
+                                  exactly what you need before replying.
+
+                                  Who this is — name, phone, marketer — is the list
+                                  card's job on the left, and saying it twice was the
+                                  original complaint. */}
+                              <div style={{ padding: '9px 16px', borderBottom: '1px solid #eee' }}>
+                                {openThread.leads.length === 0 ? (
+                                  /* Someone messaged the business number without ever
+                                     booking — a real signal, not an error to hide. */
+                                  <div style={{ fontSize: 12.5, color: '#92400e', padding: '2px 0' }}>No booking on this number</div>
+                                ) : (
+                                  <>
+                                    {openThread.leads.slice(0, 3).map((lead: any) => {
+                                      // Same derivation the Call row uses, so the two
+                                      // surfaces can never describe a lead differently.
+                                      const dateText = lead.selected_date
+                                        ? (() => {
+                                            const d = new Date(`${lead.selected_date}T00:00:00`);
+                                            return Number.isNaN(d.getTime()) ? String(lead.selected_date) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                          })()
+                                        : '';
+                                      return (
+                                        <div key={lead.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '3px 0' }}>
+                                          <span style={{ fontWeight: 700, fontSize: 13, flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {titleBySlug[lead.event_slug] ?? lead.event_slug}
+                                          </span>
+                                          <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: '#999', whiteSpace: 'nowrap' }}>{dateText}</span>
+                                          <span style={{ flex: '0 0 auto', background: statusColor(displayStatus(lead)) + '22', color: statusColor(displayStatus(lead)), borderRadius: 6, padding: '2px 8px', fontSize: 10.5, fontWeight: 700 }}>
+                                            {statusLabel(displayStatus(lead))}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                    {openThread.leads.length > 3 && (
+                                      <div style={{ fontSize: 11, color: '#aaa', padding: '3px 0 0' }}>
+                                        +{openThread.leads.length - 3} earlier booking{openThread.leads.length - 3 === 1 ? '' : 's'}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+
+                              <div ref={chatScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 9, background: '#fbfbfa' }}>
+                                {openThread.msgs.map((m, i) => {
+                                  // A day pill before the first message of each day.
+                                  // Scrolls with the thread rather than pinning, so it
+                                  // leaves the screen as you read past that day.
+                                  const dayKey = dayKeyOf(m.at);
+                                  const prevKey = i > 0 ? dayKeyOf(openThread.msgs[i - 1].at) : null;
+                                  const showDay = i === 0 || dayKey !== prevKey;
+                                  const inbound = m.dir === 'in';
+                                  const st = inbound ? null : sendState(m);
+                                  // What the bubble says. Free-form replies and doubt
+                                  // answers carry their real text. `otp` has a body we
+                                  // captured verbatim, so it reads exactly as the customer
+                                  // saw it. Any other template shows its plain name and the
+                                  // real values we filled in — we never stored the wording,
+                                  // and inventing it could show copy that was never sent.
+                                  const values = m.values ?? [];
+                                  const body = m.text
+                                    || (m.templateName === 'otp' && values[0] ? OTP_BODY(values[0]) : '');
+                                  // doubt_assisstance is the one template whose shape we
+                                  // know exactly: {{1}} is their question, {{2}} is our
+                                  // answer. Rendering them as "a · b" would lose that.
+                                  const isDoubt = m.templateName === 'doubt_assisstance' && values.length >= 2;
+                                  // A doubt answer is written by a person even when no
+                                  // sender was recorded, so it is never "automatic".
+                                  const isAuto = !inbound && !!m.templateName && !m.sentBy
+                                    && m.templateName !== 'doubt_assisstance';
+                                  // Which plan this message was about. Shown ONLY when
+                                  // the number has more than one booking: with a single
+                                  // booking the header above already names it, and
+                                  // printing it on every bubble is exactly the "said
+                                  // twice" problem this page was built to avoid.
+                                  //
+                                  // Blank when we can't resolve it — a send that predates
+                                  // the stamping, or a booking outside the loaded set.
+                                  // A blank is honest; a guessed plan name is not.
+                                  const eventName = !inbound && openThread.leads.length > 1 && m.applicationId
+                                    ? (eventByAppId.get(String(m.applicationId)) ?? '')
+                                    : '';
+                                  return (
+                                    <React.Fragment key={m.key}>
+                                    {showDay && (
+                                      <div style={{ alignSelf: 'center', background: '#eceff1', color: '#5b6b73', borderRadius: 999, padding: '3px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, margin: '4px 0' }}>
+                                        {dayLabel(m.at, dayKey)}
+                                      </div>
+                                    )}
+                                    <div style={{ alignSelf: inbound ? 'flex-start' : 'flex-end', maxWidth: '78%' }}>
+                                      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10, padding: '8px 11px', fontSize: 13, color: '#222', lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                        {/* `whiteSpace: normal` overrides the bubble's
+                                            pre-wrap — a plan title is a plain string and
+                                            should wrap like one. */}
+                                        {eventName && (
+                                          <div style={{ color: '#8a8a8a', fontSize: 11, fontWeight: 700, marginBottom: 4, whiteSpace: 'normal', lineHeight: 1.3 }}>{eventName}</div>
+                                        )}
+                                        {/* Not a WhatsApp message. Saying so matters:
+                                            it is why there may be no reply window, and
+                                            why a template is usually the only way to
+                                            answer it. */}
+                                        {m.viaWeb && (
+                                          <div style={{ color: '#b45309', fontSize: 10, fontWeight: 800, letterSpacing: 0.4, marginBottom: 4, whiteSpace: 'normal' }}>ASKED ON THE WEBSITE</div>
+                                        )}
+                                        {isDoubt ? (
+                                          <>
+                                            <div style={{ color: '#777', fontSize: 12, fontStyle: 'italic', marginBottom: 3 }}>Re: {values[0]}</div>
+                                            {values[1]}
+                                          </>
+                                        ) : (
+                                          <>
+                                            {body || (m.templateName ? templateLabel(m.templateName) : <span style={{ color: '#aaa' }}>no content recorded</span>)}
+                                            {/* The values that went into the template, when they
+                                                are not already part of the text shown above. */}
+                                            {!body && values.length > 0 && (
+                                              <div style={{ marginTop: 3, color: '#777', fontSize: 12 }}>{values.join(' · ')}</div>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                      {/* A flex row, not inline text: the ticks are an SVG
+                                          and inline layout let them wrap onto their own
+                                          line under the bubble. */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', marginTop: 3, fontSize: 10, color: '#aaa', justifyContent: inbound ? 'flex-start' : 'flex-end' }}>
+                                        <span style={{ whiteSpace: 'nowrap' }}>{msgTime(m.at)}</span>
+                                        {isAuto && <span style={{ whiteSpace: 'nowrap' }}>· automatic</span>}
+                                        {!inbound && m.sentBy && <span style={{ whiteSpace: 'nowrap' }}>· {m.sentBy.split('@')[0]}</span>}
+                                        {st?.bad && <span title={st.title} style={{ color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>· {st.bad}</span>}
+                                        {st?.ticks && (
+                                          <span title={st.title} style={{ display: 'inline-flex', alignItems: 'center', flex: '0 0 auto' }}>
+                                            <Ticks double={st.ticks.double} color={st.ticks.color} />
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    </React.Fragment>
+                                  );
+                                })}
+                              </div>
+
+                              {/* One composer, always visible. The 24-hour window
+                                  (Meta's rule; Wamafy answers 400 NO_OPEN_CONVERSATION
+                                  outside it) decides the TRANSPORT, not whether you can
+                                  type: inside it the text goes as a free-form message,
+                                  outside it as the approved `doubt_assisstance` template
+                                  quoting their question. Checked when the thread opens,
+                                  so nobody composes a careful answer that bounces. */}
+                              {(() => {
+                                const phone = openThread.phone;
+                                const win = replyWindow[phone] ?? {};
+                                const closed = win.open === false;
+                                const busy = replySendingId === phone || doubtSendingId === phone;
+                                const text = (closed ? doubtAnswer[phone] : replyText[phone]) ?? '';
+                                // Their question is what the template quotes. Prefilled
+                                // from their latest message but editable — the last thing
+                                // someone said is often not the thing they asked.
+                                const lastInbound = [...openThread.msgs].reverse().find(m => m.dir === 'in');
+                                const question = doubtQuestion[phone] ?? (lastInbound?.text ?? '');
+                                const editingQ = !!doubtQuestionEditing[phone];
+                                const blocked = win.checking || !!win.error || (closed && !question.trim());
+                                const setText = (v: string) => closed
+                                  ? setDoubtAnswer(prev => ({ ...prev, [phone]: v }))
+                                  : setReplyText(prev => ({ ...prev, [phone]: v }));
+                                const send = () => {
+                                  if (!text.trim() || busy || blocked) return;
+                                  if (closed) sendDoubtAnswer(phone, openThread.name, question, text);
+                                  else sendWhatsAppReply(phone);
+                                };
+                                return (
+                                  <div style={{ borderTop: '1px solid #eee' }}>
+                                    {closed && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', background: '#fffbeb', fontSize: 11.5, color: '#92400e', lineHeight: 1.45 }}>
+                                        <span aria-hidden="true">⏱</span>
+                                        <span>Free replies closed. Goes as a template quoting their question.</span>
+                                      </div>
+                                    )}
+                                    {closed && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px 0' }}>
+                                        <span aria-hidden="true" style={{ color: '#bbb', fontSize: 12 }}>↩</span>
+                                        {editingQ ? (
+                                          <input
+                                            type="text"
+                                            autoFocus
+                                            value={question}
+                                            maxLength={900}
+                                            onChange={e => setDoubtQuestion(prev => ({ ...prev, [phone]: e.target.value }))}
+                                            onBlur={() => setDoubtQuestionEditing(prev => ({ ...prev, [phone]: false }))}
+                                            placeholder="What did they ask?"
+                                            style={{ flex: 1, minWidth: 0, fontSize: 11.5, padding: '4px 8px', border: '1.5px solid #e0e0e0', borderRadius: 6, fontFamily: 'inherit' }}
+                                          />
+                                        ) : (
+                                          <>
+                                            <span title={question} style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: question.trim() ? '#777' : '#c00', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                              {question.trim() || 'Add the question this answers'}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              aria-label="Edit the quoted question"
+                                              onClick={() => setDoubtQuestionEditing(prev => ({ ...prev, [phone]: true }))}
+                                              style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 12, padding: 2, flex: '0 0 auto' }}
+                                            >
+                                              ✎
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                    {/* Field and Send share one outline, so the composer
+                                        reads as a single control. The border therefore
+                                        lives on the WRAPPER, which is why focus is
+                                        tracked in state — a border on the textarea would
+                                        draw a second box inside the first. */}
+                                    <div style={{ padding: '9px 16px 11px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'stretch', background: '#fff', border: `1.5px solid ${composerFocused ? '#111' : '#e0e0e0'}`, borderRadius: 8, overflow: 'hidden' }}>
+                                        <textarea
+                                          value={text}
+                                          maxLength={closed ? 900 : 4000}
+                                          onChange={e => {
+                                            setText(e.target.value);
+                                            // Grow with the message instead of showing a
+                                            // resize handle, which would break the shape.
+                                            e.target.style.height = 'auto';
+                                            e.target.style.height = `${Math.min(e.target.scrollHeight, 110)}px`;
+                                          }}
+                                          onFocus={() => setComposerFocused(true)}
+                                          onBlur={() => setComposerFocused(false)}
+                                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                                          placeholder={win.checking ? 'Checking…' : ''}
+                                          rows={1}
+                                          style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', fontSize: 13, padding: '10px 12px', border: 'none', outline: 'none', resize: 'none', overflowY: 'auto', background: 'transparent', fontFamily: 'inherit', lineHeight: 1.4, height: 38, maxHeight: 110 }}
+                                        />
+                                        <button
+                                          type="button"
+                                          disabled={busy || blocked || !text.trim()}
+                                          onClick={send}
+                                          style={{ flex: '0 0 auto', border: 'none', borderLeft: `1.5px solid ${composerFocused ? '#111' : '#e0e0e0'}`, borderRadius: 0, background: '#fafafa', color: (busy || blocked || !text.trim()) ? '#bbb' : '#111', padding: '0 18px', fontSize: 12.5, fontWeight: 700, cursor: (busy || blocked || !text.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                                        >
+                                          {busy ? 'Sending…' : 'Send'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    {win.error && (
+                                      <div style={{ padding: '0 16px 10px', fontSize: 11, color: '#b91c1c' }}>
+                                        Couldn&apos;t check their reply window.{' '}
+                                        <button type="button" onClick={() => ensureReplyWindow(phone, true)} style={{ background: 'none', border: 'none', color: '#b91c1c', textDecoration: 'underline', cursor: 'pointer', fontSize: 11, padding: 0 }}>Try again</button>
+                                      </div>
+                                    )}
+                                    {/* Worth knowing before you press send, not after. */}
+                                    {closed && (
+                                      <div style={{ padding: '0 16px 10px', fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
+                                        Marketing-category template — anyone who opted out of marketing won&apos;t receive it, which shows as a failed status rather than silence.
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Filters row — Chat brings its own (a search over conversations). */}
+              {peopleMode === 'chat' ? null : peopleMode !== 'doubts' ? (
               <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
                 <select
                   value={applicationsEventFilter}
@@ -5077,6 +6385,7 @@ export default function AdminPanel() {
                   <option value="cart_abandoned">Cart Abandoned</option>
                   <option value="payment_failed">Payment Failed</option>
                   <option value="re_target">Re-Target</option>
+                  <option value="resent_details">Resent Details</option>
                   <option value="waitlist">Waitlist</option>
                   <option value="advance_paid">Advance Paid</option>
                   <option value="fully_paid">Fully Paid</option>
@@ -5152,8 +6461,8 @@ export default function AdminPanel() {
               )}
 
               {/* Loading / Empty */}
-              {applicationsLoading && <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading…</div>}
-              {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length === 0 && (
+              {peopleMode !== 'chat' && applicationsLoading && <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading…</div>}
+              {!applicationsLoading && isTableMode && filteredApps.length === 0 && (
                 currentMarketer && effScope === 'mine' && scopedApplications.length === 0 && peopleMode === 'call' ? (
                   <div style={{ ...s.card, padding: 20, border: '1.5px solid #e8d36c', background: '#fffdf4' }}>
                     <div style={{ fontSize: 18, fontWeight: 750, color: '#111' }}>You&apos;re in! You&apos;ll start receiving leads when you&apos;re added to an event.</div>
@@ -5290,7 +6599,7 @@ export default function AdminPanel() {
               )}
 
               {/* Table */}
-              {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length > 0 && (
+              {!applicationsLoading && isTableMode && filteredApps.length > 0 && (
                 <div style={{ ...s.card, overflow: 'auto', padding: 0 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
@@ -5346,10 +6655,25 @@ export default function AdminPanel() {
                         const hasMultipleDates = eventDates.length > 1 && !dateLocked;
 
                         // ─── CALL MODE ───
-                        const openDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
+                        // A website doubt carries no answered flag — nothing has
+                        // ever written plan_doubts.status — which is why these
+                        // cards used to stay amber for life and the "needs a
+                        // human" sort had to be removed. So it is derived the
+                        // same way waAwaitingReply is: a person writing to this
+                        // number AFTER the question was asked has answered it.
+                        // An unparseable date stays unanswered, which is the
+                        // safe way round.
+                        const liveDoubts = (app.doubts ?? []).filter((d: any) => d.status !== 'closed');
+                        const doubtAnswered = (d: any) =>
+                          new Date(d.created_at).getTime() < (app.waHumanReplyAt ?? 0);
+                        const openDoubts = liveDoubts.filter((d: any) => !doubtAnswered(d));
+                        // Answered ones stay on the row, in grey: knowing what
+                        // someone asked is worth having in front of you on a
+                        // call even once it is handled. They just no longer
+                        // tint the row or count in the badge, which is what
+                        // makes the amber mean "still open".
+                        const shownDoubts = [...openDoubts, ...liveDoubts.filter(doubtAnswered)];
                         const waReplies = (app.waReplies ?? []) as any[];
-                        const waThreadHere = waReplies.length > 0
-                          && waThreadRowByPhone.get(String(app.phone ?? '').replace(/\D/g, '').slice(-10)) === app.id;
                         // Meeting point sub-line under the event title — useful for events
                         // with pickups in multiple cities (e.g. "Koyambedu, Chennai") so the
                         // caller knows exactly where the applicant is joining from. We only
@@ -5361,7 +6685,7 @@ export default function AdminPanel() {
                           ? `${pickupSpot}, ${pickupCity}`
                           : pickupSpot || pickupCity || '';
                         if (peopleMode === 'call') return (
-                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : (waReplies.length > 0 ? '#f0fdf4' : undefined) }}>
+                          <tr key={app.id} style={{ borderBottom: '1px solid #f0f0f0', verticalAlign: 'top', background: openDoubts.length > 0 ? '#fffbeb' : (app.waAwaitingReply ? '#f0fdf4' : undefined) }}>
                             <td style={{ padding: '11px 12px', maxWidth: 280, minWidth: 200 }} title={app.why_join ? `${app.name || '—'}\n${app.why_join}` : (app.name || '—')}>
                               <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {app.name || '—'}
@@ -5369,11 +6693,6 @@ export default function AdminPanel() {
                                 {openDoubts.length > 0 && (
                                   <span title={`${openDoubts.length} unresolved doubt${openDoubts.length === 1 ? '' : 's'}`} style={{ marginLeft: 6, background: '#fde047', color: '#854d0e', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
                                     💬 {openDoubts.length}
-                                  </span>
-                                )}
-                                {waReplies.length > 0 && (
-                                  <span title={`${waReplies.length} WhatsApp repl${waReplies.length === 1 ? 'y' : 'ies'}`} style={{ marginLeft: 6, background: '#bbf7d0', color: '#166534', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
-                                    ↩ {waReplies.length}
                                   </span>
                                 )}
                               </div>
@@ -5433,100 +6752,67 @@ export default function AdminPanel() {
                               )}
                             </td>
                             <td style={{ padding: '11px 12px', width: 150 }}>
-                              {openDoubts.length > 0 && (
+                              {shownDoubts.length > 0 && (
                                 <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {openDoubts.slice(0, 3).map((d: any) => (
-                                    <div key={d.id} style={{ background: '#fef3c7', borderLeft: '3px solid #f59e0b', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#78350f', lineHeight: 1.4 }}>
-                                      <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600, marginBottom: 2 }}>💬 {formatAdminDateTime(d.created_at)}</div>
-                                      {d.message}
-                                    </div>
-                                  ))}
-                                  {openDoubts.length > 3 && (
-                                    <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600 }}>+{openDoubts.length - 3} more</div>
-                                  )}
-                                </div>
-                              )}
-                              {waThreadHere && (
-                                <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {waReplies.slice(0, 3).map((m: any) => (
-                                    <div key={m.id} style={{ background: '#dcfce7', borderLeft: '3px solid #22c55e', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#14532d', lineHeight: 1.4 }}>
-                                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 600, marginBottom: 2 }}>
-                                        ↩ replied {formatAdminDateTime(m.sent_at || m.received_at)}
+                                  {shownDoubts.slice(0, 3).map((d: any) => {
+                                    const answered = doubtAnswered(d);
+                                    return (
+                                    <div key={d.id} style={{ background: answered ? '#f4f4f2' : '#fef3c7', borderLeft: `3px solid ${answered ? '#c9c9c4' : '#f59e0b'}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, color: answered ? '#777' : '#78350f', lineHeight: 1.4 }}>
+                                      <div style={{ fontSize: 10, color: answered ? '#999' : '#92400e', fontWeight: 600, marginBottom: 2 }}>
+                                        {answered ? '✓' : '💬'} {formatAdminDateTime(d.created_at)}
                                       </div>
-                                      {/* A tapped button carries no text, and a photo carries no text
-                                          either — say which it was rather than render an empty card. */}
-                                      {m.body_text
-                                        || (m.interactive_reply_id ? `tapped "${m.interactive_reply_id}"` : `sent ${m.msg_type || 'a message'}`)}
+                                      {d.message}
+                                      {/* Shown to exactly who can use it — founders and
+                                          active marketers, the same people the Chat
+                                          pill and whatsapp-reply accept — so nobody is
+                                          offered a button that lands on a tab they
+                                          cannot open. */}
+                                      {!answered && (adminRole === 'admin' || !!currentMarketer) && (
+                                        <button
+                                          type="button"
+                                          title="Reply on WhatsApp"
+                                          onClick={() => openDoubtInChat(app, d)}
+                                          // inline-block so it hugs its label instead of
+                                          // stretching across a 150px column and wrapping
+                                          // onto a second line. The short label carries
+                                          // the tooltip above; weight and border are kept
+                                          // below the card's own so the question stays
+                                          // the loudest thing in it.
+                                          style={{ display: 'inline-block', marginTop: 5, background: '#fff', color: '#92400e', border: '1px solid #f0d9a3', borderRadius: 999, padding: '1px 8px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' }}
+                                        >
+                                          ↩ Reply
+                                        </button>
+                                      )}
                                     </div>
-                                  ))}
-                                  {waReplies.length > 3 && (
-                                    <div style={{ fontSize: 10, color: '#166534', fontWeight: 600 }}>+{waReplies.length - 3} more</div>
+                                    );
+                                  })}
+                                  {shownDoubts.length > 3 && (
+                                    <div style={{ fontSize: 10, color: '#92400e', fontWeight: 600 }}>+{shownDoubts.length - 3} more</div>
                                   )}
                                 </div>
                               )}
-                              {waThreadHere && (() => {
-                                const win = replyWindow[app.id] ?? {};
-                                const justSent = replySentFor[app.id];
-                                if (justSent) {
-                                  return (
-                                    <div style={{ background: '#eff6ff', borderLeft: '3px solid #3b82f6', borderRadius: 4, padding: '5px 8px', fontSize: 12, color: '#1e3a8a', lineHeight: 1.4, marginBottom: 6 }}>
-                                      <div style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 600, marginBottom: 2 }}>you replied</div>
-                                      {justSent}
-                                    </div>
-                                  );
-                                }
-                                if (replyOpenFor !== app.id) {
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => openWhatsAppReply(app)}
-                                      style={{ marginBottom: 6, background: '#fff', color: '#166534', border: '1px solid #86efac', borderRadius: 999, padding: '2px 9px', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}
-                                    >
-                                      Reply on WhatsApp
-                                    </button>
-                                  );
-                                }
-                                if (win.checking) {
-                                  return <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>Checking if they can be replied to…</div>;
-                                }
-                                if (win.error) {
-                                  return <div style={{ fontSize: 10, color: '#b91c1c', marginBottom: 6 }}>Couldn't check the reply window. Try again.</div>;
-                                }
-                                if (win.open === false) {
-                                  // Meta only allows a free-form message within 24h of THEIR last
-                                  // message. Say so rather than offering a box that cannot work.
-                                  return (
-                                    <div style={{ fontSize: 10, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4, padding: '5px 7px', marginBottom: 6, lineHeight: 1.45 }}>
-                                      Their 24-hour reply window has closed, so WhatsApp won't allow a free-form message. Call them, or message from your own phone.
-                                    </div>
-                                  );
-                                }
+                              {/* Their newest message, one line, and ONLY while it is
+                                  still unanswered — once someone has replied from Chat
+                                  there is nothing here to act on, so the card and the
+                                  row tint both go. The thread lives in People ▸ Chat and
+                                  the reply goes there — a WhatsApp message has a thread
+                                  by definition, which is exactly what the doubt cards
+                                  above do not; a caller just needs to know what was
+                                  last said before dialling. Founders see every lead's
+                                  row here; a marketer sees it only for their own leads
+                                  (whatsapp_inbound_marketer_select); a plain ops/manager
+                                  login gets no rows at all. */}
+                              {app.waAwaitingReply && (() => {
+                                const latest = waReplies.reduce((a: any, b: any) =>
+                                  new Date(a.sent_at || a.received_at).getTime() >= new Date(b.sent_at || b.received_at).getTime() ? a : b);
+                                const text = latest.body_text || latest.media_caption
+                                  || (latest.interactive_reply_id ? `tapped "${latest.interactive_reply_id}"` : `sent ${latest.msg_type || 'a message'}`);
                                 return (
-                                  <div style={{ marginBottom: 6 }}>
-                                    <textarea
-                                      value={replyText[app.id] ?? ''}
-                                      onChange={e => setReplyText(t => ({ ...t, [app.id]: e.target.value }))}
-                                      placeholder="Type your reply…"
-                                      rows={3}
-                                      style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '6px 7px', border: '1px solid #86efac', borderRadius: 4, resize: 'vertical', fontFamily: 'inherit' }}
-                                    />
-                                    <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
-                                      <button
-                                        type="button"
-                                        disabled={replySendingId === app.id || !(replyText[app.id] ?? '').trim()}
-                                        onClick={() => sendWhatsAppReply(app)}
-                                        style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: replySendingId === app.id ? 'not-allowed' : 'pointer', opacity: (replySendingId === app.id || !(replyText[app.id] ?? '').trim()) ? 0.5 : 1 }}
-                                      >
-                                        {replySendingId === app.id ? 'Sending…' : 'Send'}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setReplyOpenFor(null)}
-                                        style={{ background: 'none', border: 'none', color: '#888', fontSize: 11, cursor: 'pointer' }}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
+                                  <div
+                                    title={`${text}\n${formatAdminDateTime(latest.sent_at || latest.received_at)}`}
+                                    style={{ marginBottom: 6, background: '#dcfce7', borderLeft: '3px solid #22c55e', borderRadius: 4, padding: '4px 7px', fontSize: 11, color: '#14532d', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                  >
+                                    ↩ {text}
                                   </div>
                                 );
                               })()}
@@ -5575,6 +6861,10 @@ export default function AdminPanel() {
                                   <div>
                                     <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>{statusLabel(displayStatus(app))}{statusIcons(app)}</span>
 	                                  </div>
+	                                  {/* Delivery ticks live in the Call view only. This is the view whose
+	                                      job is chasing a lead, so "did the message actually reach them" is
+	                                      the question being asked here. Approval and Payments are about a
+	                                      decision and a number; two extra glyphs per row would be noise. */}
 	                                  {secondaryStatusLabels(app)}
 	                                </>
                               )}
@@ -5603,7 +6893,6 @@ export default function AdminPanel() {
                                   <span style={{ fontSize: 12, color: statusColor(displayStatus(app)), fontWeight: 700, textTransform: 'none' }}>
                                     ✓ {statusLabel(displayStatus(app))}{statusIcons(app)}
 	                                  </span>
-	                                  {secondaryStatusLabels(app)}
 	                                </>
                               )}
                             </td>
@@ -5622,7 +6911,6 @@ export default function AdminPanel() {
                               <span style={{ background: statusColor(displayStatus(app)) + '22', color: statusColor(displayStatus(app)), border: `1px solid ${statusColor(displayStatus(app))}44`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 {statusLabel(displayStatus(app) ?? 'pending')}{statusIcons(app)}
 	                              </span>
-	                              {secondaryStatusLabels(app)}
 	                            </td>
                             <td style={{ padding: '11px 12px', fontSize: 11, color: '#888', maxWidth: 200 }}>
                               {pays.all.length === 0 ? (
@@ -5649,7 +6937,7 @@ export default function AdminPanel() {
               )}
 
               {/* Summary footer */}
-              {!applicationsLoading && peopleMode !== 'doubts' && filteredApps.length > 0 && (
+              {!applicationsLoading && isTableMode && filteredApps.length > 0 && (
                 <div style={{ marginTop: 18, color: '#888', fontSize: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <span>Total: <b style={{ color: '#333' }}>{counts.total}</b></span>
                   {counts.pending      > 0 && <span style={{ color: statusColor('pending')      }}>pending: <b>{counts.pending}</b></span>}
@@ -5658,6 +6946,7 @@ export default function AdminPanel() {
                   {counts.cart_abandoned > 0 && <span style={{ color: statusColor('cart_abandoned') }}>cart abandoned: <b>{counts.cart_abandoned}</b></span>}
                   {counts.payment_failed > 0 && <span style={{ color: statusColor('payment_failed') }}>payment failed: <b>{counts.payment_failed}</b></span>}
                   {counts.re_target      > 0 && <span style={{ color: statusColor('re_target')      }}>re-target: <b>{counts.re_target}</b></span>}
+                  {counts.resent_details > 0 && <span style={{ color: statusColor('resent_details') }}>resent details: <b>{counts.resent_details}</b></span>}
                   {counts.waitlist       > 0 && <span style={{ color: statusColor('waitlist')       }}>waitlist: <b>{counts.waitlist}</b></span>}
                   {counts.advance_paid > 0 && <span style={{ color: statusColor('advance_paid') }}>advance paid: <b>{counts.advance_paid}</b></span>}
                   {counts.fully_paid   > 0 && <span style={{ color: statusColor('fully_paid')   }}>fully paid: <b>{counts.fully_paid}</b></span>}
@@ -7136,6 +8425,57 @@ export default function AdminPanel() {
                       reads the most recent one. Color tints amber > 50% and
                       red > 80% of the 500 MB free tier so unusual growth gets
                       noticed before anything actually breaks. */}
+                  {/* ── WHATSAPP DELIVERY ─────────────────────────────────
+                      Moved here from People ▸ Chat: this measures the messaging
+                      system, not any one conversation. It is the whole reason
+                      for the move off AiSensy — before Wamafy we had no record
+                      of a single WhatsApp message ever sent. Its own 60-day
+                      window, independent of the selector above, because it
+                      counts messages rather than sessions. */}
+                  {(() => {
+                    // "Sent" means the provider accepted it and handed back a
+                    // message id — that is what a delivery rate can honestly
+                    // divide by. A send the provider REFUSED never left, so it
+                    // is counted separately rather than diluting the
+                    // denominator: about a third of rows are refusals, and
+                    // folding them in would badly flatter the rate.
+                    const accepted = waSends.filter((m: any) => !!m.sent_at);
+                    const wa = {
+                      sent: accepted.length,
+                      delivered: accepted.filter((m: any) => m.delivered_at).length,
+                      read: accepted.filter((m: any) => m.read_at).length,
+                      failed: accepted.filter((m: any) => m.failed_at).length,
+                      rejected: waSends.filter((m: any) => m.send_ok === false).length,
+                      replies: waInbound.length,
+                    };
+                    const waShare = (n: number) => (wa.sent ? `${Math.round((n / wa.sent) * 100)}%` : '—');
+                    const waTile = (label: string, value: number, sub?: string) => (
+                      <div key={label} style={{ flex: '1 1 110px', minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: '#999', fontWeight: 750, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#111', marginTop: 3 }}>{value}</div>
+                        {sub && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{sub}</div>}
+                      </div>
+                    );
+                    if (waChatLoading && !waSends.length) return null;
+                    if (!waSends.length && !waInbound.length) return null;
+                    return (
+                      <div style={{ marginTop: 32, paddingTop: 20, borderTop: '1px solid #ececec' }}>
+                        <div style={{ fontSize: 15, fontWeight: 750, marginBottom: 14 }}>WhatsApp delivery</div>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                          {waTile('Sent', wa.sent, 'last 60 days')}
+                          {waTile('Delivered', wa.delivered, waShare(wa.delivered))}
+                          {waTile('Read', wa.read, waShare(wa.read))}
+                          {waTile('Failed', wa.failed, wa.failed ? 'reached WhatsApp, not the phone' : 'none')}
+                          {waTile('Never sent', wa.rejected, wa.rejected ? 'the provider refused these' : 'none')}
+                          {waTile('Replies in', wa.replies, 'from customers')}
+                        </div>
+                        <div style={{ marginTop: 12, fontSize: 11, color: '#999', lineHeight: 1.5 }}>
+                          A blue tick proves someone read a message; its absence proves nothing — most people have read receipts switched off. Delivery times are when WhatsApp told us, so treat them as an upper bound. Conversations themselves live in People ▸ Chat.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {storageReport && (() => {
                     const pct = storageReport.free_tier_pct;
                     const color = pct >= 80 ? '#dc2626' : pct >= 50 ? '#d97706' : '#9ca3af';
