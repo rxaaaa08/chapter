@@ -301,7 +301,7 @@ function tripDisplayPrice(trip: Trip): number {
 // non-wrapping row and every extra tab makes the whole panel harder to scan.
 //   'marketers' renders as "Team"   ▸ Performance · Marketers · Managers · Creators
 //   'analytics' renders as "Growth" ▸ Analytics · Experiments
-//   'map'       renders as "Build"  ▸ journey maps + roadmap + to-dos
+//   'map'       renders as "Build"  ▸ journey maps + to-dos
 const ADMIN_TABS = ['trips', 'flow', 'people', 'marketers', 'analytics', 'map', 'settings'] as const;
 type AdminTab = typeof ADMIN_TABS[number];
 
@@ -3233,7 +3233,7 @@ export default function AdminPanel() {
         {/* ── MAP TAB (user-journey maps) ──────────────────────────────────── */}
         {!loading && tab === 'map' && adminRole === 'admin' && (
           <React.Suspense fallback={<div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>Loading map…</div>}>
-            <JourneyMap showRoadmap={adminRole === 'admin'} />
+            <JourneyMap showTodos={adminRole === 'admin'} />
           </React.Suspense>
         )}
 

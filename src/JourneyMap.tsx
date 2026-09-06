@@ -34,7 +34,6 @@ import {
 import '@xyflow/react/dist/style.css';
 import { supabase } from './supabase';
 import { JOURNEY_MAP_SEEDS, type JourneyKind } from './journeyMapSeeds';
-import ProductRoadmap from './ProductRoadmap';
 import TodoCard from './TodoCard';
 
 type JourneyNodeData = { label: string; note?: string; kind: JourneyKind; verified?: boolean };
@@ -146,7 +145,7 @@ function serializeEdges(edges: Edge[]) {
   }));
 }
 
-function JourneyMapInner({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: boolean }) {
+function JourneyMapInner({ demo, showTodos }: { demo?: boolean; showTodos?: boolean }) {
   const [maps, setMaps] = useState<MapRow[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [nodes, setNodes] = useState<JourneyNode[]>([]);
@@ -425,12 +424,10 @@ function JourneyMapInner({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: 
 
   return (
     <div>
-      {/* To-dos first, then the roadmap, then the map last — the two lists are
-          read far more often than the maps are edited. They stay separate
-          sections outside the canvas, so they cannot alter map state, controls,
-          dimensions or gesture handling. */}
-      {(showRoadmap || demo) && <TodoCard demo={demo} />}
-      {(showRoadmap || demo) && <ProductRoadmap demo={demo} />}
+      {/* To-dos first, the map last — the list is read far more often than the
+          maps are edited. It stays a separate section outside the canvas, so it
+          cannot alter map state, controls, dimensions or gesture handling. */}
+      {(showTodos || demo) && <TodoCard demo={demo} />}
 
       {/* Map picker + actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
@@ -580,10 +577,10 @@ function JourneyMapInner({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: 
   );
 }
 
-export default function JourneyMap({ demo, showRoadmap }: { demo?: boolean; showRoadmap?: boolean }) {
+export default function JourneyMap({ demo, showTodos }: { demo?: boolean; showTodos?: boolean }) {
   return (
     <ReactFlowProvider>
-      <JourneyMapInner demo={demo} showRoadmap={showRoadmap} />
+      <JourneyMapInner demo={demo} showTodos={showTodos} />
     </ReactFlowProvider>
   );
 }
