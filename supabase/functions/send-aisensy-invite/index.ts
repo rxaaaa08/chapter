@@ -13,6 +13,25 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const ALLOWED_ORIGIN = /^https:\/\/(?:[a-z0-9-]+\.)?chaptera\.in$|^https:\/\/chapter-[a-z0-9-]+\.vercel\.app$|^http:\/\/localhost:\d{4,5}$/;
 
+// The invite template, tracked version first.
+//
+// invitation_with_tracking carries two DYNAMIC url buttons (Confirm, Contact
+// Us) approved as https://api.wamafy.com/r/{{1}}, so every send must supply a
+// full destination URL for each. Wamafy mints a one-time token, records the tap
+// against this recipient, and forwards -- the only way a WhatsApp button tap can
+// be counted at all, since Meta reports it to nobody.
+//
+// invitation_with_contact is the current template: same body, same two
+// variables, but STATIC buttons, which reject a value.
+//
+// Both are named here rather than behind a flag, because Meta approves on its
+// own timetable and this code deploys on ours. The send tries the tracked one
+// and drops back to the static one on ANY rejection, so an unapproved or
+// still-pending template costs one wasted request and nothing else -- and the
+// day approval lands, tracking starts on its own with no second deploy.
+const INVITE_TEMPLATE = 'invitation_with_tracking';
+const INVITE_TEMPLATE_FALLBACK = 'invitation_with_contact';
+
 function corsFor(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
   const allow  = ALLOWED_ORIGIN.test(origin) ? origin : 'null';
@@ -44,8 +63,11 @@ async function sendInviteWhatsApp(args: {
   wamafyVars: Record<string, string>;
   buttonParam: string | null;
   buttonCount: number;
+  // When set, retried with this template and NO buttons if the first attempt is
+  // rejected. Used for the tracked-invite rollout.
+  wamafyFallbackTemplate?: string | null;
   aisensyBody: Record<string, unknown>;
-}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null; status: number; body: string } | null> {
+}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null; status: number; body: string; template: string } | null> {
   const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
   if (wamafyKey) {
     try {
@@ -59,16 +81,46 @@ async function sendInviteWhatsApp(args: {
           index: i, type: 'url', value: args.buttonParam,
         }));
       }
-      const res = await fetch('https://api.wamafy.com/api/v1/public/messages', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${wamafyKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const text = await res.text();
-      let parsed: any = null;
-      try { parsed = text ? JSON.parse(text) : null; } catch { /* keep raw for logs */ }
+
+      // Template approval happens in Wamafy's dashboard on Meta's timetable;
+      // this code deploys on ours. Between the two, one side is always wrong
+      // about whether the buttons take a value, and WhatsApp rejects BOTH
+      // mistakes: a value sent to a static button, and a missing value on a
+      // dynamic one. Either way the invite never goes out.
+      //
+      // So try it with buttons, and if the rejection is about buttons, try again
+      // without. A rejection means nothing was sent, so the retry cannot
+      // double-send -- and the ordering of approval vs deploy stops mattering.
+      const post = async (body: Record<string, unknown>) => {
+        const res = await fetch('https://api.wamafy.com/api/v1/public/messages', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${wamafyKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        let parsed: any = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch { /* keep raw for logs */ }
+        return { res, text, parsed };
+      };
+
+      let { res, text, parsed } = await post(payload);
+      let usedTemplate = args.wamafyTemplate;
+
+      // Deliberately retried on ANY rejection rather than on matched error text.
+      // Wamafy's wording for "no such template" is not documented, and guessing
+      // it wrong would mean invites silently stop. A rejection means nothing was
+      // sent, so the retry cannot double-send -- the worst case is one wasted
+      // request per invite while the tracked template is still pending.
+      const rejected = () => !(res.ok && parsed?.success !== false);
+      if (rejected() && args.wamafyFallbackTemplate) {
+        console.warn(`[send-invite] ${args.wamafyTemplate} rejected (${res.status}), falling back to ${args.wamafyFallbackTemplate}:`, text.slice(0, 200));
+        const { buttons: _drop, ...noButtons } = payload as any;
+        ({ res, text, parsed } = await post({ ...noButtons, templateName: args.wamafyFallbackTemplate }));
+        usedTemplate = args.wamafyFallbackTemplate;
+      }
+
       if (res.ok && parsed?.success !== false) {
-        return { provider: 'wamafy', messageId: parsed?.data?.messageId ?? null, status: res.status, body: text };
+        return { provider: 'wamafy', messageId: parsed?.data?.messageId ?? null, status: res.status, body: text, template: usedTemplate };
       }
       console.error('[send-invite] wamafy rejected:', res.status, text.slice(0, 300));
     } catch (err) {
@@ -85,9 +137,9 @@ async function sendInviteWhatsApp(args: {
       body: JSON.stringify({ apiKey: AISENSY_API_KEY, ...args.aisensyBody }),
     });
     const body = await aiRes.text().catch(() => '');
-    if (aiRes.ok) return { provider: 'aisensy', messageId: null, status: aiRes.status, body };
+    if (aiRes.ok) return { provider: 'aisensy', messageId: null, status: aiRes.status, body, template: String(args.aisensyBody.campaignName ?? '') };
     console.error('[send-invite] aisensy rejected:', aiRes.status, body.slice(0, 300));
-    return { provider: 'aisensy', messageId: null, status: aiRes.status, body };
+    return { provider: 'aisensy', messageId: null, status: aiRes.status, body, template: String(args.aisensyBody.campaignName ?? '') };
   } catch (err) {
     console.error('[send-invite] aisensy fetch failed:', err);
   }
@@ -97,6 +149,7 @@ async function sendInviteWhatsApp(args: {
 // Optional and never allowed to throw.
 async function logInviteSend(supabase: any, args: {
   provider: string; messageId: string | null; phone: string; template: string;
+  applicationId?: string | null;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
@@ -105,6 +158,9 @@ async function logInviteSend(supabase: any, args: {
       p_secret: secret, p_provider: args.provider, p_message_id: args.messageId,
       p_to: args.phone, p_template: args.template, p_variables: null,
       p_ok: true, p_http_status: 200, p_raw: null,
+      // The invite is exactly where phone-only attribution went wrong: the same
+      // guest invited to two events had one lead's ticks appear on the other.
+      p_application_id: args.applicationId ?? null,
     });
   } catch (err) {
     console.error('[send-invite] send log failed:', err);
@@ -286,21 +342,55 @@ Deno.serve(async (req) => {
       tags:           [isOpenEventDetails ? 'chapter-open-details' : isInviteDetailsResend ? 'chapter-resend-details' : 'chapter-invite'],
       attributes:     { name: userName, event_name: eventName, event_date: eventDate, admin: callerEmail, flow: isOpenEventDetails ? 'open' : isInviteDetailsResend ? 'invite-resend' : 'invite' },
     };
-    const inviteButtonParam = `?${new URLSearchParams({ phone, name: userName || 'Guest' }).toString()}`;
+    // TWO different button-value formats, and mixing them up is a failed send.
+    //
+    //   resend_details  -- its approved URL already contains our domain, so the
+    //                      value is only the TAIL that replaces the placeholder.
+    //   INVITE_TEMPLATE -- approved as https://api.wamafy.com/r/{{1}}, so the
+    //                      value is the FULL destination. Wamafy mints a token,
+    //                      records the tap against this recipient, and forwards.
+    //                      That hop is the only way a WhatsApp button tap can be
+    //                      counted at all -- Meta reports it to nobody.
+    // Which booking this send belongs to. eventSlug is present on every modern
+    // caller; older bundles send only the event NAME, so fall back to resolving
+    // it. Null is acceptable -- the reader falls back to phone matching -- but
+    // only when the phone has a single booking, so we try hard to get it.
+    const loggedApplicationId: string | null = await (async () => {
+      try {
+        const slug = eventSlug
+          || String((await supabase.rpc('resolve_event_slug', { p_title: eventName })).data ?? '').toLowerCase();
+        if (!slug) return null;
+        const { data: row } = await supabase
+          .from('applications').select('id')
+          .eq('event_slug', slug).eq('phone', phone)
+          .maybeSingle();
+        return row?.id ?? null;
+      } catch { return null; }
+    })();
+
+    const detailsButtonTail = `?${new URLSearchParams({ phone, name: userName || 'Guest' }).toString()}`;
+    const inviteBaseUrl = (Deno.env.get('BREVO_INVITE_BASE_URL') ?? 'https://chaptera.in').replace(/\/+$/, '');
+    const inviteTrackedUrl = `${inviteBaseUrl}/invite${detailsButtonTail}`;
+
     const sent = await sendInviteWhatsApp({
-      wamafyTemplate: isDetailsDelivery ? 'resend_details' : 'invitation_with_contact',
+      wamafyTemplate: isDetailsDelivery ? 'resend_details' : INVITE_TEMPLATE,
       wamafyVars: isDetailsDelivery
         ? { '1': userName || 'Guest', '2': eventName }
         : { '1': eventName, '2': eventDate },
-      // The invite template carries no dynamic buttons on either provider.
-      buttonParam: isDetailsDelivery ? inviteButtonParam : null,
-      buttonCount: isDetailsDelivery ? 2 : 0,
+      // Invite: two tracked buttons (Confirm, Contact Us), both to the same
+      // destination, so both need a value on every send.
+      buttonParam: isDetailsDelivery ? detailsButtonTail : inviteTrackedUrl,
+      buttonCount: 2,
+      wamafyFallbackTemplate: isDetailsDelivery ? null : INVITE_TEMPLATE_FALLBACK,
       aisensyBody,
     });
     if (sent) {
       await logInviteSend(supabase, {
+        applicationId: loggedApplicationId,
         provider: sent.provider, messageId: sent.messageId, phone,
-        template: isDetailsDelivery ? 'resend_details' : 'invitation_with_contact',
+        // Whichever template actually carried it -- the tracked one or the
+        // fallback -- so the admin panel's lane matches what really went out.
+        template: sent.template || (isDetailsDelivery ? 'resend_details' : INVITE_TEMPLATE),
       });
     }
     // Shim: leaves the logging and response shape below byte-identical, so what
