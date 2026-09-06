@@ -1,37 +1,38 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowRight, Check, ChevronDown, ChevronLeft, Lock, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronLeft, X } from 'lucide-react';
 import { supabase } from './supabase';
-import {
-  CORRECT_TEAM_ANSWERS,
-  TEAM_LEVELS,
-  type TeamAnswerOption,
-  type TeamCheck,
-  type TeamLevel,
-} from './TeamOnboardingLevels';
-import { TeamLevelMock, type DemoLead } from './TeamOnboardingMocks';
+import { BUSINESS_WHATSAPP_E164 } from './whatsappLinks';
+import { CORRECT_TEAM_ANSWERS, TOUR_STEPS, type TourStep } from './TeamOnboardingTour';
+import { EMPTY_PANEL_STATE, TeamMockPanel, type PanelState } from './TeamOnboardingPanel';
 
 const INK = '#111111';
 const MUTED = '#9a9aa2';
 const HAIR = '#ececed';
 const GOLD = '#FFD700';
 const RED = '#dc2626';
-const LOCAL_PROGRESS_KEY = 'teamOnboardingProgressV1';
+const LOCAL_PROGRESS_KEY = 'teamOnboardingProgressV2';
 const ONBOARDING_INTENT_KEY = 'teamOnboardingIntent';
 // TODO(owner): set this to the vertical marketer welcome video id.
 const TEAM_WELCOME_VIMEO_ID: string | null = null;
 const UPI_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 const PHONE_RE = /^[6-9]\d{9}$/;
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+const STEP_COUNT = TOUR_STEPS.length;
+// Local-only preview of the tour without a Google account. Compiled out of the
+// production bundle, and it can enrol nobody: joining still needs a real
+// session plus the server-side answer check in the marketer-signup function.
+const TOUR_DEV = import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('tourdev') !== null;
 
-type Screen = 'welcome' | 'map' | 'details' | 'success' | 'already' | 'error';
+type Screen = 'welcome' | 'tour' | 'details' | 'success' | 'already' | 'error';
 
 type TeamProgress = {
   current_level: number;
   completed: number[];
   retries: Record<string, number>;
   answers: Record<string, string>;
-  test_application?: DemoLead;
   level_timestamps: Record<string, string>;
 };
 
@@ -41,12 +42,6 @@ const EMPTY_PROGRESS: TeamProgress = {
   retries: {},
   answers: {},
   level_timestamps: {},
-};
-
-const FALLBACK_LEAD: DemoLead = {
-  name: 'Demo Lead',
-  date: 'Sun 2 Aug',
-  meeting_point: 'Nungambakkam — 11:00 AM',
 };
 
 const FAQS = [
@@ -85,32 +80,42 @@ const FAQS = [
   {
     question: 'I have another doubt.',
     answer: 'We\'re here to help! For anything else, contact us on WhatsApp.',
-    link: 'https://wa.me/919940111564',
+    link: `https://wa.me/${BUSINESS_WHATSAPP_E164}`,
   },
 ];
 
 const STATUS_FIELD_GUIDE = [
-  ['Pending', 'Applied, waiting for your call and approval.'],
-  ['Invited', 'Approved — payment link is with them. Stay close.'],
-  ['Fully paid', "Money in, spot confirmed — you've earned."],
-  ['Waitlist', 'Their date sold out. Call → offer the other date → shift.'],
-  ['Rejected', 'Not a fit. Closed respectfully.'],
+  ['Pending', 'Nobody has read it yet. Read why they applied, then invite — or leave it. No call.'],
+  ['Invited', 'Link is with them. Leave them to decide unless they write back or delivery failed.'],
+  ['Re-target', "24h, never opened the page. Calling starts here: call → log it → Resend Details."],
   ['Cart abandoned', "Opened the payment page, didn't finish. Make the trust call."],
-  ['Re-target', '24h since invite, never opened the payment page. Resend + call.'],
+  ['Payment failed', 'They tried and it bounced. Strongest signal there is — call now, no waiting.'],
+  ['Waitlist', 'Their date sold out. Call → offer the other date → change it.'],
+  ['Advance paid', 'Part paid. Still yours: chase the balance. Date is locked from here.'],
+  ['Fully paid', "Money in, spot confirmed — you've earned. Answer them, but no more chasing."],
   ['Recovered', 'Abandoned, then paid. A save — counts fully.'],
+  ['Rejected', 'Not a fit. Closed — leave the row alone.'],
 ] as const;
+
+const KNOWN_CHECK_IDS = new Set(Object.keys(CORRECT_TEAM_ANSWERS));
 
 function normalizeProgress(raw: unknown): TeamProgress {
   const value = raw && typeof raw === 'object' ? raw as Partial<TeamProgress> : {};
   const completed = Array.isArray(value.completed)
-    ? [...new Set(value.completed.filter((item): item is number => Number.isInteger(item) && item >= 1 && item <= 13))].sort((a, b) => a - b)
+    ? [...new Set(value.completed.filter((item): item is number => Number.isInteger(item) && item >= 1 && item <= STEP_COUNT))].sort((a, b) => a - b)
     : [];
+  // Answers are keyed by check id. A resume from the old level-based training
+  // carries ids that no longer exist — drop them rather than submitting keys
+  // the server will reject.
+  const rawAnswers = value.answers && typeof value.answers === 'object' ? value.answers : {};
+  const answers = Object.fromEntries(
+    Object.entries(rawAnswers).filter(([key]) => KNOWN_CHECK_IDS.has(key)),
+  ) as Record<string, string>;
   return {
-    current_level: Math.min(13, Math.max(1, Number(value.current_level) || Math.min(13, completed.length + 1))),
+    current_level: Math.min(STEP_COUNT, Math.max(1, Number(value.current_level) || Math.min(STEP_COUNT, completed.length + 1))),
     completed,
     retries: value.retries && typeof value.retries === 'object' ? value.retries : {},
-    answers: value.answers && typeof value.answers === 'object' ? value.answers : {},
-    test_application: value.test_application,
+    answers,
     level_timestamps: value.level_timestamps && typeof value.level_timestamps === 'object' ? value.level_timestamps : {},
   };
 }
@@ -137,9 +142,15 @@ const secondaryBtn: React.CSSProperties = {
   fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
 };
 
+// Everything except the tour is a narrow reading column. The tour itself needs
+// the full window, because it is showing a replica of a full-width admin table.
+const Narrow = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ width: '100%', maxWidth: 460, margin: '0 auto' }}>{children}</div>
+);
+
 function Loader({ label = 'Getting things ready…' }: { label?: string }) {
   return (
-    <div style={{ height: '100%', minHeight: 480, display: 'grid', placeItems: 'center', background: '#fff' }}>
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#fff' }}>
       <div style={{ display: 'grid', justifyItems: 'center', gap: 18 }}>
         <div className="team-loader-mark" style={{ width: 62, height: 62, borderRadius: 17, background: INK, display: 'grid', placeItems: 'center', color: GOLD, fontSize: 29, fontWeight: 900, boxShadow: '0 0 32px rgba(255,215,0,.34)' }}>அ</div>
         <span style={{ color: MUTED, fontSize: 13.5, fontWeight: 650 }}>{label}</span>
@@ -159,10 +170,10 @@ function Wordmark() {
 
 function LoginScreen({ onBecome, authError }: { onBecome: () => void; authError: string }) {
   return (
-    <div style={{ minHeight: '100%', padding: '32px 22px', display: 'grid', placeItems: 'center', background: '#fff' }}>
+    <div style={{ minHeight: '100vh', padding: '32px 22px', display: 'grid', placeItems: 'center', background: '#fff' }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <Wordmark />
-        <div style={{ marginTop: 34, border: `1.5px dashed #d9bf52`, borderRadius: 24, padding: '28px 22px', background: 'linear-gradient(155deg, #fffdf1 0%, #fff 55%)' }}>
+        <div style={{ marginTop: 34, border: '1.5px dashed #d9bf52', borderRadius: 24, padding: '28px 22px', background: 'linear-gradient(155deg, #fffdf1 0%, #fff 55%)' }}>
           <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 850, color: '#8a741b' }}>Core team training</div>
           <h1 style={{ margin: '10px 0 9px', fontSize: 27, lineHeight: 1.12, letterSpacing: '-.8px' }}>Every one of us starts with the customer.</h1>
           <p style={{ margin: '0 0 23px', color: MUTED, fontSize: 14, lineHeight: 1.6 }}>Whatever you end up doing here — sales, operations, design, support — you start on the customer desk. This is where that begins.</p>
@@ -195,26 +206,15 @@ function WelcomeScreen({ onContinue }: { onContinue: () => void }) {
       <p style={{ margin: '10px 0 8px', color: MUTED, fontSize: 14, lineHeight: 1.55 }}>We run small-group experiences and trips people genuinely love.</p>
       <p style={{ margin: '0 0 8px', color: MUTED, fontSize: 14, lineHeight: 1.55 }}>Here&apos;s how we hire, and it&apos;s unusual: <strong style={{ color: INK }}>everyone starts on the customer desk.</strong> Designers, operations people, managers, support — everyone. Not as a hurdle to clear, but because it&apos;s the fastest way to learn the only thing that matters here: what our customers actually want, what worries them, and what makes them finally say yes.</p>
       <p style={{ margin: '0 0 8px', color: MUTED, fontSize: 14, lineHeight: 1.55 }}>You&apos;ll spend your first stretch as a <strong style={{ color: INK }}>marketer</strong> — talking to real people who want to come on our trips, and getting them there. What you learn on those calls is what makes someone good at every other job in this company.</p>
-      <p style={{ margin: '0 0 18px', color: MUTED, fontSize: 14, lineHeight: 1.55 }}>This training takes about 15 minutes. First you&apos;ll see what our customers see. Then you&apos;ll handle a booking yourself — every situation you&apos;ll actually face, one level at a time.</p>
+      <p style={{ margin: '0 0 18px', color: MUTED, fontSize: 14, lineHeight: 1.55 }}>This training takes about 15 minutes. We&apos;ll walk you through the actual screen you&apos;ll work in every day — with practice leads in it — and explain every button and every status, one at a time.</p>
       <div style={{ height: 'min(56vh, 460px)', aspectRatio: '9 / 16', maxWidth: '100%', margin: '0 auto', position: 'relative', borderRadius: 24, overflow: 'hidden', background: '#000', border: `1.5px solid ${HAIR}` }}>
         {TEAM_WELCOME_VIMEO_ID ? <>
           {!videoLoaded && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff', zIndex: 1 }}><span className="team-spinner" style={{ width: 30, height: 30, border: '3px solid rgba(255,255,255,.25)', borderTopColor: GOLD, borderRadius: '50%' }} /></div>}
           <iframe title="Welcome to core team training" src={`https://player.vimeo.com/video/${TEAM_WELCOME_VIMEO_ID}?autoplay=0&muted=0&badge=0&byline=0&title=0&portrait=0&api=1`} onLoad={() => setVideoLoaded(true)} allow="autoplay; fullscreen; picture-in-picture" style={{ position: 'absolute', inset: -2, width: 'calc(100% + 4px)', height: 'calc(100% + 4px)', border: 0, clipPath: 'inset(0 round 22px)' }} />
         </> : <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: 28, textAlign: 'center', background: 'linear-gradient(155deg,#171717,#050505)', color: '#d4d4d8' }}><div><div style={{ width: 54, height: 54, margin: '0 auto 16px', borderRadius: 17, background: GOLD, color: INK, display: 'grid', placeItems: 'center', fontSize: 24, fontWeight: 900 }}>அ</div><span style={{ fontSize: 13.5, fontWeight: 700 }}>Founder welcome video coming soon</span></div></div>}
       </div>
-      <button type="button" className="team-cta-shimmer" onClick={onContinue} style={{ ...primaryBtn(true), marginTop: 18 }}>Start training</button>
+      <button type="button" className="team-cta-shimmer" onClick={onContinue} style={{ ...primaryBtn(true), marginTop: 18 }}>Start the tour</button>
     </main>
-  );
-}
-
-function LevelNode({ level, completed, unlocked, current, onOpen }: { key?: React.Key; level: TeamLevel; completed: boolean; unlocked: boolean; current: boolean; onOpen: () => void }) {
-  const state = completed ? 'completed' : unlocked ? 'unlocked' : 'locked';
-  const size = completed ? 36 : 48;
-  return (
-    <button type="button" disabled={!unlocked && !completed} onClick={onOpen} aria-label={`Level ${level.id}: ${level.title}, ${state}`} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, border: 0, background: 'transparent', padding: '7px 0', textAlign: 'left', cursor: unlocked || completed ? 'pointer' : 'default', fontFamily: 'inherit', position: 'relative', zIndex: 1 }}>
-      <span className={current ? 'team-level-pulse' : undefined} style={{ width: size, height: size, marginLeft: (48 - size) / 2, marginRight: (48 - size) / 2, flex: '0 0 auto', borderRadius: '50%', border: completed ? `2px solid ${INK}` : `2px solid ${unlocked ? INK : HAIR}`, background: completed ? INK : '#fff', color: completed ? '#fff' : unlocked ? INK : MUTED, display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 850 }}>{completed ? <Check size={18} strokeWidth={3} /> : unlocked ? level.id : <Lock size={15} />}</span>
-      <span style={{ color: unlocked || completed ? INK : MUTED, fontSize: 14.5, lineHeight: 1.35, fontWeight: unlocked || completed ? 750 : 650 }}>{level.title}</span>
-    </button>
   );
 }
 
@@ -228,14 +228,16 @@ function FaqSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   }, [open, onClose]);
   return (
     <AnimatePresence>
-      {open && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'absolute', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.4)', backdropFilter: 'blur(12px)' }} onClick={onClose}>
+      {open && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.4)', backdropFilter: 'blur(12px)' }} onClick={onClose}>
         <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 27, stiffness: 270 }} role="dialog" aria-modal="true" aria-label="Team questions" onClick={event => event.stopPropagation()} style={{ position: 'absolute', inset: 'auto 0 0', maxHeight: '84%', overflowY: 'auto', background: '#fff', borderRadius: '32px 32px 0 0', padding: '27px 22px 28px', boxShadow: '0 -16px 40px rgba(0,0,0,.16)' }}>
-          <button type="button" onClick={onClose} aria-label="Close questions" style={{ position: 'absolute', right: 18, top: 18, width: 35, height: 35, borderRadius: '50%', border: `1px solid ${HAIR}`, background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><X size={17} /></button>
-          <h2 style={{ margin: '2px 46px 22px 0', fontSize: 22, letterSpacing: '-.45px' }}>Got a question? 🤔</h2>
-          {FAQS.map((faq, index) => <div key={faq.question} style={{ borderTop: `1px solid ${HAIR}` }}>
-            <button type="button" aria-expanded={expanded === index} onClick={() => setExpanded(value => value === index ? null : index)} style={{ width: '100%', border: 0, background: '#fff', padding: '16px 0', display: 'flex', gap: 12, alignItems: 'center', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}><span style={{ flex: 1, fontWeight: 750, fontSize: 14.5, lineHeight: 1.4 }}>{faq.question}</span><motion.span animate={{ rotate: expanded === index ? 180 : 0 }}><ChevronDown size={18} /></motion.span></button>
-            <AnimatePresence initial={false}>{expanded === index && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}><p style={{ margin: '-3px 0 17px', color: '#57534e', fontSize: 13.5, lineHeight: 1.6 }}>{faq.answer} {faq.link && <a href={faq.link} target="_blank" rel="noreferrer" style={{ color: INK, fontWeight: 750 }}>Contact Us</a>}</p></motion.div>}</AnimatePresence>
-          </div>)}
+          <div style={{ maxWidth: 560, margin: '0 auto' }}>
+            <button type="button" onClick={onClose} aria-label="Close questions" style={{ position: 'absolute', right: 18, top: 18, width: 35, height: 35, borderRadius: '50%', border: `1px solid ${HAIR}`, background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><X size={17} /></button>
+            <h2 style={{ margin: '2px 46px 22px 0', fontSize: 22, letterSpacing: '-.45px' }}>Got a question? 🤔</h2>
+            {FAQS.map((faq, index) => <div key={faq.question} style={{ borderTop: `1px solid ${HAIR}` }}>
+              <button type="button" aria-expanded={expanded === index} onClick={() => setExpanded(value => value === index ? null : index)} style={{ width: '100%', border: 0, background: '#fff', padding: '16px 0', display: 'flex', gap: 12, alignItems: 'center', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}><span style={{ flex: 1, fontWeight: 750, fontSize: 14.5, lineHeight: 1.4 }}>{faq.question}</span><motion.span animate={{ rotate: expanded === index ? 180 : 0 }}><ChevronDown size={18} /></motion.span></button>
+              <AnimatePresence initial={false}>{expanded === index && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}><p style={{ margin: '-3px 0 17px', color: '#57534e', fontSize: 13.5, lineHeight: 1.6 }}>{faq.answer} {faq.link && <a href={faq.link} target="_blank" rel="noreferrer" style={{ color: INK, fontWeight: 750 }}>Contact Us</a>}</p></motion.div>}</AnimatePresence>
+            </div>)}
+          </div>
         </motion.div>
       </motion.div>}
     </AnimatePresence>
@@ -251,100 +253,280 @@ function FieldGuideSheet({ open, onClose }: { open: boolean; onClose: () => void
   }, [open, onClose]);
   return (
     <AnimatePresence>
-      {open && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'absolute', inset: 0, zIndex: 82, background: 'rgba(0,0,0,.5)' }} onClick={onClose}>
+      {open && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'fixed', inset: 0, zIndex: 302, background: 'rgba(0,0,0,.5)' }} onClick={onClose}>
         <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 27, stiffness: 270 }} role="dialog" aria-modal="true" aria-label="Lead status field guide" onClick={event => event.stopPropagation()} style={{ position: 'absolute', inset: 'auto 0 0', maxHeight: '86%', overflowY: 'auto', background: '#fff', borderRadius: '32px 32px 0 0', padding: '27px 22px 28px', boxShadow: '0 -16px 40px rgba(0,0,0,.16)' }}>
-          <button type="button" onClick={onClose} aria-label="Close field guide" style={{ position: 'absolute', right: 18, top: 18, width: 35, height: 35, borderRadius: '50%', border: `1px solid ${HAIR}`, background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><X size={17} /></button>
-          <div style={{ color: '#8a741b', fontSize: 10.5, fontWeight: 850, letterSpacing: 1.25, textTransform: 'uppercase' }}>Keep this handy</div>
-          <h2 style={{ margin: '7px 46px 8px 0', fontSize: 22, letterSpacing: '-.45px' }}>Lead status field guide</h2>
-          <p style={{ margin: '0 0 18px', color: MUTED, fontSize: 13, lineHeight: 1.55 }}>The one-line next move for every status you&apos;ll see.</p>
-          <div style={{ border: `1px solid ${HAIR}`, borderRadius: 16, overflow: 'hidden' }}>{STATUS_FIELD_GUIDE.map(([status, description]) => <div key={status} style={{ display: 'grid', gridTemplateColumns: '106px 1fr', gap: 11, padding: '12px 13px', borderTop: status === 'Pending' ? 0 : `1px solid ${HAIR}`, alignItems: 'start' }}><strong style={{ fontSize: 12.5, color: INK }}>{status}</strong><span style={{ color: '#57534e', fontSize: 12.5, lineHeight: 1.5 }}>{description}</span></div>)}</div>
+          <div style={{ maxWidth: 560, margin: '0 auto' }}>
+            <button type="button" onClick={onClose} aria-label="Close field guide" style={{ position: 'absolute', right: 18, top: 18, width: 35, height: 35, borderRadius: '50%', border: `1px solid ${HAIR}`, background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><X size={17} /></button>
+            <div style={{ color: '#8a741b', fontSize: 10.5, fontWeight: 850, letterSpacing: 1.25, textTransform: 'uppercase' }}>Keep this handy</div>
+            <h2 style={{ margin: '7px 46px 8px 0', fontSize: 22, letterSpacing: '-.45px' }}>Lead status field guide</h2>
+            <p style={{ margin: '0 0 18px', color: MUTED, fontSize: 13, lineHeight: 1.55 }}>The one-line next move for every status you&apos;ll see.</p>
+            <div style={{ border: `1px solid ${HAIR}`, borderRadius: 16, overflow: 'hidden' }}>{STATUS_FIELD_GUIDE.map(([status, description], index) => <div key={status} style={{ display: 'grid', gridTemplateColumns: '112px 1fr', gap: 11, padding: '12px 13px', borderTop: index === 0 ? 0 : `1px solid ${HAIR}`, alignItems: 'start' }}><strong style={{ fontSize: 12.5, color: INK }}>{status}</strong><span style={{ color: '#57534e', fontSize: 12.5, lineHeight: 1.5 }}>{description}</span></div>)}</div>
+          </div>
         </motion.div>
       </motion.div>}
     </AnimatePresence>
   );
 }
 
-function MapScreen({ progress, onOpenLevel, onContinue, readOnly }: { progress: TeamProgress; onOpenLevel: (level: number) => void; onContinue: () => void; readOnly: boolean }) {
-  const [faqOpen, setFaqOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
-  const completed = new Set(progress.completed);
-  const allDone = completed.size === TEAM_LEVELS.length;
-  const renderAct = (act: 1 | 2, label: string, subtitle: string) => {
-    const levels = TEAM_LEVELS.filter(level => level.act === act);
-    return <section style={{ marginTop: act === 1 ? 8 : 25 }}>
-      <div style={{ fontSize: 12.4, fontWeight: 850, letterSpacing: .45, textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ marginTop: 3, color: MUTED, fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase' }}>{subtitle}</div>
-      <div style={{ position: 'relative', marginTop: 10 }}><span style={{ position: 'absolute', left: 23, top: 18, bottom: 18, width: 2, background: HAIR }} />{levels.map(level => {
-        const done = completed.has(level.id);
-        const unlocked = level.id === 1 || completed.has(level.id - 1);
-        const current = !done && unlocked && level.id === Math.min(13, Math.max(1, progress.current_level));
-        return <LevelNode key={level.id} level={level} completed={done} unlocked={unlocked} current={current} onOpen={() => onOpenLevel(level.id)} />;
-      })}</div>
-    </section>;
-  };
+function CheckBlock({ check, selected, wrong, onSelect }: { key?: React.Key; check: TourStep['checks'] extends (infer U)[] | undefined ? U : never; selected?: string; wrong: boolean; onSelect: (key: string) => void }) {
+  const options = useMemo(() => shuffle(check.options), [check]);
   return (
-    <main style={{ padding: '10px 22px 30px' }}>
-      <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 12 }}><div><h1 style={{ margin: 0, fontSize: 23, letterSpacing: '-.55px' }}>Your training map</h1><p style={{ margin: '6px 0 0', color: MUTED, fontSize: 13.5 }}>One real situation at a time.</p></div><div style={{ border: `1px solid ${HAIR}`, borderRadius: 999, padding: '7px 10px', fontSize: 12, fontWeight: 800 }}>{completed.size} of 13</div></div>
-      {renderAct(1, 'Act 1 · Be the customer', 'See the journey first')}
-      {renderAct(2, 'Act 2 · Be the marketer', 'Handle the lead')}
-      {allDone && !readOnly && <div style={{ margin: '25px 0 15px', border: `1px solid ${HAIR}`, borderRadius: 18, padding: 17, background: '#fafafa' }}><h2 style={{ margin: 0, fontSize: 19 }}>That&apos;s rung one.</h2><p style={{ margin: '8px 0 0', color: MUTED, fontSize: 13.5, lineHeight: 1.6 }}>You&apos;ve seen what the customer sees, handled a lead from Pending to paid, chased the silent ones, saved an abandoned payment, and turned a sold-out date into a booking.</p><p style={{ margin: '8px 0 0', color: MUTED, fontSize: 13.5, lineHeight: 1.6 }}>That&apos;s the customer desk — where everyone here starts. What comes next depends on what you&apos;re good at and what we need: more events, a team to manage, operations, design, support. All of it starts with the calls you&apos;re about to make.</p><p style={{ margin: '8px 0 0', color: MUTED, fontSize: 13.5, lineHeight: 1.6 }}>One last step: your details — so we know who you are and where to pay you.</p></div>}
-      {readOnly && <div style={{ margin: '25px 0 15px', border: `1px solid ${HAIR}`, borderRadius: 18, padding: 17, background: '#fafafa' }}><h2 style={{ margin: 0, fontSize: 19 }}>Your training library</h2><p style={{ margin: '8px 0 0', color: MUTED, fontSize: 13.5, lineHeight: 1.6 }}>Every lesson is unlocked. Reopen any situation for a refresher — nothing you do here changes your live leads or your team account.</p></div>}
-      <button type="button" className={allDone ? 'team-cta-shimmer' : undefined} disabled={!allDone} onClick={onContinue} style={primaryBtn(allDone)}>{readOnly ? 'Back to my Team Dashboard' : 'Finish up'} <ArrowRight size={16} style={{ display: 'inline', verticalAlign: '-3px', marginLeft: 4 }} /></button>
-      <button type="button" onClick={() => setGuideOpen(true)} style={{ ...secondaryBtn, marginTop: 10 }}>Open the Status Field Guide</button>
-      <button type="button" onClick={() => setFaqOpen(true)} style={{ ...secondaryBtn, marginTop: 10 }}>I Have a Doubt</button>
-      <FaqSheet open={faqOpen} onClose={() => setFaqOpen(false)} />
-      <FieldGuideSheet open={guideOpen} onClose={() => setGuideOpen(false)} />
-    </main>
-  );
-}
-
-function CheckBlock({ check, options, selected, wrong, onSelect }: { key?: React.Key; check: TeamCheck; options: TeamAnswerOption[]; selected?: string; wrong: boolean; onSelect: (key: string) => void }) {
-  return (
-    <section style={{ marginTop: 22 }}>
-      <div style={{ color: '#8a741b', fontSize: 11, fontWeight: 850, letterSpacing: 1.25, textTransform: 'uppercase' }}>Quick check</div>
-      <h3 style={{ margin: '7px 0 11px', fontSize: 16.5, lineHeight: 1.38 }}>{check.question}</h3>
-      <div style={{ display: 'grid', gap: 8 }}>{options.map(option => {
+    <section style={{ marginTop: 16 }}>
+      <div style={{ color: '#8a741b', fontSize: 10.5, fontWeight: 850, letterSpacing: 1.2, textTransform: 'uppercase' }}>Quick check</div>
+      <h3 style={{ margin: '6px 0 10px', fontSize: 14.5, lineHeight: 1.4 }}>{check.question}</h3>
+      <div style={{ display: 'grid', gap: 7 }}>{options.map(option => {
         const isSelected = selected === option.key;
         const isWrong = wrong && isSelected;
-        return <button type="button" key={option.key} onClick={() => onSelect(option.key)} style={{ padding: '12px 14px', borderRadius: 12, fontSize: 14, lineHeight: 1.4, textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer', border: `1.5px solid ${isWrong ? RED : isSelected ? INK : HAIR}`, background: isWrong ? '#fef2f2' : isSelected ? '#f5f5f5' : '#fff', fontWeight: isSelected ? 700 : 500 }}>{option.label}</button>;
+        return <button type="button" key={option.key} onClick={() => onSelect(option.key)} style={{ padding: '10px 12px', borderRadius: 11, fontSize: 13, lineHeight: 1.4, textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer', border: `1.5px solid ${isWrong ? RED : isSelected ? INK : HAIR}`, background: isWrong ? '#fef2f2' : isSelected ? '#f5f5f5' : '#fff', fontWeight: isSelected ? 700 : 500 }}>{option.label}</button>;
       })}</div>
     </section>
   );
 }
 
-function LevelScreen({ level, progress, demoLead, onBack, onComplete, onRetry, onTestApplication, readOnly }: { key?: React.Key; level: TeamLevel; progress: TeamProgress; demoLead: DemoLead; onBack: () => void; onComplete: (answers: Record<string, string>) => Promise<void>; onRetry: () => Promise<void>; onTestApplication: (lead: DemoLead) => Promise<void>; readOnly: boolean }) {
-  const shuffledChecks = useMemo(() => level.checks.map(check => ({ ...check, options: shuffle(check.options) })), [level]);
-  const [selected, setSelected] = useState<Record<string, string>>(() => Object.fromEntries(level.checks.map(check => [check.id, progress.answers[check.id] ?? ''])));
+// ── The spotlight ────────────────────────────────────────────────────────────
+// One ring element with a huge box-shadow spread does the dimming, so there is
+// exactly one thing to position. pointer-events stay off it, which is what lets
+// the trainee actually press the highlighted Approve button underneath.
+// Bubble geometry is computed in pixels, so a resize has to re-render — the
+// spotlight hook below bails out early when a step has no target, and would
+// otherwise leave the bubble sized for the old window.
+function useViewport() {
+  // A hidden or not-yet-laid-out tab reports 0 for both. Falling through with
+  // that would compute a negative bubble width, so keep a sane floor.
+  const read = () => ({
+    w: Math.max(320, (typeof window === 'undefined' ? 0 : window.innerWidth) || 1024),
+    h: Math.max(360, (typeof window === 'undefined' ? 0 : window.innerHeight) || 800),
+  });
+  const [size, setSize] = useState(read);
+  useEffect(() => {
+    const onResize = () => setSize(read());
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+  return size;
+}
+
+function useSpotlightRect(target: string | null, deps: unknown[]): DOMRect | null {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    if (!target) { setRect(null); return; }
+    const element = document.querySelector(`[data-tour="${target}"]`);
+    if (!(element instanceof HTMLElement)) { setRect(null); return; }
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // inline:'center' is what drags the table's own horizontal scroll across to
+    // the Action column — the spotlight would otherwise sit off-screen.
+    element.scrollIntoView({ block: 'center', inline: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    const measure = () => setRect(element.getBoundingClientRect());
+    measure();
+    // Re-measure once the smooth scroll has settled.
+    const settle = window.setTimeout(measure, 420);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.clearTimeout(settle);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, ...deps]);
+  return rect;
+}
+
+function TourScreen({
+  progress, panelState, onPanelState, onComplete, onRetry, onFinish, readOnly,
+}: {
+  progress: TeamProgress;
+  panelState: PanelState;
+  onPanelState: (next: PanelState) => void;
+  onComplete: (stepNumber: number, answers: Record<string, string>) => Promise<void>;
+  onRetry: (stepNumber: number) => Promise<void>;
+  onFinish: () => void;
+  readOnly: boolean;
+}) {
+  const startIndex = Math.min(STEP_COUNT - 1, Math.max(0, progress.current_level - 1));
+  const [index, setIndex] = useState(startIndex);
+  const [selected, setSelected] = useState<Record<string, string>>(progress.answers);
   const [wrong, setWrong] = useState<Record<string, boolean>>({});
-  const [mockReady, setMockReady] = useState(false);
   const [saving, setSaving] = useState(false);
-  const canContinue = mockReady && level.checks.every(check => Boolean(selected[check.id])) && !saving;
-  const submit = async () => {
-    if (!canContinue) return;
-    const nextWrong = Object.fromEntries(level.checks.map(check => [check.id, selected[check.id] !== CORRECT_TEAM_ANSWERS[check.id]]));
-    setWrong(nextWrong);
-    if (Object.values(nextWrong).some(Boolean)) {
-      await onRetry();
-      return;
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(false);
+  const step = TOUR_STEPS[index];
+  const { w: viewportW, h: viewportH } = useViewport();
+  const rect = useSpotlightRect(step.target, [index, panelState, viewportW, viewportH]);
+  // A step beside its target gets only the space on that side, which is not
+  // always enough — a long explanation plus a four-option check can overflow
+  // and hide the question and the Next button below the fold. When that
+  // happens, fall back to the centre, where the bubble gets the whole window.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [forceCentre, setForceCentre] = useState(false);
+  useLayoutEffect(() => { setForceCentre(false); }, [index, viewportW, viewportH]);
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || forceCentre) return;
+    if (el.scrollHeight > el.clientHeight + 2) setForceCentre(true);
+  });
+
+  const checks = step.checks ?? [];
+  const interactionDone = !step.requires || panelState[step.requires];
+  // A marketer re-reading this later is refreshing, not being examined: the
+  // questions still show as a self-test but never block the walk. Button
+  // presses stay required either way — skipping them would leave later steps
+  // pointing at rows that have not changed yet.
+  const answered = readOnly || checks.every(check => Boolean(selected[check.id]));
+  const canAdvance = interactionDone && answered && !saving;
+  const isLast = index === STEP_COUNT - 1;
+
+  const next = async () => {
+    if (!canAdvance) return;
+    if (!readOnly) {
+      const nextWrong = Object.fromEntries(checks.map(check => [check.id, selected[check.id] !== CORRECT_TEAM_ANSWERS[check.id]]));
+      setWrong(nextWrong);
+      if (Object.values(nextWrong).some(Boolean)) {
+        await onRetry(index + 1);
+        return;
+      }
+      setSaving(true);
+      const picked = Object.fromEntries(checks.map(check => [check.id, selected[check.id]]));
+      await onComplete(index + 1, picked);
+      setSaving(false);
     }
-    setSaving(true);
-    await onComplete(selected);
+    if (isLast) { onFinish(); return; }
+    setIndex(value => Math.min(STEP_COUNT - 1, value + 1));
   };
+
+  // Bubble goes beside the target — below it by preference, above if that side
+  // is roomier. When neither side can hold a readable bubble (a target near the
+  // middle of a short window) it floats centred instead: overlapping the target
+  // is fine, the gold ring still marks it, and a squeezed 90px bubble is not.
+  const bubbleWidth = Math.min(430, viewportW - 28);
+  const MIN_BUBBLE_H = 300;
+  const spaceBelow = rect ? viewportH - rect.bottom - 28 : 0;
+  const spaceAbove = rect ? rect.top - 28 : 0;
+  const side = (!rect || forceCentre) ? 'centre'
+    : spaceBelow >= MIN_BUBBLE_H ? 'below'
+      : spaceAbove >= MIN_BUBBLE_H ? 'above'
+        : 'centre';
+  const bubbleStyle: React.CSSProperties = side === 'centre'
+    ? {
+      position: 'fixed',
+      width: bubbleWidth,
+      left: Math.max(14, viewportW / 2 - bubbleWidth / 2),
+      top: '50%',
+      transform: 'translateY(-50%)',
+      maxHeight: viewportH - 56,
+    }
+    : {
+      position: 'fixed',
+      width: bubbleWidth,
+      left: Math.max(14, Math.min(viewportW - bubbleWidth - 14, rect!.left + rect!.width / 2 - bubbleWidth / 2)),
+      ...(side === 'below' ? { top: rect!.bottom + 14 } : { bottom: viewportH - rect!.top + 14 }),
+      maxHeight: side === 'below' ? spaceBelow : spaceAbove,
+    };
+
   return (
-    <main style={{ padding: '19px 22px 30px' }}>
-      <button type="button" onClick={onBack} style={{ border: 0, background: 'transparent', padding: 0, color: MUTED, fontWeight: 750, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>‹ Lesson Map</button>
-      <div style={{ marginTop: 18, color: '#8a741b', fontSize: 10.5, fontWeight: 850, letterSpacing: 1.25, textTransform: 'uppercase' }}>Level {level.id} · Act {level.act}</div>
-      <h1 style={{ margin: '7px 0 13px', fontSize: 23, fontWeight: 850, letterSpacing: '-.55px', lineHeight: 1.2 }}>{level.title}</h1>
-      {level.content}
-      <div style={{ marginTop: 20 }}><TeamLevelMock levelId={level.id} demoLead={demoLead} onReadyChange={setMockReady} onTestApplication={onTestApplication} /></div>
-      <div style={{ marginTop: 16, borderLeft: `3px solid ${GOLD}`, background: '#fffdf4', borderRadius: '0 12px 12px 0', padding: '11px 13px' }}><div style={{ color: '#8a741b', fontSize: 10.5, fontWeight: 850, letterSpacing: 1.05, textTransform: 'uppercase' }}>Why this matters later</div><p style={{ margin: '5px 0 0', color: '#57534e', fontSize: 12.5, lineHeight: 1.55 }}>{level.whyLater}</p></div>
-      {readOnly ? <><div style={{ marginTop: 18, border: `1px solid ${HAIR}`, background: '#f7f7f8', borderRadius: 12, padding: '11px 13px', color: MUTED, fontSize: 12.5, lineHeight: 1.5 }}>Review mode — practice here as often as you like. Your completed training and team account won&apos;t be changed.</div><button type="button" onClick={onBack} style={{ ...secondaryBtn, marginTop: 12 }}>Back to lesson map</button></> : <>
-        {!mockReady && <p style={{ margin: '11px 0 0', color: MUTED, fontSize: 12.5 }}>Complete the practice above to unlock the check.</p>}
-        {shuffledChecks.map(check => <CheckBlock key={check.id} check={check} options={check.options} selected={selected[check.id]} wrong={Boolean(wrong[check.id])} onSelect={key => { setSelected(value => ({ ...value, [check.id]: key })); setWrong(value => ({ ...value, [check.id]: false })); }} />)}
-        {Object.values(wrong).some(Boolean) && <div role="alert" style={{ marginTop: 13, border: '1.5px solid #fecaca', background: '#fef2f2', borderRadius: 12, padding: '11px 13px', color: '#b91c1c', fontSize: 13, lineHeight: 1.45 }}>Take another look above ☝️ The answer is in the lesson.</div>}
-        <button type="button" className={canContinue ? 'team-cta-shimmer' : undefined} disabled={!canContinue} onClick={submit} style={{ ...primaryBtn(canContinue), marginTop: 18 }}>{saving ? 'Saving…' : 'Continue'}</button>
-      </>}
-    </main>
+    <>
+      <TeamMockPanel state={panelState} onStateChange={onPanelState} />
+
+      {/* Dimmer + ring */}
+      {rect ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            top: rect.top - 6, left: rect.left - 6,
+            width: rect.width + 12, height: rect.height + 12,
+            borderRadius: 10,
+            boxShadow: '0 0 0 3px rgba(255,215,0,.9), 0 0 0 9999px rgba(9,9,11,.62)',
+            pointerEvents: 'none',
+            zIndex: 200,
+            transition: 'all .22s ease',
+          }}
+        />
+      ) : (
+        <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'rgba(9,9,11,.62)', pointerEvents: 'none', zIndex: 200 }} />
+      )}
+
+      {/* Bubble */}
+      <div
+        role="dialog"
+        aria-label={step.title}
+        style={{
+          ...bubbleStyle,
+          zIndex: 210,
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#fff',
+          borderRadius: 18,
+          boxShadow: '0 18px 44px rgba(0,0,0,.34)',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          color: INK,
+        }}
+      >
+        {/* Only the reading half scrolls. Back/Next stay pinned below it, so a
+            long step with a four-option check can never push them out of reach. */}
+        <div ref={scrollerRef} style={{ overflowY: 'auto', minHeight: 0, flex: '1 1 auto', padding: '16px 17px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ color: '#8a741b', fontSize: 10, fontWeight: 850, letterSpacing: 1.2, textTransform: 'uppercase' }}>Step {index + 1} of {STEP_COUNT}</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" onClick={() => setGuideOpen(true)} style={{ border: `1px solid ${HAIR}`, background: '#fff', borderRadius: 999, padding: '3px 9px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Field guide</button>
+            <button type="button" onClick={() => setFaqOpen(true)} style={{ border: `1px solid ${HAIR}`, background: '#fff', borderRadius: 999, padding: '3px 9px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Doubt?</button>
+          </div>
+        </div>
+        <h2 style={{ margin: '8px 0 8px', fontSize: 18.5, letterSpacing: '-.4px', lineHeight: 1.22 }}>{step.title}</h2>
+        <div style={{ display: 'grid', gap: 9 }}>
+          {step.body.map(paragraph => <p key={paragraph} style={{ margin: 0, color: '#3f3f46', fontSize: 13.5, lineHeight: 1.55 }}>{paragraph}</p>)}
+        </div>
+
+        {!interactionDone && step.requiresHint && (
+          <div style={{ marginTop: 12, borderLeft: `3px solid ${GOLD}`, background: '#fffdf4', borderRadius: '0 10px 10px 0', padding: '9px 11px', color: '#7c5b00', fontSize: 12.5, fontWeight: 700 }}>
+            👆 {step.requiresHint}
+          </div>
+        )}
+
+        {checks.map(check => (
+          <CheckBlock
+            key={check.id}
+            check={check}
+            selected={selected[check.id]}
+            wrong={Boolean(wrong[check.id])}
+            onSelect={key => {
+              setSelected(current => ({ ...current, [check.id]: key }));
+              setWrong(current => ({ ...current, [check.id]: false }));
+            }}
+          />
+        ))}
+
+        {Object.values(wrong).some(Boolean) && (
+          <div role="alert" style={{ marginTop: 11, border: '1.5px solid #fecaca', background: '#fef2f2', borderRadius: 11, padding: '9px 11px', color: '#b91c1c', fontSize: 12.5, lineHeight: 1.45 }}>
+            Not quite — the answer is in what you just read. Take another look.
+          </div>
+        )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, padding: '11px 17px 15px', flexShrink: 0, borderTop: `1px solid ${HAIR}` }}>
+          {index > 0 && (
+            <button type="button" onClick={() => setIndex(value => Math.max(0, value - 1))} style={{ ...secondaryBtn, width: 92, padding: '11px 0' }}>Back</button>
+          )}
+          <button
+            type="button"
+            className={canAdvance ? 'team-cta-shimmer' : undefined}
+            disabled={!canAdvance}
+            onClick={() => void next()}
+            style={{ ...primaryBtn(canAdvance), flex: 1, padding: '11px 0' }}
+          >
+            {saving ? 'Saving…' : isLast ? (readOnly ? 'Back to my dashboard' : 'Finish up') : 'Next'}
+            {!saving && <ArrowRight size={15} style={{ display: 'inline', verticalAlign: '-2px', marginLeft: 5 }} />}
+          </button>
+        </div>
+      </div>
+
+      <FieldGuideSheet open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <FaqSheet open={faqOpen} onClose={() => setFaqOpen(false)} />
+    </>
   );
 }
 
@@ -383,7 +565,7 @@ function DetailsScreen({ email, initialName, answers, onSuccess, onQuizFailed }:
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (body.quiz_failed) { onQuizFailed(); return; }
-        if (body.error === 'admin_email') throw new Error('This email is a founder account. Use a different Google account for marketer access.');
+        if (body.error === 'admin_email') throw new Error('This email is a founder account. Use a different Google account for team access.');
         if (body.error === 'inactive_marketer') throw new Error('This team account is inactive. Contact the founder for help.');
         if (response.status === 429) throw new Error('Too many attempts. Wait 10 minutes, then try again.');
         throw new Error(body.message || body.error || 'We could not create your account. Please try again.');
@@ -407,34 +589,35 @@ function DetailsScreen({ email, initialName, answers, onSuccess, onQuizFailed }:
       <button type="button" onClick={() => setAgreed(value => !value)} aria-pressed={agreed} style={{ marginTop: 20, border: 0, background: 'transparent', padding: 0, display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}><span style={{ width: 20, height: 20, flex: '0 0 auto', borderRadius: 6, border: `1.5px solid ${agreed ? INK : HAIR}`, background: agreed ? INK : '#fff', color: '#fff', display: 'grid', placeItems: 'center', marginTop: 1 }}>{agreed && <Check size={14} strokeWidth={3} />}</span><span style={{ color: '#3f3f46', fontSize: 12.5, lineHeight: 1.5 }}>I agree to keep customer details confidential, contact leads only through the booking process, and collect payments only through the official payment link.</span></button>
       {requested && !agreed && <p style={{ color: RED, fontSize: 11.5, margin: '7px 0 0' }}>Please accept the agreement to continue.</p>}
       {error && <div role="alert" style={{ marginTop: 15, border: '1.5px solid #fecaca', background: '#fef2f2', borderRadius: 12, padding: 12, color: '#b91c1c', fontSize: 12.5, lineHeight: 1.5 }}>{error}</div>}
-      <button type="button" className={valid && !submitting ? 'team-cta-shimmer' : undefined} disabled={submitting} onClick={submit} style={{ ...primaryBtn(valid && !submitting), marginTop: 19 }}>{submitting ? 'Setting up your account…' : 'Join the team'}</button>
+      <button type="button" className={valid && !submitting ? 'team-cta-shimmer' : undefined} disabled={submitting} onClick={() => void submit()} style={{ ...primaryBtn(valid && !submitting), marginTop: 19 }}>{submitting ? 'Setting up your account…' : 'Join the team'}</button>
     </main>
   );
 }
 
 function SuccessScreen() {
-  return <main style={{ minHeight: '100%', padding: '48px 24px 34px', display: 'grid', alignContent: 'center', textAlign: 'center' }}><div style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 19px', background: INK, color: GOLD, display: 'grid', placeItems: 'center' }}><Check size={31} strokeWidth={3} /></div><h1 style={{ margin: 0, fontSize: 27, letterSpacing: '-.7px' }}>You&apos;re on the team.</h1><p style={{ margin: '12px 0 0', color: MUTED, fontSize: 14, lineHeight: 1.65 }}>Your Team Dashboard is live — this is the real thing now, not practice.</p><p style={{ margin: '10px 0 0', color: MUTED, fontSize: 14, lineHeight: 1.65 }}>You&apos;re starting on the customer desk as a marketer. Leads arrive when you&apos;re <strong>assigned to an event</strong>, and events are staffed as they need people. A quiet first few days is normal — it means you&apos;re on the roster, ready to go. We&apos;ll message you on WhatsApp when your first event comes up.</p><p style={{ margin: '10px 0 24px', color: MUTED, fontSize: 14, lineHeight: 1.65 }}><strong style={{ color: INK }}>What comes after</strong> is up to the work: the people here in operations, design and management all started exactly where you&apos;re standing.</p><a href="/admin" className="team-cta-shimmer" style={{ ...primaryBtn(true), display: 'block', textDecoration: 'none', boxSizing: 'border-box' }}>Open my Team Dashboard</a></main>;
+  return <main style={{ minHeight: '100vh', padding: '48px 24px 34px', display: 'grid', alignContent: 'center', textAlign: 'center' }}><div style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 19px', background: INK, color: GOLD, display: 'grid', placeItems: 'center' }}><Check size={31} strokeWidth={3} /></div><h1 style={{ margin: 0, fontSize: 27, letterSpacing: '-.7px' }}>You&apos;re on the team.</h1><p style={{ margin: '12px 0 0', color: MUTED, fontSize: 14, lineHeight: 1.65 }}>Your Team Dashboard is live — this is the real thing now, not practice.</p><p style={{ margin: '10px 0 0', color: MUTED, fontSize: 14, lineHeight: 1.65 }}>You&apos;re starting on the customer desk as a marketer. Leads arrive when you&apos;re <strong>assigned to an event</strong>, and events are staffed as they need people. A quiet first few days is normal — it means you&apos;re on the roster, ready to go. We&apos;ll message you on WhatsApp when your first event comes up.</p><p style={{ margin: '10px 0 24px', color: MUTED, fontSize: 14, lineHeight: 1.65 }}><strong style={{ color: INK }}>What comes after</strong> is up to the work: the people here in operations, design and management all started exactly where you&apos;re standing.</p><a href="/admin" className="team-cta-shimmer" style={{ ...primaryBtn(true), display: 'block', textDecoration: 'none', boxSizing: 'border-box', maxWidth: 380, margin: '0 auto' }}>Open my Team Dashboard</a></main>;
 }
 
 function AlreadyScreen({ onSignOut }: { onSignOut: () => void }) {
-  return <main style={{ minHeight: '100%', padding: '48px 24px 34px', display: 'grid', alignContent: 'center', textAlign: 'center' }}><div style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 19px', background: INK, color: GOLD, display: 'grid', placeItems: 'center' }}><Check size={31} strokeWidth={3} /></div><h1 style={{ margin: 0, fontSize: 25, letterSpacing: '-.65px' }}>You&apos;re already on the team.</h1><p style={{ margin: '10px 0 23px', color: MUTED, fontSize: 14, lineHeight: 1.6 }}>Your Team Dashboard is ready. Open it to see your leads and your training.</p><a href="/admin" className="team-cta-shimmer" style={{ ...primaryBtn(true), display: 'block', textDecoration: 'none', boxSizing: 'border-box' }}>Open Team Dashboard</a><button type="button" onClick={onSignOut} style={{ ...secondaryBtn, marginTop: 10 }}>Sign out</button></main>;
+  return <main style={{ minHeight: '100vh', padding: '48px 24px 34px', display: 'grid', alignContent: 'center', textAlign: 'center' }}><div style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 19px', background: INK, color: GOLD, display: 'grid', placeItems: 'center' }}><Check size={31} strokeWidth={3} /></div><h1 style={{ margin: 0, fontSize: 25, letterSpacing: '-.65px' }}>You&apos;re already on the team.</h1><p style={{ margin: '10px 0 23px', color: MUTED, fontSize: 14, lineHeight: 1.6 }}>Your Team Dashboard is ready. Open it to see your leads and your training.</p><div style={{ maxWidth: 380, margin: '0 auto' }}><a href="/admin" className="team-cta-shimmer" style={{ ...primaryBtn(true), display: 'block', textDecoration: 'none', boxSizing: 'border-box' }}>Open Team Dashboard</a><button type="button" onClick={onSignOut} style={{ ...secondaryBtn, marginTop: 10 }}>Sign out</button></div></main>;
 }
 
 export default function TeamOnboarding() {
-  const [authReady, setAuthReady] = useState(false);
-  const [email, setEmail] = useState('');
+  const [authReady, setAuthReady] = useState(TOUR_DEV);
+  const [email, setEmail] = useState(TOUR_DEV ? 'preview@local' : '');
   const [profileName, setProfileName] = useState('');
   const [authError, setAuthError] = useState('');
   const [loadingAccount, setLoadingAccount] = useState(false);
-  const [screen, setScreen] = useState<Screen>('welcome');
-  const [activeLevel, setActiveLevel] = useState<number | null>(null);
+  const [screen, setScreen] = useState<Screen>(TOUR_DEV ? 'tour' : 'welcome');
   const [progress, setProgress] = useState<TeamProgress>(EMPTY_PROGRESS);
+  const [panelState, setPanelState] = useState<PanelState>(EMPTY_PANEL_STATE);
   const [readOnly, setReadOnly] = useState(false);
   const [syncWarning, setSyncWarning] = useState('');
   const lookupSequence = useRef(0);
   const intentRecordedFor = useRef('');
 
   useEffect(() => {
+    if (TOUR_DEV) return;
     let alive = true;
     void supabase.auth.getSession().then(({ data }) => {
       if (!alive) return;
@@ -453,7 +636,7 @@ export default function TeamOnboarding() {
   }, []);
 
   useEffect(() => {
-    if (!authReady || !email || intentRecordedFor.current === email) return;
+    if (TOUR_DEV || !authReady || !email || intentRecordedFor.current === email) return;
     intentRecordedFor.current = email;
     // supabase-js query builders are lazy thenables: the request is only sent
     // once .then() runs. Without this the funnel row is never written.
@@ -461,7 +644,7 @@ export default function TeamOnboarding() {
   }, [authReady, email]);
 
   useEffect(() => {
-    if (!authReady || !email) return;
+    if (TOUR_DEV || !authReady || !email) return;
     const sequence = ++lookupSequence.current;
     setLoadingAccount(true);
     const run = async () => {
@@ -485,11 +668,10 @@ export default function TeamOnboarding() {
         if (revisitRequested) {
           const { data: signup } = await supabase.from('marketer_signups').select('progress, name').eq('email', email).maybeSingle();
           const saved = normalizeProgress(signup?.progress);
-          setProgress({ ...saved, completed: TEAM_LEVELS.map(level => level.id), current_level: 13 });
+          setProgress({ ...saved, completed: TOUR_STEPS.map((_, index) => index + 1), current_level: 1 });
           if (!profileName && signup?.name) setProfileName(signup.name);
           setReadOnly(true);
-          setScreen('map');
-          window.history.replaceState({ ...(window.history.state ?? {}), teamScreen: 'map', teamLevel: null }, '', '/team?revisit=1');
+          setScreen('tour');
           setLoadingAccount(false);
           return;
         }
@@ -517,77 +699,34 @@ export default function TeamOnboarding() {
       } catch { /* Ignore a malformed offline fallback. */ }
       setProgress(nextProgress);
       if (!profileName && signup?.name) setProfileName(signup.name);
-      const initialScreen: Screen = nextProgress.completed.length > 0 ? 'map' : 'welcome';
-      setScreen(initialScreen);
-      // Seed the major-step history even on a cross-device resume. That keeps
-      // native/browser Back walking map → welcome instead of dropping out of
-      // the authenticated flow on the first press.
-      window.history.replaceState({ ...(window.history.state ?? {}), teamScreen: 'welcome', teamLevel: null }, '', '/team');
-      if (initialScreen === 'map') {
-        window.history.pushState({ ...(window.history.state ?? {}), teamScreen: 'map', teamLevel: null }, '', '/team');
-      }
+      setScreen(nextProgress.completed.length > 0 ? 'tour' : 'welcome');
       sessionStorage.removeItem(ONBOARDING_INTENT_KEY);
       setLoadingAccount(false);
     };
     void run();
   }, [authReady, email]);
 
-  useEffect(() => {
-    const onPopState = (event: PopStateEvent) => {
-      if (window.location.pathname !== '/team') return;
-      const nextLevel = Number(event.state?.teamLevel) || null;
-      const nextScreen = event.state?.teamScreen as Screen | undefined;
-      setActiveLevel(nextLevel);
-      if (nextScreen) setScreen(nextScreen);
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  const openScreen = useCallback((next: Screen) => {
-    setScreen(next);
-    setActiveLevel(null);
-    window.history.pushState({ ...(window.history.state ?? {}), teamScreen: next, teamLevel: null }, '', readOnly ? '/team?revisit=1' : '/team');
-  }, [readOnly]);
-
-  const openLevel = useCallback((level: number) => {
-    setActiveLevel(level);
-    setScreen('map');
-    window.history.pushState({ ...(window.history.state ?? {}), teamScreen: 'map', teamLevel: level }, '', readOnly ? '/team?revisit=1' : '/team');
-  }, [readOnly]);
-
-  const returnToMap = useCallback(() => {
-    if (activeLevel !== null && window.history.state?.teamLevel) window.history.back();
-    else { setActiveLevel(null); setScreen('map'); }
-  }, [activeLevel]);
-
   const saveProgress = useCallback(async (next: TeamProgress) => {
     setProgress(next);
-    if (readOnly) return;
+    if (readOnly || TOUR_DEV) return;
     localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify({ email, progress: next }));
     const { error } = await supabase.from('marketer_signups').update({ progress: next, updated_at: new Date().toISOString() }).eq('email', email);
     setSyncWarning(error ? 'Saved on this device. We will retry the cloud copy on your next step.' : '');
   }, [email, readOnly]);
 
-  const completeLevel = useCallback(async (levelId: number, answers: Record<string, string>) => {
-    const next: TeamProgress = {
+  const completeStep = useCallback(async (stepNumber: number, answers: Record<string, string>) => {
+    await saveProgress({
       ...progress,
       answers: { ...progress.answers, ...answers },
-      completed: [...new Set([...progress.completed, levelId])].sort((a, b) => a - b),
-      current_level: Math.min(13, Math.max(progress.current_level, levelId + 1)),
-      level_timestamps: { ...progress.level_timestamps, [String(levelId)]: new Date().toISOString() },
-    };
-    await saveProgress(next);
-    returnToMap();
-  }, [progress, returnToMap, saveProgress]);
-
-  const recordRetry = useCallback(async (levelId: number) => {
-    const key = String(levelId);
-    await saveProgress({ ...progress, retries: { ...progress.retries, [key]: (progress.retries[key] ?? 0) + 1 } });
+      completed: [...new Set([...progress.completed, stepNumber])].sort((a, b) => a - b),
+      current_level: Math.min(STEP_COUNT, Math.max(progress.current_level, stepNumber + 1)),
+      level_timestamps: { ...progress.level_timestamps, [String(stepNumber)]: new Date().toISOString() },
+    });
   }, [progress, saveProgress]);
 
-  const saveTestApplication = useCallback(async (lead: DemoLead) => {
-    await saveProgress({ ...progress, test_application: lead });
+  const recordRetry = useCallback(async (stepNumber: number) => {
+    const key = String(stepNumber);
+    await saveProgress({ ...progress, retries: { ...progress.retries, [key]: (progress.retries[key] ?? 0) + 1 } });
   }, [progress, saveProgress]);
 
   const signIn = async () => {
@@ -608,24 +747,32 @@ export default function TeamOnboarding() {
   if (loadingAccount) return <><SharedStyles /><Loader label="Finding your place…" /></>;
   if (screen === 'already') return <><SharedStyles /><AlreadyScreen onSignOut={() => void signOut()} /></>;
   if (screen === 'success') return <><SharedStyles /><SuccessScreen /></>;
-  if (screen === 'error') return <><SharedStyles /><main style={{ minHeight: '100%', padding: 28, display: 'grid', alignContent: 'center', textAlign: 'center' }}><h1 style={{ fontSize: 23, margin: 0 }}>We couldn&apos;t load your training.</h1><p style={{ color: MUTED, fontSize: 14, lineHeight: 1.6 }}>Your sign-in is safe. Check your connection and try again.</p><button type="button" className="team-cta-shimmer" onClick={() => window.location.reload()} style={primaryBtn(true)}>Try again</button><button type="button" onClick={() => void signOut()} style={{ ...secondaryBtn, marginTop: 10 }}>Sign out</button></main></>;
+  if (screen === 'error') return <><SharedStyles /><main style={{ minHeight: '100vh', padding: 28, display: 'grid', alignContent: 'center', textAlign: 'center' }}><h1 style={{ fontSize: 23, margin: 0 }}>We couldn&apos;t load your training.</h1><p style={{ color: MUTED, fontSize: 14, lineHeight: 1.6 }}>Your sign-in is safe. Check your connection and try again.</p><div style={{ maxWidth: 340, margin: '0 auto' }}><button type="button" className="team-cta-shimmer" onClick={() => window.location.reload()} style={primaryBtn(true)}>Try again</button><button type="button" onClick={() => void signOut()} style={{ ...secondaryBtn, marginTop: 10 }}>Sign out</button></div></main></>;
 
-  const level = activeLevel ? TEAM_LEVELS.find(item => item.id === activeLevel) : undefined;
   return (
-    <div style={{ height: '100%', minHeight: 0, background: '#fff', color: INK, fontFamily: 'system-ui, -apple-system, sans-serif', overflowY: 'auto', position: 'relative', WebkitFontSmoothing: 'antialiased' }}>
+    <div style={{ minHeight: '100vh', background: screen === 'tour' ? '#f5f5f0' : '#fff', color: INK, fontFamily: 'system-ui, -apple-system, sans-serif', WebkitFontSmoothing: 'antialiased' }}>
       <SharedStyles />
       {syncWarning && <div role="status" style={{ position: 'sticky', top: 0, zIndex: 20, background: '#fff7d6', borderBottom: '1px solid #ead37a', padding: '8px 14px', color: '#6b5912', fontSize: 11.5, textAlign: 'center' }}>{syncWarning}</div>}
-      {level ? <LevelScreen key={level.id} level={level} progress={progress} demoLead={progress.test_application ?? { ...FALLBACK_LEAD, name: profileName || FALLBACK_LEAD.name }} onBack={returnToMap} onComplete={answers => completeLevel(level.id, answers)} onRetry={() => recordRetry(level.id)} onTestApplication={saveTestApplication} readOnly={readOnly} /> : <>
-        <TopBar step={screen === 'welcome' ? 1 : screen === 'map' ? 2 : 3} onBack={() => {
-          if (readOnly) window.location.assign('/admin');
-          else if (screen === 'welcome') void signOut();
-          else if (window.history.state?.teamScreen) window.history.back();
-          else setScreen(screen === 'details' ? 'map' : 'welcome');
-        }} />
-        {screen === 'welcome' && <WelcomeScreen onContinue={() => openScreen('map')} />}
-        {screen === 'map' && <MapScreen progress={progress} onOpenLevel={openLevel} onContinue={() => readOnly ? window.location.assign('/admin') : openScreen('details')} readOnly={readOnly} />}
-        {screen === 'details' && <DetailsScreen email={email} initialName={profileName} answers={progress.answers} onSuccess={() => { localStorage.removeItem(LOCAL_PROGRESS_KEY); setScreen('success'); window.history.replaceState({ teamScreen: 'success', teamLevel: null }, '', '/team'); }} onQuizFailed={() => { setSyncWarning('One training answer needs another look. Review the map and try again.'); openScreen('map'); }} />}
-      </>}
+      {screen === 'tour' ? (
+        <TourScreen
+          progress={progress}
+          panelState={panelState}
+          onPanelState={setPanelState}
+          onComplete={completeStep}
+          onRetry={recordRetry}
+          onFinish={() => { if (readOnly) window.location.assign('/admin'); else setScreen('details'); }}
+          readOnly={readOnly}
+        />
+      ) : (
+        <Narrow>
+          <TopBar step={screen === 'welcome' ? 1 : 3} onBack={() => {
+            if (screen === 'welcome') void signOut();
+            else setScreen('tour');
+          }} />
+          {screen === 'welcome' && <WelcomeScreen onContinue={() => setScreen('tour')} />}
+          {screen === 'details' && <DetailsScreen email={email} initialName={profileName} answers={progress.answers} onSuccess={() => { localStorage.removeItem(LOCAL_PROGRESS_KEY); setScreen('success'); }} onQuizFailed={() => { setSyncWarning('One training answer needs another look. Walk the tour again and try once more.'); setScreen('tour'); }} />}
+        </Narrow>
+      )}
     </div>
   );
 }
@@ -636,12 +783,9 @@ function SharedStyles() {
     @keyframes teamLoaderEnter { from { opacity:0; transform:scale(.82) rotate(-5deg); } to { opacity:1; transform:scale(1) rotate(0); } }
     @keyframes teamLoaderGlow { 0%,100% { box-shadow:0 0 22px rgba(255,215,0,.22); } 50% { box-shadow:0 0 42px rgba(255,215,0,.48); } }
     @keyframes teamSpinner { to { transform: rotate(360deg); } }
-    @keyframes teamLevelPulse { 0%,100% { box-shadow:0 0 0 0 rgba(17,17,17,.13); } 50% { box-shadow:0 0 0 8px rgba(17,17,17,0); } }
-    @keyframes teamDotPulse { 0%,80%,100% { opacity:.25; transform:translateY(0); } 40% { opacity:1; transform:translateY(-2px); } }
     .team-cta-shimmer::before { content:''; position:absolute; inset:0 auto 0 -35%; width:32%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent); animation:teamCtaShimmer 2.2s ease-in-out infinite; pointer-events:none; }
     .team-loader-mark { animation:teamLoaderEnter .35s ease-out both, teamLoaderGlow 1.8s ease-in-out infinite .35s; }
     .team-spinner { animation:teamSpinner .8s linear infinite; }
-    .team-level-pulse { animation:teamLevelPulse 1.8s ease-in-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .team-cta-shimmer::before,.team-loader-mark,.team-spinner,.team-level-pulse,.team-typing-dot { animation:none !important; } }
+    @media (prefers-reduced-motion: reduce) { .team-cta-shimmer::before,.team-loader-mark,.team-spinner { animation:none !important; } }
   `}</style>;
 }

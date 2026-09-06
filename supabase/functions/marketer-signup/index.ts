@@ -14,23 +14,26 @@ const UPI_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 const FAILED_WINDOW_MS = 10 * 60 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
 
-// Source of truth for the 14 comprehension checks. The client mirrors these
-// stable tokens in MarketerOnboardingLevels.tsx, but only this copy grants entry.
+// Source of truth for the 15 comprehension checks in the panel tour. The client
+// mirrors these stable tokens in src/TeamOnboardingTour.tsx, but only this copy
+// grants entry. Changing either side REQUIRES redeploying this function, or a
+// correct run-through is rejected as a failed quiz.
 const ANSWER_KEY: Record<string, string> = {
-  '1': 'ref_site',
-  '2': 'apply_then_pay',
-  '3': 'round_robin_even',
-  '4': 'team_transparent',
-  '5': 'pending_waiting',
-  '6': 'auto_whatsapp',
-  '7': 'spot_on_reveal_date',
-  '8': 'resend_both_channels',
-  '9': 'official_link_only',
-  '10': 'stays_with_me',
-  '11': 'pitch_other_date_shift',
-  '12': 'days_after_event',
-  '13a': 'never_pushy',
-  '13b': 'only_my_leads',
+  pending: 'read_then_invite',
+  approve: 'auto_whatsapp',
+  invited: 'invited_awaiting_payment',
+  wait: 'answer_replies_only',
+  retarget: 'call_then_resend',
+  cart: 'trust_call_official_link',
+  cash: 'official_link_only',
+  waitlist: 'shift_date_unwaitlist',
+  paidlock: 'paid_needs_founder',
+  balance: 'marketer_chases',
+  doubt: 'stays_with_me',
+  board: 'team_transparent',
+  payout: 'days_after_event',
+  privacy: 'only_my_leads',
+  tone: 'never_pushy',
 };
 
 type JsonObject = Record<string, unknown>;

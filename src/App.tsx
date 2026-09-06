@@ -5543,14 +5543,14 @@ export default function App() {
     );
   }
 
+  // Rendered bare, like /admin: the training walks a replica of the admin
+  // panel's full-width lead table, so a phone frame would misrepresent the
+  // screen it is teaching. Landscape is allowed here for the same reason.
   if (isTeamPage) {
     return (
       <>
         <InAppBrowserNudge />
-        <LandscapeBlocker />
-        <MobileShell>
-          <TeamOnboarding />
-        </MobileShell>
+        <TeamOnboarding />
       </>
     );
   }

@@ -6,6 +6,9 @@ import {
   timelineModel, defaultBookingSteps, stepsMatchModel, carryStepDates,
   isFixedTimeline as isFixedTimelineModel, stepBadge, stripDeadStepDates, BADGE_LABEL,
 } from './bookingTimeline';
+// Only for the signup drop-off pills below — imported rather than hardcoded so
+// adding a tour step can never silently squash the last ones together.
+import { TOUR_STEPS } from './TeamOnboardingTour';
 
 // Journey Map tab (React Flow) — lazy so the map library only downloads when
 // the tab is opened, never in the customer-facing bundle.
@@ -1148,7 +1151,10 @@ export default function AdminPanel() {
     (signupRows ?? []).forEach((row: any) => {
       const signupEmail = String(row.email ?? '').toLowerCase();
       if (row.status !== 'in_progress' || !startedIntentEmails.has(signupEmail) || completedIntentEmails.has(signupEmail)) return;
-      const level = Math.min(13, Math.max(1, Number(row.progress?.current_level) || 1));
+      // Tour steps, not lessons — the training is one continuous walk through a
+      // mock of this very screen. current_level keeps its DB name; only the
+      // human-facing wording changed.
+      const level = Math.min(TOUR_STEPS.length, Math.max(1, Number(row.progress?.current_level) || 1));
       dropoff[level] = (dropoff[level] ?? 0) + 1;
     });
     setMarketerLevelDropoff(Object.entries(dropoff).map(([level, count]) => ({ level: Number(level), count })).sort((a, b) => a.level - b.level));
@@ -9110,8 +9116,8 @@ export default function AdminPanel() {
 
             {marketerLevelDropoff.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: '#777' }}>
-                <span style={{ fontWeight: 700, color: '#555' }}>Unfinished by current level</span>
-                {marketerLevelDropoff.map(item => <span key={item.level} title={`${item.count} ${item.count === 1 ? 'person' : 'people'} currently at level ${item.level}`} style={{ border: '1px solid #e4e4e7', background: '#fff', borderRadius: 999, padding: '3px 8px' }}>L{item.level} <b style={{ color: '#111' }}>{item.count}</b></span>)}
+                <span style={{ fontWeight: 700, color: '#555' }}>Unfinished by current step</span>
+                {marketerLevelDropoff.map(item => <span key={item.level} title={`${item.count} ${item.count === 1 ? 'person' : 'people'} currently at step ${item.level} of ${TOUR_STEPS.length}`} style={{ border: '1px solid #e4e4e7', background: '#fff', borderRadius: 999, padding: '3px 8px' }}>S{item.level} <b style={{ color: '#111' }}>{item.count}</b></span>)}
               </div>
             )}
 
