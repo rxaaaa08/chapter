@@ -109,6 +109,10 @@ attributed as (
     a.event_slug,
     a.phone,
     a.status,
+    -- One booking can be several heads on pay-at-venue open events. Counting
+    -- rows only would report a four-ticket sale as one acquisition and make
+    -- that ad's cost read four times worse than it was.
+    greatest(coalesce(a.ticket_count, 1), 1) as tickets,
     a.attribution->>'utm_content' as ad_id,
     (coalesce(nullif(a.attribution->>'landed_at','')::timestamptz, a.created_at)
        at time zone 'Asia/Kolkata')::date as touch_date
@@ -133,6 +137,7 @@ booked as (
     count(*)                                                          as leads,
     count(*) filter (where t.status in ('advance_paid','fully_paid'))  as bookings,
     count(*) filter (where t.status = 'fully_paid')                    as completed,
+    coalesce(sum(t.tickets) filter (where t.status in ('advance_paid','fully_paid')), 0) as tickets,
     coalesce(sum(c.received), 0)::numeric(12,2)                        as revenue
   from attributed t
   left join cash c on c.event_slug = t.event_slug and c.phone = t.phone
@@ -158,6 +163,7 @@ per_ad as (
     coalesce(sum(b.leads), 0)                        as our_leads,
     coalesce(sum(b.bookings), 0)                     as our_bookings,
     coalesce(sum(b.completed), 0)                    as our_completed,
+    coalesce(sum(b.tickets), 0)                      as our_tickets,
     coalesce(sum(b.revenue), 0)::numeric(12,2)       as our_revenue
   from spend s
   full outer join booked b
@@ -172,6 +178,7 @@ per_day as (
     coalesce(sum(b.leads), 0)                        as leads,
     coalesce(sum(b.bookings), 0)                     as bookings,
     coalesce(sum(b.completed), 0)                    as completed,
+    coalesce(sum(b.tickets), 0)                      as tickets,
     coalesce(sum(b.revenue), 0)::numeric(12,2)       as revenue
   from spend s
   full outer join booked b
@@ -195,11 +202,13 @@ select case when public.is_admin_strict() then jsonb_build_object(
       'our_leads', our_leads,
       'our_bookings', our_bookings,
       'our_completed', our_completed,
+      'our_tickets', our_tickets,
       'our_revenue', our_revenue,
       -- Nulls, not zeros: "no data yet" and "free" are different answers and a
       -- chart must not draw a line through the first one.
       'cost_per_lead',    case when our_leads     > 0 then round(spend / our_leads, 2) end,
       'cost_per_booking', case when our_bookings  > 0 then round(spend / our_bookings, 2) end,
+      'cost_per_ticket',  case when our_tickets   > 0 then round(spend / our_tickets, 2) end,
       'cost_per_customer',case when our_completed > 0 then round(spend / our_completed, 2) end,
       'true_roas',        case when spend > 0 then round(our_revenue / spend, 2) end,
       -- What Meta believes, for the same ad, over the same window.
@@ -214,8 +223,10 @@ select case when public.is_admin_strict() then jsonb_build_object(
       'leads', leads,
       'bookings', bookings,
       'completed', completed,
+      'tickets', tickets,
       'revenue', revenue,
-      'cost_per_booking', case when bookings > 0 then round(spend / bookings, 2) end
+      'cost_per_booking', case when bookings > 0 then round(spend / bookings, 2) end,
+      'cost_per_ticket',  case when tickets  > 0 then round(spend / tickets, 2) end
     ) order by day)
     from per_day where day is not null
   ), '[]'::jsonb),
@@ -225,9 +236,12 @@ select case when public.is_admin_strict() then jsonb_build_object(
       'leads', coalesce(sum(leads), 0),
       'bookings', coalesce(sum(bookings), 0),
       'completed', coalesce(sum(completed), 0),
+      'tickets', coalesce(sum(tickets), 0),
       'revenue', coalesce(sum(revenue), 0),
       'cost_per_booking', case when coalesce(sum(bookings),0) > 0
                                then round(sum(spend) / sum(bookings), 2) end,
+      'cost_per_ticket', case when coalesce(sum(tickets),0) > 0
+                              then round(sum(spend) / sum(tickets), 2) end,
       'true_roas', case when coalesce(sum(spend),0) > 0
                         then round(sum(revenue) / sum(spend), 2) end
     ) from per_day

@@ -10336,10 +10336,16 @@ export default function AdminPanel() {
               <div style={s.card}>
                 <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
                   {stat('Spent', money(totals.spend))}
-                  {stat('Bookings', String(totals.bookings ?? 0), `${totals.leads ?? 0} leads · ${totals.completed ?? 0} fully paid`)}
+                  {stat('Bookings', String(totals.bookings ?? 0),
+                    `${totals.leads ?? 0} leads · ${totals.completed ?? 0} fully paid`
+                    + (Number(totals.tickets) > Number(totals.bookings) ? ` · ${totals.tickets} tickets` : ''))}
                   {stat('Cost per booking',
                     totals.cost_per_booking == null ? '—' : money(totals.cost_per_booking),
-                    'what one advance-paid ticket cost')}
+                    // One booking can carry several heads on pay-at-venue events,
+                    // so the per-head figure is only shown when it differs.
+                    Number(totals.tickets) > Number(totals.bookings) && totals.cost_per_ticket != null
+                      ? `${money(totals.cost_per_ticket)} per ticket`
+                      : 'what one advance-paid booking cost')}
                   {stat('Money received', money(totals.revenue), 'actually in the bank')}
                   {stat('True ROAS',
                     totals.true_roas == null ? '—' : `${Number(totals.true_roas).toFixed(2)}×`,
@@ -10430,10 +10436,18 @@ export default function AdminPanel() {
                             <td style={{ padding: '9px 10px', textAlign: 'right' }}>{money(a.spend)}</td>
                             <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{a.link_clicks ?? 0}</td>
                             <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{a.our_leads ?? 0}</td>
-                            <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>{a.our_bookings ?? 0}</td>
+                            <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>
+                              {a.our_bookings ?? 0}
+                              {Number(a.our_tickets) > Number(a.our_bookings) && (
+                                <div style={{ fontSize: 10.5, fontWeight: 500, color: '#999' }}>{a.our_tickets} tickets</div>
+                              )}
+                            </td>
                             <td style={{ padding: '9px 10px', textAlign: 'right' }}>{a.our_completed ?? 0}</td>
                             <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>
                               {a.cost_per_booking == null ? '—' : money(a.cost_per_booking)}
+                              {Number(a.our_tickets) > Number(a.our_bookings) && a.cost_per_ticket != null && (
+                                <div style={{ fontSize: 10.5, fontWeight: 500, color: '#999' }}>{money(a.cost_per_ticket)} / ticket</div>
+                              )}
                             </td>
                             <td style={{ padding: '9px 10px', textAlign: 'right' }}>
                               {a.cost_per_customer == null ? '—' : money(a.cost_per_customer)}
