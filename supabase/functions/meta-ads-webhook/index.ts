@@ -49,14 +49,38 @@ const OBJECT_ID_KEYS: ReadonlyArray<readonly [string, string | null]> = [
 ];
 
 function readObject(value: Record<string, unknown>): { id: string | null; type: string | null } {
+  // The type can be spelled two ways. `level` arrives upper case ("AD",
+  // "CREATIVE") where object_type arrives lower ("ad"), so normalise.
+  const explicit = typeof value.object_type === 'string'
+    ? value.object_type.toLowerCase()
+    : typeof value.level === 'string'
+      ? value.level.toLowerCase()
+      : null;
+
   for (const [key, impliedType] of OBJECT_ID_KEYS) {
     const raw = value[key];
     if (typeof raw === 'string' || typeof raw === 'number') {
-      const explicit = typeof value.object_type === 'string' ? value.object_type : null;
       return { id: String(raw), type: explicit ?? impliedType };
     }
   }
-  return { id: null, type: typeof value.object_type === 'string' ? value.object_type : null };
+
+  // Third shape: bare `id` alongside `level` — with_issues_ad_objects and
+  // in_process_ad_objects. `id` on its own is far too generic a key to trust,
+  // so it only counts when `level` is there to say what the id refers to.
+  if (explicit && (typeof value.id === 'string' || typeof value.id === 'number')) {
+    return { id: String(value.id), type: explicit };
+  }
+
+  // ad_recommendations carries a plural array instead of one id. Empty in the
+  // dashboard test; take the first where a real one arrives.
+  if (Array.isArray(value.ad_object_ids) && value.ad_object_ids.length) {
+    const first = value.ad_object_ids[0];
+    if (typeof first === 'string' || typeof first === 'number') {
+      return { id: String(first), type: explicit };
+    }
+  }
+
+  return { id: null, type: explicit };
 }
 
 // entry.id is normally the ad account, but Meta's dashboard test sends 0 while
@@ -67,7 +91,8 @@ function readAccountId(entryId: unknown, value: Record<string, unknown>): string
   if (fromEntry && fromEntry !== '0') return fromEntry;
   const fromValue = value.ad_account_id;
   if (typeof fromValue === 'string' || typeof fromValue === 'number') return String(fromValue);
-  return fromEntry;
+  // Nothing usable anywhere: store null rather than filing '0' as an account.
+  return null;
 }
 
 function hex(buf: ArrayBuffer): string {
