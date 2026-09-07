@@ -39,13 +39,34 @@ examples in this file as the current hold.
      work-in-progress) → you cannot `git add` the whole file. Use **patch-isolation**
      below.
    - Other dirty files exist but are separate from the target → fine, they just stay
-     unstaged. Confirm they're untouched at step 7.
+     unstaged. Confirm they're untouched at step 8.
 4. `git diff <target>` — read the FULL diff and show the user what is about to ship. If
    it contains anything beyond the intended change, STOP and flag it.
-5. `git add <target>` (only the target path(s)), then `git commit` with a body that
+5. **Leak scan the diff — this is the only irreversible check.** A pushed secret is
+   public the moment it lands; you rotate it, you cannot un-push it. Run against the
+   diff of the target path(s) only, so unrelated dirty files don't create noise:
+
+   ```
+   git diff <target> | grep -nEi '(sk-|api[_-]?key|secret|salt|passwd|password|token|bearer|authorization|service_role|eyJhbGciOi|-----BEGIN)'
+   git diff <target> | grep -nE '^\+.*console\.(log|debug)'
+   ```
+
+   Judge every hit — do not pattern-match blindly:
+   - A literal value (a PayU salt, a Meta access token, a `service_role` key, a JWT
+     starting `eyJhbGciOi`, an `app_secrets` value) → **STOP.** Do not commit. Tell the
+     user which line, and that the secret belongs in a Supabase secret or
+     `app_secrets`, never in the repo.
+   - A *reference* to a secret (`Deno.env.get('PAYU_SALT')`, a column named
+     `admin_push_secret`, the string `X-Admin-Push-Secret`) → fine, that is how the
+     code is supposed to read them. Say so and continue.
+   - A new `console.log`/`console.debug` on an added line → flag it. This deploys to a
+     live customer site. Removing it is usually right; keep it only if the user says so.
+
+   Report what the scan found — including "clean" — before moving on.
+6. `git add <target>` (only the target path(s)), then `git commit` with a body that
    explains the WHY, ending with the repo's co-author trailer.
-6. `git push`.
-7. `git status --short` — confirm everything that was meant to stay behind is still
+7. `git push`.
+8. `git status --short` — confirm everything that was meant to stay behind is still
    uncommitted. Report the commit hash, the file(s) shipped, and either
    "held batch untouched: <list>" or "no hold active; <n> unrelated file(s) left dirty"
    — whichever matches what you actually found at step 1.
