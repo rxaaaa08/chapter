@@ -468,6 +468,8 @@ export default function AdminPanel() {
   // Growth ▸ Ads. One RPC payload: per_ad, daily, totals, diagnostics.
   const [metaAds, setMetaAds] = useState<any | null>(null);
   const [metaAdsLoading, setMetaAdsLoading] = useState(false);
+  // Meta's own recommendations, scored against our cash rather than its estimate.
+  const [metaRecs, setMetaRecs] = useState<any | null>(null);
   const [metaAdsDays, setMetaAdsDays] = useState<7 | 30 | 90>(30);
   const [conversionFunnel, setConversionFunnel] = useState<any | null>(null);
   // Most recent weekly DB-storage snapshot (cron writes one every Monday).
@@ -3070,6 +3072,10 @@ export default function AdminPanel() {
       p_since: iso(since),
       p_until: iso(until),
     });
+    // Fetched together: the scorecard is meaningless without the spend context
+    // beside it, and two round trips would let them disagree about the window.
+    const recRes = await supabase.rpc('get_meta_recommendation_scorecard', { p_window_days: 14 });
+    setMetaRecs(recRes.error ? null : recRes.data);
     if (error) showToast(`❌ Failed to load ad performance: ${error.message}`);
     // NULL is the founder gate answering "not you", not an empty report — keep
     // them distinguishable so the page can say which one happened.
@@ -10628,6 +10634,81 @@ export default function AdminPanel() {
                   </div>
                 )}
               </div>
+
+              {/* Meta's recommendations, scored against OUR cost per booking.
+                  Hidden entirely until one arrives — an empty scorecard teaches
+                  nothing and just adds furniture to the page. */}
+              {Number(metaRecs?.total_recommendations) > 0 && (() => {
+                const byType: any[] = metaRecs.by_type ?? [];
+                const recs: any[] = metaRecs.recommendations ?? [];
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Meta&rsquo;s recommendations, scored</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                      What happened to cost per booking in the {metaRecs.window_days} days after each recommendation
+                      arrived, measured from money actually received. We cannot see whether you applied one, so this is
+                      what followed, not what it caused — read the counts, not single rows.
+                    </div>
+
+                    <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                            <th style={{ padding: '6px 10px 8px 0' }}>Kind of advice</th>
+                            <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Seen</th>
+                            <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Measurable</th>
+                            <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Cheaper</th>
+                            <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Dearer</th>
+                            <th style={{ padding: '6px 0 8px 10px', textAlign: 'right' }}>Median change</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {byType.map((t: any) => (
+                            <tr key={t.type} style={{ borderTop: '1px solid #f0f0ea' }}>
+                              <td style={{ padding: '9px 10px 9px 0', fontWeight: 700 }}>{t.type}</td>
+                              <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{t.times_seen}</td>
+                              <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{t.measurable}</td>
+                              <td style={{ padding: '9px 10px', textAlign: 'right', color: '#16a34a' }}>{t.got_cheaper}</td>
+                              <td style={{ padding: '9px 10px', textAlign: 'right', color: '#dc2626' }}>{t.got_dearer}</td>
+                              <td style={{ padding: '9px 0 9px 10px', textAlign: 'right', fontWeight: 800,
+                                           color: t.median_cost_per_booking_change_pct == null ? '#999'
+                                                : Number(t.median_cost_per_booking_change_pct) < 0 ? '#16a34a' : '#dc2626' }}>
+                                {t.median_cost_per_booking_change_pct == null ? 'not yet'
+                                  : `${Number(t.median_cost_per_booking_change_pct) > 0 ? '+' : ''}${t.median_cost_per_booking_change_pct}%`}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {recs.slice(0, 8).map((r: any, i: number) => (
+                        <div key={i} style={{ borderTop: '1px solid #f0f0ea', paddingTop: 8 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{r.type}</span>
+                            <span style={{ fontSize: 11.5, color: '#999' }}>{new Date(r.received_at).toLocaleDateString('en-IN')}</span>
+                            {r.measurable ? (
+                              <span style={{ fontSize: 12, fontWeight: 700,
+                                             color: Number(r.cost_per_booking_change_pct) < 0 ? '#16a34a' : '#dc2626' }}>
+                                {money(r.before_cost_per_booking)} → {money(r.after_cost_per_booking)} per booking
+                                {' '}({Number(r.cost_per_booking_change_pct) > 0 ? '+' : ''}{r.cost_per_booking_change_pct}%)
+                              </span>
+                            ) : (
+                              // Never render "no change" here: not measurable and
+                              // made no difference are opposite conclusions.
+                              <span style={{ fontSize: 12, color: '#999' }}>
+                                not measurable — {r.ads_matched === 0 ? 'no matching ad with spend' : 'no bookings on one side of the window'}
+                              </span>
+                            )}
+                          </div>
+                          {r.message && <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>{r.message}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Diagnostics. The join between Meta spend and our bookings can only
                   break silently, so it is reported as numbers rather than left to
