@@ -1593,15 +1593,14 @@ export default function AdminPanel() {
   };
 
   // ── Affiliates (creators) — admin-only management ───────────────────────────
-  // Pull roster + build per-creator rollups from clicks, attributed applications
-  // and the sales ledger (admin has full RLS on all three), plus the unpaid
-  // commission per event + date for Creator payouts (founder-only RPC).
+  // Pull the roster, the per-creator clicks / sign-ups / paid tickets (counted
+  // in the database by get_affiliate_rollups — downloading raw rows to count
+  // them here silently stopped at the API's 1,000-row cap), and the unpaid
+  // commission per event + date for Creator payouts. Both RPCs are founder-only.
   const loadAffiliatesData = async () => {
-    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }, { data: intentRows }, { data: payoutRows }] = await Promise.all([
+    const [{ data: affRows }, { data: rollups }, { data: videoRows }, { data: intentRows }, { data: payoutRows }] = await Promise.all([
       supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone, gender').order('created_at'),
-      supabase.from('affiliate_sales').select('affiliate_id'),
-      supabase.from('affiliate_clicks').select('affiliate_id'),
-      supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
+      supabase.rpc('get_affiliate_rollups'),
       supabase.from('creator_submissions').select('id, affiliate_id, event_slug, event_date, video_url, status, review_note, submitted_at, seen_at').order('submitted_at', { ascending: false }),
       supabase.from('creator_signup_intents').select('email, completed_at'),
       supabase.rpc('get_creator_payouts_outstanding'),
@@ -1611,12 +1610,9 @@ export default function AdminPanel() {
     setCreatorPayouts(((payoutRows ?? []) as any[]).map(r => ({ ...r, tickets: Number(r.tickets) || 0, amount: Number(r.amount) || 0, sale_ids: r.sale_ids ?? [] })));
     const intents = (intentRows ?? []) as Array<{ completed_at: string | null }>;
     setSignupFunnel({ started: intents.length, completed: intents.filter(r => r.completed_at).length });
-    const stats: Record<string, AffiliateStat> = {};
-    const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0 });
-    (clickRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).clicks += 1; });
-    (appRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).apps += 1; });
-    (salesRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).tickets += 1; });
-    setAffiliateStats(stats);
+    // One object keyed by affiliate id — { clicks, apps, tickets } — or NULL
+    // for non-founders, which leaves every creator at zero.
+    setAffiliateStats((rollups ?? {}) as Record<string, AffiliateStat>);
   };
 
   const saveNewAffiliate = async () => {
