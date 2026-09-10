@@ -129,7 +129,10 @@ type Trip = {
   invite_faqs?: FAQ[];
   city_details?: Record<string, { included: string[]; not_included: string[]; optional_activities: string[]; itinerary: ItineraryDay[]; meeting_spot?: string; transport?: string; price_full?: number; price_advance?: number }>;
 };
-type AffiliateStat = { clicks: number; apps: number; tickets: number; earned: number; unpaid: number };
+type AffiliateStat = { clicks: number; apps: number; tickets: number };
+// One row of get_creator_payouts_outstanding(): a creator's unpaid commission
+// for one event + date. sale_ids are exactly the rows Settle will clear.
+type CreatorPayoutRow = { event_slug: string; event_title: string | null; selected_date: string | null; affiliate_id: string; affiliate_name: string | null; affiliate_handle: string | null; upi_id: string | null; tickets: number; amount: number; sale_ids: string[] };
 // A creator's video submission. Rows only exist once a creator actually submits,
 // so counting them per creator IS the measure of who is working.
 type CreatorVideoRow = {
@@ -602,8 +605,14 @@ export default function AdminPanel() {
   // Creator signup funnel — how many Google accounts entered the /creator flow
   // vs actually finished. Cleaner than auth.users, which mixes every login type.
   const [signupFunnel, setSignupFunnel] = useState<{ started: number; completed: number }>({ started: 0, completed: 0 });
-  // Per-affiliate rollups: clicks, attributed applications, paid tickets, earned + unpaid ₹.
+  // Per-affiliate rollups: clicks, attributed applications, paid tickets.
   const [affiliateStats, setAffiliateStats] = useState<Record<string, AffiliateStat>>({});
+  // Unpaid creator commission, one row per event + date + creator (founder-only
+  // RPC). Feeds the Creator payouts table on Team ▸ Creators.
+  const [creatorPayouts, setCreatorPayouts] = useState<CreatorPayoutRow[]>([]);
+  // The last settle, kept so a mis-tap can be undone until the next settle or reload.
+  const [lastCreatorSettle, setLastCreatorSettle] = useState<{ label: string; sale_ids: string[]; paid_out_at: string; count: number; amount: number } | null>(null);
+  const [settlingCreatorPayout, setSettlingCreatorPayout] = useState(false);
   const [addingAffiliate, setAddingAffiliate] = useState(false);
   const [newAffiliateHandle, setNewAffiliateHandle] = useState('');
   const [newAffiliateName, setNewAffiliateName] = useState('');
@@ -1585,30 +1594,28 @@ export default function AdminPanel() {
 
   // ── Affiliates (creators) — admin-only management ───────────────────────────
   // Pull roster + build per-creator rollups from clicks, attributed applications
-  // and the sales ledger (admin has full RLS on all three).
+  // and the sales ledger (admin has full RLS on all three), plus the unpaid
+  // commission per event + date for Creator payouts (founder-only RPC).
   const loadAffiliatesData = async () => {
-    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }, { data: intentRows }] = await Promise.all([
+    const [{ data: affRows }, { data: salesRows }, { data: clickRows }, { data: appRows }, { data: videoRows }, { data: intentRows }, { data: payoutRows }] = await Promise.all([
       supabase.from('affiliates').select('id, handle, name, email, active, reviewed_at, upi_id, phone, gender').order('created_at'),
-      supabase.from('affiliate_sales').select('affiliate_id, amount, paid_out_at'),
+      supabase.from('affiliate_sales').select('affiliate_id'),
       supabase.from('affiliate_clicks').select('affiliate_id'),
       supabase.from('applications').select('affiliate_id').not('affiliate_id', 'is', null),
       supabase.from('creator_submissions').select('id, affiliate_id, event_slug, event_date, video_url, status, review_note, submitted_at, seen_at').order('submitted_at', { ascending: false }),
       supabase.from('creator_signup_intents').select('email, completed_at'),
+      supabase.rpc('get_creator_payouts_outstanding'),
     ]);
     setAffiliates((affRows ?? []) as any);
     setCreatorVideos((videoRows ?? []) as CreatorVideoRow[]);
+    setCreatorPayouts(((payoutRows ?? []) as any[]).map(r => ({ ...r, tickets: Number(r.tickets) || 0, amount: Number(r.amount) || 0, sale_ids: r.sale_ids ?? [] })));
     const intents = (intentRows ?? []) as Array<{ completed_at: string | null }>;
     setSignupFunnel({ started: intents.length, completed: intents.filter(r => r.completed_at).length });
     const stats: Record<string, AffiliateStat> = {};
-    const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 });
+    const bump = (id: string): AffiliateStat => (stats[id] ??= { clicks: 0, apps: 0, tickets: 0 });
     (clickRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).clicks += 1; });
     (appRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).apps += 1; });
-    (salesRows ?? []).forEach((r: any) => {
-      const cur = bump(r.affiliate_id);
-      cur.tickets += 1;
-      cur.earned += Number(r.amount);
-      if (!r.paid_out_at) cur.unpaid += Number(r.amount);
-    });
+    (salesRows ?? []).forEach((r: any) => { if (r.affiliate_id) bump(r.affiliate_id).tickets += 1; });
     setAffiliateStats(stats);
   };
 
@@ -1684,20 +1691,37 @@ export default function AdminPanel() {
     loadAffiliatesData();
   };
 
-  // Settle a creator's outstanding commission: stamp paid_out_at on every unpaid
-  // sale row for them. Append-only ledger keeps the full history.
-  const markAffiliatePaid = async (af: { id: string; name: string; unpaid: number }) => {
-    if (af.unpaid <= 0) return;
-    if (!window.confirm(`Mark ₹${Math.round(af.unpaid).toLocaleString('en-IN')} as paid out to ${af.name}? This can't be undone.`)) return;
-    const { error } = await supabase
-      .from('affiliate_sales')
-      .update({ paid_out_at: new Date().toISOString() })
-      .eq('affiliate_id', af.id)
-      .is('paid_out_at', null);
-    if (error) { showToast(`Failed: ${error.message}`); return; }
-    showToast(`Marked paid for ${af.name}`);
-    logAdminAction('affiliate_payout', 'affiliate_sales', af.id, { amount: af.unpaid });
-    loadAffiliatesData();
+  // Settle one event + date for every creator on it (founder-only RPC stamps
+  // paid_out_at). Sends the exact sale ids on screen, so a ticket that accrued
+  // after the page loaded stays owed instead of being marked paid unseen.
+  // Mirrors settleMarketerPayout, except this one can be undone.
+  const settleCreatorPayout = async (label: string, saleIds: string[], creators: number, tickets: number, amount: number) => {
+    if (saleIds.length === 0 || settlingCreatorPayout) return;
+    const rupees = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (!window.confirm(`Mark ${label} as paid out?\n\nThis clears ₹${rupees} — ${tickets} ${tickets === 1 ? 'ticket' : 'tickets'} across ${creators} ${creators === 1 ? 'creator' : 'creators'}. Only do this once you've paid every one of them.`)) return;
+    setSettlingCreatorPayout(true);
+    const { data, error } = await supabase.rpc('settle_creator_payouts', { p_sale_ids: saleIds });
+    setSettlingCreatorPayout(false);
+    if (error) { alert('Could not settle: ' + error.message); return; }
+    const res = data as { settled_count: number; settled_amount: number; paid_out_at: string; sale_ids: string[] };
+    logAdminAction('affiliate_payout_settle', 'affiliate_sales', null, { label, ...res });
+    setLastCreatorSettle(res.settled_count > 0 ? { label, sale_ids: res.sale_ids, paid_out_at: res.paid_out_at, count: res.settled_count, amount: Number(res.settled_amount) } : null);
+    await loadAffiliatesData();
+  };
+
+  // Reverse the last settle. The RPC only clears rows still carrying that
+  // settle's exact paid_out_at, so it can never un-pay an earlier date.
+  const undoCreatorSettle = async () => {
+    const last = lastCreatorSettle;
+    if (!last || settlingCreatorPayout) return;
+    setSettlingCreatorPayout(true);
+    const { data, error } = await supabase.rpc('unsettle_creator_payouts', { p_sale_ids: last.sale_ids, p_paid_out_at: last.paid_out_at });
+    setSettlingCreatorPayout(false);
+    if (error) { alert('Could not undo: ' + error.message); return; }
+    logAdminAction('affiliate_payout_unsettle', 'affiliate_sales', null, { label: last.label, ...(data as any) });
+    setLastCreatorSettle(null);
+    showToast(`${last.label} is owed again`);
+    await loadAffiliatesData();
   };
 
   // ── Performance: per-event cost-per-ticket + fixed-costs ledger ─────────────
@@ -9358,8 +9382,8 @@ export default function AdminPanel() {
 
           return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 20 }}>
-            {/* No page title — the Creators pill above names this page. Review
-                and All creators below are its two sections. */}
+            {/* No page title — the Creators pill above names this page. Review,
+                Creator payouts and All creators below are its three sections. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ fontWeight: 700, fontSize: 18 }}>Review</div>
             </div>
@@ -9470,11 +9494,131 @@ export default function AdminPanel() {
           );
         })()}
 
-        {/* ── TEAM ▸ CREATORS: the affiliate roster ─────────────────────────── */}
+        {/* ── TEAM ▸ CREATORS: Creator payouts ─────────────────────────────────
+            Only money still owed, paid the way Marketer Payouts is: a
+            per-creator table broken down by event + date, then one Settle per
+            event + date that clears every creator on it. Settled money drops
+            out of view; the last settle can be undone. */}
         {tab === 'marketers' && adminRole === 'admin' && teamMode === 'creators' && (() => {
           // 2 decimals — matches the creator dashboard so small commissions
-          // (e.g. 8% of a ₹1 ticket = ₹0.08) aren't hidden as ₹0 in Earned/Unpaid.
+          // (e.g. 8% of a ₹1 ticket = ₹0.08) aren't hidden as ₹0.
           const inr = (n: any) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const fmtPayoutDate = (d: string | null) => {
+            if (!d) return 'No date set';
+            const dt = new Date(d + 'T00:00:00');
+            return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          };
+          const titleOf = (r: CreatorPayoutRow) => (r.event_title || r.event_slug || 'Unknown event').trim();
+          // Per creator: total owed + the event · date lines it's made of.
+          const byCreator = new Map<string, { id: string; name: string; handle: string | null; upi: string | null; tickets: number; amount: number; lines: CreatorPayoutRow[] }>();
+          creatorPayouts.forEach(r => {
+            const cur = byCreator.get(r.affiliate_id) ?? { id: r.affiliate_id, name: r.affiliate_name || '—', handle: r.affiliate_handle, upi: r.upi_id, tickets: 0, amount: 0, lines: [] };
+            cur.tickets += r.tickets; cur.amount += r.amount; cur.lines.push(r);
+            byCreator.set(r.affiliate_id, cur);
+          });
+          const creatorRows = Array.from(byCreator.values()).sort((a, b) => b.amount - a.amount);
+          creatorRows.forEach(c => c.lines.sort((a, b) => (a.selected_date || '').localeCompare(b.selected_date || '') || titleOf(a).localeCompare(titleOf(b))));
+          // Per event + date: what one Settle clears, across every creator on it.
+          const byDate = new Map<string, { key: string; title: string; selected_date: string | null; tickets: number; amount: number; sale_ids: string[]; splits: Array<{ name: string; tickets: number; noUpi: boolean }> }>();
+          creatorPayouts.forEach(r => {
+            const key = r.event_slug + '||' + (r.selected_date ?? '');
+            const cur = byDate.get(key) ?? { key, title: titleOf(r), selected_date: r.selected_date, tickets: 0, amount: 0, sale_ids: [], splits: [] };
+            cur.tickets += r.tickets; cur.amount += r.amount; cur.sale_ids.push(...r.sale_ids);
+            cur.splits.push({ name: r.affiliate_name || '—', tickets: r.tickets, noUpi: !r.upi_id });
+            byDate.set(key, cur);
+          });
+          const payoutDates = Array.from(byDate.values()).sort((a, b) => (a.selected_date || '').localeCompare(b.selected_date || ''));
+          const totalOwed = creatorRows.reduce((sum, c) => sum + c.amount, 0);
+          return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20, paddingTop: 24, borderTop: '1.5px solid #eee' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>Creator payouts</div>
+              {creatorRows.length > 0 && (
+                <span style={{ fontSize: 13, color: '#888' }}>{inr(totalOwed)} owed · {creatorRows.length} {creatorRows.length === 1 ? 'creator' : 'creators'}</span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: '#aaa', marginTop: -6 }}>Only money still owed. Settle a date once you've paid every creator on it, and it drops off this list.</div>
+
+            {lastCreatorSettle && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '9px 14px', fontSize: 13, color: '#166534' }}>
+                <span style={{ flex: 1, minWidth: 0 }}>Settled <b>{lastCreatorSettle.label}</b>: {inr(lastCreatorSettle.amount)}, {lastCreatorSettle.count} {lastCreatorSettle.count === 1 ? 'ticket' : 'tickets'}.</span>
+                <button onClick={undoCreatorSettle} disabled={settlingCreatorPayout} style={{ ...s.outlineBtn, fontSize: 12 }}>Undo</button>
+                <button aria-label="Dismiss" onClick={() => setLastCreatorSettle(null)} style={{ background: 'none', border: 'none', color: '#15803d', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+              </div>
+            )}
+
+            <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 620 }}>
+                <thead>
+                  <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <th style={{ textAlign: 'left', padding: '8px 16px' }}>Creator</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px' }}>Owed for</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Tickets</th>
+                    <th style={{ textAlign: 'right', padding: '8px 16px' }}>Owed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {creatorRows.length === 0 && (
+                    <tr><td colSpan={4} style={{ padding: '14px 16px', color: '#bbb', fontSize: 13 }}>Nothing owed — every date is settled.</td></tr>
+                  )}
+                  {creatorRows.map(c => (
+                    <tr key={c.id} style={{ borderTop: '1px solid #f5f5f0', verticalAlign: 'top' }}>
+                      <td style={{ padding: '10px 16px' }}>
+                        <div style={{ fontWeight: 700, color: '#111' }}>{c.name}</div>
+                        {c.handle && <div style={{ fontSize: 12, color: '#6366f1', marginTop: 2 }}>/@{c.handle}</div>}
+                        <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>
+                          {c.upi ? <>UPI <span style={{ color: '#555', fontWeight: 600 }}>{c.upi}</span></> : <span style={{ color: '#c00b0b' }}>no UPI on file</span>}
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        {c.lines.map(l => (
+                          <div key={l.event_slug + '||' + (l.selected_date ?? '')} style={{ display: 'flex', gap: 12, padding: '2px 0', color: '#555' }}>
+                            <span style={{ flex: 1, minWidth: 0 }}>{titleOf(l)} <span style={{ color: '#aaa' }}>· {fmtPayoutDate(l.selected_date)}</span></span>
+                            <span style={{ whiteSpace: 'nowrap', color: '#888' }}>{l.tickets} {l.tickets === 1 ? 'ticket' : 'tickets'}</span>
+                            <span style={{ whiteSpace: 'nowrap', minWidth: 72, textAlign: 'right' }}>{inr(l.amount)}</span>
+                          </div>
+                        ))}
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{c.tickets}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', color: '#111', fontWeight: 700 }}>{inr(c.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {payoutDates.length > 0 && (
+              <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, margin: '4px 2px 0' }}>Settle a date once you've paid the creators for it</div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {payoutDates.map(d => {
+                const label = `${d.title} · ${fmtPayoutDate(d.selected_date)}`;
+                return (
+                  <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '12px 14px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 650, fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</div>
+                      <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                        {fmtPayoutDate(d.selected_date)} · {d.tickets} {d.tickets === 1 ? 'ticket' : 'tickets'} · {d.splits.map((sp, k) => (
+                          <span key={k}>{k > 0 && ', '}{sp.name} {sp.tickets}{sp.noUpi && <span style={{ color: '#c00b0b' }}> (no UPI)</span>}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 15, color: '#111', whiteSpace: 'nowrap' }}>{inr(d.amount)}</div>
+                    <button
+                      onClick={() => settleCreatorPayout(label, d.sale_ids, d.splits.length, d.tickets, d.amount)}
+                      disabled={settlingCreatorPayout}
+                      style={{ whiteSpace: 'nowrap', padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e0e0e0', background: '#fff', cursor: settlingCreatorPayout ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#444', opacity: settlingCreatorPayout ? 0.55 : 1 }}
+                    >Settle</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* ── TEAM ▸ CREATORS: the affiliate roster ─────────────────────────── */}
+        {tab === 'marketers' && adminRole === 'admin' && teamMode === 'creators' && (() => {
           const linkFor = (h: string) => `${window.location.origin}/@${h}`;
           const copyLink = (h: string) => {
             navigator.clipboard?.writeText(linkFor(h)).then(() => showToast(`Copied ${linkFor(h)}`), () => showToast('Copy failed'));
@@ -9548,23 +9692,23 @@ export default function AdminPanel() {
 
 
             <div style={{ background: '#fff', border: '1.5px solid #ebebeb', borderRadius: 12, padding: '8px 0', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
+              {/* No Earned / Unpaid / Mark paid here — money owed lives only in
+                  Creator payouts above, so there's one place to pay from. */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
                 <thead>
                   <tr style={{ color: '#999', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     <th style={{ textAlign: 'left', padding: '8px 16px' }}>Creator</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Clicks</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Sign-ups</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px' }}>Paid tickets</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Earned</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px' }}>Unpaid</th>
                     <th style={{ textAlign: 'right', padding: '8px 16px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {affiliates.length === 0 && <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No creators yet. Add your first one above.</td></tr>}
-                  {affiliates.length > 0 && visibleAffiliates.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#999' }}>No creators match “{creatorSearch.trim()}”.</td></tr>}
+                  {affiliates.length === 0 && <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: '#bbb' }}>No creators yet. Add your first one above.</td></tr>}
+                  {affiliates.length > 0 && visibleAffiliates.length === 0 && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#999' }}>No creators match “{creatorSearch.trim()}”.</td></tr>}
                   {visibleAffiliates.map((af) => {
-                    const st = affiliateStats[af.id] ?? { clicks: 0, apps: 0, tickets: 0, earned: 0, unpaid: 0 };
+                    const st = affiliateStats[af.id] ?? { clicks: 0, apps: 0, tickets: 0 };
                     const conv = st.clicks > 0 ? Math.round((st.tickets / st.clicks) * 100) : null;
                     const isNew = !af.reviewed_at;
                     return (
@@ -9589,11 +9733,8 @@ export default function AdminPanel() {
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{st.clicks}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#555' }}>{st.apps}{conv != null && <span style={{ color: '#bbb', fontSize: 11 }}> · {conv}%</span>}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111', fontWeight: 600 }}>{st.tickets}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>{inr(st.earned)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: st.unpaid > 0 ? '#dc2626' : '#bbb', fontWeight: st.unpaid > 0 ? 700 : 400 }}>{inr(st.unpaid)}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {isNew && <button style={{ ...s.outlineBtn, marginRight: 6 }} onClick={() => markAffiliateReviewed({ id: af.id, name: af.name })}>Mark reviewed</button>}
-                          {st.unpaid > 0 && <button style={{ ...s.btn('#111'), padding: '4px 10px', fontSize: 12, marginRight: 6 }} onClick={() => markAffiliatePaid({ id: af.id, name: af.name, unpaid: st.unpaid })}>Mark paid</button>}
                           <button style={s.outlineBtn} onClick={() => toggleAffiliateActive(af)}>{af.active ? 'Pause' : 'Resume'}</button>
                         </td>
                       </tr>
