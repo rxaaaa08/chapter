@@ -52,6 +52,52 @@ export function getSessionId(): string {
   return id;
 }
 
+// A stable id for this BROWSER, as opposed to this visit.
+//
+// It lives here rather than in experiments.ts (its only real consumer) for one
+// unglamorous reason: experiments.ts imports `supabase` from this file, so
+// importing back the other way would be a cycle. Keeping both ids side by side
+// also puts the contrast where someone will actually read it.
+//
+// THE TWO IDS ARE NOT INTERCHANGEABLE AND MUST NOT BE MERGED.
+// getSessionId is sessionStorage — it dies with the tab, which is the right
+// lifetime for "what happened in this visit" and the same deliberate choice
+// src/attribution.ts makes so a returning visitor is not credited to an old ad.
+// An experiment needs the opposite: assignment has to follow one person across
+// visits, or they see version A today and version B on Thursday — which looks
+// broken to them and quietly ruins the measurement, because someone exposed to
+// both variants before booking belongs to neither.
+//
+// The fallback chain degrades honestly rather than throwing: localStorage
+// (survives visits) → sessionStorage (stable within a visit) → memory (this
+// page load). See the KNOWN LIMIT note in src/experiments.ts.
+let memoryVisitorId: string | null = null;
+
+export function getVisitorId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const key = 'ca_visitor_id';
+  try {
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    try {
+      let id = sessionStorage.getItem(key);
+      if (!id) {
+        id = crypto.randomUUID();
+        sessionStorage.setItem(key, id);
+      }
+      return id;
+    } catch {
+      if (!memoryVisitorId) memoryVisitorId = crypto.randomUUID();
+      return memoryVisitorId;
+    }
+  }
+}
+
 // Which of our funnel steps also gets reported to Meta, and under what name.
 //
 // The names look wrong for a meetup business ("AddToCart" for opening a date
@@ -122,6 +168,13 @@ export async function trackEvent(
     await supabase.from('flow_analytics').insert({
       event_type,
       session_id: getSessionId(),
+      // The join key between a funnel step and an experiment variant. Stamped
+      // on EVERY row, not just rows inside an experiment: assignment is sticky
+      // across visits, so a conversion in a later session still belongs to the
+      // variant that visitor was assigned — and a row written without this can
+      // never be attached to a person afterwards. NULL when storage is blocked,
+      // which get_experiment_results reads as "not identifiable", not as zero.
+      visitor_id: getVisitorId(),
       city: meta.city ?? null,
       category: meta.category ?? null,
       event_id: meta.event_id ?? null,

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut, newLeadId, reportLead } from './supabase';
 import { getAffiliateRef } from './affiliate';
 import { getAttribution } from './attribution';
+import { useVariant } from './experiments';
 import { setPixelUserData, getFbp, getFbc } from './metaPixel';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { formatEventTimeRange } from './eventTime';
@@ -4494,6 +4495,48 @@ function FoundersNotePlayer({ url }: { url: string }) {
 // page load, which is a genuinely new visit.
 const calendarOpenedPinged = new Set<string>();
 
+// ── EXPERIMENT: price-commitment-line-v1 ────────────────────────────────────
+//
+// The largest single leak in the funnel. Measured 2026-09-09 over 12 weeks:
+// 21.6% of visitors reach a price and 8.5% act on it — 61% walk away at this
+// exact moment, and it is the same step the invite-vs-open comparison found
+// the gap opening at.
+//
+// The test: does saying the commitment in plain words move people past it?
+// Variant B adds one line restating what the two numbers above already mean.
+//
+// IT INVENTS NO PROMISE. The line only restates figures already on screen —
+// no cancellation terms, no refund policy, nothing this codebase cannot back
+// up. A test that wins by making a claim we do not honour is worse than a
+// test that loses.
+//
+// WHY THIS IS ITS OWN COMPONENT, and must stay one.
+// useVariant logs the exposure when it MOUNTS, and the exposure set is the
+// denominator of the result. Calling the hook up in the overlay — which mounts
+// as soon as the details sheet opens — would count every visitor who never
+// chose a meeting point and therefore never saw a price. That dilutes a real
+// effect toward zero and makes a good change look like no change. Mounting
+// this only inside the `selectedMeetingPoint && …` branch is what makes
+// "was exposed" mean "actually saw the price".
+function PriceCommitmentLine({ advance, total, payAtVenue }: {
+  advance: number; total: number; payAtVenue: boolean;
+}) {
+  // Module scope, so the component-local formatINR further down this file is
+  // not in scope. Same one-liner, kept identical.
+  const formatINR = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+  const { variant } = useVariant('price-commitment-line-v1');
+  // Nothing to restate when the whole ticket is paid in one go.
+  if (advance >= total || advance <= 0) return null;
+  if (variant !== 'B') return null;
+  return (
+    <p className="text-[11px] font-semibold text-gray-500 text-center leading-snug">
+      {payAtVenue
+        ? `Only ${formatINR(advance)} now — the rest when you arrive.`
+        : `Only ${formatINR(advance)} now to lock your spot.`}
+    </p>
+  );
+}
+
 function pingCalendarOpenedOnce(
   eventId: string,
   meta: { city?: string; category?: string; event_id?: string; event_title?: string },
@@ -5684,7 +5727,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                 // single-payment (payment_mode='full') → centered "Entry Ticket"
                                 // + price; split → Advance + Remaining Balance. Spots-left is
                                 // surfaced via the calendar key, not here.
-                                return event.paymentMode === 'full' ? (
+                                const priceBlock = event.paymentMode === 'full' ? (
                               <div className="flex flex-col items-center text-center gap-1 text-[11px] font-semibold text-gray-700">
                                 <p>Entry Ticket</p>
                                 <p className="text-2xl font-black text-black leading-tight">{formatINR(displayTotal)}</p>
@@ -5729,6 +5772,19 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
                                   </p>
                                 </div>
                               </div>
+                                );
+                                return (
+                                  <>
+                                    {priceBlock}
+                                    {/* Experiment price-commitment-line-v1. Mounts only here,
+                                        inside `selectedMeetingPoint && …`, so being exposed means
+                                        having actually seen a price — see the component. */}
+                                    <PriceCommitmentLine
+                                      advance={displayAdvance}
+                                      total={displayTotal}
+                                      payAtVenue={!!event.payAtVenue}
+                                    />
+                                  </>
                                 );
                               })()}
 
