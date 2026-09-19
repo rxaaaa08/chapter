@@ -29,16 +29,35 @@
 // Conversions API rides that cycle. v21.0 dates from late 2024, which put it
 // close enough to end-of-life to be a bad thing to start spending ad money on:
 // if it sunsets, every server event fails at once and the only symptom is
-// conversions quietly stopping. v25.0 is the version Meta's own current docs
-// use in their examples.
+// conversions quietly stopping. v25.0 was the version Meta's own docs used in
+// their examples, which is exactly why the docs turned out to be the weaker
+// signal — see WHY NOW below.
 //
 // Nothing in our payload is version-specific — em/ph/fn/ln/ct/country,
 // external_id, fbc/fbp, event_id and custom_data are all long-standing fields —
 // so the bump is a URL change, not a migration.
 //
-// Worth re-checking roughly yearly. If Meta's docs stop showing this version in
-// their examples, it is time to move again.
-const API_VERSION = 'v25.0';
+// Moved v25.0 -> v26.0 on 2026-09-08, with all five importers redeployed in the
+// same pass. Re-derive that list before ANY future bump here:
+//     grep -rl "_shared/metaCapi" supabase/functions/
+// Editing this line alone changes nothing live — this module is bundled at DEPLOY
+// time, so an importer that is not redeployed keeps reporting on the old version
+// while the repo says otherwise. That is the trap in §9 of META-ADS-HANDOFF.md,
+// and a version pin is the worst possible place to fall into it: the failure is
+// invisible until Meta retires the version and Purchase reporting stops.
+//
+// WHY NOW. meta-ads-sync's insights call came back carrying Meta's
+// `x-ad-api-version-warning`: "The call has been auto-upgraded to v26.0 as v25.0
+// will be deprecated." Auto-upgrade only rescues endpoints UNAFFECTED by the new
+// version; an affected one fails outright. Purchase and Lead are the measurement
+// everything else exists to produce, so this is not an endpoint to leave riding
+// on a silent upgrade. There is no published v26.0 changelog to check against
+// (the public one still lists v25.0 as latest), so the check is the one this
+// comment already made: nothing in our payload is version-specific.
+//
+// Worth re-checking roughly yearly, and whenever a sync run reports a
+// version_warning — that field now exists precisely so nobody has to remember.
+const API_VERSION = 'v26.0';
 
 // The customer's redirect to their receipt waits on this call. Without a deadline
 // a slow or hanging graph.facebook.com sits in front of the receipt for as long as
@@ -450,12 +469,17 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
     // from a customer we already won. So the acquisition is reported once, when
     // it happens.
     //
-    // Known trade-off, deliberately taken: Meta therefore sees the advance
-    // (₹102) rather than the full ticket (₹299) for split events, so revenue is
-    // understated there. That is the safe direction — the alternative is booking
-    // money before it is collected, and a no-show would make it a lie. Count
-    // accuracy drives bidding; value accuracy can be revisited when there is real
-    // spend to judge it against.
+    // NO LONGER A TRADE-OFF, as of the 2026-09-03 `reported_value` change: this
+    // paragraph used to say Meta sees the advance (₹102) rather than the full
+    // ticket (₹299) on split events. It does not. create-payu-order stamps
+    // `payu_payments.reported_value = prices.full * ticketCount` at order time
+    // for every non-balance payment, and all three Purchase reporters read
+    // `reported_value ?? amount`, so Meta receives the FULL ticket price x
+    // quantity exactly once — at the first payment, where the ad earned it.
+    //
+    // What survives from the old reasoning is the rule above: the balance is
+    // collection from a customer already won, so it reports nothing. Count
+    // accuracy drives bidding, and the count is one per booking either way.
     if ((args.paymentType ?? '').toLowerCase() === 'balance') {
       console.log('[meta-capi] balance payment, already counted at booking', args.txnid);
       return;
