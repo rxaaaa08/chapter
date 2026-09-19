@@ -202,6 +202,19 @@ function buildNotification(type: string, record: any): { title: string; body: st
         url:   adminUrl,
         tag:   'manager-brief',
       };
+    // A Meta ad object entered an issue state — a rejection, a delivery block.
+    // Founder-only, because it is not in STAFF_TYPES below.
+    case 'meta_ad_issue':
+      return {
+        title: '\u26a0\ufe0f Meta ad problem',
+        body:  String(record.body ?? 'An ad object has an issue.'),
+        url:   adminUrl,
+        // Tagged PER OBJECT, not per type. A shared tag would make a second
+        // broken ad silently replace the first in the notification tray, so two
+        // problems would look like one; a repeat about the SAME ad still
+        // collapses, which is what you want.
+        tag:   `meta-ad-issue-${record.object_id ?? 'unknown'}`,
+      };
     default:
       return null;
   }
