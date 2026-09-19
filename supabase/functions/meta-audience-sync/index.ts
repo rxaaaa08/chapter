@@ -19,11 +19,31 @@ import { sha256Hex, normaliseEmail, normalisePhone, normaliseNamePart } from '..
 //   supabase functions deploy meta-audience-sync --no-verify-jwt
 //
 // ENV
-//   META_ADS_ACCESS_TOKEN — needs ads_management. Creating an audience and
-//                           writing members are WRITES; ads_read cannot do it.
+//   META_ADS_ACCESS_TOKEN — the reporting system user's token, scope ads_read.
+//                           Creating an audience and writing members ARE writes,
+//                           so this looks like it should need ads_management —
+//                           but it does not, and was verified working on
+//                           ads_read: the system user holds asset-level Full
+//                           access on the ad account, which is what actually
+//                           authorises the write. Do not widen the token's scope
+//                           on the strength of the word "write" alone.
 //   META_AD_ACCOUNT_ID    — numeric, no act_ prefix.
 
-const API_VERSION = 'v25.0';
+// Moved v25.0 -> v26.0 on 2026-09-08, because the live API said to.
+//
+// meta-ads-sync's response carried Meta's `x-ad-api-version-warning`:
+// "The call has been auto-upgraded to v26.0 as v25.0 will be deprecated."
+// Auto-upgrade only rescues endpoints UNAFFECTED by the new version; an
+// affected one fails outright instead, so drifting along on the warning is a
+// bet that none of ours is ever on that list.
+//
+// There is NO published v26.0 changelog to check against — the public changelog
+// still lists v25.0 as latest, and version26.0 returns HTTP 500. Meanwhile the
+// devtools API reports latest_platform_version v26.0 with an EMPTY deprecations
+// array. Three Meta surfaces, three answers; the response header is the only one
+// observed against our own traffic, so it wins. Verification here is therefore
+// empirical, not documentary: deploy, call, confirm the warning is gone.
+const API_VERSION = 'v26.0';
 
 // Meta accepts up to 10,000 rows per call. Ours are in the hundreds, so this
 // only ever matters if the business grows two orders of magnitude — which is
@@ -150,6 +170,33 @@ Deno.serve(async () => {
       const detail = raw
         ? `${why} [meta code ${raw.code}${raw.subcode != null ? `/${raw.subcode}` : ''}: ${raw.message}]`
         : why;
+
+      // `last_error` is written below, but nothing in the admin panel reads this
+      // table — so without a push, an audience that stops updating is invisible
+      // forever. That is the expensive kind of silence: a customer who has paid
+      // stays in the retargeting list and we keep buying ads to chase someone we
+      // already have. Edge-triggered on the same reasoning as meta-ads-sync —
+      // `aud.last_error` is the PREVIOUS run's value because the update below
+      // has not happened yet, so a still-broken audience does not re-alert daily.
+      if (!aud.last_error) {
+        try {
+          await supabase.rpc('notify_admin_push', {
+            payload: {
+              type: 'meta_ad_issue',
+              // Per-audience object_id so three broken audiences are three
+              // notifications, not one overwriting the next — send-admin-push
+              // builds its collapse tag from this field.
+              record: {
+                body: `Meta audience "${key}" stopped syncing · ${detail}`.slice(0, 240),
+                object_id: `audience-${key}`,
+              },
+            },
+          });
+        } catch (e) {
+          console.error('[meta-audience-sync] could not send failure alert', e instanceof Error ? e.message : String(e));
+        }
+      }
+
       await supabase.from('meta_audiences')
         .update({ last_error: detail, last_synced_at: new Date().toISOString() }).eq('key', key);
       report.push({
