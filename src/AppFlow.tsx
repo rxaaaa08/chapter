@@ -855,6 +855,17 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       setStep('EVENT_SELECTED');
       setPreviewLoading(false);
 
+      // A direct link to a plan must count as viewing it, exactly as tapping it
+      // in the list does (event_selected, which the Pixel reports as ViewContent).
+      // Before this, a visitor landing on /?preview_event=<slug> recorded a page
+      // view and no plan view, so every ad pointing straight at a plan would have
+      // starved the one optimisation event this account can train on. Skipped on
+      // a Google-login return (the view was counted before the redirect) and on a
+      // staff preview (AdminPanel adds staff=1), which is us, not a customer.
+      if (!isGauthReturn && params.get('staff') !== '1') {
+        trackEvent('event_selected', { category: event.category, event_id: event.id, event_title: event.title });
+      }
+
       if (isGauthReturn) {
         // Restore flow state saved before the OAuth redirect
         let savedCity = event.cities?.[0] || 'Chennai';
@@ -4463,6 +4474,35 @@ function FoundersNotePlayer({ url }: { url: string }) {
   );
 }
 
+// One visit reports ONE AddToCart per plan.
+//
+// trackEvent('calendar_opened') is mapped to Meta's AddToCart (PIXEL_EVENTS in
+// src/supabase.ts). The button that fires it sits at the end of the details
+// scroll and opens a *closable* calendar sheet, so open -> close -> re-read the
+// itinerary -> open again is ordinary browsing, not indecision worth reporting
+// twice. Every other funnel ping in this file was already latched against
+// exactly that — reached_pricing behind `if (!selectedMeetingPoint)`,
+// date_selected behind `if (!selectedDate)`, and pingOpenFunnel behind a
+// per-stage Set — this one alone was not, so a single undecided visitor could
+// send Meta several AddToCarts. That inflates a signal Meta optimises delivery
+// on, and simultaneously deflates the admin panel's "Calendar -> date picked %",
+// whose denominator is this step while its numerator (date_selected) is latched.
+//
+// Module scope, NOT a ref: EventDetailsOverlay unmounts when the details sheet
+// closes, so a ref would reset on precisely the reopen it exists to suppress.
+// Keyed by plan so switching plans still reports the new one. Cleared by a full
+// page load, which is a genuinely new visit.
+const calendarOpenedPinged = new Set<string>();
+
+function pingCalendarOpenedOnce(
+  eventId: string,
+  meta: { city?: string; category?: string; event_id?: string; event_title?: string },
+) {
+  if (calendarOpenedPinged.has(eventId)) return;
+  calendarOpenedPinged.add(eventId);
+  trackEvent('calendar_opened', meta);
+}
+
 const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount, reservedCount, dateCounts, closeCalendarSignal, onCalendarVisibilityChange, closePlanSwitcherSignal, onPlanSwitcherVisibilityChange, onDismissPlanSwitcher, closePolicySignal, onPolicyVisibilityChange, onSwitchEvent, onClose, onAction }: { event: Event, selectedCity: string, allEvents: Event[], applicationCount?: number | null, reservedCount?: number | null, dateCounts?: Record<string, { registered: number; reserved: number }> | null, closeCalendarSignal?: number, onCalendarVisibilityChange?: (open: boolean) => void, closePlanSwitcherSignal?: number, onPlanSwitcherVisibilityChange?: (open: boolean) => void, onDismissPlanSwitcher?: () => void, closePolicySignal?: number, onPolicyVisibilityChange?: (open: boolean) => void, onSwitchEvent: (e: Event, city: string) => void, onClose: () => void, onAction: (a: 'book' | 'contact', date?: string, meetingPoint?: string) => void }) => {
   const [expandedItinerary, setExpandedItinerary] = useState<number | null>(null);
   const [showNotIncluded, setShowNotIncluded] = useState(false);
@@ -5418,7 +5458,7 @@ const EventDetailsOverlay = ({ event, selectedCity, allEvents, applicationCount,
 
           <button
             onClick={() => {
-              trackEvent('calendar_opened', { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
+              pingCalendarOpenedOnce(event.id, { city: selectedCity, category: event.category, event_id: event.id, event_title: event.title });
               setShowCalendar(true);
             }}
             className="w-full py-5 rounded-2xl bg-[#FFD700] text-black font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all relative overflow-hidden"
