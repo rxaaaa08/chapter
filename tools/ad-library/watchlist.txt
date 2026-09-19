@@ -1,0 +1,13 @@
+# Competitor Ad Library watchlist — one per line:  <page_id>  <label>
+#
+# The label becomes the folder name under ~/Desktop/ads/, so keep it simple
+# (letters, numbers, underscores). Lines starting with # are ignored.
+#
+# To find a page id: open the advertiser in the Meta Ad Library in a browser and
+# read view_all_page_id=<number> from the address bar.
+#
+# Meta permits downloading creative for individual ads for analysis and
+# prohibits bulk extraction of the Ad Library, so this list is capped at 10
+# pages in capture.mjs. Keep it to competitors actually worth watching.
+
+1042347828962277  thirdspace_by_losh

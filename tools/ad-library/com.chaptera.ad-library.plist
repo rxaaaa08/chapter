@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily competitor ad capture. META-ADS-HANDOFF.md §25, Phase 4.
+
+  Install:
+    cp tools/ad-library/com.chaptera.ad-library.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chaptera.ad-library.plist
+  Force a run without waiting for 6pm:
+    launchctl kickstart -p gui/$(id -u)/com.chaptera.ad-library
+  Remove:
+    launchctl bootout gui/$(id -u)/com.chaptera.ad-library
+
+  launchd re-runs a missed StartCalendarInterval job when the Mac wakes, so an
+  asleep laptop fires late rather than not at all. Only a full day powered off
+  is skipped — and because the ledger lives in Supabase, a skipped day loses at
+  most the creative FILE for an ad that both started and stopped in the gap,
+  never the run-length record of anything already seen.
+
+  Absolute paths throughout: launchd does not expand ~ and does not inherit a
+  login shell's PATH.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chaptera.ad-library</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/krutesh/Downloads/Website Flow Multi-Pickup/tools/ad-library/capture.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/krutesh/Downloads/Website Flow Multi-Pickup</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>18</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <!-- Deliberately false: this must not fire on every login or reboot. The
+       daily cadence is the point, and _run.log is how a missed day is seen. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/krutesh/Library/Logs/chaptera-ad-library.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/krutesh/Library/Logs/chaptera-ad-library.log</string>
+
+  <!-- Standard, NOT Background. ProcessType Background asks launchd to throttle
+       CPU and I/O, which is wrong for a job that drives a browser: the render
+       loop is wall-clock bounded, so throttling does not save work, it just
+       makes the job fail to finish inside its own budget. -->
+  <key>ProcessType</key>
+  <string>Standard</string>
+</dict>
+</plist>
