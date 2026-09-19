@@ -1,0 +1,79 @@
+<!doctype html>
+<!--
+  Sealed Meta Pixel harness — see exactly what fbevents.js WOULD send, while
+  nothing can reach the live dataset (META-ADS-HANDOFF.md §23 "Meta Pixel docs").
+
+  WHY: any Pixel change tested on chaptera.in, or on localhost with the real
+  Pixel id, writes real events into dataset 28370453785913523 — the one Meta
+  optimises ad delivery on and builds retargeting audiences from. Four junk
+  custom events (AdvancedMatchingProbe…) sit in it today from exactly that.
+
+  HOW IT IS SEALED: the CSP below allows scripts from connect.facebook.net and
+  NOTHING else — no beacon, fetch, XHR, image, frame or form submission can
+  leave the page. On top of that every send path is stubbed into
+  window.__sent, so the would-be payloads can be read.
+
+  USE:
+    1. Serve this folder on localhost: preview_start { name: "pixel-harness" }
+       (the entry is in .claude/launch.json, port 5199). file:// does not
+       work — fbevents needs a real origin.
+    2. Mirror the change under test in the "Mirror initMetaPixel()" block.
+       ?mode=control = today's loader; ?mode=pixel adds the pixel-scoped
+       autoConfig opt-out (live in src/metaPixel.ts since 5bcb721).
+    3. Click the buttons, then read window.__summary() in the console / via
+       javascript_tool. Compare a control run with a treatment run.
+  A control run MUST show the thing you expect to remove (e.g. a
+  SubscribedButtonClick per tap) — otherwise the harness is not seeing it and
+  a clean treatment run proves nothing.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline' https://connect.facebook.net; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; frame-src 'none'; form-action 'none'">
+<title>Pixel harness</title>
+<script>
+  // Capture everything fbevents tries to send, and send none of it.
+  window.__sent = [];
+  const rec = (via, url, body) => window.__sent.push({ via, url: String(url || ''), body: body == null ? null : String(body) });
+  navigator.sendBeacon = (u, d) => { rec('beacon', u, d); return true; };
+  window.fetch = (u, o) => { rec('fetch', u, o && o.body); return Promise.resolve(new Response('')); };
+  XMLHttpRequest.prototype.open = function (m, u) { this.__u = u; };
+  XMLHttpRequest.prototype.send = function (b) { rec('xhr', this.__u, b); };
+  XMLHttpRequest.prototype.setRequestHeader = function () {};
+  Object.defineProperty(HTMLImageElement.prototype, 'src', { set(v) { rec('img', v); }, get() { return ''; } });
+  HTMLFormElement.prototype.submit = function () { rec('form', this.action, new URLSearchParams(new FormData(this)).toString()); };
+
+  const MODE = new URLSearchParams(location.search).get('mode') || 'control';
+  const PIXEL = '28370453785913523';
+
+  // ── Mirror initMetaPixel() in src/metaPixel.ts, in the same order ──────────
+  const stub = function (...args) { stub.callMethod ? stub.callMethod.apply(stub, args) : stub.queue.push(args); };
+  stub.push = stub; stub.loaded = true; stub.version = '2.0'; stub.queue = [];
+  stub.disablePushState = true;
+  window.fbq = stub; window._fbq = stub;
+  if (MODE === 'pixel') window.fbq('set', 'autoConfig', false, PIXEL);
+  const s = document.createElement('script');
+  s.async = true; s.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  document.head.appendChild(s);
+  window.fbq('init', PIXEL);
+  window.fbq('track', 'PageView');
+  // ────────────────────────────────────────────────────────────────────────────
+
+  // One line per would-be send: event name, and which custom-data (cd[…]) and
+  // hashed user-data (ud[…]) keys it carried.
+  window.__summary = () => window.__sent.map(x => {
+    const q = new URLSearchParams(x.url.includes('?') ? x.url.split('?')[1] : (x.body || ''));
+    return { via: x.via, ev: q.get('ev'), eid: q.get('eid'), keys: [...q.keys()].filter(k => /^(cd|ud)\[/.test(k)).join(' ') };
+  });
+</script>
+</head>
+<body style="font-family: system-ui; padding: 24px">
+  <h1>Pixel harness — mode: <span id="m"></span></h1>
+  <p>Sealed: nothing on this page can reach Meta. Taps below exercise automatic event detection.</p>
+  <button id="b1" style="font-size:18px;padding:12px 24px">Book now</button>
+  <button id="b2" style="font-size:18px;padding:12px 24px">Join our plan</button>
+  <a href="#x" role="button" id="b3" style="display:inline-block;font-size:18px;padding:12px 24px;border:1px solid #333">Contact us</a>
+  <script>document.getElementById('m').textContent = MODE;</script>
+</body>
+</html>

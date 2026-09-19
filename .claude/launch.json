@@ -4,8 +4,25 @@
     {
       "name": "Vite Dev Server",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5175
+    },
+    {
+      "name": "pixel-harness",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5199",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "tools/pixel-harness"
+      ],
+      "port": 5199
     }
   ]
 }

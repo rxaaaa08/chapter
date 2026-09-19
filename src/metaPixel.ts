@@ -107,16 +107,42 @@ export function initMetaPixel(): void {
     //
     // Set on the stub BEFORE init, which is the only point it is read.
     //
-    // Deliberately NOT the broader `fbq('set','autoConfig',false)`: that would
-    // also switch off automatic advanced matching, which is helping the very
-    // match-quality score Phase A exists to raise.
-    //
     // Affects reporting only. Our own pushState calls, popstate handling and
     // the layer stack are untouched — Meta stops emitting an event, the browser
     // still gets its history entry.
     stub.disablePushState = true;
     window.fbq = stub;
     window._fbq = stub;
+
+    // Stop Meta inventing events of its own on this site.
+    //
+    // With automatic setup on, fbevents watches every tap and sends
+    // "SubscribedButtonClick" carrying the button's text and the page title —
+    // 32 of them in the month to 19 Sep 2026, none with any business meaning,
+    // and one of the 8 web-event slots Meta measures per domain. Current
+    // fbevents also scrapes page metadata (AutomaticParameters, Microdata*) and
+    // runs SmartSetup, which guesses standard events and prices on its own.
+    // Every event and every identifier we want Meta to have is already sent on
+    // purpose, with a dedup id, from this file and _shared/metaCapi.ts.
+    //
+    // The pixel-scoped form below opts this pixel out of Meta's whole
+    // "AutomaticSetup" group (InferredEvents, Microdata, AutomaticParameters,
+    // SmartSetup, ...). Doing it here rather than with the Events Manager
+    // switch means it cannot be quietly undone: Meta's Data Advisor pre-selects
+    // automatic events since Aug 2026 and applies its suggestions by default.
+    //
+    // This used to be avoided on the belief that it would also cost automatic
+    // advanced matching. It costs nothing: Meta's own config for this pixel
+    // (connect.facebook.net/signals/config/<id>, read 2026-09-19) does not opt
+    // it into AutomaticMatching at all, and identity reaches Meta through
+    // setPixelUserData() below. Proven 2026-09-19 in a sealed page running the
+    // real fbevents 2.9.403 with this pixel id: without this line each button
+    // tap produced a SubscribedButtonClick; with it, none — while PageView,
+    // ViewContent with content_ids + eventID, and all six hashed user-data
+    // fields were sent unchanged.
+    //
+    // Must be queued BEFORE init.
+    window.fbq('set', 'autoConfig', false, META_PIXEL_ID);
 
     const script = document.createElement('script');
     script.async = true;
