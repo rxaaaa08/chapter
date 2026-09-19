@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
 import { trackPixel, getFbp, getFbc } from './metaPixel';
+// Imported for its VALUE at call time only — never read while this module is
+// evaluating. attribution -> affiliate -> supabase makes this a cycle, and it is
+// safe solely because of that: by the time trackEvent runs, every module in the
+// ring is initialised. Do not move this call to module top level.
+import { getFunnelAttribution } from './attribution';
 
 // Fail loudly if env vars aren't wired up. We used to fall back to the
 // production URL + anon key on a misconfigured preview deploy, which
@@ -121,6 +126,11 @@ export async function trackEvent(
       category: meta.category ?? null,
       event_id: meta.event_id ?? null,
       event_title: meta.event_title ?? null,
+      // Where this visitor came from. Without it a funnel step can say THAT
+      // people left but never which ad's people they were — see the migration
+      // 20260907_flow_analytics_attribution.sql. NULL = direct/organic, which
+      // is a real answer rather than a missing one.
+      attribution: getFunnelAttribution(),
     });
   } catch (_) {
     // fire-and-forget — never block the user flow

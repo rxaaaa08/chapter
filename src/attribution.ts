@@ -41,24 +41,60 @@ const MAX_FBCLID_LEN = 512;
 
 // fbclid is Meta's click id — the single most reliable marker that a visit came
 // from a Meta ad, and it survives even when the pixel is blocked.
-const PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid'] as const;
+//
+// placement / site_source_name say WHICH SURFACE the click came from — Reels vs
+// Feed vs Stories vs Audience Network. Meta substitutes them from {{placement}}
+// and {{site_source_name}} in the ad's URL Parameters field, the same mechanism
+// that already carries {{ad.id}} in utm_content.
+//
+// Captured now because they cannot be backfilled: a click that lands before the
+// parameter exists never gets a placement, and the question they answer is one
+// this business asks in its first week of spending — Advantage+ placements
+// spread delivery across every surface, and Meta's own breakdown can only say
+// where the IMPRESSIONS went. Which surface produced a paid TICKET is a join
+// against our own bookings, and it needs the value on the row.
+//
+// Entirely inert until the founder adds the macros: a parameter that is absent
+// is simply never stored, and one that arrives unsubstituted is dropped below.
+const PARAMS = [
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+  'fbclid', 'placement', 'site_source_name',
+] as const;
 
 export type Attribution = Partial<Record<(typeof PARAMS)[number], string>> & {
   referrer?: string;
   landed_at?: string;
 };
 
+// A Meta URL macro that was never substituted arrives here literally, as
+// "{{ad.id}}" — caused by a typo in the macro name, the parameter being set on
+// the wrong object, or a placement that does not support it.
+//
+// Storing that is strictly worse than storing nothing. get_meta_ads_performance
+// identifies an ad by `attribution->>'utm_content' ~ '^[0-9]{6,}$'`, so a
+// literal macro fails the match and the booking reads as ORGANIC — while the
+// row still looks tagged to anyone eyeballing the column. The failure is then
+// invisible in exactly the place someone would look to spot it, and stays
+// invisible until a month of spend shows no bookings against it.
+//
+// Dropping it makes the row honestly untagged, which is what the panel's
+// tracking-health strip is built to notice and shout about.
+function isUnsubstitutedMacro(v: string): boolean {
+  return v.includes('{{') || v.includes('}}');
+}
+
 function clean(v: string | null): string | undefined {
   if (!v) return undefined;
   const t = v.trim().slice(0, MAX_LEN);
-  return t.length ? t : undefined;
+  if (!t.length || isUnsubstitutedMacro(t)) return undefined;
+  return t;
 }
 
 // All or nothing — see MAX_FBCLID_LEN.
 function cleanFbclid(v: string | null): string | undefined {
   if (!v) return undefined;
   const t = v.trim();
-  if (!t.length || t.length > MAX_FBCLID_LEN) return undefined;
+  if (!t.length || t.length > MAX_FBCLID_LEN || isUnsubstitutedMacro(t)) return undefined;
   return t;
 }
 
@@ -112,4 +148,29 @@ export function getAttribution(): Attribution | null {
   } catch {
     return null;
   }
+}
+
+// The attribution to stamp on a FUNNEL row (flow_analytics), as opposed to a
+// booking row (applications). Identical to getAttribution() minus fbclid.
+//
+// fbclid is Meta's click id: a MATCHING token that earns its keep exactly once,
+// at conversion, where the server turns it into an fbc cookie value — and
+// applications.attribution still carries it there in full. The funnel table
+// asks a different question ("where did this ad's traffic drop out") that
+// fbclid answers no part of. It is also the largest field we hold — up to 512
+// characters, see MAX_FBCLID_LEN — and a session writes roughly three funnel
+// rows to every one booking row, so carrying it would triple the biggest string
+// in the payload to answer nothing.
+//
+// The rule lives here, not at the insert site, so there is ONE definition of
+// what a funnel row's source looks like.
+export function getFunnelAttribution(): Attribution | null {
+  const full = getAttribution();
+  if (!full) return null;
+  const rest: Attribution = { ...full };
+  delete rest.fbclid;
+  // A visit whose ONLY marker was an fbclid still came from an ad, and the bare
+  // landed_at proves the session was tagged — so this stays non-null on purpose
+  // rather than collapsing to "organic".
+  return Object.keys(rest).length ? rest : null;
 }
