@@ -268,6 +268,71 @@ function SeatBadge({ app }: { app: any }) {
   );
 }
 
+// ── Growth ▸ Ads delivery settings (get_meta_delivery_status) ─────────────────
+// Plain-language labels for Meta's level, objective, bid-strategy and delivery
+// codes, and one sentence per recorded change. Shared by the "What's switched on"
+// card and the "Learning phase" card, so both describe a change the same way.
+const META_LEVEL_LABEL: Record<string, string> = { campaign: 'Campaign', adset: 'Ad set', ad: 'Ad' };
+const META_OBJECTIVE_LABEL: Record<string, string> = {
+  OUTCOME_SALES: 'Sales', OUTCOME_LEADS: 'Leads', OUTCOME_TRAFFIC: 'Traffic',
+  OUTCOME_ENGAGEMENT: 'Engagement', OUTCOME_AWARENESS: 'Awareness', OUTCOME_APP_PROMOTION: 'App promotion',
+};
+const META_BID_LABEL: Record<string, string> = {
+  LOWEST_COST_WITHOUT_CAP: 'highest volume, no cost cap', COST_CAP: 'cost cap',
+  LOWEST_COST_WITH_BID_CAP: 'bid cap', LOWEST_COST_WITH_MIN_ROAS: 'minimum ROAS',
+};
+// Why something switched on is not delivering. effective_status reflects parents,
+// review and billing; status is only what someone set.
+const META_NOT_RUNNING_REASON: Record<string, string> = {
+  PENDING_BILLING_INFO: 'stopped: the payment method needs attention in Ads Manager',
+  DISAPPROVED: "rejected in Meta's review",
+  PENDING_REVIEW: "waiting for Meta's review",
+  PREAPPROVED: 'approved, not delivering yet',
+  IN_PROCESS: 'Meta is still processing it',
+  WITH_ISSUES: 'an issue is blocking delivery',
+  CAMPAIGN_PAUSED: 'its campaign is off',
+  ADSET_PAUSED: 'its ad set is off',
+};
+const metaStatusWords = (code: any) =>
+  META_NOT_RUNNING_REASON[String(code)] ?? String(code ?? 'unknown').toLowerCase().replace(/_/g, ' ');
+const metaRupees = (n: any) =>
+  n == null || n === '' ? null : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const metaBudgetText = (o: any) =>
+  o?.daily_budget != null ? `${metaRupees(o.daily_budget)}/day`
+    : o?.lifetime_budget != null ? `${metaRupees(o.lifetime_budget)} total` : null;
+
+function describeMetaDeliveryChange(c: any): string {
+  if (c?.new_object) return `new, ${c.status === 'ACTIVE' ? 'switched on' : 'switched off'}`;
+  if (c?.first_sighting) {
+    const budget = metaBudgetText(c);
+    return `first recorded, ${c.status === 'ACTIVE' ? 'on' : 'off'}${budget ? ` at ${budget}` : ''}`;
+  }
+  const changes: any[] = c?.changes ?? [];
+  const statusMoved = changes.some((ch) => ch.field === 'status');
+  const parts: string[] = [];
+  for (const ch of changes) {
+    const from = (label: Record<string, string>) => (ch.from == null ? 'none' : label[ch.from] ?? ch.from);
+    const to = (label: Record<string, string>) => (ch.to == null ? 'none' : label[ch.to] ?? ch.to);
+    switch (ch.field) {
+      case 'status':
+        parts.push(ch.to === 'ACTIVE'
+          ? (c.off_for_days != null ? `switched back on after ${c.off_for_days} days off` : 'switched on')
+          : ch.to === 'PAUSED' ? 'switched off' : String(ch.to ?? '').toLowerCase());
+        break;
+      case 'effective_status':
+        // When the switch itself moved, that already says it.
+        if (!statusMoved) parts.push(ch.to === 'ACTIVE' ? 'running again' : metaStatusWords(ch.to));
+        break;
+      case 'daily_budget':    parts.push(`daily budget ${metaRupees(ch.from) ?? 'none'} → ${metaRupees(ch.to) ?? 'none'}`); break;
+      case 'lifetime_budget': parts.push(`total budget ${metaRupees(ch.from) ?? 'none'} → ${metaRupees(ch.to) ?? 'none'}`); break;
+      case 'spend_cap':       parts.push(`spend cap ${metaRupees(ch.from) ?? 'none'} → ${metaRupees(ch.to) ?? 'none'}`); break;
+      case 'objective':       parts.push(`objective ${from(META_OBJECTIVE_LABEL)} → ${to(META_OBJECTIVE_LABEL)}`); break;
+      case 'bid_strategy':    parts.push(`bidding ${from(META_BID_LABEL)} → ${to(META_BID_LABEL)}`); break;
+    }
+  }
+  return parts.join(', ') || 'settings changed';
+}
+
 export default function AdminPanel() {
   const [adminRole, setAdminRole] = useState<'admin' | 'ops' | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -470,7 +535,47 @@ export default function AdminPanel() {
   const [metaAdsLoading, setMetaAdsLoading] = useState(false);
   // Meta's own recommendations, scored against our cash rather than its estimate.
   const [metaRecs, setMetaRecs] = useState<any | null>(null);
+  // Per-ad funnel drop-off. Separate from metaAds because it answers a different
+  // question: not what an ad cost, but where its traffic stopped.
+  const [metaFunnel, setMetaFunnel] = useState<any | null>(null);
+  // Ad set setup and where each ad set stands in Meta's learning phase
+  // (get_meta_adset_health). Learning restarts on edits the founder makes
+  // himself, so the page says "don't edit yet" instead of pushing.
+  const [metaAdsetHealth, setMetaAdsetHealth] = useState<any | null>(null);
+  // On/off state, budgets and their history for every campaign, ad set and ad
+  // (get_meta_delivery_status). Page only: the founder chose no alerts.
+  const [metaDelivery, setMetaDelivery] = useState<any | null>(null);
   const [metaAdsDays, setMetaAdsDays] = useState<7 | 30 | 90>(30);
+  // Guardrails. Two separate things on purpose, because they answer different
+  // questions and one is not a substitute for the other:
+  //   metaGuards   — what is breaching RIGHT NOW, recomputed live from spend.
+  //   metaGuardLog — what has ever breached, from meta_ad_guardrail_events.
+  // Until this panel existed, a push notification was the ONLY surface either
+  // had, so a notification missed on a phone was a breach that, as far as
+  // anyone could tell afterwards, never happened.
+  const [metaGuards, setMetaGuards] = useState<any[] | null>(null);
+  const [metaGuardLog, setMetaGuardLog] = useState<any[] | null>(null);
+  // Audiences: every Custom Audience on the account with Meta's size beside our
+  // own count, plus ad sets that would pay to reach existing customers. NULL means
+  // the founder gate said no or the call failed, never "there are no audiences".
+  const [metaAudiences, setMetaAudiences] = useState<any | null>(null);
+  // Every live plan as a Meta catalog would see it, with what stops it being
+  // advertised. The same rows feed meta-catalog-feed. NULL = gate said no or failed.
+  const [metaCatalog, setMetaCatalog] = useState<any | null>(null);
+  // What one ticket leaves for advertising, per plan (money paid at booking
+  // minus the cost of hosting), and the most a click may therefore cost. The
+  // same ad money is what the cost alarm judges ads against.
+  // NULL = gate said no or the call failed.
+  const [metaPlanBudgets, setMetaPlanBudgets] = useState<any | null>(null);
+  // Is Meta actually receiving our sales, applications and page events? Written
+  // hourly by meta-signal-watchdog. NULL = gate said no or the call failed.
+  const [metaSignals, setMetaSignals] = useState<any | null>(null);
+  // Competitor ads seen in the Meta Ad Library (get_competitor_ads). IDs and
+  // context only — the creative lives on the founder's Mac under
+  // ~/Desktop/ads/, joined by library_id. Written by the local capture script
+  // via the ad-library-ingest edge function. META-ADS-HANDOFF.md §25.
+  // NULL = gate said no or the call failed.
+  const [competitorAds, setCompetitorAds] = useState<any | null>(null);
   const [conversionFunnel, setConversionFunnel] = useState<any | null>(null);
   // Most recent weekly DB-storage snapshot (cron writes one every Monday).
   // Used by the small footer line in the analytics tab so the admin can
@@ -633,6 +738,23 @@ export default function AdminPanel() {
   const [expReleases, setExpReleases] = useState<Array<{ id: number; released_at: string; title: string; description: string | null; area: string | null; expected_effect: string | null; source: string; commit_hash: string | null }>>([]);
   const [expDaily, setExpDaily] = useState<Array<{ day: string; metric: string; value: number }>>([]);
   const [expLoading, setExpLoading] = useState(false);
+  // Site experiments — A/B tests on our OWN traffic. Built 2026-09-09 after
+  // get_experiment_feasibility showed a Meta split test needs ~203 weeks to
+  // read anything at the purchase level on this account; the site meanwhile
+  // takes ~400 organic sessions a week through an instrumented funnel.
+  const [siteExps, setSiteExps] = useState<any[]>([]);
+  // Keyed by experiment key. One at a time is the normal case, but a map means
+  // opening a second result does not silently close the first.
+  const [siteExpResults, setSiteExpResults] = useState<Record<string, any>>({});
+  const [siteExpForm, setSiteExpForm] = useState<null | {
+    key: string; hypothesis: string; primary_metric: string; target: string;
+  }>(null);
+  const [siteExpSaving, setSiteExpSaving] = useState(false);
+  // The output of get_experiment_feasibility, used to PREFILL the sample size
+  // on the create form. That prefill is the anti-peeking guard in practice:
+  // the horizon has to be committed before the test starts, and a founder is
+  // not going to run a power calculation by hand to get it.
+  const [siteExpFeas, setSiteExpFeas] = useState<any | null>(null);
   const [expMetric, setExpMetric] = useState('form_completion');
   const [expGranularity, setExpGranularity] = useState<'daily' | 'weekly'>('weekly');
   const [expCompareReleaseId, setExpCompareReleaseId] = useState<number | null>(null);
@@ -3057,7 +3179,75 @@ export default function AdminPanel() {
     } else {
       setExpDaily(Array.isArray(dailyRes.data) ? dailyRes.data : []);
     }
+
+    // Site experiments, plus the feasibility numbers that size them. Fetched
+    // together because the create form cannot suggest a sample size without
+    // the second, and a form that asks a no-code founder to invent one would
+    // get an invented one.
+    const [siteRes, feasRes] = await Promise.all([
+      supabase.from('experiments').select('*').order('created_at', { ascending: false }),
+      supabase.rpc('get_experiment_feasibility', { p_cells: 2, p_lift_pct: 20 }),
+    ]);
+    setSiteExps(siteRes.error ? [] : (siteRes.data ?? []));
+    setSiteExpFeas(feasRes.error ? null : feasRes.data);
+
+    // Results for everything that is running or already stopped. A draft has
+    // no exposures yet, so asking would only return an empty shell.
+    const live = (siteRes.data ?? []).filter((e: any) => e.status !== 'draft');
+    if (live.length) {
+      const pairs = await Promise.all(live.map(async (e: any) => {
+        const r = await supabase.rpc('get_experiment_results', { p_key: e.key });
+        return [e.key, r.error ? null : r.data] as const;
+      }));
+      setSiteExpResults(Object.fromEntries(pairs));
+    } else {
+      setSiteExpResults({});
+    }
+
     setExpLoading(false);
+  };
+
+  // Create / start / stop a site experiment.
+  //
+  // Status is a one-way ladder here on purpose: draft → running → stopped.
+  // There is no "restart", because restarting after looking at the numbers is
+  // peeking with extra steps — the exposures already collected would be mixed
+  // with new ones chosen precisely because the first batch looked promising.
+  // A new question gets a new key.
+  const saveSiteExp = async () => {
+    if (!siteExpForm) return;
+    const key = siteExpForm.key.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    if (!key || !siteExpForm.hypothesis.trim()) {
+      showToast('A key and a hypothesis are both required'); return;
+    }
+    setSiteExpSaving(true);
+    const { error } = await supabase.from('experiments').insert({
+      key,
+      hypothesis: siteExpForm.hypothesis.trim(),
+      primary_metric: siteExpForm.primary_metric,
+      // Two cells, evenly split. More is possible in the schema (the weights
+      // sum to 100 under a CHECK), but every extra cell needs its own sample
+      // and multiplies the wait — at this traffic a third variant is a way of
+      // guaranteeing no answer at all.
+      variants: [{ name: 'A', weight: 50 }, { name: 'B', weight: 50 }],
+      target_exposures_per_variant: Number(siteExpForm.target) || null,
+      status: 'draft',
+    });
+    setSiteExpSaving(false);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    setSiteExpForm(null);
+    showToast('✅ Experiment created as a draft');
+    loadExperiments();
+  };
+
+  const setSiteExpStatus = async (key: string, status: 'running' | 'stopped', decision?: string) => {
+    const patch: any = { status };
+    if (status === 'running') patch.started_at = new Date().toISOString();
+    if (status === 'stopped') { patch.stopped_at = new Date().toISOString(); if (decision) patch.decision = decision; }
+    const { error } = await supabase.from('experiments').update(patch).eq('key', key);
+    if (error) { showToast(`❌ ${error.message}`); return; }
+    showToast(status === 'running' ? '▶️ Experiment started' : '⏹ Experiment stopped');
+    loadExperiments();
   };
 
   // Growth ▸ Ads. Everything is computed server-side by get_meta_ads_performance
@@ -3076,6 +3266,51 @@ export default function AdminPanel() {
     // beside it, and two round trips would let them disagree about the window.
     const recRes = await supabase.rpc('get_meta_recommendation_scorecard', { p_window_days: 14 });
     setMetaRecs(recRes.error ? null : recRes.data);
+    // Same window as the spend above, on purpose: a funnel measured over a
+    // different span than the cost sitting beside it invites a false comparison.
+    const funRes = await supabase.rpc('get_meta_ad_funnel', {
+      p_since: iso(since),
+      p_until: iso(until),
+    });
+    setMetaFunnel(funRes.error ? null : funRes.data);
+
+    // What is breaching right now, and what ever has. Fetched in the same pass
+    // as the spend above so the page cannot show a breach next to numbers from
+    // a different moment.
+    //
+    // The RPC is the FOUNDER-GATED wrapper, never the ungated core — the core
+    // is granted to service_role alone so the cron can run it, and calling that
+    // from a browser is the mistake that migration's comment warns about.
+    const guardRes = await supabase.rpc('get_meta_ad_guardrail_breaches');
+    setMetaGuards(guardRes.error ? null : (guardRes.data ?? []));
+    const logRes = await supabase
+      .from('meta_ad_guardrail_events')
+      .select('id, rule_key, label, ad_id, ad_name, metric, observed, threshold, window_days, fired_at, notified_at, notify_error')
+      .order('fired_at', { ascending: false })
+      .limit(60);
+    setMetaGuardLog(logRes.error ? null : (logRes.data ?? []));
+
+    // Audiences, in the same pass for the same reason as the guardrails: a size
+    // shown beside spend from a different moment invites a comparison that isn't real.
+    const audRes = await supabase.rpc('get_meta_audience_health');
+    setMetaAudiences(audRes.error ? null : audRes.data);
+    const catRes = await supabase.rpc('get_meta_catalog_readiness');
+    setMetaCatalog(catRes.error ? null : catRes.data);
+    // 90 days, NOT the window selector above: this is a conversion rate, and it
+    // needs as much history as it can get. The selector governs spend, which is
+    // a different question. Traffic here arrives in launch bursts (§21.6), so a
+    // 7-day rate would swing by an order of magnitude week to week.
+    const budRes = await supabase.rpc('get_meta_plan_ad_budgets', { p_days: 90 });
+    setMetaPlanBudgets(budRes.error ? null : budRes.data);
+    const sigRes = await supabase.rpc('get_meta_signal_health');
+    setMetaSignals(sigRes.error ? null : sigRes.data);
+    const adsetRes = await supabase.rpc('get_meta_adset_health');
+    setMetaAdsetHealth(adsetRes.error ? null : adsetRes.data);
+    const deliveryRes = await supabase.rpc('get_meta_delivery_status');
+    setMetaDelivery(deliveryRes.error ? null : deliveryRes.data);
+    const compRes = await supabase.rpc('get_competitor_ads', { p_days: 180 });
+    setCompetitorAds(compRes.error ? null : compRes.data);
+
     if (error) showToast(`❌ Failed to load ad performance: ${error.message}`);
     // NULL is the founder gate answering "not you", not an empty report — keep
     // them distinguishable so the page can say which one happened.
@@ -3198,7 +3433,8 @@ export default function AdminPanel() {
       if (trip.is_active) {
         await setLiveState(trip, false);
       }
-      const previewUrl = `${window.location.origin}/?preview_event=${encodeURIComponent(previewTarget)}`;
+      // staff=1: this preview is us, so it must not count as a customer viewing the plan.
+      const previewUrl = `${window.location.origin}/?preview_event=${encodeURIComponent(previewTarget)}&staff=1`;
       if (navigator?.clipboard?.writeText) {
         try { await navigator.clipboard.writeText(previewUrl); } catch (_) {}
       }
@@ -3233,7 +3469,8 @@ export default function AdminPanel() {
     if (action === 'preview') {
       const previewTarget = trip.id || trip.slug;
       if (!previewTarget) return;
-      const previewUrl = `${window.location.origin}/?preview_event=${encodeURIComponent(previewTarget)}`;
+      // staff=1: this preview is us, so it must not count as a customer viewing the plan.
+      const previewUrl = `${window.location.origin}/?preview_event=${encodeURIComponent(previewTarget)}&staff=1`;
       if (navigator?.clipboard?.writeText) {
         try { await navigator.clipboard.writeText(previewUrl); } catch (_) {}
       }
@@ -9883,6 +10120,225 @@ export default function AdminPanel() {
         )}
 
         {/* ── EXPERIMENTS TAB ──────────────────────────────────────────────── */}
+
+        {/* ── SITE EXPERIMENTS (A/B tests on our own traffic) ───────────────── */}
+        {tab === 'analytics' && growthMode === 'trends' && (() => {
+          // Only SINGLE event types are offered. get_experiment_results matches
+          // one event_type exactly, so a composite step like "acted on the
+          // price" (three different CTA events) would silently match none of
+          // them and read as zero conversions in both variants.
+          const METRIC_CHOICES: Array<{ value: string; label: string; step: string }> = [
+            { value: 'event_selected',       label: 'Opened a plan',       step: 'viewed_plan' },
+            { value: 'calendar_opened',      label: 'Opened the calendar', step: 'opened_dates' },
+            { value: 'reached_pricing',      label: 'Saw the price',       step: 'saw_price' },
+            { value: 'book_cta_clicked',     label: 'Clicked “book”',      step: 'acted_on_price' },
+            { value: 'application_submitted',label: 'Submitted an application', step: 'became_lead' },
+            { value: 'details_form_submitted',label: 'Submitted details',  step: 'became_lead' },
+          ];
+          const feasFor = (step: string) =>
+            (siteExpFeas?.metrics ?? []).find((m: any) => m.step === step) ?? null;
+          const suggestTarget = (eventType: string) => {
+            const c = METRIC_CHOICES.find(m => m.value === eventType);
+            const f = c ? feasFor(c.step) : null;
+            return f?.sessions_needed_per_cell != null ? String(f.sessions_needed_per_cell) : '';
+          };
+          // Has the client half shipped? Until it has, visitor_id is NULL on
+          // every funnel row, so no conversion can join to any exposure. This
+          // is the difference between "nobody converted" and "we are not
+          // measuring", and the page must never present the second as the first.
+          const stampingLive = Object.values(siteExpResults)
+            .some((r: any) => r?.diagnostics?.client_stamping_live === true);
+
+          return (
+            <div style={s.card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>Site experiments</div>
+                {!siteExpForm && (
+                  <button onClick={() => setSiteExpForm({
+                    key: '', hypothesis: '', primary_metric: 'calendar_opened',
+                    target: suggestTarget('calendar_opened'),
+                  })} style={s.btn()}>New experiment</button>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                Two versions of the site, shown to different visitors, judged on which converts better. This is where
+                testing is affordable: a Meta split test on <b>paid tickets</b> needs about <b>203 weeks</b> to say
+                anything on this account, while the same question asked on our own {siteExpFeas?.traffic?.weekly_sessions ?? '~400'} sessions
+                a week is answerable in weeks.
+              </div>
+
+              {!stampingLive && siteExps.length > 0 && (
+                <div style={{ fontSize: 12.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a',
+                              borderRadius: 8, padding: '10px 13px', marginBottom: 12, lineHeight: 1.6 }}>
+                  <b>Not measuring yet.</b> The visitor-id stamp has not shipped to the live site, so funnel events
+                  cannot be matched to a variant. Every result below will read zero conversions — that is this deploy
+                  missing, not visitors failing to convert.
+                </div>
+              )}
+
+              {siteExpForm && (
+                <div style={{ border: '1.5px solid #e5e5e5', borderRadius: 10, padding: 14, marginBottom: 14 }}>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <div>
+                      <label style={s.label}>Key (used in the code)</label>
+                      <input style={s.input} value={siteExpForm.key} placeholder="pricing-headline-v1"
+                             onChange={e => setSiteExpForm({ ...siteExpForm, key: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={s.label}>What do you think will happen, and why?</label>
+                      <textarea style={{ ...s.input, minHeight: 68, resize: 'vertical' }} value={siteExpForm.hypothesis}
+                                placeholder="Saying “pay at the venue” next to the price will get more people past it, because the objection is paying a stranger up front."
+                                onChange={e => setSiteExpForm({ ...siteExpForm, hypothesis: e.target.value })} />
+                      <div style={{ fontSize: 11, color: '#bbb', marginTop: 4, lineHeight: 1.5 }}>
+                        Required, and worth writing properly. Without it, whatever the numbers say afterwards will
+                        look like it was the prediction all along.
+                      </div>
+                    </div>
+                    <div>
+                      <label style={s.label}>Judged on</label>
+                      <select style={s.input} value={siteExpForm.primary_metric}
+                              onChange={e => setSiteExpForm({
+                                ...siteExpForm, primary_metric: e.target.value,
+                                target: suggestTarget(e.target.value),
+                              })}>
+                        {METRIC_CHOICES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                      {(() => {
+                        const c = METRIC_CHOICES.find(m => m.value === siteExpForm.primary_metric);
+                        const f = c ? feasFor(c.step) : null;
+                        if (!f) return null;
+                        const bad = f.verdict === 'not_measurable';
+                        return (
+                          <div style={{ fontSize: 11.5, marginTop: 6, lineHeight: 1.55,
+                                        color: bad ? '#dc2626' : f.verdict === 'slow' ? '#d97706' : '#16a34a' }}>
+                            {f.base_rate_pct}% of visitors do this today ·{' '}
+                            {f.weeks_to_answer == null ? 'not measurable'
+                              : `about ${f.weeks_to_answer} weeks to a trustworthy answer`}
+                            {bad && ' — pick something higher up the funnel'}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <div>
+                      <label style={s.label}>Visitors needed per version</label>
+                      <input style={s.input} value={siteExpForm.target} inputMode="numeric"
+                             onChange={e => setSiteExpForm({ ...siteExpForm, target: e.target.value })} />
+                      <div style={{ fontSize: 11, color: '#bbb', marginTop: 4, lineHeight: 1.5 }}>
+                        Filled in from the maths for a 20% improvement. <b>Decide it now, not later.</b> Stopping a
+                        test early because it looks good is how a coin flip turns into a decision — it has already
+                        happened once here, on the invite-vs-open comparison.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={saveSiteExp} disabled={siteExpSaving} style={s.btn()}>
+                        {siteExpSaving ? 'Saving…' : 'Create as draft'}
+                      </button>
+                      <button onClick={() => setSiteExpForm(null)} style={{ ...s.btn('#fff'), color: '#666', border: '1.5px solid #e5e5e5' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {siteExps.length === 0 && !siteExpForm && (
+                <div style={{ fontSize: 13, color: '#666', background: '#fafaf7', borderRadius: 8, padding: '12px 14px', lineHeight: 1.6 }}>
+                  No experiments yet. The biggest gap in the funnel today is the price step — about 21.6% of visitors
+                  see a price and 8.5% act on it.
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gap: 12 }}>
+                {siteExps.map((e: any) => {
+                  const r = siteExpResults[e.key];
+                  const variants: any[] = r?.variants ?? [];
+                  const srmFailed = r?.validity?.srm_failed === true;
+                  const ready = r?.horizon?.ready;
+                  return (
+                    <div key={e.key} style={{ border: '1px solid #ecece6', borderRadius: 10, padding: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <span style={{ fontWeight: 800, fontSize: 14 }}>{e.key}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                                       background: e.status === 'running' ? '#dcfce7' : e.status === 'draft' ? '#f3f4f6' : '#fee2e2',
+                                       color: e.status === 'running' ? '#166534' : e.status === 'draft' ? '#6b7280' : '#991b1b' }}>
+                          {e.status}
+                        </span>
+                        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                          {e.status === 'draft' && (
+                            <button onClick={() => setSiteExpStatus(e.key, 'running')} style={{ ...s.btn('#16a34a'), padding: '5px 12px', fontSize: 12 }}>Start</button>
+                          )}
+                          {e.status === 'running' && (
+                            <button onClick={() => setSiteExpStatus(e.key, 'stopped')} style={{ ...s.btn('#dc2626'), padding: '5px 12px', fontSize: 12 }}>Stop</button>
+                          )}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.6, marginBottom: 10 }}>{e.hypothesis}</div>
+
+                      {srmFailed && (
+                        <div style={{ fontSize: 12.5, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca',
+                                      borderRadius: 8, padding: '10px 13px', marginBottom: 10, lineHeight: 1.6 }}>
+                          <b>Invalid — do not read this.</b> {r.validity.note} Visitors did not split the way they
+                          should have, so any difference below is measuring that fault, not your change.
+                        </div>
+                      )}
+
+                      {r && !srmFailed && ready === false && (
+                        <div style={{ fontSize: 12.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a',
+                                      borderRadius: 8, padding: '10px 13px', marginBottom: 10, lineHeight: 1.6 }}>
+                          <b>Still filling — {r.horizon.smallest_variant_exposures} of {r.horizon.target_per_variant} per version.</b>{' '}
+                          The numbers below are real but not yet trustworthy. Wait.
+                        </div>
+                      )}
+
+                      {variants.length > 0 && (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                              <th style={{ padding: '4px 10px 6px 0' }}>Version</th>
+                              <th style={{ padding: '4px 10px 6px', textAlign: 'right' }}>Visitors</th>
+                              <th style={{ padding: '4px 10px 6px', textAlign: 'right' }}>Converted</th>
+                              <th style={{ padding: '4px 10px 6px', textAlign: 'right' }}>Rate</th>
+                              <th style={{ padding: '4px 0 6px 10px', textAlign: 'right' }}>vs control</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {variants.map((v: any) => (
+                              <tr key={v.variant} style={{ borderTop: '1px solid #f0f0ea' }}>
+                                <td style={{ padding: '8px 10px 8px 0', fontWeight: 700 }}>
+                                  {v.variant}{v.is_control && <span style={{ color: '#999', fontWeight: 500, fontSize: 11 }}> · control</span>}
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#666' }}>{v.exposures}</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#666' }}>{v.converters}</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{v.rate_pct ?? '—'}%</td>
+                                <td style={{ padding: '8px 0 8px 10px', textAlign: 'right', fontWeight: 700,
+                                             color: v.is_control ? '#999'
+                                                  : !ready || srmFailed ? '#999'
+                                                  : v.significant ? (Number(v.lift_vs_control_pct) > 0 ? '#16a34a' : '#dc2626')
+                                                  : '#6b7280' }}>
+                                  {v.is_control ? '—'
+                                    : v.lift_vs_control_pct == null ? '—'
+                                    : `${Number(v.lift_vs_control_pct) > 0 ? '+' : ''}${v.lift_vs_control_pct}%`}
+                                  {!v.is_control && ready && !srmFailed && v.significant === false && (
+                                    <span style={{ fontWeight: 500, color: '#999', fontSize: 11 }}> · could be luck</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {e.decision && (
+                        <div style={{ fontSize: 12, color: '#666', marginTop: 10, fontStyle: 'italic' }}>Concluded: {e.decision}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── GROWTH ▸ TRENDS (same metrics per day, vs the release log) ────── */}
         {tab === 'analytics' && growthMode === 'trends' && (() => {
           // Site-wide metrics, pooled across events per day by the RPC. Ratio
@@ -10459,7 +10915,23 @@ export default function AdminPanel() {
 
               {/* The last sync failed. Shown above everything, because every
                   number below it is then stale by an unknown amount. */}
-              {syncFailing && (
+              {syncFailing && String(diag.last_sync_error ?? '').startsWith('spend_unaccounted') && (
+                // Not a failed sync: the sync worked, but Meta's account-wide
+                // spend and our per-ad rows disagree (meta-ads-sync reconciles
+                // them every run). Usually a deleted or archived ad. The token
+                // advice in the generic banner below would send him the wrong way.
+                <div style={{ ...s.card, borderLeft: '4px solid #dc2626' }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 6, color: '#dc2626' }}>Some ad spend is missing from these numbers</div>
+                  <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.6 }}>
+                    {String(diag.last_sync_error).replace(/^spend_unaccounted:\s*/, '')}
+                    <div style={{ marginTop: 6 }}>
+                      Cost per booking and ROAS below leave that spend out, so they read better than reality until it clears.
+                      It clears by itself on the next sync where Meta's total and the per-ad numbers agree.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {syncFailing && !String(diag.last_sync_error ?? '').startsWith('spend_unaccounted') && (
                 <div style={{ ...s.card, borderLeft: '4px solid #dc2626' }}>
                   <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 6, color: '#dc2626' }}>Last sync from Meta failed</div>
                   <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.6 }}>
@@ -10472,6 +10944,89 @@ export default function AdminPanel() {
                   </div>
                 </div>
               )}
+
+              {/* Is Meta hearing about what happens on the site? Placed above the
+                  numbers because if it is not, every Meta figure below is built on
+                  missing data. Quiet green when healthy, red when not. */}
+              {(() => {
+                const sig: any = metaSignals;
+                const checks: any[] = sig?.checks ?? [];
+                const alarms: any[] = sig?.alarms ?? [];
+                const bad = checks.some((c: any) => ['broken', 'expiring'].includes(c.verdict));
+                const warn = checks.some((c: any) => ['gap', 'unreadable', 'test_mode_on'].includes(c.verdict));
+                const colour: Record<string, string> = {
+                  ok: '#16a34a', gap: '#d97706', broken: '#dc2626', expiring: '#dc2626', test_mode_on: '#d97706',
+                  unreadable: '#d97706', unverifiable: '#999', too_few: '#bbb',
+                };
+                const noun: Record<string, string> = {
+                  purchase_server: 'paid bookings', lead_server: 'applications',
+                  view_content_web: 'plan views', add_to_cart_web: 'calendar opens',
+                };
+                const span = (c: any) => c.check_key === 'purchase_server' || c.check_key === 'lead_server' ? 'last 6 days' : 'last 3 days';
+                const when = (t: any) => t ? new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+                const say = (c: any): string => {
+                  const d = c.detail ?? {};
+                  if (!c.verdict) return 'Not checked yet';
+                  if (c.check_key === 'capi_token') {
+                    if (c.verdict === 'ok') return Number(d.expires_at) > 0 ? `Working, valid until ${when(Number(d.expires_at) * 1000)}` : 'Working, never expires';
+                    if (c.verdict === 'expiring') return `Stops working on ${when(d.expires_on)} — replace META_CAPI_ACCESS_TOKEN before then`;
+                    if (c.verdict === 'broken') return `${d.reason ?? 'Meta rejects it'} — sales are NOT reaching Meta`;
+                    if (c.verdict === 'unverifiable') return 'Meta answered, but the token could not be inspected';
+                    return 'Could not check this hour';
+                  }
+                  if (c.check_key === 'capi_test_mode') {
+                    return c.verdict === 'ok' ? 'Off' : 'ON — test bookings are reaching Meta as real sales';
+                  }
+                  // Not a count: the sentence is written by meta_pixel_config_verdict(),
+                  // so its wording can change without a deploy.
+                  if (c.check_key === 'pixel_config') return d.summary ?? 'Checked';
+                  const n = noun[c.check_key] ?? 'events';
+                  const missing = Number(c.expected ?? 0) - Number(c.matched ?? 0);
+                  if (c.verdict === 'too_few') return Number(c.expected) === 0 ? `No ${n} in the ${span(c)} to check` : `Too few ${n} to judge (${c.expected})`;
+                  if (c.verdict === 'unreadable') return `Could not read Meta${d.error ? ` — ${d.error}` : ''}`;
+                  if (c.verdict === 'broken') return `Meta received only ${c.matched} of ${c.expected} ${n} (${span(c)})`;
+                  return `Meta received ${c.matched} of ${c.expected} ${n} (${span(c)})${missing > 0 ? ` — ${missing} missing` : ''}`;
+                };
+                return (
+                  <div style={{ ...s.card, borderLeft: `4px solid ${bad ? '#dc2626' : warn ? '#d97706' : '#16a34a'}` }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Is Meta hearing about your sales?</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 10, lineHeight: 1.6 }}>
+                      Checked once a day (9:11 AM): what happened on the site against what Meta says it received.
+                      If sales stop reaching Meta, ads keep spending while Meta learns from half the picture.
+                    </div>
+                    {sig == null ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>Could not load.</div>
+                    ) : !sig.last_run_at ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>Not run yet — the first daily check will fill this in.</div>
+                    ) : (
+                      <>
+                        {checks.map((c: any) => (
+                          <div key={c.check_key} style={{ display: 'flex', gap: 9, alignItems: 'baseline', fontSize: 13, lineHeight: 1.5, padding: '4px 0' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, background: colour[c.verdict] ?? '#bbb', transform: 'translateY(-1px)' }} />
+                            <span style={{ minWidth: 170, fontWeight: 600, color: '#333' }}>{c.label}</span>
+                            <span style={{ color: ['broken', 'expiring'].includes(c.verdict) ? '#b91c1c' : '#555' }}>{say(c)}</span>
+                          </div>
+                        ))}
+                        {alarms.length > 0 && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #eee' }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 4 }}>Alerts sent</div>
+                            {alarms.slice(0, 8).map((a: any, i: number) => (
+                              <div key={i} style={{ fontSize: 12, color: '#666', lineHeight: 1.7 }}>
+                                {when(a.checked_at)} · {a.label} · {a.verdict.replace(/_/g, ' ')}
+                                {a.notify_error ? <span style={{ color: '#dc2626' }}> · push failed</span> : null}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 11.5, color: '#999', marginTop: 8 }}>
+                          Last checked {when(sig.last_run_at)}
+                          {checks.some((c: any) => c.push_enabled === false) ? ' · phone alerts off for some checks' : ''}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Setup state. Shown until the sync has ever run — an empty table
                   would otherwise read as "your ads produced nothing". */}
@@ -10510,12 +11065,63 @@ export default function AdminPanel() {
                     Number(totals.tickets) > Number(totals.bookings) && totals.cost_per_ticket != null
                       ? `${money(totals.cost_per_ticket)} per ticket`
                       : 'what one advance-paid booking cost')}
-                  {stat('Money received', money(totals.revenue), 'actually in the bank')}
+                  {/* Ticket money, NOT what customers paid. Customers pay PayU's
+                      fee on top at their payment method's rate and PayU keeps it,
+                      so counting it would flatter ROAS by 2.4–5%. Split per
+                      payment by payu_fee_split() in the database. */}
+                  {stat('Ticket money', money(totals.revenue),
+                    Number(totals.fees) > 0
+                      ? `in the bank · ${money(totals.fees)} of fees removed`
+                      : 'in the bank, gateway fees removed')}
+                  {/* Green/red is a verdict, so it is withheld until there are
+                      enough paid tickets for the figure to mean something
+                      (judge_min_tickets in get_meta_ads_performance). */}
                   {stat('True ROAS',
                     totals.true_roas == null ? '—' : `${Number(totals.true_roas).toFixed(2)}×`,
-                    'cash received ÷ spend',
-                    Number(totals.true_roas) >= 1 ? '#16a34a' : '#dc2626')}
+                    totals.true_roas != null && totals.enough_to_judge === false
+                      ? `fees removed · only ${totals.tickets} ticket${Number(totals.tickets) === 1 ? '' : 's'}, too few to judge`
+                      : totals.true_roas_low != null && totals.true_roas_high != null
+                        ? `fees removed · likely ${Number(totals.true_roas_low).toFixed(1)}–${Number(totals.true_roas_high).toFixed(1)}×`
+                        : 'ticket money ÷ spend · fees removed',
+                    totals.enough_to_judge === false ? '#888' : (Number(totals.true_roas) >= 1 ? '#16a34a' : '#dc2626'))}
                 </div>
+
+                {/* Where the fee went, per payment method. Rates differ by method
+                    (UPI 2.42%, credit card 3.67%, wallets 4.95%), so the same
+                    ticket leaves a different fee depending on how it was paid. */}
+                {Array.isArray(totals.fees_by_method) && totals.fees_by_method.length > 0 && (() => {
+                  const METHOD_LABEL: Record<string, string> = {
+                    upi: 'UPI', upi_credit_card: 'Credit card via UPI', debitcard: 'Debit card',
+                    netbanking: 'Net banking', bnpl: 'Pay later', creditcard: 'Credit card',
+                    emi: 'EMI', cashcard: 'Wallets', no_fee: 'No fee charged', other: 'Other',
+                    unknown: 'Fee unknown',
+                  };
+                  const pct = (r: any) => r == null ? '' : ` at ${(Number(r) * 100).toFixed(2)}%`;
+                  return (
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f0f0ea', fontSize: 12.5, color: '#666', lineHeight: 1.7 }}>
+                      <div>
+                        Customers paid <b style={{ color: '#111' }}>{money(totals.paid)}</b>
+                        {' '}= {money(totals.revenue)} ticket money + {money(totals.fees)} payment-gateway fees, which go to PayU.
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', marginTop: 4 }}>
+                        {totals.fees_by_method.map((m: any) => (
+                          <span key={`${m.method}-${m.fee_rate}`}>
+                            {METHOD_LABEL[m.method] ?? m.method}: {money(m.fees)} on {m.payments} payment{Number(m.payments) === 1 ? '' : 's'}{pct(m.fee_rate)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* A payment whose fee could not be split is counted at the full
+                    amount paid, so it never disappears — but it may still carry
+                    up to ~5% of fee. 0 is healthy; anything else is worth a look. */}
+                {Number(diag.fee_unknown_payments) > 0 && (
+                  <div style={{ marginTop: 10, padding: '8px 11px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12.5, color: '#92400e', lineHeight: 1.55 }}>
+                    {diag.fee_unknown_payments} payment{Number(diag.fee_unknown_payments) === 1 ? '' : 's'} ({money(diag.fee_unknown_amount)}) could not be split into ticket and fee, so {Number(diag.fee_unknown_payments) === 1 ? 'it is' : 'they are'} counted at the full amount paid. True ROAS may read up to 5% high on {Number(diag.fee_unknown_payments) === 1 ? 'that one' : 'those'}.
+                  </div>
+                )}
               </div>
 
               {/* The graph */}
@@ -10567,9 +11173,237 @@ export default function AdminPanel() {
                 )}
               </div>
 
+              {/* What's switched on (get_meta_delivery_status). Budgets and on/off
+                  state for every campaign, ad set and ad, with every change. Meta
+                  overwrites these in place, so this is the only record of them. Page
+                  only: the founder chose no alerts (2026-09-17). META-ADS-HANDOFF.md §23. */}
+              {metaDelivery && (() => {
+                const objects: any[] = metaDelivery.objects ?? [];
+                const blocked: any[] = metaDelivery.blocked ?? [];
+                const changes: any[] = metaDelivery.changes ?? [];
+                const when = (v: any) => v
+                  ? new Date(v).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                  : '';
+                const campaigns = objects.filter((o) => o.level === 'campaign');
+                const adsets = objects.filter((o) => o.level === 'adset');
+                const ads = objects.filter((o) => o.level === 'ad');
+                const state = (o: any): { label: string; colour: string } => {
+                  if (o.blocked) return { label: 'On, not running', colour: '#b91c1c' };
+                  if (o.effective_status === 'ACTIVE') return { label: 'Running', colour: '#15803d' };
+                  if (o.status === 'PAUSED') return { label: 'Off', colour: '#666' };
+                  return { label: metaStatusWords(o.effective_status), colour: '#92400e' };
+                };
+                const row = (o: any, indent: boolean) => {
+                  const st = state(o);
+                  const parent = campaigns.find((c) => c.object_id === o.campaign_id);
+                  const budget = metaBudgetText(o)
+                    ?? (o.level === 'adset' && metaBudgetText(parent) ? 'budget set on the campaign' : null);
+                  return (
+                    <div key={o.object_id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', padding: `7px 0 7px ${indent ? 14 : 0}px`, borderTop: '1px solid #f0f0ea' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: indent ? 600 : 700, fontSize: 13 }}>{o.name ?? o.object_id}</div>
+                        <div style={{ fontSize: 11.5, color: '#888' }}>
+                          {META_LEVEL_LABEL[o.level] ?? o.level}
+                          {o.objective ? ` · ${META_OBJECTIVE_LABEL[o.objective] ?? o.objective}` : ''}
+                          {budget ? ` · ${budget}` : ''}
+                          {o.bid_strategy ? ` · ${META_BID_LABEL[o.bid_strategy] ?? o.bid_strategy}` : ''}
+                        </div>
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: 12.5, color: st.colour, whiteSpace: 'nowrap' }}>{st.label}</span>
+                    </div>
+                  );
+                };
+                const orphanAdsets = adsets.filter((s2) => !campaigns.some((c) => c.object_id === s2.campaign_id));
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>What's switched on</div>
+                    <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, marginBottom: 10 }}>
+                      On/off state and budgets, read from Meta every 6 hours, with every change kept. Shown here only; nothing sends an alert.
+                    </div>
+                    {!metaDelivery.capture_since ? (
+                      <div style={{ color: '#999', fontSize: 13.5, padding: '6px 0' }}>Not read yet. The sync reads this every 6 hours.</div>
+                    ) : (
+                      <>
+                        {/* On at every level, yet not delivering. A parent switched off on
+                            purpose is not listed: that is a choice, not a blockage. */}
+                        {blocked.length > 0 && (
+                          <div style={{ padding: '9px 12px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', marginBottom: 10 }}>
+                            <div style={{ fontWeight: 700, color: '#b91c1c', fontSize: 13 }}>Switched on but not running ({blocked.length})</div>
+                            {blocked.map((b: any) => (
+                              <div key={b.object_id} style={{ fontSize: 12.5, color: '#7f1d1d', marginTop: 4, lineHeight: 1.5 }}>
+                                {META_LEVEL_LABEL[b.level] ?? b.level} "{b.name ?? b.object_id}": {metaStatusWords(b.effective_status)}
+                                {b.since ? ` (since ${when(b.since)})` : ''}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {campaigns.length === 0 && adsets.length === 0 ? (
+                          <div style={{ color: '#999', fontSize: 13.5, padding: '6px 0' }}>No campaigns on the account.</div>
+                        ) : (
+                          <>
+                            {campaigns.map((c) => (
+                              <div key={c.object_id}>
+                                {row(c, false)}
+                                {adsets.filter((s2) => s2.campaign_id === c.object_id).map((s2) => row(s2, true))}
+                              </div>
+                            ))}
+                            {orphanAdsets.map((s2) => row(s2, true))}
+                          </>
+                        )}
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
+                          {ads.length === 0
+                            ? 'No ads yet.'
+                            : `${ads.length} ad${ads.length === 1 ? '' : 's'}: ${ads.filter((x) => x.effective_status === 'ACTIVE').length} running, ${ads.filter((x) => x.status === 'PAUSED').length} off${ads.some((x) => x.blocked) ? `, ${ads.filter((x) => x.blocked).length} on but not running` : ''}.`}
+                        </div>
+                        {changes.length > 0 && (
+                          <div style={{ marginTop: 12 }}>
+                            <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Recent changes</div>
+                            {changes.slice(0, 8).map((c: any, i: number) => (
+                              <div key={`${c.object_id}-${c.seen_at}-${i}`} style={{ fontSize: 12.5, color: '#555', lineHeight: 1.7 }}>
+                                <span style={{ color: '#999' }}>{when(c.seen_at)}</span>
+                                {' · '}{META_LEVEL_LABEL[c.level] ?? c.level} "{c.name ?? c.object_id}" {describeMetaDeliveryChange(c)}
+                              </div>
+                            ))}
+                            <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+                              Times are when the sync noticed, up to 6 hours after the change.
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Learning phase, per ad set (get_meta_adset_health). Meta restarts
+                  an ad set's ~50-result learning count on any targeting or
+                  creative change, a new ad, a pause of 7+ days or a bid-strategy
+                  change (Meta help 316478108955072). The founder makes those edits
+                  himself, so this says "don't edit yet" rather than pushing.
+                  META-ADS-HANDOFF.md §23. */}
+              {(() => {
+                const sets: any[] = metaAdsetHealth?.adsets ?? [];
+                if (!sets.length) return null;
+                const day = (v: any) => v
+                  ? new Date(v).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })
+                  : null;
+                const TONE: Record<string, { fg: string; bg: string; border: string }> = {
+                  amber: { fg: '#92400e', bg: '#fffbeb', border: '#fde68a' },
+                  green: { fg: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+                  red:   { fg: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
+                  grey:  { fg: '#555',    bg: '#f7f7f5', border: '#e8e8e3' },
+                };
+                const describe = (a: any): { tone: string; head: string; body: string } => {
+                  const l = a.learning ?? {};
+                  const status = String(l.status ?? '').toUpperCase();
+                  const bar = Number(l.results_to_exit ?? 50);
+                  const edited = day(l.last_significant_edit_at);
+                  // Never read ≠ read and empty: observed_at is what tells them apart.
+                  if (!l.observed_at) {
+                    return { tone: 'grey', head: 'Not read yet', body: 'The sync reads this every 6 hours.' };
+                  }
+                  if (status === 'LEARNING') {
+                    return { tone: 'amber', head: `Learning · ${l.conversions ?? 0} of ~${bar} results`,
+                      body: `Counted since the last big edit${edited ? ` on ${edited}` : ''}. Don't edit this ad set until it finishes, or the count starts again.` };
+                  }
+                  if (status === 'SUCCESS') {
+                    return { tone: 'green', head: 'Finished learning',
+                      body: `Delivery is stable${edited ? ` since the edit on ${edited}` : ''}. A big edit sends it back into learning.` };
+                  }
+                  if (status === 'FAIL') {
+                    return { tone: 'red', head: 'Learning limited',
+                      body: `It can't reach ~${bar} results a week, so it never finishes learning. What helps: a higher-volume optimisation event, combining ad sets, or more budget. More edits don't.` };
+                  }
+                  if (!status) {
+                    return a.effective_status === 'ACTIVE'
+                      ? { tone: 'grey', head: 'No learning stage yet', body: 'Meta reports one once the ad set starts delivering.' }
+                      : { tone: 'grey', head: 'Not delivering', body: 'Meta reports a learning stage only while an ad set runs.' };
+                  }
+                  return { tone: 'grey', head: `Meta says: ${l.status}`, body: '' };
+                };
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Learning phase</div>
+                    <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, marginBottom: 12 }}>
+                      Meta needs about 50 results in a week to finish learning. These restart the count: any change to
+                      targeting or creative, adding a new ad, changing the optimisation event, pausing for 7+ days,
+                      changing bid strategy. A big budget change can too.
+                    </div>
+                    {sets.map((a: any) => {
+                      const d = describe(a);
+                      const t = TONE[d.tone] ?? TONE.grey;
+                      const edits = Array.from(new Set(
+                        (a.learning_history ?? [])
+                          .map((h: any) => h.last_significant_edit_at)
+                          .filter(Boolean)
+                          .map((v: any) => day(v)),
+                      )) as string[];
+                      // The optimisation-goal check (meta_adset_optimization_warnings).
+                      // 'impossible' pushes only while ACTIVE and 'tight' never pushes,
+                      // so this is the only place either is visible.
+                      const w = (metaAdsetHealth?.warnings ?? []).find((x: any) => x.adset_id === a.adset_id);
+                      return (
+                        <div key={a.adset_id} style={{ padding: '10px 12px', borderRadius: 10, background: t.bg, border: `1px solid ${t.border}`, marginBottom: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700, color: '#111' }}>{a.adset_name ?? `Ad set ${a.adset_id}`}</span>
+                            <span style={{ fontWeight: 700, color: t.fg, fontSize: 13 }}>{d.head}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+                            Optimising for {String(a.custom_event_type ?? a.optimization_goal ?? 'unknown').toLowerCase().replace(/_/g, ' ')}
+                            {a.effective_status ? ` · ${String(a.effective_status).toLowerCase()}` : ''}
+                          </div>
+                          {d.body && <div style={{ fontSize: 12.5, color: t.fg, marginTop: 6, lineHeight: 1.5 }}>{d.body}</div>}
+                          {w && (
+                            <div style={{ fontSize: 12, color: w.severity === 'impossible' ? '#b91c1c' : '#92400e', marginTop: 6, lineHeight: 1.5 }}>
+                              {w.severity === 'impossible' ? 'Can never finish learning: ' : 'Tight: '}
+                              the whole site makes about {Math.round(Number(w.weekly_volume))} of this event a week, against Meta's ~{w.bar}.
+                            </div>
+                          )}
+                          {(() => {
+                            // Each recorded restart, with what changed in delivery settings
+                            // within 12 hours of it (get_meta_delivery_status). A change there
+                            // is a likely cause; none means the edit was one this record does
+                            // not cover (targeting, creative or the optimisation event).
+                            const restarts: any[] = (metaDelivery?.learning_restarts ?? [])
+                              .filter((r: any) => r.adset_id === a.adset_id)
+                              .slice(0, 3);
+                            if (!restarts.length) {
+                              return edits.length > 0 ? (
+                                <div style={{ fontSize: 11.5, color: '#888', marginTop: 6 }}>Big edits on record: {edits.join(', ')}</div>
+                              ) : null;
+                            }
+                            return restarts.map((r: any) => {
+                              const nearby: any[] = r.nearby_changes ?? [];
+                              return (
+                                <div key={`${r.adset_id}-${r.edit_at}`} style={{ fontSize: 11.5, color: '#888', marginTop: 6, lineHeight: 1.5 }}>
+                                  Learning restarted {day(r.edit_at)}
+                                  {nearby.length > 0
+                                    ? ` · around then: ${nearby.map((c: any) =>
+                                        `${META_LEVEL_LABEL[c.level] ?? c.level} "${c.name ?? c.object_id}" ${describeMetaDeliveryChange(c)}`).join('; ')}`
+                                    : ' · no budget or on/off change around then, so a targeting, creative or goal edit'}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {/* Per-ad table */}
               <div style={s.card}>
                 <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>By ad</div>
+                {/* Few tickets make a lucky ad look like a winner. Said once, above
+                    the table, so the per-row marker can stay short. */}
+                {perAd.some((a: any) => a.enough_to_judge === false && Number(a.our_tickets) > 0) && (
+                  <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, margin: '-4px 0 10px' }}>
+                    Ads marked <b style={{ color: '#92400e' }}>too few tickets to judge</b> have under {rep?.judge_min_tickets ?? 10} paid
+                    tickets. Their real cost per ticket could easily be half or double what's shown, so don't move budget
+                    between them on these numbers yet.
+                  </div>
+                )}
                 {perAd.length === 0 ? (
                   <div style={{ color: '#999', fontSize: 13.5, padding: '10px 0' }}>
                     {metaAdsLoading ? 'Loading…' : 'No ads with spend or bookings in this window.'}
@@ -10612,14 +11446,30 @@ export default function AdminPanel() {
                               {Number(a.our_tickets) > Number(a.our_bookings) && a.cost_per_ticket != null && (
                                 <div style={{ fontSize: 10.5, fontWeight: 500, color: '#999' }}>{money(a.cost_per_ticket)} / ticket</div>
                               )}
+                              {a.enough_to_judge === false && Number(a.our_tickets) > 0 && (
+                                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#92400e', whiteSpace: 'nowrap' }}>
+                                  too few tickets to judge ({a.our_tickets} of {rep?.judge_min_tickets ?? 10})
+                                </div>
+                              )}
                             </td>
                             <td style={{ padding: '9px 10px', textAlign: 'right' }}>
                               {a.cost_per_customer == null ? '—' : money(a.cost_per_customer)}
                             </td>
                             <td style={{ padding: '9px 0 9px 10px', textAlign: 'right' }}>
-                              <div style={{ fontWeight: 800, color: Number(a.true_roas) >= 1 ? '#16a34a' : '#dc2626' }}>
+                              <div
+                                title={a.our_paid != null
+                                  ? `Customers paid ${money(a.our_paid)} · ${money(a.our_fees)} gateway fees removed · ${money(a.our_revenue)} ticket money`
+                                  : undefined}
+                                style={{ fontWeight: 800, color: a.enough_to_judge === false ? '#888' : (Number(a.true_roas) >= 1 ? '#16a34a' : '#dc2626') }}>
                                 {a.true_roas == null ? '—' : `${Number(a.true_roas).toFixed(2)}×`}
                               </div>
+                              {/* Where the real ROAS plausibly lies, shown inline rather
+                                  than on hover so it reads on a phone too. */}
+                              {a.true_roas_low != null && a.true_roas_high != null && (
+                                <div style={{ fontSize: 10.5, color: '#999', whiteSpace: 'nowrap' }}>
+                                  likely {Number(a.true_roas_low).toFixed(1)}–{Number(a.true_roas_high).toFixed(1)}×
+                                </div>
+                              )}
                               {/* Meta's own figure, for the same ad and window. It counts
                                   a full ticket the moment an advance is paid, so it reads
                                   high — seeing both side by side is the point. */}
@@ -10634,6 +11484,635 @@ export default function AdminPanel() {
                   </div>
                 )}
               </div>
+
+              {/* Where an ad's traffic stops.
+                  The table above says WHETHER an ad produced bookings. When the
+                  answer is none, this says why — traffic that never gets past the
+                  hero is a creative problem, traffic that reaches the price and
+                  stops is a price or audience problem, and both read as the same
+                  zero in the table above. */}
+              {(() => {
+                const fun: any = metaFunnel;
+                const fsteps: any[] = fun?.steps ?? [];
+                const fads: any[] = fun?.per_ad ?? [];
+                const fdiag: any = fun?.diagnostics ?? {};
+                // NULL capture_live_since means not one funnel row has ever
+                // carried a source, i.e. the client change is not live yet.
+                const capturing = !!fdiag.capture_live_since;
+                const entry = Number(fun?.entry_sessions ?? 0);
+                const orphanTagged = Number(fdiag.tagged_sessions_without_ad_id) || 0;
+
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Where the traffic stops</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                      Sessions that reached each step, for visitors who arrived from an ad. Each step is counted on its
+                      own rather than as a strict funnel &mdash; a link straight to a plan page skips the list, so a later
+                      step can out-count an earlier one. Read each row as &ldquo;how many got this far&rdquo;.
+                    </div>
+
+                    {!capturing ? (
+                      /* "Not deployed" and "no traffic" are both empty, and they
+                         need opposite responses. Say which one this is. */
+                      <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.6, background: '#fffbea', border: '1px solid #f5e6a8', borderRadius: 8, padding: 12 }}>
+                        <b>Not capturing yet.</b> No funnel step has ever recorded where its visitor came from, so this
+                        fills only once the change that stamps the source onto each step is live on the site.
+                      </div>
+                    ) : entry === 0 ? (
+                      <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.6 }}>
+                        Capturing since{' '}
+                        {new Date(fdiag.capture_live_since).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.
+                        No visitor arrived from an ad in this window.
+                        {orphanTagged > 0 && (
+                          <> {orphanTagged} tagged session{orphanTagged === 1 ? '' : 's'} carried a source but no ad id
+                          &mdash; creator links and organic tags, which are counted elsewhere.</>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: 16 }}>
+                          {fsteps.map((st: any) => (
+                            <div key={st.step} style={{ marginBottom: 11 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 12.5, marginBottom: 4 }}>
+                                <span style={{ fontWeight: 700 }}>{st.label}</span>
+                                <span style={{ color: '#666' }}>
+                                  {st.sessions}
+                                  {st.pct_of_entry != null && <span style={{ color: '#aaa' }}> &middot; {st.pct_of_entry}%</span>}
+                                </span>
+                              </div>
+                              <div style={{ height: 8, background: '#f0f0ea', borderRadius: 4, overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.max(0, Math.min(100, Number(st.pct_of_entry) || 0))}%`, height: '100%', background: '#111' }} />
+                              </div>
+                              {Number(st.lost_from_prev) > 0 && (
+                                <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>&minus;{st.lost_from_prev} stopped here</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {fads.length > 0 && (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
+                              <thead>
+                                <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                                  <th style={{ padding: '6px 10px 8px 0' }}>Ad</th>
+                                  <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Sessions</th>
+                                  <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Reached price</th>
+                                  <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Price &rarr; lead</th>
+                                  <th style={{ padding: '6px 0 8px 10px', textAlign: 'right' }}>Cost / session</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {fads.map((a: any) => (
+                                  <tr key={a.ad_id} style={{ borderTop: '1px solid #f0f0ea' }}>
+                                    <td style={{ padding: '9px 10px 9px 0', maxWidth: 230 }}>
+                                      <div style={{ fontWeight: 700 }}>{a.ad_name ?? `Ad ${a.ad_id}`}</div>
+                                    </td>
+                                    <td style={{ padding: '9px 10px', textAlign: 'right' }}>{a.sessions}</td>
+                                    <td style={{ padding: '9px 10px', textAlign: 'right' }}>
+                                      {a.pct_reached_price == null ? '—' : `${a.pct_reached_price}%`}
+                                    </td>
+                                    <td style={{ padding: '9px 10px', textAlign: 'right' }}>
+                                      {a.pct_price_to_lead == null ? '—' : `${a.pct_price_to_lead}%`}
+                                    </td>
+                                    <td style={{ padding: '9px 0 9px 10px', textAlign: 'right' }}>
+                                      {a.cost_per_session == null ? '—' : money(a.cost_per_session)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{ fontSize: 11.5, color: '#999', marginTop: 8, lineHeight: 1.55 }}>
+                              <b>Reached price</b> is the share of an ad&rsquo;s sessions that got as far as seeing a price
+                              &mdash; low means the creative promised something the page did not. <b>Price &rarr; lead</b> is
+                              the share of those who then acted &mdash; low means they saw the price and walked away.
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Guardrails — the circuit breaker, given a face.
+                  NOT hidden when empty, unlike the scorecard below. An alarm
+                  you cannot see the state of is not an alarm, so this always
+                  says which of the two silences you are looking at: nothing to
+                  watch, or watching and nothing wrong. */}
+              {(() => {
+                const firing: any[] = Array.isArray(metaGuards) ? metaGuards : [];
+                const log: any[] = Array.isArray(metaGuardLog) ? metaGuardLog : [];
+                const spend = Number(rep?.totals?.spend ?? 0);
+                // No spend means every rule is correctly silent, which is a
+                // completely different fact from every rule passing. Saying
+                // "all clear" here would be the same mistake as reporting 0
+                // where the answer is null.
+                const nothingToWatch = spend <= 0 && !log.length;
+
+                // Grouped BY AD, because one bad ad legitimately trips several
+                // rules at once — the dry run had one trip three. Three lines
+                // about one ad is how a founder learns to skim the list.
+                const byAd = new Map<string, any[]>();
+                for (const b of firing) {
+                  const k = b.ad_id ?? 'account';
+                  if (!byAd.has(k)) byAd.set(k, []);
+                  byAd.get(k)!.push(b);
+                }
+
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Guardrails</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                      Threshold rules on <b>money actually received</b>, not Meta&rsquo;s conversion count &mdash; which
+                      on this account reads about 50% high, so a breaker built on it would fire late every time.
+                      These <b>notify only</b>; nothing here pauses an ad. Auto-pause is one crude spend rule in Ads
+                      Manager, because spend is the one number Meta cannot be wrong about.
+                    </div>
+
+                    {nothingToWatch ? (
+                      <div style={{ fontSize: 13, color: '#666', background: '#fafaf7', borderRadius: 8, padding: '12px 14px' }}>
+                        <b>Nothing to watch yet.</b> No ad has spent anything, so every rule is silent because there is
+                        no data &mdash; not because everything passed. Six rules are armed and will start judging the
+                        first day money goes out.
+                      </div>
+                    ) : firing.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#16a34a', background: '#f0fdf4', borderRadius: 8, padding: '12px 14px' }}>
+                        <b>Nothing breaching right now.</b> Every armed rule was checked against current spend and none
+                        tripped.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
+                        {[...byAd.entries()].map(([adId, breaches]) => (
+                          <div key={adId} style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '11px 13px' }}>
+                            <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 6 }}>
+                              {breaches[0].ad_name || adId}
+                              {breaches.length > 1 && (
+                                <span style={{ fontWeight: 600, color: '#b91c1c', fontSize: 12 }}> · {breaches.length} rules</span>
+                              )}
+                            </div>
+                            {breaches.map((b: any) => (
+                              <div key={b.rule_key} style={{ fontSize: 12.5, color: '#7f1d1d', lineHeight: 1.7 }}>
+                                {b.label} &mdash; <b>{b.observed}</b> against a limit of {b.threshold}
+                                <span style={{ color: '#b91c1c' }}> (last {b.window_days}d)</span>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {log.length > 0 && (
+                      <>
+                        <div style={{ fontWeight: 700, fontSize: 13, margin: '16px 0 6px' }}>Everything that has ever tripped</div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+                            <thead>
+                              <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                                <th style={{ padding: '6px 10px 8px 0' }}>When</th>
+                                <th style={{ padding: '6px 10px 8px' }}>Ad</th>
+                                <th style={{ padding: '6px 10px 8px' }}>Rule</th>
+                                <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Observed</th>
+                                <th style={{ padding: '6px 0 8px 10px' }}>Alert</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {log.map((e: any) => (
+                                <tr key={e.id} style={{ borderTop: '1px solid #f0f0ea' }}>
+                                  <td style={{ padding: '9px 10px 9px 0', color: '#666', whiteSpace: 'nowrap' }}>
+                                    {new Date(e.fired_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                  </td>
+                                  <td style={{ padding: '9px 10px', fontWeight: 700 }}>{e.ad_name || e.ad_id || '—'}</td>
+                                  <td style={{ padding: '9px 10px', color: '#666' }}>{e.label}</td>
+                                  <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>
+                                    {/* A yes/no finding, like a missing customer exclusion, has no
+                                        quantity, so it stores NULL rather than an invented 0. */}
+                                    {e.observed == null ? '—' : <>{e.observed} <span style={{ color: '#999', fontWeight: 500 }}>/ {e.threshold}</span></>}
+                                  </td>
+                                  <td style={{ padding: '9px 0 9px 10px', color: e.notify_error ? '#dc2626' : e.notified_at ? '#666' : '#999' }}>
+                                    {e.notify_error ? `failed: ${String(e.notify_error).slice(0, 40)}`
+                                      : e.notified_at ? 'queued' : 'not sent'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: '#999', marginTop: 8, lineHeight: 1.55 }}>
+                          <b>&ldquo;Queued&rdquo; is not &ldquo;delivered.&rdquo;</b> The push is sent fire-and-forget, so this column
+                          records that it left without an error and nothing more. If a breach matters, check the ad here
+                          rather than trusting that a notification arrived.
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* What each plan can spend on ads (get_meta_plan_ad_budgets).
+                  The founder's rule, 2026-09-17: the money a customer pays AT
+                  BOOKING minus the cost of hosting them is what that ticket can
+                  spend on an ad. On a pay-at-venue plan the advance is set above
+                  cost on purpose, and the balance at the venue is profit — so an
+                  ad inside this budget cannot lose money even if the guest never
+                  arrives. The cost alarm judges ads against this same figure.
+                  META-ADS-HANDOFF.md §21.6. */}
+              {(() => {
+                const pb: any = metaPlanBudgets;
+                const plans: any[] = pb?.plans ?? [];
+                const rupee = (n: any) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+                const minTickets = Number(pb?.min_tickets_to_estimate ?? 10);
+                const why: Record<string, string> = {
+                  cost_not_set: 'Cost per ticket is ₹0. If that is not really free to host, the ad money above is too high — type the real cost in Team ▸ Performance.',
+                  no_ad_money: 'Nothing left for ads at this advance: hosting costs as much as the booking collects. Raising the advance is what creates ad money here.',
+                  placeholder_price: 'Priced under ₹50, so this looks like a test plan. The alarm ignores it.',
+                  no_views: 'Nobody has opened this plan in the window, so the click ceiling cannot be worked out.',
+                };
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>What each plan can spend on ads</div>
+                    <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, marginBottom: 12 }}>
+                      What a customer pays <b>at booking</b>, minus what the plan costs to host, is the money that ticket
+                      can spend on an ad. The advance is the part you keep even if the guest never turns up, so an ad
+                      inside this figure cannot lose money. The balance collected at the venue is profit on top.
+                    </div>
+                    {pb == null ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>Could not load plan economics.</div>
+                    ) : plans.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>No live plans that take payment.</div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {plans.map((p: any) => {
+                          const warns: string[] = p.warnings ?? [];
+                          const adMoney = Number(p.ad_money_per_ticket || 0);
+                          // Red only for "this plan cannot fund an ad at all", amber
+                          // for "the number above rests on something unset". A plan
+                          // with no warnings is not praised in green — it is simply
+                          // a figure, and colour would read as a verdict.
+                          const tone = adMoney <= 0
+                            ? { b: '#fecaca', bg: '#fef2f2' }
+                            : warns.some(w => w === 'cost_not_set' || w === 'placeholder_price')
+                              ? { b: '#fde68a', bg: '#fffbeb' }
+                              : { b: '#e8e8e3', bg: '#fcfcfa' };
+                          const enough = p.enough_to_estimate === true;
+                          return (
+                            <div key={p.slug} style={{ border: `1px solid ${tone.b}`, background: tone.bg, borderRadius: 8, padding: '11px 13px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                                <div style={{ fontWeight: 800, fontSize: 13.5 }}>{String(p.title ?? p.slug).trim()}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap', color: adMoney > 0 ? '#111' : '#b91c1c' }}>
+                                  {rupee(adMoney)} per ticket for ads
+                                </div>
+                              </div>
+                              <div style={{ fontSize: 12, color: '#666', marginTop: 3 }}>
+                                {rupee(p.at_booking)} {p.payment_mode === 'full' ? 'paid in full' : 'advance'} − {rupee(p.cost_per_ticket)} your cost
+                                {p.invite_only ? ' · invite-only' : ''}
+                              </div>
+                              {/* The click ceiling. Greyed below the ticket floor
+                                  rather than hidden: the founder still wants to see
+                                  the figure, only not to act on it. Same discipline
+                                  as "too few tickets to judge" on the ad table. */}
+                              <div style={{ fontSize: 12.5, marginTop: 6, color: enough && adMoney > 0 ? '#111' : '#999' }}>
+                                {adMoney <= 0 || p.max_cost_per_click == null ? (
+                                  'No click ceiling while there is nothing to spend.'
+                                ) : (
+                                  <>
+                                    Most a click may cost: <b>{rupee(p.max_cost_per_click)}</b>
+                                    {p.max_cost_per_click_low != null && p.max_cost_per_click_high != null
+                                      ? ` (likely ${rupee(p.max_cost_per_click_low)}–${rupee(p.max_cost_per_click_high)})`
+                                      : ''}
+                                    {!enough ? ` · too few tickets to judge (${Number(p.paid_tickets || 0)} of ${minTickets})` : ''}
+                                  </>
+                                )}
+                              </div>
+                              <div style={{ fontSize: 11.5, color: '#999', marginTop: 3 }}>
+                                From {Number(p.paid_tickets || 0)} paid ticket{Number(p.paid_tickets || 0) === 1 ? '' : 's'} out of{' '}
+                                {Number(p.view_sessions || 0).toLocaleString('en-IN')} visits that opened this plan in {Number(pb.window_days || 90)} days
+                              </div>
+                              {warns.filter((w: string) => w !== 'too_few_tickets').map((w: string) => (
+                                <div key={w} style={{ fontSize: 12, color: w === 'no_ad_money' ? '#b91c1c' : '#92400e', marginTop: 4, lineHeight: 1.5 }}>
+                                  {why[w] ?? w}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11.5, color: '#999', marginTop: 10, lineHeight: 1.6 }}>
+                      <b>The click ceiling is an upper bound, not a target.</b> It is worked out from visitors you already
+                      have, who mostly know the brand; people arriving from an ad normally buy less often, so the real
+                      ceiling is lower. Treat it as the number a click must stay under, and replace it with what real ads
+                      produce.
+                      {pb?.alarm?.enabled ? (
+                        <> The cost alarm notifies you when an ad&rsquo;s cost per paid ticket passes{' '}
+                        {Number(pb.alarm.pct_of_ad_budget) === 100 ? 'this plan’s ad money' : `${Number(pb.alarm.pct_of_ad_budget)}% of this plan’s ad money`}
+                        , over {Number(pb.alarm.window_days || 7)} days and after {rupee(pb.alarm.min_spend)} of spend.</>
+                      ) : (
+                        <> The cost alarm that uses these figures is currently switched off.</>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Plans ready to advertise. The same rows feed the Meta catalog
+                  (meta-catalog-feed), so what passes here is exactly what an ad
+                  or a catalog would show: the site's own price, a photo of its
+                  own, a date with seats, and a link that opens the plan itself. */}
+              {(() => {
+                const cat: any = metaCatalog;
+                const items: any[] = cat?.items ?? [];
+                const why: Record<string, string> = {
+                  no_price: 'No price: the plan and its city both read ₹0',
+                  no_image: 'No photo. In a catalog ad the photo is the ad',
+                  no_description: 'No description',
+                  no_upcoming_date: 'No upcoming date',
+                  sold_out: 'Every upcoming date is full',
+                  shared_image: 'Same photo as another plan, so their ads would look identical',
+                  invite_only: 'Invite-only: an ad leads to an application, not a checkout',
+                };
+                const day = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Plans ready to advertise</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                      Before money goes on a plan it needs the site&rsquo;s real price, a photo of its own, a date with seats,
+                      and a link that opens it directly. Checked from the same data the site uses, and exactly what a Meta
+                      catalog would receive.
+                    </div>
+                    {cat == null ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>Could not load plans.</div>
+                    ) : items.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>No live plans that take payment.</div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {items.map((p: any) => {
+                          const blocking: string[] = p.problems ?? [];
+                          const warns: string[] = p.warnings ?? [];
+                          const bookable = !warns.includes('no_upcoming_date') && !warns.includes('sold_out');
+                          const ready = blocking.length === 0 && bookable;
+                          const tone = blocking.length ? { b: '#fecaca', bg: '#fef2f2' } : ready ? { b: '#bbf7d0', bg: '#f0fdf4' } : { b: '#f5e6a8', bg: '#fffbea' };
+                          return (
+                            <div key={p.id} style={{ border: `1px solid ${tone.b}`, background: tone.bg, borderRadius: 8, padding: '11px 13px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+                                <div style={{ fontWeight: 800, fontSize: 13.5 }}>{p.title}</div>
+                                <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>₹{Number(p.price || 0).toLocaleString('en-IN')}</div>
+                              </div>
+                              <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                                {blocking.length ? 'Not advertisable yet' : ready ? 'Ready' : 'Nothing to sell right now'}
+                                {p.next_date ? ` · next open date ${day(p.next_date)}` : ''}
+                              </div>
+                              {[...blocking, ...warns].map((k: string) => (
+                                <div key={k} style={{ fontSize: 12, color: blocking.includes(k) ? '#b91c1c' : '#92400e', marginTop: 3 }}>{why[k] ?? k}</div>
+                              ))}
+                              <div style={{ fontSize: 11, color: '#999', marginTop: 6, wordBreak: 'break-all' }}>Ad link: {p.link}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11.5, color: '#999', marginTop: 8, lineHeight: 1.55 }}>
+                      Use a plan&rsquo;s ad link as the website URL of any ad for it. It opens that plan instead of the plan
+                      list, where 6 in 10 visitors leave before choosing anything.
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* What competitors are running (get_competitor_ads). Founder's
+                  decision 2026-09-18: IDs and copy only, never the creative —
+                  "if I see the id I guess that's enough because I can then see
+                  the ad locally by matching the ID". The video and images sit on
+                  his Mac under ~/Desktop/ads/, in a folder named after the same
+                  library id. Sorted by days running, because with no spend or
+                  reach available for India that is the ENTIRE signal: how long
+                  an advertiser keeps an ad alive is the only evidence of what is
+                  working for them. META-ADS-HANDOFF.md §25. */}
+              {(() => {
+                const ca: any = competitorAds;
+                const running: any[] = ca?.running ?? [];
+                const removed: any[] = ca?.removed ?? [];
+                const sum: any = ca?.summary ?? {};
+                const day = (d: any) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—');
+                // "Never observed" and "observed, found nothing" are different
+                // answers and must not render the same way (§9).
+                const neverRan = !sum?.last_observed_at;
+                const staleDays = sum?.last_observed_at
+                  ? Math.floor((Date.now() - new Date(sum.last_observed_at).getTime()) / 86400000)
+                  : null;
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>What competitors are running</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+                      Captured once a day from the Meta Ad Library. The creative itself is on your Mac in{' '}
+                      <code style={{ fontSize: 11 }}>~/Desktop/ads/</code> — match the folder name to the ID below.
+                    </div>
+
+                    {neverRan ? (
+                      <div style={{ fontSize: 13, color: '#6b7280' }}>
+                        Nothing captured yet. The daily job writes here the first time it runs.
+                      </div>
+                    ) : (
+                      <>
+                        {staleDays !== null && staleDays >= 2 && (
+                          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#92400e', marginBottom: 10 }}>
+                            Last checked {staleDays} days ago. The capture job on your Mac may not be running —
+                            anything a competitor started and stopped since then was missed.
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12, fontSize: 12, color: '#374151' }}>
+                          <div><b>{sum.running_count ?? 0}</b> running</div>
+                          <div><b>{sum.removed_count ?? 0}</b> removed</div>
+                          {sum.longest_running_days != null && <div>longest live: <b>{sum.longest_running_days}d</b></div>}
+                          <div style={{ color: '#6b7280' }}>checked {day(sum.last_observed_at)}</div>
+                        </div>
+
+                        {running.length > 0 && (
+                          <div style={{ marginBottom: removed.length ? 14 : 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: '#065f46', marginBottom: 6 }}>Still running</div>
+                            {running.map((a: any) => (
+                              <div key={a.library_id} style={{ borderLeft: '3px solid #10b981', paddingLeft: 10, marginBottom: 8 }}>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                                  <code style={{ fontSize: 12, fontWeight: 700 }}>{a.library_id}</code>
+                                  <span style={{ fontSize: 12, color: '#065f46', fontWeight: 700 }}>{a.days_running}d</span>
+                                  <span style={{ fontSize: 11, color: '#6b7280' }}>{a.page_label} · {a.media_type}</span>
+                                  {/* An asset older than the ad means they have run this
+                                      creative before and brought it back — the clearest
+                                      signal they believe it works. */}
+                                  {a.video_asset_age_days != null && a.video_asset_age_days > (a.days_running ?? 0) && (
+                                    <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700 }}>re-run</span>
+                                  )}
+                                  {!a.creative_captured && (
+                                    <span style={{ fontSize: 11, color: '#b45309' }}>creative not saved</span>
+                                  )}
+                                </div>
+                                {a.excerpt && <div style={{ fontSize: 12, color: '#374151', marginTop: 2 }}>{a.excerpt}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {removed.length > 0 && (
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: '#7f1d1d', marginBottom: 6 }}>Removed</div>
+                            {removed.map((a: any) => (
+                              <div key={a.library_id} style={{ borderLeft: '3px solid #d1d5db', paddingLeft: 10, marginBottom: 8 }}>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                                  <code style={{ fontSize: 12, fontWeight: 700, color: '#6b7280' }}>{a.library_id}</code>
+                                  <span style={{ fontSize: 12, color: '#374151' }}>ran {a.days_ran}d</span>
+                                  <span style={{ fontSize: 11, color: '#6b7280' }}>gone {day(a.disappeared_on)} · {a.page_label}</span>
+                                </div>
+                                {a.excerpt && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{a.excerpt}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {running.length === 0 && removed.length === 0 && (
+                          <div style={{ fontSize: 13, color: '#6b7280' }}>
+                            Checked, and no competitor ads are on record yet.
+                          </div>
+                        )}
+
+                        {Number(sum.missing_creative ?? 0) > 0 && (
+                          <div style={{ fontSize: 11, color: '#b45309', marginTop: 10 }}>
+                            {sum.missing_creative} ad(s) were seen running but their creative never reached your Mac —
+                            usually a run where the download failed.
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Audiences: who the ads can reach again, and who they must never
+                  pay to reach. Meta's size sits beside our own count on purpose.
+                  On 2026-09-10 the all-visitors audience held ~20 people against
+                  ~1,650 visits, and only the pair of numbers shows that. */}
+              {(() => {
+                const aud: any = metaAudiences;
+                const web: any[] = aud?.website ?? [];
+                const lists: any[] = aud?.customer_files ?? [];
+                const loose: any[] = aud?.unregistered ?? [];
+                const warns: any[] = aud?.adset_warnings ?? [];
+                const neverRead = aud != null && !aud.snapshots_since;
+                const num = (n: any) => Number(n || 0).toLocaleString('en-IN');
+                // Meta's size, said honestly: a range when it gives one, and
+                // "hidden" when it is the under-1,000 floor rather than a count.
+                const metaSize = (a: any) => {
+                  if (a.status === 'draft') return <span style={{ color: '#999' }}>not created</span>;
+                  if (a.size_hidden) return <span style={{ color: '#999' }}>under 1,000 (Meta hides it)</span>;
+                  if (a.meta_lower == null) return <span style={{ color: '#999' }}>not read yet</span>;
+                  return a.meta_lower === a.meta_upper ? num(a.meta_lower) : `${num(a.meta_lower)}–${num(a.meta_upper)}`;
+                };
+                const jobLabel: Record<string, string> = {
+                  retarget: 'Show ads again', exclude: 'Never show ads', seed: 'Find people like them',
+                };
+                const listJob = (key: string) =>
+                  key === 'customers_all_paid' ? jobLabel.exclude
+                    : key === 'customers_completed' ? jobLabel.seed : jobLabel.retarget;
+
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Audiences</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                      Who your ads can reach again, and who they must never pay to reach. <b>Meta size</b> is how many
+                      people Meta matched; <b>our count</b> is what our own site recorded. The gap between them is the
+                      visitors Meta could not tie to an account.
+                    </div>
+
+                    {aud == null ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>Could not load audiences.</div>
+                    ) : (
+                      <>
+                        {warns.map((w: any) => (
+                          <div key={w.adset_id} style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '11px 13px', marginBottom: 10, fontSize: 12.5, color: '#7f1d1d', lineHeight: 1.6 }}>
+                            <b>&ldquo;{w.adset_name || w.adset_id}&rdquo; does not exclude {w.customers != null ? `your ${w.customers} paying customers` : 'your paying customers'}.</b>{' '}
+                            {w.effective_status === 'ACTIVE'
+                              ? 'It is running, so it is paying to show ads to people who already bought.'
+                              : 'It is paused, so nothing is spent yet, but the moment it runs it will pay to reach people who already bought.'}
+                            {' '}Fix: open the ad set in Ads Manager &rarr; Audience &rarr; exclude &ldquo;chapter அ · customers (any payment)&rdquo;.
+                          </div>
+                        ))}
+
+                        {neverRead && (
+                          <div style={{ fontSize: 12.5, color: '#555', background: '#fffbea', border: '1px solid #f5e6a8', borderRadius: 8, padding: '10px 12px', marginBottom: 10, lineHeight: 1.6 }}>
+                            <b>Sizes not read yet.</b> The sync reads every audience from Meta on its next run.
+                          </div>
+                        )}
+
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+                            <thead>
+                              <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                                <th style={{ padding: '6px 10px 8px 0' }}>Audience</th>
+                                <th style={{ padding: '6px 10px 8px' }}>Job</th>
+                                <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Meta size</th>
+                                <th style={{ padding: '6px 0 8px 10px', textAlign: 'right' }}>Our count</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {lists.map((a: any) => (
+                                <tr key={a.key} style={{ borderTop: '1px solid #f0f0ea' }}>
+                                  <td style={{ padding: '9px 10px 9px 0' }}>
+                                    <div style={{ fontWeight: 700 }}>{a.name}</div>
+                                    {a.last_error && <div style={{ fontSize: 11, color: '#dc2626' }}>{String(a.last_error).slice(0, 80)}</div>}
+                                  </td>
+                                  <td style={{ padding: '9px 10px', color: '#666' }}>{listJob(a.key)}</td>
+                                  <td style={{ padding: '9px 10px', textAlign: 'right' }}>{metaSize(a)}</td>
+                                  <td style={{ padding: '9px 0 9px 10px', textAlign: 'right', fontWeight: 700 }}>
+                                    {num(a.uploaded)} <span style={{ color: '#999', fontWeight: 500 }}>uploaded</span>
+                                  </td>
+                                </tr>
+                              ))}
+                              {web.map((a: any) => {
+                                const flags: string[] = [];
+                                if (a.drift_detected_at) flags.push('Rule edited on Meta: now a mix of old and new');
+                                if ((a.silent_events ?? []).length) flags.push(`${a.silent_events.join(', ')} has not fired in 7 days`);
+                                if (a.status === 'active' && a.delivery_code != null && a.delivery_code !== 200) {
+                                  flags.push(a.delivery_text || 'Meta cannot deliver to it');
+                                }
+                                return (
+                                  <tr key={`${a.key}-${a.version}`} style={{ borderTop: '1px solid #f0f0ea', opacity: a.status === 'retired' ? 0.5 : 1 }}>
+                                    <td style={{ padding: '9px 10px 9px 0', maxWidth: 280 }}>
+                                      <div style={{ fontWeight: 700 }}>{a.name}</div>
+                                      <div style={{ fontSize: 11, color: '#999', lineHeight: 1.5 }}>{a.description}</div>
+                                      {flags.map(f => <div key={f} style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{f}</div>)}
+                                    </td>
+                                    <td style={{ padding: '9px 10px', color: '#666' }}>{jobLabel[a.purpose] ?? a.purpose}</td>
+                                    <td style={{ padding: '9px 10px', textAlign: 'right' }}>{metaSize(a)}</td>
+                                    <td style={{ padding: '9px 0 9px 10px', textAlign: 'right', fontWeight: 700 }}>
+                                      {num(a.qualifying_sessions)} <span style={{ color: '#999', fontWeight: 500 }}>visits · {a.window_days}d</span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              {loose.map((a: any) => (
+                                <tr key={a.audience_id} style={{ borderTop: '1px solid #f0f0ea' }}>
+                                  <td style={{ padding: '9px 10px 9px 0' }}>
+                                    <div style={{ fontWeight: 700 }}>{a.name || a.audience_id}</div>
+                                    <div style={{ fontSize: 11, color: '#b45309' }}>Made in Ads Manager, not tracked here</div>
+                                  </td>
+                                  <td style={{ padding: '9px 10px', color: '#999' }}>—</td>
+                                  <td style={{ padding: '9px 10px', textAlign: 'right' }}>{metaSize(a)}</td>
+                                  <td style={{ padding: '9px 0 9px 10px', textAlign: 'right', color: '#999' }}>—</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: '#999', marginTop: 8, lineHeight: 1.55 }}>
+                          &ldquo;Visits&rdquo; counts sessions that reached the qualifying step, so it is a ceiling on people, not a
+                          target: one person can visit twice. Once an audience exists on Meta its rule is never edited here.
+                          Meta does not remove people when a rule changes, so a change becomes a new version instead.
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Meta's recommendations, scored against OUR cost per booking.
                   Hidden entirely until one arrives — an empty scorecard teaches
