@@ -11218,10 +11218,10 @@ export default function AdminPanel() {
                   <div style={s.card}>
                     <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>What's switched on</div>
                     <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, marginBottom: 10 }}>
-                      On/off state and budgets, read from Meta every 6 hours, with every change kept. Shown here only; nothing sends an alert.
+                      On/off state and budgets, read from Meta once a day (8:50 AM), with every change kept. Shown here only; nothing sends an alert.
                     </div>
                     {!metaDelivery.capture_since ? (
-                      <div style={{ color: '#999', fontSize: 13.5, padding: '6px 0' }}>Not read yet. The sync reads this every 6 hours.</div>
+                      <div style={{ color: '#999', fontSize: 13.5, padding: '6px 0' }}>Not read yet. The sync reads this once a day (8:50 AM).</div>
                     ) : (
                       <>
                         {/* On at every level, yet not delivering. A parent switched off on
@@ -11265,7 +11265,7 @@ export default function AdminPanel() {
                               </div>
                             ))}
                             <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
-                              Times are when the sync noticed, up to 6 hours after the change.
+                              Times are when the sync noticed, up to a day after the change.
                             </div>
                           </div>
                         )}
@@ -11300,7 +11300,7 @@ export default function AdminPanel() {
                   const edited = day(l.last_significant_edit_at);
                   // Never read ≠ read and empty: observed_at is what tells them apart.
                   if (!l.observed_at) {
-                    return { tone: 'grey', head: 'Not read yet', body: 'The sync reads this every 6 hours.' };
+                    return { tone: 'grey', head: 'Not read yet', body: 'The sync reads this once a day (8:50 AM).' };
                   }
                   if (status === 'LEARNING') {
                     return { tone: 'amber', head: `Learning · ${l.conversions ?? 0} of ~${bar} results`,
