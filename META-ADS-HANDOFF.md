@@ -2631,6 +2631,7 @@ with the live app secret.
 | **Threshold rules / `subscriptions` webhook** | **Re-verified 2026-09-08 against the full endpoint spec — still not available, and now for two independent reasons.** (1) *Delivery*: the `ad_account` topic offers our app exactly seven fields — `ad_recommendations`, `ads_async_creation_request`, `creative_fatigue`, `in_process_ad_objects`, `marketing_messages_subscriber_upload_status`, `product_set_issue`, `with_issues_ad_objects`. `subscriptions` is absent, and the spec says the app-level subscribe to that field "is required for notifications to be delivered and must be created first". (2) *Creation*: `POST /act_<ID>/subscriptions` requires `ads_management` plus write access; our system-user token is `ads_read`. Either blocker alone is fatal. **Do not re-check this by reading Meta's docs — they describe the endpoint as though everyone has it. Check `devtools_webhook_list` `list_topics` and look for the field.** See §9 for why the doc is worth keeping anyway. |
 | **`tracking_specs` / `conversion_specs` on ads** | **Checked 2026-09-08 against the full spec — unusable and mostly unnecessary.** Three separate reasons. (1) Setting `tracking_specs` is a WRITE on an ad object; the token is `ads_read`. (2) `conversion_specs` has been **read-only since v2.4** and is derived from the ad set's `optimization_goal`, so there is nothing to configure there in the first place — the lever is `optimization_goal` + `promoted_object`, not the spec. (3) The doc itself says a pixel named in `promoted_object` is **tracked automatically**, so for a single-pixel advertiser the main use case is already covered. Also note `tracking_specs` is not even readable through the Ads MCP — it returns in `unknown_fields`. The one genuinely useful thing in that doc is where it points: the ad set's optimisation config, which is what §10 now records for the live campaign. Multi-pixel tracking, app events, `leadgen_quality_conversion` (Lead Ads instant forms) and RSVP specs are all for products we do not run. |
 | **`/reachestimate` audience sizing** | **Evaluated 2026-09-09, low value here.** It returns an audience-size RANGE for a targeting spec. Three reasons it earns little: (1) the live ad set runs `targeting_optimization: expansion_all` with `advantage_audience: 1`, so the stated targeting is not the audience Meta will actually use — an estimate of the stated spec measures the wrong thing; (2) Ads Manager already shows this during ad set creation, which is when the decision is made; (3) `estimated_audience_size` is not exposed through the Ads MCP, so it would need a raw Graph call for a number nobody acts on. **The valuable half of that doc is `targeting` itself**, which IS readable (alias `targeting_spec`) and is NOT stored — see §10. Capture the spec, not the estimate. Note also that the doc's opening line, ads in WhatsApp Status, is a placement choice rather than infrastructure; we own the WABA, so it is available, but it needs nothing built. |
+| **Click-to-WhatsApp ad conversion reporting (CAPI for Business Messaging)** | **Owner declined 2026-09-21**, asked directly: he does not want ad-started WhatsApp conversations measured. Proposed as #3 of OpenClaw's five CAPI proposals (§27.5). The plumbing is already half there and stays there harmlessly — `whatsapp_inbound.referral jsonb` exists and `api/_wamafy.js:141` forwards the provider's `referral` object — so if a click-to-WhatsApp ad ever runs, the ad-click id (`ctwa_clid`) would be captured without new work. Measured 2026-09-21: **0 of 20 inbound rows carry a referral and no `raw` payload contains "ctwa"** — which reflects our never having run such an ad, NOT the provider dropping the id. Do not read that zero as a bug, and do not re-propose the reporting layer. |
 | **Auto-applying recommendations** | The API makes it easy and it is the one automation to argue against. The whole point of measuring your own CPA is to decide for yourself rather than accept Meta's projection. Meta's example actions raise budgets and broaden targeting to US/CA/GB. |
 | **Campaign / ad-set rollup views** | The panel is ad-level only. `campaign_id`, `adset_id` and their names are stored on every row, so a rollup is a query change, not a rebuild. |
 | **Any write to Meta's ad objects** | The stored token is `ads_read`. Creating/pausing/editing ads is not possible and is not wanted. |
@@ -2662,11 +2663,49 @@ Not commitments — a menu, roughly in order of value.
    push is the only surface for either, so a missed notification is invisible —
    which is exactly why `meta_ad_guardrail_events` is written even when the push
    fails.
-2. **Surface creative fatigue in the panel.** A `creative_fatigue` event plus the
+2. **Record measurement-quality history automatically.** *Owner said yes,
+   2026-09-21.* Today Meta's match-quality score (EMQ) is only ever read by hand,
+   and §27.1 shows why that fails: it went **8.0 (3 Sep) → 9.3 (8 Sep) → 8
+   (21 Sep)** and the drop sat unnoticed for two weeks, found only because
+   someone happened to re-run the call. The graded key set changed underneath us
+   too — `fbc` left the feedback list, `ln` arrived at 33.3%.
+
+   **Nothing blocks this, which makes it the only proposal of the five that is
+   purely build work.** Access is proven: `ads_get_dataset_quality` on dataset
+   `28370453785913523` returned live metrics on 2026-09-21 with the token we
+   already hold — the docs' `ads_read` + `ads_management`/`business_management`
+   worry did not materialise. **Verify with a real call, not this sentence**, the
+   same rule as everything else in §9.
+
+   Shape it as an extension of the watchdog that exists, not a new system:
+   - Collect per event: `composite_score`, each `match_key_feedback` coverage %,
+     and `data_freshness.upload_frequency`. Store one row per dataset per event
+     per run so a history accumulates from day one — the point is the **trend**,
+     which cannot be backfilled (§"build for future scale").
+   - Fold it into `meta-signal-watchdog` (§22) and its `meta_signal_checks`
+     table rather than a new cron. It already runs daily at 09:11 IST, already
+     holds a Graph token, and already answers "is Meta receiving our sales?" —
+     this is the same question one layer up. **Daily, not more often** (§8,
+     owner's standing call on every Meta cron).
+   - **Only Purchase and Lead will ever have a score.** The five browser-only
+     events (`InitiateCheckout`, `PageView`, `ViewContent`, `AddToCart`,
+     `ReachedPricing`) returned no `event_match_quality` block at all, because
+     EMQ needs a server counterpart. A panel that renders five permanently empty
+     rows looks broken; render only what is scored, and label the rest
+     "browser-only, not scored" rather than blank.
+   - **A missing score at our volume means "unavailable", never "failed."** The
+     composite is computed over very few events, so one low read is noise, not
+     decay. Alert on a sustained move, not a single point — and state the small
+     sample once rather than suppressing the chart (§"build for future scale").
+   - Do **not** rebuild `ln` handling in response to its 33.3%. That is customer
+     typing, explained at `_shared/metaCapi.ts:174`, and confirmed against our
+     own rows (§27.2).
+
+3. **Surface creative fatigue in the panel.** A `creative_fatigue` event plus the
    7-day decay already in `meta_ad_daily` is a complete story with no extra API call.
-3. **Campaign / ad-set rollup** in Growth ▸ Ads. Pure query work.
-4. **A lookalike audience**, once `customers_completed` crosses ~100 matched.
-5. **Deprecation watch.** `API_VERSION` is pinned in **FIVE** places as of
+4. **Campaign / ad-set rollup** in Growth ▸ Ads. Pure query work.
+5. **A lookalike audience**, once `customers_completed` crosses ~100 matched.
+6. **Deprecation watch.** `API_VERSION` is pinned in **FIVE** places as of
    2026-09-09 — `meta-ads-sync`, `meta-audience-sync`, `meta-ads-alerts`,
    **`meta-insights-features`** and **`_shared/metaCapi.ts:60`** — and they must
    move together. **This list has now been wrong three times** (three, then
@@ -6941,3 +6980,201 @@ convention §14 records. Replaying the repo gives the same end state, except tha
   §23.
 - **Never reconcile against `event_total_counts`.** It is not the hourly counts,
   and reading it produced the false 80%. §22.
+
+## 27. The five CAPI proposals, and what live checks settled — 2026-09-21
+
+OpenClaw's `capi-proposals` job (report:
+`~/.openclaw/workspace/reports/2026-09-21-capi-proposals.md`) read the
+Conversions API docs against the repo and returned **five ranked proposals, no
+defects**. Its workers have no live access, so every proposal ended with an
+"unknown until someone checks the account/database" caveat. This section records
+what those checks actually returned, so nobody pays to re-derive it.
+
+**All numbers below measured 2026-09-21. Read-only checks: two prod SELECTs and
+two Meta dataset reads. Nothing was changed, deployed or pushed.**
+
+### 27.1 Dataset Quality — access CONFIRMED, and it already tells us something
+
+The proposal's blocking dependency was whether our authorization can read the
+Dataset Quality API at all (the docs list `ads_read` + `ads_management` or
+`business_management`, and the handoff's CAPI token does not establish those).
+
+**It works today.** `ads_get_dataset_quality` on dataset `28370453785913523`
+returned real metrics, so proposal #1 is buildable without any new permission:
+
+| Event | EMQ | Notes |
+|---|---|---|
+| Purchase | **8** / 10 | `data_freshness: real_time` |
+| Lead | **8** / 10 | `data_freshness: real_time` |
+| InitiateCheckout, PageView, ViewContent, AddToCart, ReachedPricing | *(none)* | no `event_match_quality` block at all |
+
+**EMQ HAS MOVED, AND WE ONLY NOTICED BY ACCIDENT — this is the case for #1.**
+Three point reads now exist, and nothing recorded them automatically:
+
+| Date | Purchase EMQ | How it was read |
+|---|---|---|
+| 2026-09-03 | 8.0 | Events Manager, by hand |
+| 2026-09-08 | **9.3** | `ads_get_dataset_quality`, by hand |
+| 2026-09-21 | **8** | `ads_get_dataset_quality`, by hand (this check) |
+
+The per-key list changed too: on 8 Sep the below-100% field was **`fbc`** (33%
+Lead / 50% Purchase) and `ln` was not listed at all; today `fbc` is absent from
+the feedback and **`ln` appears at 33.3%**. So both the composite and the set of
+keys Meta grades us on drift between reads.
+
+Nobody is watching this. A 9.3 → 8 move went unrecorded for two weeks and was
+found only because someone happened to run the call again. **That is precisely
+the gap proposal #1 closes, and it is the strongest argument in the report** —
+stronger than the report itself could make, because its workers could not read
+the number twice. Note also that the memory note asserting "EMQ is 9.3/10 as of
+2026-09-06" is now stale as a statement of current health.
+
+One caveat to state once: at our volume the composite is computed over very few
+events, so a single-point drop is not proof of decay — which is itself the
+argument for a history rather than another one-off read.
+
+Match-key coverage on Purchase and Lead, both **100%**: email, phone,
+`ip_address`, `user_agent`, `fbp`, `external_id`, `country`, `fn`, `ct`.
+The **only** field below 100% is `ln` (last name) at **33.3%** — see §27.2.
+
+Two things worth keeping:
+
+- **EMQ exists only for events with a server counterpart.** The five
+  browser-only events returned no score. So an EMQ history card would chart
+  Purchase and Lead and nothing else — not a fault, but don't build a panel that
+  shows five empty rows and looks broken.
+- `ads_get_dataset_details` also reports `is_active: true`,
+  `first_party_cookie_enabled`, `data_use_setting:
+  advertising_and_analytics`, and `gateway_status: NOT_ONBOARDED` (Conversions
+  API Gateway unused — correct, we send our own). `server_last_fired_time` was
+  ~26h behind `last_fired_time`, which at our volume just means no sale that
+  day, not a broken sender.
+
+### 27.2 The `ln` 33.3% is real, understood, and NOT a bug — but the code comment is stale
+
+`splitName()` in `supabase/functions/_shared/metaCapi.ts:174` deliberately sends
+no `ln` for a single-word name, because Meta scores an empty field as
+supplied-but-unmatched. Meta's 33.3% is therefore measuring our customers'
+typing, not our code.
+
+Confirmed independently against our own rows — and the two agree closely, which
+is a nice end-to-end check that the `user_data` pipeline sends what we think:
+
+| Scope | n | has a second name part |
+|---|---|---|
+| All applications with a name | 310 | 29.0% |
+| Paid only (`advance_paid`/`fully_paid`) | 125 | **34.4%** |
+| Paid, last 60 days | 72 | 31.9% |
+
+Meta's measured `ln` coverage 33.3% ≈ our 34.4% on paid rows. **The comment on
+`metaCapi.ts:173` claims "45% of our bookings carry a second name part" — that
+is stale; the real figure is ~34% of paid bookings, ~29% of all.** The comment
+is wrong about a measured number, which is the kind of thing that later gets
+quoted as fact. Fixing it is a one-line comment edit, owner's call.
+
+The only way to move `ln` is to ask for first and last name as two fields at
+booking, which trades a small EMQ gain against a longer form on a mobile
+checkout. Not proposed.
+
+### 27.3 Parameter Builder / IPv6 — no live evidence of anything to gain
+
+The proposal rests on the docs' "IPV6 is preferable over IPV4 for IPV6-enabled
+users". Measured, over every `payu_payments` row that has an IP:
+
+- **0 of 37 stored `client_ip` values are IPv6. All 37 are IPv4** (samples are
+  Jio/Airtel mobile ranges, `152.57.x.x`, `122.183.x.x`).
+
+So the header our edge actually receives is IPv4, always. A browser-side helper
+could in principle discover an IPv6 address the server never sees — but only via
+its optional `getIpFn`, i.e. **an external address-lookup service**, with the
+cost and privacy trade-off that implies. Meanwhile `ip_address` coverage is
+already **100%** at EMQ 8 (§27.1), so there is no measured deficit to close.
+**Weakest of the five on current evidence. Deno compatibility never even had to
+be settled.**
+
+### 27.4 `client_ip` NULL on 80% of payment rows — checked, NOT a defect
+
+The IPv6 query surfaced `client_ip` null on 152 of 189 `payu_payments` rows,
+which looks alarming. It is purely historical — the columns were added
+mid-August:
+
+| Month | payments | with_ip | with_ua | with_fbp | with_fbc |
+|---|---|---|---|---|---|
+| 2026-06 | 54 | 0 | 0 | 0 | 0 |
+| 2026-07 | 36 | 0 | 0 | 0 | 0 |
+| 2026-08 | 87 | 25 | 25 | 16 | 3 |
+| 2026-09 | 12 | **12** | **12** | **12** | 3 |
+
+September is **12/12** on IP, user-agent and `fbp`. Capture is healthy.
+Low `fbc` is expected and not a fault: `fbc` only exists when someone arrived by
+clicking an ad, and we are barely running ads. **Recorded so the next person who
+runs that query doesn't re-open it as a bug.**
+
+### 27.5 Business Messaging / `ctwa_clid` — untestable, for the right reason
+
+The proposal hoped our raw referral JSON already retains the click-to-WhatsApp
+ad id. Measured on `whatsapp_inbound` (20 rows):
+
+- **0 rows with a non-null `referral`**, and **0 rows whose `raw` contains
+  "ctwa"** anywhere.
+
+The `referral jsonb` column exists (`20260901_whatsapp_inbound.sql:24`) and
+`api/_wamafy.js:141` forwards `d?.referral`. **This does not show the provider
+drops the id — it shows we have never run a Click-to-WhatsApp ad, so there has
+never been a referral to store.** Absence of the cause, not evidence of a
+failure.
+
+**DECIDED 2026-09-21: the owner declined this, asked directly — he does not want
+ad-started WhatsApp conversations measured.** So the open question is moot and
+should not be reopened; recorded as a row in §12. The existing capture stays as
+it is (it costs nothing and needs no work), which means if a click-to-WhatsApp
+ad is ever run, `ctwa_clid` lands in `referral` on its own.
+
+### 27.6 Where the other two stand
+
+- **Revenue Optimization (#4)** — the report itself calls it a clarity
+  extension, not missing plumbing: value and INR already agree browser/server
+  and the ad goal is already displayed (`AdminPanel.tsx` goal label). Nothing to
+  verify live; it is purely "would this comparison help you".
+- **Append Attribution (#5)** — still blocked on limited-beta access, and on the
+  one thing the code genuinely cannot supply: **actual ad-click time.**
+  `src/attribution.ts` stores `landed_at`, which is site-arrival time, and
+  `buildFbc()` at `metaCapi.ts:189` already uses it as the `fbc` timestamp.
+  Confirmed present, confirmed *not* the same thing. Do not relabel it.
+
+### 27.7 Verified citations, and one correction to how the report reads
+
+Every `file:line` the report cited was checked in the **real** folder (it read
+`~/OpenClaw-Workspace/chapter-copy`). All substantive claims hold; line numbers
+drift by a few. Specifically confirmed present: `_fbp` cookie handling
+(`src/metaPixel.ts`), IP + UA forwarding (`metaCapi.ts:316-317`), per-payment
+IP/UA/fbp/fbc persistence (`create-payu-order/index.ts:734`), attribution
+capture with unsubstituted-macro rejection (`src/attribution.ts`), and the
+watchdog's `debug_token` + `/stats` reads (`meta-signal-watchdog/index.ts`).
+
+**Conversion Leads stays demoted** — Instant-Forms-only per the docs, and the
+owner declined lead ads on 18 September (§ recorded at `META-ADS-HANDOFF.md`
+line ~4348). Not reopened here.
+
+### 27.8 Net read
+
+Of five proposals, live checks **promoted one and demoted one**:
+
+- **#1 Dataset Quality is stronger than the report could claim** — access is
+  proven, metrics are real, and the very first read already produced a usable
+  number (`ln` 33.3%) plus a stale-comment correction. It is the only one of the
+  five with zero unresolved dependencies.
+- **#2 Parameter Builder is weaker than ranked** — zero IPv6 in the wild, IP
+  coverage already 100%, and any upside needs a paid third-party IP service.
+- **#3 Messaging — DECLINED by the owner 2026-09-21.** Closed, not deferred; §12.
+- **#4/#5** unchanged: a clarity nicety, and a beta-gated model needing click
+  time we do not have.
+
+**Decisions taken on this report, 2026-09-21:** #1 accepted and written up as a
+to-do (§13 item 2); the stale 45% name comment corrected in
+`_shared/metaCapi.ts` (comment only — **no behaviour change, so no redeploy is
+owed**, despite the `_shared/` bundling rule in §9); #3 declined; #2 left
+unranked-down but not pursued; #5 explained to the owner and not pursued.
+
+Nothing here was implemented. Per the golden rule, implementation of any
+proposal is a separate owner decision.
