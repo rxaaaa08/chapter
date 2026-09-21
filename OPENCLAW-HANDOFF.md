@@ -547,6 +547,64 @@ Run these again after ANY change to models, agents or policy. They are cheap.
    Then set the resume state to status "completed" with authorized false. Then give a short plain-language summary in chat and STOP. Do not start anything else.
    ```
 
+11d. **THE PROPOSALS JOB — the Phase C that was cut out of 11c, as its own run. Drafted 2026-09-21, NOT YET RUN.** Owner's call: `capi-full` ran A+B only, and its ranked NOT USED list is the input here.
+   - **Why it is a separate job at all:** Phase B ranked capabilities from titles and headings without opening a single page, which is cheap but thin. This job's whole purpose is to actually read those pages — so its ranking is allowed to **overrule** Phase B's. It may demote one capability and take the next down the list, provided it records the page evidence that demoted it. A demotion is a result, not a failure.
+   - **The failure mode it is built against:** proposing to build something that already exists. This project carries far more Meta and messaging plumbing than a first read suggests, so the prompt makes checking the existing code a numbered step, with the exact greps. ⚠ It also warns that **the migration FILES are an incomplete record of the live database** (`META-ADS-HANDOFF.md` §24 item 8: 273 applied vs 190 files), so a missing file is never evidence a table does not exist — the job must say "not found in the repo" and leave it to the owner.
+   - **Two owner rules written into it explicitly**, because a generic model breaks both: **low volume is not an argument against laying plumbing** (data not captured on day 1 cannot be backfilled — say the caveat once and still propose it), and **never tell him to launch, spend or move faster.** He sets the pace.
+   - **The verifier gets facts only, never the recommendation.** "Meta requires X" and "we already have Z at `file:line`" are checkable; whether something is worth building is the owner's judgement, and sending it to a verifier would dress an opinion up as a verdict.
+
+   ```
+   JOB "capi-proposals" — read-only. Follow AGENTS.md exactly. This is the follow-up to "capi-full": turn its ranked list of unused capabilities into real proposals. Read-only; propose, never build.
+
+   STEP 0 — RESUME STATE FIRST, BEFORE ANY OTHER WORK.
+   Follow /Users/krutesh/.openclaw/workspace/resume/resume-state-contract.md and write /Users/krutesh/.openclaw/workspace/resume/resume-state.json with: schemaVersion 1, jobId "capi-proposals", authorized true, status "running", checkpointVersion 1, checkpointPath "/Users/krutesh/.openclaw/workspace/reports/2026-09-21-capi-proposals-progress.md", attemptStartedAt = now. Say in ONE line that you wrote it.
+
+   STEP 1 — Run chapter-refresh-copy. Then read:
+     /Users/krutesh/OpenClaw-Workspace/chapter-copy/META-AUDIT-CONTEXT.md   (in full — §2 is the business, §3 is what not to re-litigate)
+     /Users/krutesh/.openclaw/workspace/reports/2026-09-21-capi-full.md     (section 3 only — the capability table and the ranked NOT USED list)
+   Paste META-AUDIT-CONTEXT §1 and §3 into EVERY worker task.
+   **Intermediate files go in ~/.openclaw/workspace/reports/working/**, never beside the final report.
+
+   WHAT TO PROPOSE
+   Take the **top 5** from that ranked NOT USED list. The ranking was made from titles and headings only, so it is a starting point, not a verdict.
+   **You may demote one.** If reading a capability's actual pages shows it does not deserve a proposal for this business, say so in two lines, drop it, and take the next one down the list. Record every demotion and why — a demotion backed by the real pages is a useful result, not a failure.
+
+   FOR EACH capability, in this order:
+   1. **Read its actual pages properly.** This is the new information this job exists to gather — capi-full deliberately read none of them.
+   2. **Check what already exists here before claiming anything must be built.** This project has more Meta and messaging plumbing than a first read suggests. Cheap ways to find out, from the project copy:
+      `grep -rl "<keyword>" /Users/krutesh/OpenClaw-Workspace/chapter-copy/supabase/functions/`
+      `ls /Users/krutesh/OpenClaw-Workspace/chapter-copy/supabase/migrations/`
+      `grep -rl "<keyword>" /Users/krutesh/OpenClaw-Workspace/chapter-copy/src/`
+      **A proposal that says "we would need to build X" when X already exists is the worst failure mode of this job.** ⚠ The migration FILES are an incomplete record of the live database (see below), so absence of a file is NOT evidence a table does not exist — say "not found in the repo" and leave it for Krutesh, never "does not exist".
+   3. Write the proposal, at most **12 lines**, in this shape:
+      - **What it is** — plain language, no Meta jargon. Krutesh is a no-code founder; define every term on first use.
+      - **What it would do for chapter அ specifically** — tied to this business, not to businesses in general.
+      - **What we would have to build**, and what already exists (with `file:line` or a table name where you found it).
+      - **What it depends on** — Meta-side setup, eligibility, an account or permission, another capability first.
+      - **Confidence, and what would prove you wrong.** Say plainly when the pages do not settle something.
+
+   RULES OF JUDGEMENT
+   - **Volume is not an argument against laying plumbing.** The business runs ~6–12 ticket purchases a month. If a capability only pays off at higher volume but the data has to be captured from day one to be usable later, **say that plainly and still propose it** — data not captured is gone and cannot be backfilled. Equally, do not dress a low-volume capability up as urgent.
+   - **Do not tell Krutesh to launch, spend, or move faster.** He sets the pace. Propose what could be built; the timing is his.
+   - **Flag anything needing his judgement rather than deciding it** — cost, brand, whether a channel is wanted at all.
+   - **No build plans, no code, no schemas.** A proposal says what and why, not how.
+
+   REPLY CAPS. Every worker task: at most 8 items, at most 3 lines each. Split the five capabilities between Researcher A (openai/gpt-5.6-luna) and Researcher B (anthropic/claude-sonnet-5); never give both the same one by accident.
+
+   VERIFICATION. Send the verifier only the factual claims — "Meta requires X", "this capability does Y", "we already have Z at file:line" — never the recommendation itself. A proposal's *judgement* is yours and Krutesh's, not the verifier's. It answers CONFIRMED / REJECTED / UNCERTAIN.
+
+   BUDGET. Check with `chapter-budget` before each capability. Do NOT run `openclaw models status` — it is not allowlisted and stalls ~90s. If a limit stops you: save finished proposals to the -working file, update progress, set waiting_for_limit with blockedProvider and the exact reset time, stop cleanly.
+
+   FINAL REPORT — /Users/krutesh/.openclaw/workspace/reports/2026-09-21-capi-proposals.md
+     1. One-paragraph summary a busy person can read in 20 seconds.
+     2. The proposals, ranked, best first — and say what the ranking is by (effort, likely gain, or dependency order — name which).
+     3. Demoted capabilities and why, with the page evidence that demoted them.
+     4. What needs Krutesh's decision, as a short list of actual questions.
+     5. What is uncertain, including anything the pages did not settle.
+     6. "How this run went" — what worked, what was blocked, whether a limit stopped you.
+   Then set the resume state to completed with authorized false, give a short plain-language summary in chat, and STOP.
+   ```
+
 12. **When the report lands, run `/openclaw-fixes` in an interactive Claude session.** That skill (`.claude/skills/openclaw-fixes/SKILL.md`, created 2026-09-20, **uncommitted**) reads the newest report straight off disk — the owner never copies anything — re-checks each finding against the *current* code (reports go stale and researchers make mistakes: three in the safety review), settles UNCERTAIN findings by running the test OpenClaw is forbidden to run, then fixes with his approval and hands to `/ship`.
 
 13. **PARTLY DONE 2026-09-20 — the gate's DECISION LOGIC is now proven, 16/16, at zero model cost.** A standalone harness runs `resume-gate.js` with shimmed OpenClaw globals (`trigger`, `exec`, `json`) so it never touches the real state file and never fires the automation. **Preserved at `~/.openclaw/workspace/resume/gate-harness.mjs` — re-run after ANY change to the gate with `node ~/.openclaw/workspace/resume/gate-harness.mjs`.** All 16 pass: idle · empty file · malformed JSON (`gate-error`) · `authorized:false` · `ready` FIRES · `running` blocked · `waiting_for_limit` with a future reset blocked (`limit-window-pending`) · with a past reset FIRES (`limit-window-reached`) · with no `notBefore` blocked (`limit-window-unknown`) · completed/paused/waiting_for_user blocked · **`checkpointPath` outside `reports/` rejected (path-traversal guard works — `/etc/passwd` refused)** · `checkpointVersion 0` rejected · `schemaVersion 2` rejected · **duplicate suppression confirmed (fires once, second tick returns `already-fired`)**. It fails closed on every malformed input.
