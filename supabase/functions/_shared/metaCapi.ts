@@ -170,7 +170,14 @@ export function normaliseNamePart(raw: string | null | undefined): string | null
 
 // "Krutesh A" → { fn: 'krutesh', ln: 'a' }. Single-word names give fn only —
 // sending a blank ln is worse than sending none (Meta scores empty fields as
-// supplied-but-unmatched). 45% of our bookings carry a second name part.
+// supplied-but-unmatched).
+//
+// MEASURED 2026-09-21: ~34% of PAID bookings carry a second name part (43/125),
+// ~29% across all named applications (90/310). Meta's own `ln` coverage read
+// 33.3% the same day, which agrees closely and is a useful end-to-end check
+// that this function sends what we think it does. `ln` is the ONLY match key
+// below 100% — that is our customers' typing, not a defect here.
+// (This comment previously claimed 45%; that number was never re-measured.)
 function splitName(full: string | null | undefined): { fn: string | null; ln: string | null } {
   const parts = (full ?? '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return { fn: null, ln: null };
