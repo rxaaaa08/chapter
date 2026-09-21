@@ -6236,6 +6236,82 @@ for a lawyer, not for code. Worth half an hour of a lawyer's time before scale;
 the code change is small once there is an answer.
 
 
+### Customer Information Parameters, 6-page audit — 2026-09-21 (OpenClaw pilot, verified here)
+
+First real OpenClaw audit (`~/.openclaw/workspace/reports/2026-09-21-capi-small.md`).
+Six pages, one question: does what we send match the spec? Every claim below was
+**re-verified against the live repo in an interactive session** before being
+written here. **Nothing is fixed yet — these are findings awaiting the owner's
+decision.**
+
+1. **`client_user_agent` can be omitted, and Meta calls it required. REAL.**
+   Meta: *"The `client_user_agent` is required for website events shared using
+   the Conversions API"* (`05 Parameters/04 Customer Information Parameters/01
+   Customer Information Parameters.md:51`). We assign it conditionally —
+   `if (p.userAgent) user_data.client_user_agent = p.userAgent;`
+   (`_shared/metaCapi.ts:317`) — while every event is `action_source: 'website'`.
+   Delayed and retry paths feed it from stored values
+   (`payu-webhook:963`, `verify-pending-payments:959`, `capi-lead:216`), so a
+   missing stored UA silently drops a required field. Never substitute PayU's
+   user agent: it would assert the wrong browser identity.
+   **MEASURED AGAINST PRODUCTION 2026-09-21 — already solved in practice, do NOT
+   "fix" the code.** Capture went live **21 Aug** (`payu_payments.client_user_agent`,
+   first row 2026-08-21 16:37 UTC) and **27 Aug** (`applications.lead_user_agent`).
+   Coverage by month — payments: Jun 0/54 · Jul 0/36 · Aug 25/87 · **Sep 12/12**;
+   applications: Jun 0/132 · Jul 0/58 · Aug 3/108 · **Sep 12/12**. Since 20 Aug
+   only **1 of 38** payments lacks one. The all-time "80% / 95% missing" figures
+   are almost entirely rows written **before the columns existed** — a trap worth
+   naming, because the headline number looks alarming and means nothing.
+   **Therefore the conditional `if (p.userAgent)` is a correct safety net, not a
+   bug:** the only rows it can still drop are pre-August ones, and sending a
+   fabricated or PayU-derived user agent would be worse than sending none.
+   **Residual exposure:** a pre-August unpaid lead converting later. Low volume,
+   shrinking, and not worth a code change. What *would* earn its keep is an alarm
+   if coverage ever falls back below ~95% — not built, owner's call.
+   **Caveat:** September is 12 payments and 12 applications — a small sample, and
+   100% of a small number is weaker evidence than it looks. The 21-Aug→Sep trend
+   is what carries the conclusion, not the September figure alone.
+
+2. **Accent stripping diverges from Meta's own example. REAL — but the fix is
+   two-sided, and that is the important part.** Meta: *"Input: Valéry /
+   Normalized format: valéry"* (same file, line 41, the `fn` row). We lowercase,
+   NFD-decompose, strip combining marks, then drop everything outside a–z
+   (`_shared/metaCapi.ts:163-168`), so `Valéry` → `valery` — a different SHA-256.
+   **⚠ `src/metaPixel.ts:185-186` does the IDENTICAL normalisation**, so browser
+   and server currently agree with each other while both differ from Meta.
+   **Changing the server alone would break the browser/server 1:1 match** that
+   the [[meta-capi-audit-2026-09]] work established and that EMQ 8.0 rests on.
+   Either both sides change together, or neither does.
+   **CLOSED 2026-09-21 — owner's decision: not worth fixing.** The business is
+   India-only and Indian names written in the Roman alphabet essentially never
+   carry combining accents, so the affected population is near zero, against a
+   two-file coordinated change that risks the browser/server match if either half
+   is missed. Deliberate accepted deviation, not an oversight. Re-open only if
+   the customer base stops being India-only.
+
+3. **Phone normalisation assumes an Indian 10-digit number. CLOSED 2026-09-21 —
+   owner confirmed the business is India-only, so this is correct behaviour, not
+   a defect. Do not re-open it.** `_shared/metaCapi.ts:87-93` strips non-digits, takes the last ten and
+   prefixes `91`; `CLAUDE.md` confirms phones are stored as bare last-10-digits.
+   Correct for Indian mobiles; a non-Indian number is silently relabelled Indian.
+   Meta requires a country code and no leading zeros. **Decide whether the
+   business is India-only** before treating this as a defect.
+
+4. **A 200 with no `events_received` counted as a successful send. FIXED AND DEPLOYED 2026-09-21.** Found by the full audit as candidate A-1; the verifier REJECTED it as a *documented requirement* violation (Meta's quote is about Events Manager, not a mandatory parser rule) and was right, but the narrow code observation was true. `_shared/metaCapi.ts` checked `received === 0 || messages.length > 0`, so an **absent** count passed both tests and fell through to the success log as `events_received=?` — visible, but recorded as sent, which is the one outcome that parser exists to prevent.
+   Now a non-numeric count logs `200 WITHOUT A COUNT` and returns false. **Checked before changing it:** Purchases discard the boolean (`sendPurchaseToMeta` returns `void`), so the three payment functions change only their log line; `capi-lead` is the only behavioural change, and there failing is the safe side — it leaves `lead_reported_at` unstamped so the sweep retries with the **same `lead_id`, which Meta deduplicates** (the code's own comment says so).
+   **Deployed to all five importers** with `--no-verify-jwt`: `capi-lead` v9→10, `meta-audience-sync` v9→10, `verify-pending-payments` v36→37, `payu-webhook` v64→65, `payu-callback` v69→70. Every `verify_jwt` re-read as `false` afterwards, every `ezbr_sha256` changed, and an unauthenticated GET returns 302/200 — **not 401** — on all five, which is the check that proves payments still work.
+
+**A negative result worth keeping:** Researcher A found no contradictions in
+`03 Using the API`, `05 Parameters/03 Server Event Parameters` or
+`12 Handling Duplicate Events`. That certifies nothing about runtime behaviour or
+browser/server deduplication — it only means those three pages raised no
+candidate against the field map.
+
+**Also settled, so nobody re-opens it:** `05 Parameters/02 Main Body Parameters.md`
+was deliberately excluded from the six and the co-manager objected. Checked
+directly — it holds exactly two rows, `data` (required) and `test_event_code`
+(optional), both already sent correctly. Nothing there.
+
 ## 24. Before the first ad spends — the checklist
 
 Written 2026-09-18, from the readiness check the founder asked for: *"can you
