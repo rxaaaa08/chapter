@@ -422,13 +422,27 @@ async function postEventToMeta(opts: {
       { events_received?: number; messages?: unknown[] } | null;
     const received = body?.events_received;
     const messages: unknown[] = Array.isArray(body?.messages) ? (body as any).messages : [];
+    // A 200 carrying no NUMERIC events_received is not a confirmed send: an
+    // unparseable body, or a response shape we don't know, lands here. It used
+    // to fall through to the success log as "events_received=?" — visible, but
+    // recorded as sent, which is the one outcome this parser exists to prevent.
+    // Found by the 2026-09-21 Conversions API audit (finding A-1).
+    // Failing is also the safe side for Leads: capi-lead leaves
+    // lead_reported_at unstamped and retries on the next sweep with the SAME
+    // lead_id, which Meta deduplicates. Purchases discard this boolean, so for
+    // them only the log line changes.
+    if (typeof received !== 'number') {
+      console.error('[meta-capi] 200 WITHOUT A COUNT — not treating as sent', tag,
+        'body=' + JSON.stringify(body));
+      return false;
+    }
     if (received === 0 || messages.length > 0) {
       console.error('[meta-capi] ACCEPTED BUT NOT COUNTED', tag,
         'events_received=' + String(received), 'messages=' + JSON.stringify(messages));
       return false;
     }
     console.log('[meta-capi] sent', tag,
-      'events_received=' + String(received ?? '?'), 'keys=' + sentKeys);
+      'events_received=' + String(received), 'keys=' + sentKeys);
     return true;
   } catch (err) {
     // A timeout is a different problem from a malformed payload, and saying which
