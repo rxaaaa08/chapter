@@ -6334,6 +6334,37 @@ Manager; the app only reads data and receives notifications (§23,
 7. **Stage the push deliberately.** `src/AdminPanel.tsx`, `src/AppFlow.tsx`,
    `src/attribution.ts` and `src/supabase.ts` carry several sessions' work;
    `git add -A` would ship all of it under one message. §18.
+8. **TODO: verify the live database structure — the written record is
+   INCOMPLETE.** Founder's ask, 2026-09-21: confirm the schema is sound before
+   the Meta system is fully live. Measured the same day: the live database
+   reports **273 applied migrations** while `supabase/migrations/` holds **190
+   files**, and since 2026-09-01 alone **16 migrations are applied live with no
+   file of that name in the repo** — `meta_ads_performance_ticket_count`,
+   `meta_ads_performance_sync_state`, `meta_audience_membership_security_note`,
+   `meta_audience_layer_guard_grants`, `meta_ad_guardrails_untagged_needs_capture`,
+   `meta_signal_watchdog_cron_timeout`, `meta_jobs_daily_retry_before_watchdog`,
+   `meta_adset_placements_unknown_is_a_finding`, `meta_placement_helpers_pin_search_path`,
+   `meta_pixel_config_verdict_array_append`, `ad_library_ingest_secret`,
+   `ad_library_ingest_secret_hashed`, `email_status_request_is_not_delivered`,
+   `whatsapp_click_tracking`, `whatsapp_sends_application_id`,
+   `whatsapp_sends_backfill_application_id`. Whether those are unsaved files or
+   renamed ones has **not** been investigated.
+   **Why this is a to-do and not a footnote:** the migrations folder is therefore
+   NOT a picture of the live schema, so anything that audits it instead of the
+   database can report "we never did X" when X has been live for weeks — the same
+   failure mode as the live-RPC drift in §14's notes. Several of the missing rows
+   are security changes (`*_guard_grants`, `*_security_note`), which is the worst
+   category to be wrong about.
+   **Where it must be done:** an interactive Claude session with the Supabase MCP.
+   `/check-db` runs Supabase's own security and performance linters and reads them
+   against this project's deliberate exceptions (`app_secrets`,
+   `meta_audience_membership`). **OpenClaw cannot do this** — its workers have live
+   connections disabled, no internet, and an 8-program shell with no `psql` or
+   `supabase`; it can only read the incomplete `.sql` files (`OPENCLAW-HANDOFF.md`
+   §6).
+   **Note this verifies what is already running, not a pre-deploy gate:** the Meta
+   database layer is live — **20 `meta*` tables and 39 meta functions in production
+   on 2026-09-21**. It is the admin panel that is unpushed, not the schema.
 
 ### What the push switches on (and what stays broken without it)
 
