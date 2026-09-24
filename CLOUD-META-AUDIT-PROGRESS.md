@@ -7,8 +7,14 @@ Two jobs, kept strictly separate:
 - **Part A — audit** of what is built, against Meta's own docs → `CLOUD-META-AUDIT.md`
 - **Part B — opportunities** in Meta's docs we have not built → `CLOUD-META-OPPORTUNITIES.md`
 
-## Constraints found before planning
-- The repo holds only the **Marketing API** docs (`docs/meta-marketing-api/`, 300 guide pages + 469 reference pages). The dedicated **Meta Pixel and Conversions API doc sets are not in the repo**, and this container's network refuses developers.facebook.com (proxy 403, checked 2026-09-24). Pixel/CAPI findings therefore cite in-repo passages where they exist, or doc passages already quoted in `META-ADS-HANDOFF.md` §23, and say "NO IN-REPO DOC" otherwise.
+## Doc sources (corrected 2026-09-24)
+- ~~The Pixel and Conversions API doc sets are not in the repo.~~ **Corrected:** the owner pushed them in `3ca17f3`. Everything is under `docs/meta-marketing-api/`:
+  - `guides/` (Marketing API, 300 pages) and `api-reference/` (469 pages)
+  - `conversions-api/` (193 pages) — **primary source for the CAPI areas**
+  - `pixel/` (21 pages) — **primary source for the Pixel area**
+  - `developer-docs-html/` (62 saved developer pages: dedup, advanced matching, rate limits, Dataset Quality API, value optimisation, Parameter Builder…) and `extra-pages-html/` (33 saved pages: lead ads, click-to-WhatsApp, Threads/Instagram ads, URL tags, error codes, troubleshooting). Researchers read plain-text copies made in the session scratchpad but cite the original `.html` path plus the quoted passage.
+- The container's network still refuses developers.facebook.com (proxy 403), so nothing is cited from outside the repo; with no in-repo passage a claim is marked "NO IN-REPO DOC".
+- All of these folders feed the inventory's docs map, the Pixel/CAPI audit areas, and every Part B theme.
 
 ## Phase status
 | Phase | Status |
