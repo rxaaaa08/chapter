@@ -1,0 +1,14 @@
+<!-- Source: https://developers.facebook.com/docs/marketing-api/reference/ad-account/capabilities | Saved: 2026-09-19 | From Meta's older docs site (this page has not moved to the new site yet), converted from the web page -->
+
+# Capabilities
+
+List of capabilities an ad account can have. Make an HTTP GET call to `act_{AD_ACCOUNT_ID}?fields=capabilities` endpoint in order to get all capabilities.
+
+**Note**: This endpoint remains accessible for legacy purposes. Although it offers additional functionalities beyond those listed on this page, the majority are designated for internal use only. It is advised to *avoid utilizing this endpoint or relying on its outcomes within your program*. Eventually, this endpoint will be phased out.
+
+| Capability | Description |
+| --- | --- |
+| CAN_USE_REACH_AND_FREQUENCY | Ability to buy [Reach and Frequency ads](https://developers.facebook.com/docs/marketing-api/reachandfrequency/) |
+| DIRECT_SALES | Direct sales are accounts run entirely by Facebook Employees on behalf of advertisers who have purchased an Insertion Order |
+| VIEW_TAGS | Ability to track impressions using third-party view tags |
+| ... and more | ... and more |

@@ -1,0 +1,10 @@
+<!-- Source: https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/call-to-action | Saved: 2026-09-19 -->
+
+# Add Call-To-Action
+
+
+
+As an option, you can provide a call-to-action (CTA) in `link_data` while [creating your Instagram Ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/get-started). If you do not provide a CTA, we use `LEARN_MORE` as the `type`, and the `link` from `link_data` as the `link`, to create a default. Not all types can be used for all ads. We are gradually introducing a new set of 6 campaign objectives in Ads Manager: awareness, traffic, engagement, leads, app promotion and sales. Check [Ads Product Guide](https://www.facebook.com/business/ads-guide/update) to see which type can be used based on the `objective` of your campaign.
+
+## Options
+You should not create `WEBSITE_CLICKS` ads that link to your Facebook Page or Instagram profile. This can result in API error and it also creates a poor advertising experience. For example, if you link to your Instagram profile, every one who is not logged in via their in-app browser will see a log in dialog again. To promote your Facebook Page with a Facebook ad, use `PAGE_LIKES` ads instead.

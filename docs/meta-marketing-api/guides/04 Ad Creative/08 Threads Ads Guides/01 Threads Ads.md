@@ -1,0 +1,227 @@
+<!-- Source: https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads | Saved: 2026-09-19 -->
+
+# Threads Ads
+
+
+
+**Warning:** Some updates to Threads Ads may not be available to all users yet.
+
+To run ads on Threads, you need a Threads account ID. You have three options for obtaining one:
+
+* [Instagram-associated Threads account](#instagram-associated-threads-accounts): A Threads account has an associated Instagram account with a matching username in the same Business Portfolio.
+    * **Note:** Businesses with an Instagram-associated Threads account created before January 29, 2026, will have their Threads account automatically added to their Business Portfolio with the same user access and permissions managed from the Instagram account. Developers can continue to use the same Instagram-associated Threads account IDs as they were using prior to January 29, 2026. New Threads accounts created after January 29, 2026, will need to be manually added to the Business Portfolio and managed like other account types.
+* [Instagram-backed Threads account](#instagram-backed-threads-accounts): An Instagram account runs ads on behalf of a Threads account created for that purpose.
+* [Page-backed Threads account](#page-backed-threads-accounts): A Facebook Page runs ads on behalf of a Threads account created for that purpose, similar to [Page-backed Instagram accounts](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/pages-ig-account#read) for Instagram.
+
+**Warning:** Make sure your Instagram account has the proper setup for [Instagram ads](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/pages-ig-account).
+
+### Limitations
+
+* You cannot run ads on Threads without an Instagram-associated, Instagram-backed, or Page-backed Threads account. For Instagram-associated and Instagram-backed accounts, you cannot run ads on Threads if the associated Instagram account cannot run ads on Instagram. For Page-backed Threads account, you cannot run ads on Threads if the Page-backed Instagram account from the same Page cannot run ads on Instagram.
+* You need to have at least an Advertiser role on the [Page that is linked to your Instagram account](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/pages-ig-account#via_page); Manager or Content Creator roles also work. Or you need to have the Instagram account [connected to a business account](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/ig-accounts-with-business-manager#claim_account) where you have the appropriate roles.
+* An Instagram account can have a link to only one Threads account ([Instagram-associated Threads account](#instagram-associated-threads-accounts)) in the Business Portfolio, as well as only one [Instagram-backed Threads account](#instagram-backed-threads-accounts). A Page can have only one [Page-backed Threads account](#page-backed-threads-accounts). Verify whether a specific Instagram account or Page has a Threads account of the type you want before attempting to create a new one. If one already exists, use that one.
+* We are keeping the volume of ads in Threads intentionally low as we test and learn, therefore expect that delivery to Threads will be low. You will see this reflected in your placement breakdown reporting if your campaign delivers on Threads.
+* Threads ads creation only supports images, videos, and carousel as the media format.
+* Ads cannot be created from an existing Threads post.
+
+## Instagram-associated Threads accounts
+
+### Permissions
+
+To make API calls with an Instagram-associated Threads account you need a user access token with the following permissions:
+
+* `instagram_basic`
+* `threads_business_basic`
+* `pages_read_engagement`
+
+If the app user was granted a role via the Meta Business Suite on the Page connected to your app user's Instagram professional account, your app will also need one of:
+
+* `ads_management`
+* `ads_read`
+
+**Note:** Anyone with access to create Instagram ads from the Instagram account can create Threads ads from the Instagram-associated Threads account.
+
+### Before you begin
+
+You need the following:
+
+* A business with the proper setup for [Instagram ads advertiser identities](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/pages-ig-account).
+* An Instagram account with a profile image that is not a [Private Account](https://help.instagram.com/138925576505882) and has the appropriate advertiser permissions (See [How do I connect my Facebook Page and Instagram account?](https://www.facebook.com/help/1148909221857370)).
+* A Threads account associated with an Instagram account through a matching username in the same Business Portfolio. You can set this up by following the [Threads Business Portfolio Instructions](https://www.facebook.com/business/help/1888797071720635). Businesses with an Instagram-associated Threads account created before January 29, 2026, will have their Threads account automatically added to their Business Portfolio with the same user access and permissions managed from the Instagram account. New Threads accounts created after January 29, 2026, will need to be manually added to the Business Portfolio and managed like other account types.
+
+### Get the Instagram-associated Threads account ID
+
+Once you connect a Threads account to a valid Instagram account, you can call the [`/<IG_USER_ID>/connected_threads_user` endpoint](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/connected_threads_user) to get the Threads account ID.
+
+#### Example request
+
+```html
+curl -G \
+  -d "access_token=<ACCESS_TOKEN>"\
+  -d "fields=threads_user_id" \
+"https://graph.facebook.com/v25.0/<IG_USER_ID>/connected_threads_user"
+```
+
+The result should be a Threads account object containing only the `threads_user_id`. Save this `threads_user_id` to use in your ads.
+
+## Instagram-backed Threads accounts
+
+If you don't have a Threads profile, you can still create and deliver ads in Threads using an Instagram-backed Threads account.
+
+These accounts are created with the API and function as if you are running ads *for* a Threads account, however a mock Threads account is created specifically to run those ads.
+
+**Warning:** You cannot log into Threads accounts created this way to manage posts.
+
+### Create an Instagram-backed Threads account
+
+You can create an Instagram-backed Threads account by sending a `POST` request to the [`/<IG_USER_ID>/instagram_backed_threads_user` endpoint](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user#edges).
+
+#### Example request
+
+```html
+curl \
+  -F "access_token=<ACCESS_TOKEN>"\
+"https://graph.facebook.com/v25.0/<IG_USER_ID>/instagram_backed_threads_user"
+```
+
+This returns a Threads account ID on success. If an Instagram account already has an Instagram-backed Threads account, the call returns the existing Instagram-backed Threads account ID. Save the returned ID to run your ads.
+
+### Get the Instagram-backed Threads account ID
+
+To see if an Instagram account has an Instagram-backed Threads account, send a `GET` request to the `/<IG_USER_ID>/instagram_backed_threads_user` endpoint.
+
+#### Example request
+
+```html
+curl -G \
+  -d "access_token=<ACCESS_TOKEN>"\
+  -d "fields=threads_user_id" \
+"https://graph.facebook.com/v25.0/<IG_USER_ID>/instagram_backed_threads_user"
+```
+
+This returns a Threads account object, if there is one. The object includes a `threads_user_id` that can be used to run Threads ads. If there is no Instagram-backed Threads account already set up, the API returns an empty response.
+
+## Page-backed Threads accounts
+
+If you don't have a Threads profile or an Instagram account, you can still create and deliver ads in Threads using a Page-backed Threads account, similar to Page-backed Instagram accounts for Instagram.
+
+**Note:** You should only use a Page-backed Threads account when you are using a Page-backed Instagram account for Instagram ads.
+
+You can create these accounts with the API and use them to create ads on Threads. These Threads accounts have the same name and profile picture as the related Page. If someone changes the Page name or profile picture, the Threads account is automatically updated.
+
+This approach functions as if you are running ads *for* a Facebook Page, however a mock Threads account is created specifically to run those ads.
+
+**Warning:** You cannot log into Threads accounts created this way to manage posts.
+
+### Create a Page-backed Threads account
+
+To create a Page-backed Threads account, you need to have at least an `ADVERTISER` role on the Page; the `MANAGER` or `CONTENT_CREATOR` roles also work.
+
+Additionally, your Page should not have a previously created Page-backed Threads account, as each Page can only have one Page-backed Threads account. If you already have a Page-backed Threads account, use the existing one. Check whether a specific Page has a Page-backed Threads account before you create a new one.
+
+You can create a Page-backed Threads account by sending a `POST` request to the `/<PAGE_ID>/page_backed_threads_accounts` endpoint.
+
+#### Example request
+
+```html
+curl -X POST \
+  -F "access_token=<ACCESS_TOKEN>" \
+"https://graph.facebook.com/v25.0/<PAGE_ID>/page_backed_threads_accounts"
+```
+
+This returns a Threads account ID on success. If a Page already has a Page-backed Threads account, the call returns the existing Page-backed Threads account ID. Save the returned ID to run your ads.
+
+### Get the Page-backed Threads account ID
+
+To see if a Facebook Page has a Page-backed Threads account, send a `GET` request to the `/<PAGE_ID>?fields=page_backed_threads_account_id` endpoint.
+
+#### Example request
+
+```html
+curl -G \
+  -d "access_token=<ACCESS_TOKEN>"\
+  -d "fields=page_backed_threads_account_id" \
+"https://graph.facebook.com/v25.0/<PAGE_ID>"
+```
+
+This returns a Threads account ID, if there is one. If there is no Page-backed Threads account already set up, the API returns an empty response.
+
+## Ad creatives with Threads accounts
+
+### Using Instagram-associated Threads accounts in ads
+
+You can use any ad account, either owned by an individual or by a business, as long as you have access, to create ads for Instagram-associated Threads accounts.
+
+When creating an ad creative, you should provide the `threads_user_id` and the `instagram_user_id` . The `instagram_user_id` of your ad creative must be for the Instagram account associated with this Threads account and with the matching username in your Business Portfolio. Businesses with an Instagram-associated Threads account created before January 29, 2026, will have their Threads account automatically added to their Business Portfolio with the same user access and permissions managed from the Instagram account. Developers can continue to use the same Instagram-associated Threads account IDs as they were using prior to January 29, 2026. New Threads accounts created after January 29, 2026, will need to be manually added to the Business Portfolio and managed like other account types.
+
+### Using Instagram-backed Threads accounts in ads
+
+You do not need to assign ad accounts to the Instagram-backed Threads account. When you provide an ad creative using an Instagram-backed Threads account, you can use any ad accounts that you have access to.
+
+Once an Instagram-backed Threads account is created, you can use its ID as the `threads_user_id` in your ad creative, as you do with other types of Instagram accounts. The `instagram_user_id` of your ad creative must be for the Instagram account associated with this Instagram-backed Threads account.
+
+### Using Page-backed Threads accounts in ads
+
+You do not need to assign ad accounts to the Page-backed Threads account. When you provide an ad creative using a Page-backed Threads account, you can use any ad accounts that you have access to.
+
+You need to have at least the `ADVERTISER` role on the Page backing this Page-backed Threads account. Similar to a Page-backed Instagram account, the `pages_read_engagement` permission is also required to be granted to the app.
+
+Once a Page-backed Threads account is created, you can use its ID as the `threads_user_id` in your ad creative. The `page_id` of your ad creative must be for the Page associated with this Page-backed Threads account.
+
+### Examples
+
+While the `instagram_user_id` must be included in the `object_story_spec` field, the `threads_user_id` can be included either in the `object_story_spec` field or on a higher level of the API call.
+
+#### Included in the `object_story_spec` field
+
+```html
+curl -X POST \
+  -F {
+    "name": "test",
+    "object_story_spec": {
+      "link_data": {
+        "link": "<LINK_URL>",
+        "call_to_action": {
+          "type": "WATCH_MORE",
+          "value": {}
+        },
+        "message": "<MESSAGE_TEXT>",
+        "image_hash": "<IMAGE_HASH>"
+      },
+      "instagram_user_id": "<IG_USER_ID>",
+      "threads_user_id": "<THREADS_USER_ID>",
+      "page_id": "<PAGE_ID>"
+    }
+  } \
+https://graph.facebook.com/v25.0/act_<AD_ACCOUNT_ID>/adcreatives
+```
+
+#### Included at a higher level
+
+```html
+curl -X POST \
+  - F {
+    "name": "test",
+    "object_story_spec": {
+      "link_data": {
+        "link": "<LINK_URL>",
+        "call_to_action": {
+          "type": "WATCH_MORE",
+          "value": {}
+        },
+        "message": "<MESSAGE_TEXT>",
+        "image_hash": "<IMAGE_HASH>"
+      },
+      "instagram_user_id": "<IG_USER_ID>",
+      "page_id": "<PAGE_ID>"
+    },
+    "threads_user_id": "<THREADS_USER_ID>"
+  } \
+https://graph.facebook.com/v25.0/act_<AD_ACCOUNT_ID>/adcreatives
+```
+
+## Next steps
+
+* [Threads Ads Creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation)
+* [Threads Carousel Ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation/carousel-ads)
+* [Threads Ads Insights](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/insights)
