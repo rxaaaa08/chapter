@@ -22,9 +22,9 @@ Two jobs, kept strictly separate:
 | 1. Inventory | DONE 2026-09-24 — 1 researcher; code map (Pixel, CAPI, 7 API pins, webhooks, audiences, catalog, panel RPCs, 37 migrations, cron order) + docs map (~995 pages, [REQ] pages flagged, HTML duplicates mapped). Notable: `_shared/metaCapi` has 5 real importers — the CLAUDE.md grep also matches 2 comments in meta-signal-watchdog; `retarget-check` has no Meta touchpoint; `api/webhook.js` pins WhatsApp Cloud API v19.0 (not ads). |
 | 2. Plan + plan review | DONE 2026-09-24 — plan reviewer (Opus) raised 26 points: 25 AGREED (one with modification), 1 DISAGREED. Final plan below. |
 | 3. Progress file | this file |
-| 4. Research (A + B) | Round 1 DONE 2026-09-24: 20 researchers (11 Part A, 9 Part B). Part A: 33 candidate defects + many checked-fine items; Part B: 45 candidate opportunities. Round 2 (thin areas + doc-first sweep of requirement pages) launching. |
-| 5. Verify | running in parallel with research: Opus verifier, batches of ~5 with one planted false claim each. Part A batch 1 back (2 CONFIRMED, 4 DISPROVED incl. the planted one); 14 more batches running. |
-| 6. Reports | not started |
+| 4. Research (A + B) | Round 1 DONE 2026-09-24: 20 researchers (11 Part A, 9 Part B). Part A: 33 candidate defects + many checked-fine items; Part B: 43 candidate opportunities. Round 2 (thin areas + doc-first sweep of requirement pages) launching. |
+| 5. Verify | Part B DONE: 9 batches, 43 real candidates → 9 VIABLE (after merging 2 duplicates), 7 NEEDS-OWNER-INPUT, 6 NOT-NEW, 20 NOT VIABLE; 9/9 planted non-ideas rejected. Part A: 7 of 8 batches back; final batch waits for round 2. |
+| 6. Reports | CLOUD-META-OPPORTUNITIES.md drafted (finding cross-references to be finalised with the audit report); CLOUD-META-AUDIT.md next. |
 
 ## Audited snapshot
 Repo at `782b6c8` on `cloud/meta-audit` (2026-09-24). This clone's history is squashed, so hashes quoted in the handoff do not resolve here and git cannot tell pushed from unpushed. A finding is called "live" only where `META-ADS-HANDOFF.md`'s own status notes say so.
