@@ -1,0 +1,97 @@
+<html><head><title>Promote Existing Posts as Threads Ads</title><meta charset="UTF-8" /><style nonce="UB1hICFi">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Promote Existing Posts as Threads Ads
+
+
+
+You can create Threads ads by promoting existing Facebook or Instagram posts. This allows you to use content that has already been published on Facebook or Instagram as an ad creative with media (image, video, or carousel) from the original post. Social engagement (likes and comments) on the Threads ad does not propagate back to the original post on Facebook or Instagram.
+
+### Supported Post Types &#123;#supported-post-types&#125;
+
+| Source platform | Supported media types |
+| --- | --- |
+| Facebook post | Image, Video, Image Carousel |
+| Instagram post | Image, Video, Image Carousel |
+
+## Before you begin
+
+Make sure you are familiar with the basic [Threads ads creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation) process and know how to [use posts as Instagram ads](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/use-posts-as-ads).
+
+### Limitations &#123;#limitations&#125;
+
+* Existing Threads organic posts cannot be promoted as ads.
+* Only image carousels are supported.
+* Boosting existing posts as partnership ads (branded content) are not supported for Threads.
+* Social engagement on the Threads ad does not propagate back to the original post on the source platform.
+* All standard [Threads ads media requirements](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#media-requirements) apply.
+* Media posts containing copyrighted music or interactive elements such as filters cannot be promoted.
+
+## Promote an existing Instagram post
+
+To promote an existing Instagram post as a Threads ad, you provide the `source_instagram_media_id` of the organic Instagram post in your ad creative, along with the required identity fields. This media should be [eligible to be boosted as an ad](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/use-posts-as-ads#ig-posts-step-2).
+
+### Example request
+
+```html
+curl -X POST \
+  -F &#039;source_instagram_media_id=&lt;IG_MEDIA_ID&gt;&#039; \
+  -F &#039;object_id=&lt;PAGE_ID&gt;&#039; \
+  -F &#039;instagram_user_id=&lt;IG_USER_ID&gt;&#039; \
+  -F &#039;threads_user_id=&lt;THREADS_USER_ID&gt;&#039; \
+  -F &#039;call_to_action=&#123;&quot;type&quot;: &quot;LEARN_MORE&quot;, &quot;value&quot;: &#123;&quot;link&quot;: &quot;&lt;LINK_URL&gt;&quot;&#125;&#125;&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+### Example response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+## Promote an existing Facebook post
+
+To promote an existing Facebook post as a Threads ad, you use the `object_story_id` (`&lt;PAGE_ID&gt;_&lt;POST_ID&gt;`) to identify the Facebook post, along with the required identity fields.
+
+### Example request
+
+```html
+curl -X POST \
+  -F &#039;object_story_id=&lt;PAGE_ID&gt;_&lt;POST_ID&gt;&#039; \
+  -F &#039;instagram_user_id=&lt;IG_USER_ID&gt;&#039; \
+  -F &#039;threads_user_id=&lt;THREADS_USER_ID&gt;&#039; \
+  -F &#039;call_to_action=&#123;&quot;type&quot;: &quot;LEARN_MORE&quot;, &quot;value&quot;: &#123;&quot;link&quot;: &quot;&lt;LINK_URL&gt;&quot;&#125;&#125;&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+### Example response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+## Create the ad
+
+Once you have the ad creative ID, use it to create an ad linking your ad set.
+
+### Example request
+
+```html
+curl -X POST \
+  -F &#039;name=&lt;AD_SET_NAME&gt;&#039; \
+  -F &#039;adset_id=&lt;ADSET_ID&gt;&#039; \
+  -F &#039;creative=&#123;&quot;creative_id&quot;: &quot;&lt;CREATIVE_ID&gt;&quot;&#125;&#039; \
+  -F &#039;status=PAUSED&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+  https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/ads
+```
+
+## Learn More
+
+* [Ad Creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/creative)
+* [Use Posts as Instagram Ads](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/use-posts-as-ads)
+* [Threads Ads Creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation)
+</pre></body></html>

@@ -1,0 +1,202 @@
+<html><head><title>Threads Ads Reply Moderation</title><meta charset="UTF-8" /><style nonce="peeunW6H">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Threads Ads Reply Moderation
+
+
+
+Reply moderation lets you manage the conversation on your Threads ads by reading replies, hiding inappropriate content, and adding your own replies. For general information about advertising on Threads, see the [Threads Ads overview](https://developers.facebook.com/docs/threads/threads-ads).
+
+### Limitations &#123;#limitations&#125;
+
+* Only direct replies to ad media are supported for both fetching and replying. Nested replies (replies to replies) are not available through either operation.
+* Only text replies can be added. Image, video, and carousel replies are not supported.
+* Supported ad types include single image ads, single video ads, carousel ads, Placement Asset Customization ads, static posts, and existing posts.
+* Unsupported ad types are Advantage+ catalog ads and boosted posts as well as ads created by Instagram-backed and Page-backed Threads accounts.
+
+## Before you begin
+
+You will need:
+
+* A Meta app with the Marketing API product enabled
+* An ad account with an active Threads ad
+* An ad of one of the supported ad types (see [Limitations](#limitations))
+
+### Permissions
+
+These permissions are required for the ad account that owns the ad:
+
+* `ads_read` — for reading ad media and replies
+* `ads_management` — for hiding and adding replies
+
+## Retrieve a Threads ad&#039;s media
+
+To retrieve a Threads ad&#039;s media and associated metadata, send a `GET` request to the `/&#123;media-id&#125;` endpoint with a comma-separated `fields` parameter to specify which fields to return.
+
+### Fields
+
+| Name | Description |
+| --- | --- |
+| `id`&lt;br&gt;&lt;br&gt;string | The Threads media ID. |
+| `caption`&lt;br&gt;&lt;br&gt;string | The text associated with the media. |
+| `like_count`&lt;br&gt;&lt;br&gt;integer | The number of likes on the media. |
+| `username`&lt;br&gt;&lt;br&gt;string | The username of the media owner. |
+| `reply_count`&lt;br&gt;&lt;br&gt;integer | For replies, the number of direct replies. For parent media, the total number of nested replies. |
+| `share_count`&lt;br&gt;&lt;br&gt;integer | The number of shares. |
+| `quote_count`&lt;br&gt;&lt;br&gt;integer | The number of quotes. |
+| `repost_count`&lt;br&gt;&lt;br&gt;integer | The number of reposts. |
+| `hide_status`&lt;br&gt;&lt;br&gt;string | The hide status of the reply.  &lt;br&gt;**Values:** `HUSHED`, `UNHUSHED`. |
+| `timestamp`&lt;br&gt;&lt;br&gt;string | The time the media was created, in ISO 8601 format. |
+| `media_url`&lt;br&gt;&lt;br&gt;string | The CDN URL for the media image or video. |
+| `media_type`&lt;br&gt;&lt;br&gt;string | The media type.  &lt;br&gt;**Values:** `IMAGE`, `VIDEO`, `CAROUSEL`. |
+| `gif_url`&lt;br&gt;&lt;br&gt;string | The CDN URL of an attached GIF, if available. |
+| `owner_profile_pic`&lt;br&gt;&lt;br&gt;string | The CDN URL for the owner&#039;s profile picture. |
+| `is_owner_verified`&lt;br&gt;&lt;br&gt;Boolean | Whether the media owner&#039;s account is verified. |
+
+### Example request
+
+```html
+curl -X GET &quot;https://graph.facebook.com/v24.0/&lt;MEDIA_ID&gt;/?fields=id,caption,like_count,username,reply_count,hide_status,timestamp,media_type&amp;access_token=&lt;ACCESS_TOKEN&gt;&quot;
+```
+
+### Example response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;18106042978723008&quot;,
+  &quot;caption&quot;: &quot;Check out our latest product!&quot;,
+  &quot;like_count&quot;: 42,
+  &quot;username&quot;: &quot;mybrand&quot;,
+  &quot;reply_count&quot;: 5,
+  &quot;hide_status&quot;: &quot;UNHUSHED&quot;,
+  &quot;timestamp&quot;: &quot;2025-11-18T23:52:47+0000&quot;,
+  &quot;media_type&quot;: &quot;IMAGE&quot;
+&#125;
+```
+
+## Retrieve a Threads ad&#039;s replies
+
+To retrieve the direct replies to a Threads ad&#039;s media, send a `GET` request to the `/&#123;media-id&#125;/replies` endpoint, with a comma-separated `fields` parameter to specify which fields to return.
+
+### Fields
+
+| Name | Description |
+| --- | --- |
+| `id`&lt;br&gt;&lt;br&gt;string | The Threads media ID. |
+| `caption`&lt;br&gt;&lt;br&gt;string | The text associated with the reply. |
+| `like_count`&lt;br&gt;&lt;br&gt;integer | The number of likes on the reply. |
+| `username`&lt;br&gt;&lt;br&gt;string | The username of the reply author. |
+| `reply_count`&lt;br&gt;&lt;br&gt;integer | The number of direct replies to this reply. |
+| `share_count`&lt;br&gt;&lt;br&gt;integer | The number of shares. |
+| `quote_count`&lt;br&gt;&lt;br&gt;integer | The number of quotes. |
+| `repost_count`&lt;br&gt;&lt;br&gt;integer | The number of reposts. |
+| `hide_status`&lt;br&gt;&lt;br&gt;string | The hide status of the reply.  &lt;br&gt;**Values:** `HUSHED`, `UNHUSHED`. |
+| `timestamp`&lt;br&gt;&lt;br&gt;string | The time the reply was created, in ISO 8601 format. |
+| `media_url`&lt;br&gt;&lt;br&gt;string | The CDN URL for the reply&#039;s media image or video, if available. |
+| `media_type`&lt;br&gt;&lt;br&gt;string | The media type.  &lt;br&gt;**Values:** `IMAGE`, `VIDEO`, `CAROUSEL`. |
+| `gif_url`&lt;br&gt;&lt;br&gt;string | The CDN URL of an attached GIF, if available. |
+| `owner_profile_pic`&lt;br&gt;&lt;br&gt;string | The CDN URL for the reply author&#039;s profile picture. |
+| `is_owner_verified`&lt;br&gt;&lt;br&gt;Boolean | Whether the reply author&#039;s account is verified. |
+
+### Example request
+
+```html
+curl -X GET &quot;https://graph.facebook.com/v24.0/&lt;MEDIA_ID&gt;/replies?fields=id,caption,username,like_count,hide_status,timestamp&amp;access_token=&lt;ACCESS_TOKEN&gt;&quot;
+```
+
+### Example response
+
+```json
+&#123;
+  &quot;data&quot;: [
+    &#123;
+      &quot;id&quot;: &quot;18106042978723009&quot;,
+      &quot;caption&quot;: &quot;Love this!&quot;,
+      &quot;username&quot;: &quot;user123&quot;,
+      &quot;like_count&quot;: 3,
+      &quot;hide_status&quot;: &quot;UNHUSHED&quot;,
+      &quot;timestamp&quot;: &quot;2025-11-19T01:15:22+0000&quot;
+    &#125;,
+    &#123;
+      &quot;id&quot;: &quot;18106042978723010&quot;,
+      &quot;caption&quot;: &quot;Where can I buy this?&quot;,
+      &quot;username&quot;: &quot;user456&quot;,
+      &quot;like_count&quot;: 1,
+      &quot;hide_status&quot;: &quot;UNHUSHED&quot;,
+      &quot;timestamp&quot;: &quot;2025-11-19T02:30:45+0000&quot;
+    &#125;
+  ]
+&#125;
+```
+
+## Hide or unhide replies on a Threads ad
+
+To hide or unhide a reply on your Threads ad, send a `POST` request to the `/&#123;reply-id&#125;/manage_reply` endpoint. Hiding a reply removes it from public view but does not delete it.
+
+**Note:** Your app must have the `ads_management` permission to use this endpoint.
+
+### Parameters
+
+| Name | Description |
+| --- | --- |
+| `hide`&lt;br&gt;&lt;br&gt;Boolean | **Required.**  &lt;br&gt;Set to `true` to hide the reply or `false` to unhide it. |
+
+### Response fields
+
+| Name | Description |
+| --- | --- |
+| `success`&lt;br&gt;&lt;br&gt;Boolean | Returns `true` if the reply was successfully hidden or unhidden. |
+
+### Example request
+
+```html
+curl -X POST &quot;https://graph.facebook.com/v24.0/&lt;REPLY_ID&gt;/manage_reply&quot; \
+  -H &quot;Authorization: Bearer &lt;ACCESS_TOKEN&gt;&quot; \
+  -d &quot;hide=true&quot;
+```
+
+### Example response
+
+```json
+&#123;
+  &quot;success&quot;: true
+&#125;
+```
+
+## Add replies to a Threads ad
+
+To add a text reply to your Threads ad, send a `POST` request to the `/&#123;reply-id&#125;/add_reply` endpoint. Only text replies are supported.
+
+**Note:** Your app must have the `ads_management` permission to use this endpoint.
+
+### Parameters
+
+| Name | Description |
+| --- | --- |
+| `text`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;The text content of your reply. |
+
+### Response fields
+
+| Name | Description |
+| --- | --- |
+| `id`&lt;br&gt;&lt;br&gt;string | The ID of the newly created reply. |
+
+### Example request
+
+```html
+curl -X POST &quot;https://graph.facebook.com/v24.0/&lt;REPLY_ID&gt;/add_reply&quot; \
+  -H &quot;Authorization: Bearer &lt;ACCESS_TOKEN&gt;&quot; \
+  -d &quot;text=Thanks for your interest! Check out our website for more info.&quot;
+```
+
+### Example response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;18106042978723011&quot;
+&#125;
+```
+
+## Learn more
+
+* [Threads Ads overview](https://developers.facebook.com/docs/threads/threads-ads)
+* [Threads API changelog](https://developers.facebook.com/docs/threads/changelog)
+* [Marketing API permissions](https://developers.facebook.com/documentation/ads-commerce/marketing-api/get-started/authorization)
+</pre></body></html>

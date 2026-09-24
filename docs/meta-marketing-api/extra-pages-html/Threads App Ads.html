@@ -1,0 +1,64 @@
+<html><head><title>Threads App Ads</title><meta charset="UTF-8" /><style nonce="fwNqK7sL">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Threads App Ads
+
+
+
+[App ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/mobile-app-ads) are available for Threads. To deliver to Threads, include both `instagram` and `threads` under `publisher_platforms` in your ad set. Then, use the `threads_stream` placement. Remember that you must also select the Instagram `stream` placement.
+
+To create an ad creative for Threads app ads, include the `instagram_user_id` and `threads_user_id` as part of the ad creative&#039;s `object_story_spec` parameter.
+
+## Limitations
+
+Threads app ads have the following limitations:
+
+* Threads supports mobile app install and app engagement ads. Threads does not support [desktop app install ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/mobile-app-ads).
+* Image, video, and carousel app ads are supported. Threads does not support playable app ads, and playable app ads will render as video ads on Threads.
+
+## Before you begin
+
+* Make sure you are familiar with the basic [Threads ads creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation) process.
+
+## Create a Threads app ad
+
+### Example request
+
+Include the `threads_user_id` and `instagram_user_id` in the `object_story_spec` of the request below so the ad can be successfully delivered to Threads.
+
+```bash
+curl -X POST \
+  -F &#039;name=&quot;Sample App Ads Creative&quot;&#039; \
+  -F &#039;object_story_spec=&#123;
+    &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;,
+    &quot;instagram_user_id&quot;: &quot;&lt;INSTAGRAM_USER_ID&gt;&quot;,
+    &quot;threads_user_id&quot;: &quot;&lt;THREADS_USER_ID&gt;&quot;,
+    &quot;link_data&quot;: &#123;
+      &quot;call_to_action&quot;: &#123;
+        &quot;type&quot;: &quot;INSTALL_MOBILE_APP&quot;,
+        &quot;value&quot;: &#123;
+          &quot;link&quot;: &quot;&lt;APP_STORE_URL&gt;&quot;
+        &#125;
+      &#125;,
+    &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH&gt;&quot;,
+    &quot;link&quot;: &quot;&lt;APP_STORE_URL&gt;&quot;,
+    &quot;message&quot;: &quot;&lt;MESSAGE_TEXT&gt;&quot;
+    &#125;
+  &#125;&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+### Example response
+
+A successful response returns the new app ad creative ID.
+
+```json
+&#123;
+  &quot;id&quot;:&quot;&lt;CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+## Learn more
+
+* [App Ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/mobile-app-ads)
+* [Facebook App Ads](https://developers.facebook.com/docs/app-ads)
+* [Threads Ads Creation: Media Requirements](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#media-requirements)
+</pre></body></html>

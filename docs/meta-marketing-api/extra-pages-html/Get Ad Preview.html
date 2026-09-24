@@ -1,0 +1,114 @@
+<html><head><title>Get Ad Preview</title><meta charset="UTF-8" /><style nonce="wbizGykm">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Get Ad Preview
+
+
+
+For Instagram Ads, you can get a preview of:
+
+- [Existing Ads](#existing)
+- [New ads, before adding creative](#before-creative)
+- [New ads, after adding creative](#after-creative)
+
+## Preview Existing Ads &#123;#existing&#125;
+
+You can use format options with an ad or ad creative ID to [preview](https://developers.facebook.com/documentation/ads-commerce/marketing-api/generatepreview) an existing ad. For `ad_format`, you have:
+
+| Format | Description |
+| --- | --- |
+| `INSTAGRAM_EXPLORE_CONTEXTUAL` | Instagram Explore Feed format. [Learn more about ads in Instagram Explore](https://www.facebook.com/business/help/468874930636689?id=1997185213680277). |
+| `INSTAGRAM_EXPLORE_IMMERSIVE` | Instagram Explore Video format. [Learn more about ads in Instagram Explore](https://www.facebook.com/business/help/468874930636689?id=1997185213680277). |
+| `INSTAGRAM_REELS` | Instagram [Reels placement](https://developers.facebook.com/documentation/ads-commerce/marketing-api/guides/instagramads/get-started#targeting). |
+| `INSTAGRAM_STANDARD` | Instagram [feed post](https://developers.facebook.com/docs/instagram/sharing-to-feed) format. |
+| `INSTAGRAM_STORY` | Instagram [story](https://developers.facebook.com/docs/instagram/sharing-to-stories) format. |
+| `THREADS_STREAM` | Threads feed post format. |
+
+The Instagram ad preview call looks like this:
+
+```html
+curl -G \
+  -d &#039;ad_format=INSTAGRAM_STANDARD&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/&lt;AD_ID&gt;/previews
+```
+
+The Threads ad preview call looks like this:
+
+```html
+curl -G \
+  -d &#039;ad_format=THREADS_STREAM \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/&lt;AD_ID&gt;/previews
+```
+
+## Preview Before Adding Creative &#123;#before-creative&#125;
+
+### Instagram
+
+To preview an ad before providing ad creative, pass the creative&#039;s `object_story_spec` in the preview&#039;s `creative` parameter. You must provide `instagram_user_id` and `page_id` for both Instagram-only placement and mixed placement ads:
+
+```html
+curl -G \
+  --data-urlencode &#039;creative=&#123;
+    &quot;object_story_spec&quot;: &#123;
+      &quot;instagram_user_id&quot;: &quot;&lt;INSTAGRAM_USER_ID&gt;&quot;,
+      &quot;link_data&quot;: &#123;
+        &quot;call_to_action&quot;: &#123;&quot;type&quot;:&quot;LEARN_MORE&quot;,&quot;value&quot;:&#123;&quot;link&quot;:&quot;&lt;URL&gt;&quot;&#125;&#125;,
+        &quot;caption&quot;: &quot;www.example.com&quot;,
+        &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH&gt;&quot;,
+        &quot;link&quot;: &quot;&lt;URL&gt;&quot;,
+        &quot;message&quot;: &quot;Ad Message&quot;
+      &#125;,
+      &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;
+    &#125;
+  &#125;&#039; \
+  -d &#039;ad_format=INSTAGRAM_STANDARD&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/generatepreviews
+```
+
+### Threads
+To preview an ad before providing an ad creative, pass the creative&#039;s `object_story_spec` in the preview&#039;s `creative` parameter. You must provide `threads_user_id` and `page_id` for both Threads with Instagram placements:
+
+```html
+curl -G \
+  --data-urlencode &#039;creative=&#123;
+    &quot;object_story_spec&quot;: &#123;
+      &quot;instagram_user_id&quot;: &quot;&lt;INSTAGRAM_USER_ID&gt;&quot;,
+      &quot;threads_user_id&quot; : &quot;&lt;THREAD_USER_ID&gt;&quot;
+      &quot;link_data&quot;: &#123;
+        &quot;call_to_action&quot;: &#123;&quot;type&quot;:&quot;LEARN_MORE&quot;,&quot;value&quot;:&#123;&quot;link&quot;:&quot;&lt;URL&gt;&quot;&#125;&#125;,
+        &quot;caption&quot;: &quot;www.example.com&quot;,
+        &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH&gt;&quot;,
+        &quot;link&quot;: &quot;&lt;URL&gt;&quot;,
+        &quot;message&quot;: &quot;Ad Message&quot;
+      &#125;,
+      &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;
+    &#125;
+  &#125;&#039; \
+  -d &#039;ad_format=THREADS_STREAM \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/generatepreviews
+```
+
+## Preview After Adding Creative &#123;#after-creative&#125;
+After you provide ad creative, you can get the URL for the corresponding Instagram post, and can see responses to the ad post. The post is not identical to the one your audience sees. It does not have &quot;Sponsored&quot; or a call-to-action.
+
+This URL is not available with Advantage+ catalog ad creatives, which is when you use `template_data` in `object_story_spec`. This URL is also unavailable for ad creatives for ads in Instagram stories.
+
+### Example request
+
+```html
+curl -X GET \
+  -d &#039;fields=&quot;instagram_permalink_url&quot;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/&lt;CREATIVE_ID&gt;/
+```
+
+### Example response  
+
+```html
+&#123;
+  &quot;instagram_permalink_url&quot;: &quot;&lt;INSTAGRAM_POST_URL&gt;&quot;,
+  &quot;id&quot;: &quot;&lt;AD_CREATIVE_ID&gt;&quot;
+&#125;
+```
+</pre></body></html>

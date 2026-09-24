@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en" id="facebook" class="no_js">
+<head><meta charset="utf-8" /><meta name="referrer" content="origin-when-crossorigin" id="meta_referrer" /><script nonce="ztniEXYw">function envFlush(e){function t(t){for(var n in e)t[n]=e[n]}window.requireLazy?window.requireLazy(["Env"],t):(window.Env=window.Env||{},t(window.Env))}envFlush({"ajaxpipe_token":"AXkiHDumCYGATb0_E8Y","stack_trace_limit":30,"timesliceBufferSize":5000,"show_invariant_decoder":false,"compat_iframe_token":"AUeGVzLv0Ld6VcCObCiNeKgsY2I","isCQuick":false,"brsid":"7677647358332221540","promise_include_trace":false});</script><script nonce="ztniEXYw">window.openDatabase&&(window.openDatabase=function(){var e=new Error;throw e.stack,e});</script><script nonce="ztniEXYw">_btldr={};</script><script nonce="ztniEXYw">(function(){function e(e){return e.parentElement!==document.body&&e.parentElement!==document.head}function t(e){var t;return e.nodeName==="SCRIPT"||e.nodeName==="LINK"&&((t=n(e))==null?void 0:t.asyncCss)}function n(e){return e.dataset instanceof window.DOMStringMap?e.dataset:null}function r(r){var o;try{if(r.nodeType!==Node.ELEMENT_NODE)return}catch(e){return}if(!(e(r)||!t(r))){var a=(o=n(r))==null?void 0:o.bootloaderHash;if(a!=null&&a!==""){var i=null,l=function(){var e;window._btldr[a]=1,r instanceof HTMLLinkElement&&r.media==="print"&&((e=n(r))==null?void 0:e.printScreenSwap)==="1"&&(r.media="all"),i==null||i()};i=function(){r.removeEventListener("load",l),r.removeEventListener("error",l)},r.addEventListener("load",l),r.addEventListener("error",l)}}}Array.from(document.querySelectorAll('script,link[data-async-css="1"]')).forEach(function(e){return r(e)});var o=new MutationObserver(function(e,t){e.forEach(function(e){e.type==="childList"&&Array.from(e.addedNodes).forEach(function(e){r(e)})})});o.observe(document.getElementsByTagName("html")[0],{attributes:!1,childList:!0,subtree:!0})})();</script><style nonce="ztniEXYw"></style><script nonce="ztniEXYw">__DEV__=0;</script><noscript><meta http-equiv="refresh" content="0; URL=/documentation/ads-commerce/conversions-api/dataset-quality-api.md?_fb_noscript=1" /></noscript><link type="text/css" rel="stylesheet" href="https://static.xx.fbcdn.net/rsrc.php/v5/y_/l/0,cross/aBk9mmxIP3U.css" data-bootloader-hash="/rzEuFy" crossorigin="anonymous" />
+<link type="text/css" rel="stylesheet" href="https://static.xx.fbcdn.net/rsrc.php/v5/yR/l/0,cross/q2hBlXV7GIr.css" data-bootloader-hash="TmGY2L9" crossorigin="anonymous" />
+<script src="https://static.xx.fbcdn.net/rsrc.php/v4/yH/r/LrIVW3laaJp.js" data-bootloader-hash="4SDoeQi" crossorigin="anonymous"></script>
+<link rel="preload" href="https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/_OnFlS3rbmP.js" as="script" crossorigin="anonymous" nonce="ztniEXYw" /><script src="https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/_OnFlS3rbmP.js" data-bootloader-hash="rYS5xDd" async="1" crossorigin="anonymous"></script>
+<script nonce="ztniEXYw">requireLazy(["HasteSupportData"],function(m){m.handle({"clpData":{"1838142":{"r":1,"s":1}},"gkxData":{"999":{"result":true,"hash":null},"1174":{"result":false,"hash":null},"5023":{"result":true,"hash":null},"5163":{"result":false,"hash":null},"5415":{"result":false,"hash":null},"7742":{"result":false,"hash":null},"8068":{"result":true,"hash":null},"8869":{"result":false,"hash":null},"9063":{"result":false,"hash":null},"15745":{"result":false,"hash":null},"18719":{"result":false,"hash":"AUGAGfrsVQK62NBBREDBMHGUXTk"},"20935":{"result":false,"hash":null},"20936":{"result":false,"hash":null},"21043":{"result":false,"hash":null},"21116":{"result":false,"hash":null},"23984":{"result":true,"hash":null},"25201":{"result":false,"hash":null},"25572":{"result":true,"hash":null}},"justknobxData":{"340":{"r":true},"1276":{"r":true},"1590":{"r":true},"2694":{"r":true},"3323":{"r":true},"5589":{"r":true},"5685":{"r":true}}})});requireLazy(["Bootloader"],function(m){m.handlePayload({"consistency":{"rev":1045866108},"rsrcMap":{"CU15I83":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4i7M54\/ys\/l\/en_US-j\/9ZCafg1B6op.js"},"nNE7gxG":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yG\/r\/1R5oM0NXMwn.js"},"NNXS92D":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yU\/r\/rILdUr3Swee.js"},"Yd67Vi1":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yz\/l\/0,cross\/EOJ-LOiJjVY.css"},"uRfMyu1":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iSC-4\/yT\/l\/en_US-j\/QHHgISJbnXm.js"},"oiIE3bk":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yl\/r\/9eWctCOYRq8.js"},"lYMIqwV":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y0\/r\/DSlsW78tKNi.js"},"2usmjmY":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iLl54\/ym\/l\/en_US-j\/sc21ONGw7S6.js"},"NMop34\/":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/ye\/l\/0,cross\/85xmMFAru5f.css"},"sorMvhw":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yY\/r\/Gh3o7zYwJ7d.js"},"asPR7\/4":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iJfX4\/ya\/l\/en_US-j\/T3ZnCDFBUWl.js"},"rlbiS2R":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yA\/r\/0v-DCi7WTvw.js"},"+2mYsBo":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yw\/r\/WTVsCC5YLV-.js"},"yMgn4BF":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y5\/r\/KLlM3kBgFHN.js"},"KTfYB04":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4il4M4\/yq\/l\/en_US-j\/h3lPuXqhnyA.js"},"yM5mzW1":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yL\/l\/0,cross\/eZfLgk4vCdE.css"},"M9rh1r7":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iWSK4\/yt\/l\/en_US-j\/kEzj_gWDkRX.js"},"VB4zTC3":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yF\/r\/L4zigBK7JcR.js"},"1EjWQ+N":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yf\/l\/0,cross\/cyZvbvz4d-N.css"},"FXpCh5x":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yv\/r\/MqTcLK9_5P5.js"},"tUADyXw":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yQ\/l\/0,cross\/hQCXdW1PgeD.css"},"Msquukr":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4isAH4\/yi\/l\/en_US-j\/4Blj8qPvVCV.js"},"J62RfGM":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yh\/r\/H0UZX4js5ea.js"},"88+gRST":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yy\/r\/2x3TZeXjEwM.js"},"HBK9MF6":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4ikPw4\/ym\/l\/en_US-j\/vnti_09BBxh.js"},"sAi+dJj":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4ijos4\/yK\/l\/en_US-j\/a4ZFkHnT2Iw.js"},"u77Rt1y":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yZ\/r\/kvoA27m-Zo6.js"},"w5OGUgc":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yZ\/r\/UC-spTNJ0PD.js"},"AhaWPFo":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yY\/l\/0,cross\/WpBT8y_anNT.css"},"R5w1rCJ":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yb\/r\/8wypiAW_bfk.js"},"dPrjl\/F":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y5\/r\/U0_vQ0bd5-j.js"},"ixKNKg8":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yI\/r\/lN3aLSsYoTw.js"},"Ib7SBZF":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iPwL4\/yX\/l\/en_US-j\/FbyFUcdmB2K.js"},"ObTKU4o":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iLl54\/yO\/l\/en_US-j\/QDOXYMjOCpD.js"},"aeoiSjY":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yX\/l\/0,cross\/pYQKXWNFgVb.css"},"gOFeKGX":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yG\/l\/0,cross\/llww2dZo_yN.css"},"ggcmtCM":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iz1z4\/yf\/l\/en_US-j\/vD2IIZP18Lh.js"},"gpyaZnD":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yj\/r\/TSVCFdiWOAi.js"},"FNgkMOR":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yb\/r\/w-J8PaGSPLM.js"},"r+KgxbT":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ym\/r\/Tbkmtb0QGuk.js"},"AV5yxjF":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yD\/r\/eQlpz75LxM1.js"},"G2iy9Ox":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yl\/r\/hlCqa5s-yvW.js"},"b\/rYFtF":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ys\/r\/MYi7OmJTZw1.js"},"7koW4+B":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yE\/r\/c00Kwagkjnn.js"},"KKBnWKk":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ya\/r\/rO84W-20ipW.js"},"ZY1oM2Q":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ye\/r\/wO-j4UqYxll.js"},"b9sATVO":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yG\/r\/_F4Pkmp3PwP.js"},"r92wvYV":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y_\/r\/N2qT9tFu9H1.js"},"FfNUNsm":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yJ\/r\/Chj1ZQtVa8L.js"},"3QBOKTC":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yx\/r\/oafQXQlRcD0.js"},"5o15Itz":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yK\/r\/xC4xf89KOYZ.js"},"y6amyv6":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4itTO4\/y7\/l\/en_US-j\/ela_3y75dFC.js"},"eHmXoxf":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iwUZ4\/yP\/l\/en_US-j\/6PHL3TeVjV_.js"},"Vn+5Cjn":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yB\/l\/0,cross\/JMx3tc0w0Ok.css"},"HIaVaCE":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yR\/r\/fAozIMNFBkk.js"},"5SiUkyH":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4id7F4\/yi\/l\/en_US-j\/rHodO5Rkxkn.js"},"VxVvXAd":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yI\/l\/0,cross\/UOV_O7WwVQ7.css"},"2fmniAW":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yB\/r\/ABeQTOErVXl.js"},"SFfitMa":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4ibQ14\/yR\/l\/en_US-j\/A8xYkWPUFLv.js"},"MA7wtBb":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yY\/r\/No6U7gXBoHU.js"},"ol24QbW":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4i4Pe4\/yS\/l\/en_US-j\/KeOBwB4l6lv.js"},"w61UKMj":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iaXy4\/yi\/l\/en_US-j\/vAiHZ8yPn5X.js"},"SwP\/0rw":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yG\/r\/fxZCDVrp6xX.js"},"e072yaF":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4ii6x4\/yP\/l\/en_US-j\/jBbmiGhAIbj.js"},"JpZhukL":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yV\/r\/a9CZAdLh-KQ.js"},"TWVnGJn":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yo\/r\/zDi0BqjLqS1.js"},"UkQH2lh":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yr\/l\/0,cross\/M40mMDK9Fwn.css"},"aSbaNKt":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yE\/l\/0,cross\/09Y1nxOOMnz.css"},"M8Xp01T":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yo\/r\/gZXyaiyxOXr.js"},"s6f7kQQ":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ym\/r\/NnlRCp3ikfS.js"},"j8vinei":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yI\/r\/8jURbgieXGt.js"},"U\/yqNKh":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y7\/r\/v36S8hsWaJn.js"},"X758dUO":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iioU4\/yZ\/l\/en_US-j\/sSZw8GbyXSp.js"},"zVTqSl6":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yK\/r\/MO76BK2Y34W.js"},"3LydTkd":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iFe24\/yr\/l\/en_US-j\/8JEALUFa_AR.js"},"p8qZx2r":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ym\/r\/0VqkWT8PjgK.js"},"BeOwzfl":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yt\/r\/nB07_LKrSa4.js"},"7D+A1q6":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y7\/r\/EQ9dS4WPiAq.js"},"oPTgYNC":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yQ\/r\/xVjkvCjbSPf.js"},"GeBTIYU":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yg\/r\/JNv6jubkNFY.js"},"iXU77vs":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yT\/r\/8NaL8J4uQzq.js"},"8pnRkHq":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yQ\/r\/-1XOo7Vr4Vk.js"},"uLLR6+X":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y_\/r\/NYOVtHRttcc.js"},"bH6Fxzu":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4icfi4\/yL\/l\/en_US-j\/QU26mvraWXP.js"},"\/g73V0k":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yv\/r\/BAMcC70Hopp.js"},"PVVgYNj":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4i-LA4\/yk\/l\/en_US-j\/8TC7PjnxRDP.js"},"rIl+91s":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iB9-4\/yG\/l\/en_US-j\/Y80F6pRn5oJ.js"},"iseooSO":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y5\/r\/s5ogJz7VKA3.js"},"2ZRb6Cp":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yO\/r\/l73qnzeLeZ9.js"},"zXkfzcX":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iav_4\/yU\/l\/en_US-j\/xJmbIVRjXSs.js"},"rJdCa1H":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4i_zm4\/yr\/l\/en_US-j\/KTYnofFr4HZ.js"},"Z2nD9ac":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iYhe4\/yI\/l\/en_US-j\/uBkj22efhsN.js"},"xlMpWQZ":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y1\/r\/e_QQwLXqzZA.js"},"t46GVsr":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yU\/r\/Y6prPHxn6I9.js"},"0l\/bdVG":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4ip6c4\/y6\/l\/en_US-j\/y5_wqQlroW3.js"},"Ayd2Csx":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yg\/l\/0,cross\/EWAedVw4qsp.css"},"9zce+oe":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yN\/r\/qoZP2oi6qj5.js"},"asppkhA":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yt\/r\/fIi6aapXuYz.js"},"ZqrRGw3":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iXI94\/yv\/l\/en_US-j\/lkwXDG4gORg.js"},"jjYsTQO":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yv\/r\/OjyNolovV8Y.js"},"UqUvMpW":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/ym\/r\/XLbDLdPmCJ3.js"},"Nx3aG7o":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yn\/r\/-fc1-9SbzyY.js"},"meXqvUG":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yy\/r\/hW4dQBKQpMV.js"},"KJGn4PT":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4i0cI4\/y3\/l\/en_US-j\/4wbJI8b69Lk.js"},"Gbf1TUE":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yM\/r\/rSvS72M-0n4.js"},"lTO89wT":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yf\/l\/0,cross\/VCBD_n_EeDm.css"},"dUh4UaO":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yv\/r\/CcspPuJNCXh.js"},"QbeIXUm":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y6\/r\/hpTJZ6dtNEt.js"},"gLpHGW2":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yL\/l\/0,cross\/jiM2cYwiypf.css"},"txstYBE":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y6\/r\/sVprFS0GERY.js"},"4gKni9p":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yo\/l\/0,cross\/wZPe7KLLtmX.css"},"cIwjOS0":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yy\/r\/xf7vOiPkL77.js"},"TJ3wXDw":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yx\/r\/J_OEIK5LER1.js"},"hRnYGn1":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yI\/r\/5cWTJeMEopu.js"},"jWuQPCW":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yG\/r\/3efhZZ4nKCu.js"},"VfuLkfj":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yf\/r\/GOCZAEl7Wfd.js"},"XV0Z0ix":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yW\/r\/Ry5FLRMGXCW.js"},"Cqzu\/ty":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yx\/r\/JU-NCTWWt9c.js"},"NQcY4GA":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yz\/r\/N7QnN6eYoxc.js"},"CvndCfq":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yL\/r\/fwUq9poQBc1.js"},"uKw0LU7":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yE\/r\/NyhxguMxWwT.js"},"H62qnKF":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yZ\/r\/eNVf4p_V3e_.js"},"zhwKWai":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yt\/r\/pCF5a7L5j0u.js"},"Yelqfuz":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yw\/r\/5f17FXW4DdZ.js"},"D7CPRMj":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yO\/r\/W4mXVH9H0fO.js"},"X4+I4b2":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yr\/l\/0,cross\/qZkt8B59_24.css"},"xmz7Lk6":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/y5\/l\/0,cross\/BZFLyaomTai.css"},"VDymvVI":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yY\/l\/0,cross\/izlvyf9sstM.css"},"yPN8Cty":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yv\/l\/0,cross\/OGASGeXnQTS.css"},"GS4bGVX":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/ye\/l\/0,cross\/wkRmQ4eAqEk.css"},"8q2zxdD":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yH\/l\/0,cross\/LUw6jVNlC9_.css"},"mDomTSa":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yx\/l\/0,cross\/iZKMw1zuDmd.css"},"8LpAtc0":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yW\/l\/0,cross\/S9at_pWNaTI.css"},"8vKBOmk":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/ye\/l\/0,cross\/Xz0bg7PjDXW.css"},"\/j+rPH4":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4iVDL4\/yv\/l\/en_US-j\/8oH0n8QZ9IS.js"},"iaLjwrf":{"type":"css","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v5\/yX\/l\/0,cross\/7gZn8Efw-h_.css"},"aL9vxBi":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yx\/r\/DSqDRG3Kyt9.js"},"8xWXRCO":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/y7\/r\/byQCOrS5wwL.js"},"RiUj8Gc":{"type":"js","src":"https:\/\/static.xx.fbcdn.net\/rsrc.php\/v4\/yD\/r\/W96E17GUaQg.js"}},"compMap":{"AsyncRequest":{"r":["CU15I83","nNE7gxG","rYS5xDd","NNXS92D","Yd67Vi1"],"rds":{"m":["FbtLogging","ODS","IntlQtEventFalcoEvent"],"r":["uRfMyu1"]},"be":1},"DOM":{"r":["nNE7gxG","CU15I83"],"rds":{"m":["ODS"]},"be":1},"Form":{"r":["nNE7gxG","CU15I83","oiIE3bk"],"rds":{"m":["ODS"]},"be":1},"FormSubmit":{"r":["CU15I83","nNE7gxG","rYS5xDd","oiIE3bk","lYMIqwV","NNXS92D","Yd67Vi1"],"rds":{"m":["FbtLogging","ODS","IntlQtEventFalcoEvent"],"r":["uRfMyu1"]},"be":1},"Input":{"r":["oiIE3bk"],"be":1},"Toggler":{"r":["CU15I83","2usmjmY","nNE7gxG","TmGY2L9","NMop34\/","sorMvhw","asPR7\/4"],"rds":{"m":["ODS"]},"be":1},"URI":{"r":[],"be":1},"trackReferrer":{"r":[],"be":1},"PhotoTagApproval":{"r":["nNE7gxG","CU15I83","rlbiS2R","+2mYsBo"],"rds":{"m":["ODS"]},"be":1},"PhotoTags":{"r":["nNE7gxG","CU15I83","rlbiS2R","2usmjmY","yMgn4BF"],"rds":{"m":["ODS"]},"be":1},"TagTokenizer":{"r":["nNE7gxG","CU15I83","2usmjmY","KTfYB04","yM5mzW1","M9rh1r7","VB4zTC3","TmGY2L9","oiIE3bk","1EjWQ+N","FXpCh5x","tUADyXw","Msquukr","J62RfGM","88+gRST","HBK9MF6","NNXS92D","Yd67Vi1"],"rds":{"m":["FbtLogging","ODS","IntlQtEventFalcoEvent"],"r":["uRfMyu1"]},"be":1},"Hovercard":{"r":["nNE7gxG","CU15I83","2usmjmY","TmGY2L9","sAi+dJj","rYS5xDd","u77Rt1y","w5OGUgc","asPR7\/4","AhaWPFo","R5w1rCJ","uRfMyu1","dPrjl\/F","ixKNKg8","Ib7SBZF","ObTKU4o","aeoiSjY","gOFeKGX","ggcmtCM","NNXS92D","gpyaZnD","oiIE3bk","FNgkMOR","Yd67Vi1","r+KgxbT"],"rds":{"m":["bumpVultureJSHash","FbtLogging","ODS","IntlQtEventFalcoEvent","PageTransitions","Animation"],"r":["AV5yxjF"]},"be":1},"Tooltip":{"r":["CU15I83","nNE7gxG","rYS5xDd","2usmjmY","asPR7\/4","ixKNKg8","R5w1rCJ","TmGY2L9","uRfMyu1","dPrjl\/F","AhaWPFo","ggcmtCM","NNXS92D","oiIE3bk","Yd67Vi1","r+KgxbT"],"rds":{"m":["bumpVultureJSHash","FbtLogging","ODS","IntlQtEventFalcoEvent","PageTransitions","Animation"],"r":["Ib7SBZF","AV5yxjF"]},"be":1},"PhotoTagger":{"r":["AV5yxjF","CU15I83","nNE7gxG","rYS5xDd","G2iy9Ox","2usmjmY","TmGY2L9","sAi+dJj","u77Rt1y","w5OGUgc","asPR7\/4","AhaWPFo","R5w1rCJ","uRfMyu1","dPrjl\/F","ixKNKg8","Ib7SBZF","ObTKU4o","aeoiSjY","gOFeKGX","ggcmtCM","b\/rYFtF","rlbiS2R","7koW4+B","KKBnWKk","ZY1oM2Q","b9sATVO","r92wvYV","FfNUNsm","3QBOKTC","NNXS92D","gpyaZnD","oiIE3bk","FNgkMOR","Yd67Vi1","r+KgxbT"],"rds":{"m":["bumpVultureJSHash","FbtLogging","ODS","IntlQtEventFalcoEvent","PageTransitions","Animation"]},"be":1},"AsyncDialog":{"r":["CU15I83","nNE7gxG","rYS5xDd","asPR7\/4","2usmjmY","R5w1rCJ","TmGY2L9","dPrjl\/F","NMop34\/","sorMvhw","Ib7SBZF","5o15Itz","AhaWPFo","y6amyv6","FNgkMOR","eHmXoxf","Vn+5Cjn","HIaVaCE","aeoiSjY","5SiUkyH","VxVvXAd","gpyaZnD","NNXS92D","2fmniAW","Yd67Vi1","r+KgxbT"],"rds":{"m":["FbtLogging","ODS","IntlQtEventFalcoEvent"],"r":["uRfMyu1"]},"be":1},"PhotoSnowlift":{"r":["CU15I83","nNE7gxG","rYS5xDd","oiIE3bk","SFfitMa","MA7wtBb","2usmjmY","AhaWPFo","dPrjl\/F","ol24QbW","w61UKMj","SwP\/0rw","e072yaF","R5w1rCJ","TmGY2L9","asPR7\/4","NMop34\/","sorMvhw","Ib7SBZF","5o15Itz","y6amyv6","FNgkMOR","eHmXoxf","Vn+5Cjn","HIaVaCE","aeoiSjY","5SiUkyH","JpZhukL","TWVnGJn","UkQH2lh","aSbaNKt","M8Xp01T","s6f7kQQ","j8vinei","\/rzEuFy","U\/yqNKh","X758dUO","zVTqSl6","3LydTkd","p8qZx2r","BeOwzfl","7D+A1q6","oPTgYNC","GeBTIYU","iXU77vs","8pnRkHq","gpyaZnD","uLLR6+X","bH6Fxzu","\/g73V0k","AV5yxjF","PVVgYNj","rIl+91s","iseooSO","2ZRb6Cp","zXkfzcX","uRfMyu1","rJdCa1H","Z2nD9ac","xlMpWQZ","t46GVsr","0l\/bdVG","Ayd2Csx","9zce+oe","asppkhA","ZqrRGw3","jjYsTQO","UqUvMpW","Nx3aG7o","meXqvUG","ggcmtCM","ixKNKg8","KJGn4PT","Gbf1TUE","lTO89wT","dUh4UaO","QbeIXUm","gLpHGW2","txstYBE","4gKni9p","cIwjOS0","TJ3wXDw","hRnYGn1","jWuQPCW","VfuLkfj","XV0Z0ix","rlbiS2R","r+KgxbT","Cqzu\/ty","NQcY4GA","CvndCfq","r92wvYV","uKw0LU7","w5OGUgc","H62qnKF","zhwKWai","Yelqfuz","D7CPRMj","X4+I4b2","xmz7Lk6","VDymvVI","yPN8Cty","GS4bGVX","8q2zxdD","mDomTSa","8LpAtc0","8vKBOmk","\/j+rPH4","VxVvXAd","iaLjwrf","aL9vxBi","NNXS92D","8xWXRCO","2fmniAW","RiUj8Gc","Yd67Vi1"],"rds":{"m":["Animation","bumpVultureJSHash","FbtLogging","ODS","IntlQtEventFalcoEvent","PageTransitions"]},"be":1}},"indexUpgrades":{}})});</script><script nonce="ztniEXYw">requireLazy(["TimeSliceImpl","ServerJS"],function(TimeSlice,ServerJS){(new ServerJS()).handle({"define":[["cr:1126",["TimeSliceImpl"],{"__rc":["TimeSliceImpl",null]},-1],["InitialCookieConsent",[],{"initialConsent":[1,2],"noCookies":false,"shouldShowCookieBanner":false,"shouldWaitForDeferredDatrCookie":false,"optedInIntegrations":["adobe_marketo_rest_api","apple_pay","brightedge","calendly_embed","chili_piper_api","cloudfront_cdn","ghl_embed","giphy_api","giphy_media","google_ads_pixel_frame_legacy","google_ads_pixel_img_legacy","google_ads_pixel_legacy","google_ads_remarketing_tag","google_ads_services","google_analytics_4_tag","google_apis","google_cached_img","google_double_click_loading","google_double_click_redirecting","google_double_click_uri_connect","google_double_click_uri_frame","google_double_click_uri_img","google_fonts","google_fonts_font","google_img","google_maps","google_paid_ads_frame","google_paid_ads_img","google_tag","google_translate","google_universal_analytics_legacy","google_universal_analytics_legacy_img","google_universal_analytics_legacy_script","google_uri_frame","google_uri_script","hubspot_embed","jio","linkedin_insight","linkedin_insight_img","mapbox_maps_api","medallia_digital_experience_analytics","nytimes_oembed","reachtheworld_s3","salesforce_mcp_beacon","salesforce_miaw","soundcloud_oembed","spotify_oembed","spreaker_oembed","ted_oembed","tenor_api","tenor_images","tenor_media","tiktok_analytics_pixel","tiktok_oembed","twitter_analytics_pixel","twitter_analytics_pixel_img","twitter_legacy_embed","vimeo_oembed","youtube_embed","youtube_oembed","kochava","advertiser_hosted_pixel","affirm_prequal_iframe","airbus_sat","amazon_media","apple_music_sdk","apps_for_office","arkose_captcha","aspnet_cdn","autodesk_fusion","bing_maps","bing_widget","boku_wallet","bootstrap","box","cardinal_centinel_api","chromecast_extensions","cloudflare_cdnjs","cloudflare_datatables","cloudflare_relay","conversions_api_gateway","demandbase_api","digitalglobe_maps_api","dlocal","dropbox","esri_sat","fastly_relay","gmg_pulse_embed_iframe","google_ads_conversions_tag","google_cast_receiver","google_drive","google_fonts_legacy","google_hosted_libraries","google_oauth_api","google_oauth_api_v2","google_recaptcha","here_map_ext","hive_streaming_video","ipification","iproov","isptoolbox","jquery","js_delivr","kbank","klarna_prequal_iframe","mastercard_click_to_pay","mathjax","meshy","metacdn","microsoft_excel","microsoft_office_addin","microsoft_onedrive","microsoft_speech","microsoft_teams","mmi_tiles","oculus","open_street_map","paypal_billing_agreement","paypal_fastlane_sdk","paypal_oauth_api","payu","payu_india","plaid","platformized_adyen_checkout","plotly","pydata","razorpay","recruitics","rstudio","salesforce_lighting","salesforce_miaw_fbsbx_only","salesforce_miaw_meta_dot_com_help_center","shopify_app_bridge","shopify_app_polaris","sierra_voice_api","stripe","stripe_js_sdk","team_center","tripshot","trustly_direct_debit_ach","turbo_gala","twilio_voice","unifier","unpkg","unsplash_api","unsplash_image_loading","vega","whatsapp_arkose_captcha","yoti_api","youtube_oembed_api"],"hasGranularThirdPartyCookieConsent":true,"exemptedIntegrations":["advertiser_hosted_pixel","affirm_prequal_iframe","airbus_sat","amazon_media","apple_music_sdk","apps_for_office","arkose_captcha","aspnet_cdn","autodesk_fusion","bing_maps","bing_widget","boku_wallet","bootstrap","box","cardinal_centinel_api","chromecast_extensions","cloudflare_cdnjs","cloudflare_datatables","cloudflare_relay","conversions_api_gateway","demandbase_api","digitalglobe_maps_api","dlocal","dropbox","esri_sat","fastly_relay","gmg_pulse_embed_iframe","google_ads_conversions_tag","google_cast_receiver","google_drive","google_fonts_legacy","google_hosted_libraries","google_oauth_api","google_oauth_api_v2","google_recaptcha","here_map_ext","hive_streaming_video","ipification","iproov","isptoolbox","jquery","js_delivr","kbank","klarna_prequal_iframe","mastercard_click_to_pay","mathjax","meshy","metacdn","microsoft_excel","microsoft_office_addin","microsoft_onedrive","microsoft_speech","microsoft_teams","mmi_tiles","oculus","open_street_map","paypal_billing_agreement","paypal_fastlane_sdk","paypal_oauth_api","payu","payu_india","plaid","platformized_adyen_checkout","plotly","pydata","razorpay","recruitics","rstudio","salesforce_lighting","salesforce_miaw_fbsbx_only","salesforce_miaw_meta_dot_com_help_center","shopify_app_bridge","shopify_app_polaris","sierra_voice_api","stripe","stripe_js_sdk","team_center","tripshot","trustly_direct_debit_ach","turbo_gala","twilio_voice","unifier","unpkg","unsplash_api","unsplash_image_loading","vega","whatsapp_arkose_captcha","yoti_api","youtube_oembed_api"],"consentRequiredForMetaPixel":false,"nonBlockingBannerPage":false},4328]],"require":[["ScriptPath","set",[],["XDeveloperDocumentationTextFileController","a1f3c513",{"imp_id":"0zQQHfHmcXJ0U0RMu","ef_page":"XDeveloperDocumentationTextFileController","uri":"https:\/\/developers.facebook.com\/documentation\/ads-commerce\/conversions-api\/dataset-quality-api.md","entity_id":"100074386092170","profile_session_id":"61587132432393:100074386092170:1787591576"}]]]});});</script><html><head><title>Dataset Quality API</title><meta charset="UTF-8" /><style nonce="ztniEXYw">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Dataset Quality API
+
+
+**Warning:** **Ads Management Standard Access is now Marketing API Access Tier**
+
+**No code changes are needed.**
+
+Tier labels have been updated: &quot;Standard Access&quot; is now **Limited Access**, and &quot;Advanced Access&quot; is now **Full Access**. The revised qualification threshold for Full Access has been reduced from 1,500 to **500 Marketing API calls** in the past 15 days. The underlying permission identifier remains the same, and existing access levels are preserved automatically. Learn more in the [Marketing API Access Tier documentation](https://developers.facebook.com/docs/features-reference#marketing-api-access-tier).
+
+Advertisers that share server events using the Conversions API can see the event match quality score in Meta Events Manager. However, this only works on an individual basis and is difficult to scale in cases where a Tech Provider partner, agency partner, or advertiser is managing hundreds and thousands of Meta Pixels for their businesses. The Dataset Quality (formerly known as Integration Quality) API can help solve this problem by consolidating dataset quality metrics programmatically at scale.
+
+**Warning:** ## What&#039;s new
+
+As of May 28th, 2025, the following additional metrics have been added to the API for querying.
+
+* [Additional Conversions Reported](#acr-main)
+* [Additional Conversions Reported per parameter](#acr-params)
+* [Additional Conversions Reported for per event](#acr-capi-event)
+* [Additional Conversions Reported for event coverage](#acr-event-coverage)
+* [Event Coverage](#event-coverage)
+* [Event Deduplication](#event-deduplication)
+* [Data Freshness](#data-freshness)
+* [Event Match Quality Diagnostics](#emq-diagnostics)
+
+Also, the [Dataset Quality API for Offline Events](https://developers.facebook.com/documentation/ads-commerce/conversions-api/dataset-quality-api/offline-events), currently under beta, and new metrics are now available.
+
+## Common use cases
+
+Partners and agencies may use the Dataset Quality API to provide a quality dashboard and insights, while helping their advertisers to enhance and optimize their integrations. Partners may also use this integration to monitor the stability of their Conversions API integration. Advertisers may use this endpoint to aggregate dataset quality data to incorporate in their monitoring.
+
+## Setup requirements
+
+### Ownership and access
+
+#### Advertiser authentication using Meta Business Suite
+
+1. In Meta Business Suite, go to the Users section and select the **System User** tab. Click on the specific system user you are using for the Conversions API.
+2. Go to the Assign Asset dialog and choose **Pixels**. Then, select the pixels you want to send events on behalf of.
+3. For each pixel, select the Manage Pixel permission, and click **Save Changes**.
+4. Go back to your system user&#039;s details page. Verify that the selected pixels are visible there.
+5. To generate the access token, follow instructions [here](https://www.facebook.com/business/help/503306463479099?id=2190812977867143).
+
+#### Partner platform authentication
+
+You must first request authorization to send events on behalf of your clients. You have the following authentication options:
+
+##### Facebook Login for Business (recommended)
+
+[Facebook Login for Business](https://developers.facebook.com/documentation/facebook-login/facebook-login-for-business) is the preferred authentication and authorization solution for Tech Providers and business app developers who need access to their business clients&#039; assets. It allows you to specify the access token type, types of assets, and permissions your app needs, and save it as a set (configuration). You can then present the set to your business clients to complete the flow and grant your app access to their business assets.
+
+##### Meta Business Extension (recommended)
+
+With this option, [Meta Business Extension](https://developers.facebook.com/docs/facebook-business-extension) (MBE) returns all the necessary information needed to send events on behalf of the client. MBE provides an endpoint to retrieve system user access tokens created in the client&#039;s Meta Business Suite. This process includes permissions to send server events and is done automatically and securely. MBE is currently under beta. Please contact your Meta representative for access.
+
+The endpoint requires a user access token as an input parameter. If you are a new MBE user, call this endpoint to fetch the system user access token after you have finished setting up MBE. Existing users need to ask for re-authentication before calling the new API endpoint.
+
+##### Client shares Meta Pixel to partner&#039;s Meta Business Suite
+
+With this option, the client shares their Meta Pixel to the partner using Meta Business Suite settings or by the [API](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ads-pixel/shared_accounts). Then, the partner can assign the partner system user to the client pixel and [generate an access token to send server events](https://developers.facebook.com/documentation/ads-commerce/conversions-api/set-up-conversions-api-as-a-platform#get-started).
+
+##### Client generates token manually using Events Manager
+
+Advertisers can generate access tokens in Events Manager to set up the Conversions API and access the Dataset Quality API. You can configure a direct integration or share the generated access token with your partners to send events to Meta. You can copy and save this new token. Note that Meta will not store these tokens. The generated token will be able to fetch quality data and send events using the Conversions API.
+
+#### User permission
+* The user or system user used to make the API call requires (at minimum) the following user permission: **Partial access -&gt; Use events dataset**
+* User access may be granted (in bulk) by using the instructions provided [here](https://www.facebook.com/business/help/279059996069252?id=2042840805783715).
+
+#### App permission
+* **Basic:** If you manage a small number of Meta datasets and/or wish to test the Dataset Quality API, then the following app permissions are required: **ads_read** and (**ads_management** or **business_management**).
+
+* **Advanced:** If you manage a high number of Meta datasets on behalf of other businesses and/or require higher rate limits, then the **advanced level** of the **ads_management** app permission and app feature **Marketing API Access Tier** is required. Advanced level app permissions and features require [app review](https://developers.facebook.com/docs/resp-plat-initiatives/individual-processes/app-review).
+
+## Retrieving dataset quality information
+
+### Endpoint
+```
+https://graph.facebook.com/v25.0/dataset_quality
+```
+
+### Parameters
+
+| Parameter | Description |
+| --- | --- |
+| `dataset_id`&lt;br&gt;&lt;br&gt;integer | **Required.**  &lt;br&gt;The ID of dataset (Pixel) to retrieve quality data. |
+| `access_token`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;Valid (unexpired) access token for given dataset (Pixel) ID. Set up a long-lived system user access token.&lt;br&gt;Read more about the different types of access tokens in the dedicated [guide](https://developers.facebook.com/documentation/facebook-login/guides/access-tokens). |
+| `agent_name`&lt;br&gt;&lt;br&gt;string | **Optional.**  &lt;br&gt;The normalized value of the `partner_agent` field is used to filter only events sent with the `partner_agent` param in [/&#123;pixel_id&#125;/events](https://developers.facebook.com/documentation/ads-commerce/conversions-api/using-the-api#send) POST request (see attributing your events best practices [here](https://developers.facebook.com/documentation/ads-commerce/conversions-api/guides/end-to-end-implementation#step-3--attribute-events-to-your-platform) and [here](https://developers.facebook.com/documentation/ads-commerce/conversions-api/best-practices#bp-agencies)).&lt;br&gt;&lt;br&gt;For example, if your partner_agent value is `[partner_name]_[majorversion]_[minorVersion]`, your normalized agent string value will be `partner_name` in lowercase.&lt;br&gt;&lt;br&gt;The `agent_name` allows you to set your own platform identifier when sending events on behalf of a client. If you are a managed partner/agency, work with your Meta representative to agree on an identifier for your platform.&lt;br&gt;&lt;br&gt;If you are an advertiser, most of the time you should not worry about `agent_name` attribution.&lt;br&gt;&lt;br&gt;If you do not provide an `agent_name`, all events regardless of whether they were sent by an agent or not, will be included in the EMQ calculation. |
+
+### Fields
+
+| Field | Description |
+| --- | --- |
+| `web`&lt;br&gt;&lt;br&gt;array | This field denotes a structured set of data related to website events. The filter is an array containing `event_name` and its metrics. This field is required by default in this API. See [example section](#example-section). |
+| `event_name`&lt;br&gt;&lt;br&gt;string | A [standard event](https://developers.facebook.com/docs/facebook-pixel/implementation/conversion-tracking#standard-events) or [custom event](https://developers.facebook.com/docs/facebook-pixel/implementation/conversion-tracking#custom-events) name. |
+| `event_match_quality`&lt;br&gt;&lt;br&gt;[AdsPixelCAPIEMQ(/docs/marketing-api/reference/ads-pixel-capiemq)] | Event Match Quality indicates how effective the customer information sent from your server may be at matching event instances to a Facebook account.  &lt;br&gt;&lt;br&gt;See more details [here](#emq-main). |
+| `event_potential_aly_acr_increase`&lt;br&gt;&lt;br&gt;[AdsPixelCAPIEventALYACR](https://developers.facebook.com/docs/marketing-api/reference/ads-pixel-capi-event-alyacr) | Additional Conversions Reported (ACR) for Conversions API Event is a metric that estimates how many conversions (for example, purchases, or link clicks) are measured as a result of an advertiser&#039;s Conversions API setup.&lt;br&gt;&lt;br&gt;See more details [here](#acr-capi-event). |
+| `acr`&lt;br&gt;&lt;br&gt;[AdsDatasetCAPIACR](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-capiacr) | Additional Conversions Reported (ACR) is a metric that helps you understand how much your business benefits from using the Conversions API alongside the Meta Pixel. It also can help you determine if you can improve your Conversions API setup to measure more reported conversions. More reported conversions can help you decrease your cost per result and show your ads to people that find them relevant.  &lt;br&gt;&lt;br&gt;See more details [here](#acr-main). |
+| `event_coverage`&lt;br&gt;&lt;br&gt;[AdsDatasetEventCoverage](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-event-coverage) | Event coverage is the 7-day average percent of Pixel events that are covered by the Conversions API, and share deduplication keys with events from the Conversions API.&lt;br&gt;&lt;br&gt;See more details [here](#acr-event-coverage). |
+| `dedup_key_feedback`&lt;br&gt;&lt;br&gt;[AdsDatasetDedupKeyFeedback](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-dedup-key-feedback) | Deduplication is a process used to prevent our system from counting the same event twice. In order for you to have a high event coverage, covered events must have a proper deduplication setup.&lt;br&gt;&lt;br&gt;Deduplication key feedback helps to identify any active issues with deduplication.&lt;br&gt;&lt;br&gt;See more details [here](#event-deduplication). |
+| `data_freshness`&lt;br&gt;&lt;br&gt;[AdsDatasetDataFreshness](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-data-freshness) | Data freshness tells you how current your data is. Use this information to understand the delay between the time the event occurred and when Meta received it.&lt;br&gt;&lt;br&gt;See more details [here](#data-freshness). |
+
+**Warning:** **Tip**: Look inside the node (follow hyperlink to the separate developers page) to find out all fields and child nodes for fields in the table above.
+
+## EMQ &#123;#emq-main&#125;
+
+### About event match quality
+
+#### Event match quality
+Event match quality (EMQ) is a score (out of 10) that indicates how effective the customer information sent from your server may be at matching event instances to a Meta account. High quality event matching may improve ads attribution and performance.
+
+#### How it&#039;s calculated
+Event match quality is calculated by looking at which customer information parameters are received from your server using a Conversions API integration, the quality of the information received and the percent of event instances that are matched to a Meta account.
+
+#### How it&#039;s used
+Event match quality is used to assess whether you&#039;re sending through the Conversions API the right customer information to match your events to a Meta account, and whether you have set up your customer information parameters correctly. Customer information parameters help match your events to a Meta account so you can attribute conversions to your ads and deliver them to people who are most likely to convert.
+**Event match quality is calculated in real time**. Learn more about EMQ best practices [here](https://www.facebook.com/business/help/765081237991954?id=818859032317965).
+
+EMQ is currently available only for web events. For other event types such as offline and physical store events, app events, conversion leads or any integration under alpha or beta stages, contact your Meta representative for guidance on improving match quality.
+
+**Use case**: Monitor event match quality score per event, along with match keys being sent, build an EMQ trendline or historical extracts, then hook up alerts/delectors for EMQ score and match keys drops.
+
+**Documentation**: All fields available for EMQ diagnostics can be found on [this developer&#039;s page](https://developers.facebook.com/docs/marketing-api/reference/ads-pixel-capiemq).
+
+### Example &#123;#example-section&#125;
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;agent_name=&lt;AGENT_NAME&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;event_match_quality,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;event_match_quality,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;agent_name=&lt;AGENT_NAME&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;event_match_quality&quot;: &#123;
+        &quot;composite_score&quot;: 6.2,
+        &quot;match_key_feedback&quot;: [
+          &#123;
+            &quot;identifier&quot;: &quot;user_agent&quot;,
+            &quot;coverage&quot;: &#123;
+              &quot;percentage&quot;: 100
+            &#125;
+          &#125;,
+          &#123;
+            &quot;identifier&quot;: &quot;external_id&quot;,
+            &quot;coverage&quot;: &#123;
+              &quot;percentage&quot;: 100
+            &#125;
+          &#125;
+        ]
+      &#125;,
+      &quot;event_name&quot;: &quot;pLTVPurchase&quot;
+    &#125;,
+    &#123;
+      &quot;event_match_quality&quot;: &#123;
+        &quot;composite_score&quot;: 7.2,
+        &quot;match_key_feedback&quot;: [
+          &#123;
+            &quot;identifier&quot;: &quot;email&quot;,
+            &quot;coverage&quot;: &#123;
+              &quot;percentage&quot;: 100
+            &#125;
+          &#125;,
+          &#123;
+            &quot;identifier&quot;: &quot;ip_address&quot;,
+            &quot;coverage&quot;: &#123;
+              &quot;percentage&quot;: 99.9
+            &#125;
+          &#125;,
+        ]
+      &#125;,
+      &quot;event_name&quot;: &quot;CompleteRegistration&quot;
+    &#125;
+   ]
+ &#125;
+```
+
+## Additional Conversions Reported (ACR) for Event Match Quality parameters &#123;#acr-params&#125;
+
+Additional Conversions Reported (ACR) is a metric that estimates how many conversions (for example, purchases, or link clicks) are measured as a result of an advertiser&#039;s Conversions API setup.
+
+**To learn more about this metric, see the [About ACR](https://www.facebook.com/business/help/453888373437795) article and the [Learn More](https://developers.facebook.com/documentation/ads-commerce/conversions-api/dataset-quality-api#learn-more) section**.
+
+**Use case**: For events connected to the Conversions API that have an EMQ score, monitor the uplift in additional conversions which the Conversions API is able to add when sending more and/or higher quality match keys.
+
+**Documentation**: All fields available for ACR EMQ parameters can be found in the developer documentation [here](https://developers.facebook.com/docs/graph-api/reference/ads-pixel-capi-match-key-alyacr).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;agent_name=&lt;AGENT_NAME&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;event_match_quality&#123;match_key_feedback&#123;identifier,potential_aly_acr_increase&#123;percentage,description&#125;&#125;&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;event_match_quality&#123;match_key_feedback&#123;identifier,potential_aly_acr_increase&#123;percentage,description&#125;&#125;&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;agent_name=&lt;AGENT_NAME&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;event_match_quality&quot;:
+        &quot;match_key_feedback&quot;: [
+          &#123;
+            &quot;identifier&quot;: &quot;email&quot;,
+            &quot;potential_aly_acr_increase&quot;: &#123;
+              &quot;percentage&quot;: 58.96,
+              &quot;description&quot;: &quot;Similar advertisers who sent valid Email for Purchase saw a 58.96% median increase in their existing additional conversions reported.&quot;
+            &#125;
+          &#125;,
+          &#123;
+            &quot;identifier&quot;: &quot;ip_address&quot;,
+            &quot;potential_aly_acr_increase&quot;: &#123;
+              &quot;percentage&quot;: 20.65,
+              &quot;description&quot;: &quot;Similar advertisers who sent valid Ip Address for Purchase saw a 20.65% median increase in their existing additional conversions reported.&quot;
+            &#125;
+          &#125;,
+        ]
+      &#125;
+      &quot;event_name&quot;: &quot;Purchase&quot;
+    &#125;,
+  ]
+&#125;
+```
+
+## EMQ diagnostics &#123;#emq-diagnostics&#125;
+
+Event match quality diagnostics are issues Meta identified with your Conversions API integration. Follow the provided recommendations to send higher quality match keys, optimize your ad performance, and improve your EMQ score.
+
+**Use case**: Extract and store EMQ diagnostics in your environment, set up notifications using channels like email, messenger, or in-app notifications in order to resolve issues reactively.
+
+**Documentation**: All fields available for EMQ diagnostics can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-emq-diagnostics).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;agent_name=&lt;AGENT_NAME&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;event_match_quality&#123;diagnostics&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;event_match_quality&#123;diagnostics&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;agent_name=&lt;AGENT_NAME&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;event_match_quality&quot;: &#123;
+        &quot;diagnostics&quot;: [
+          &#123;
+            &quot;name&quot;: &quot;Update your IPv4 IP addresses to IPv6 IP addresses&quot;,
+            &quot;description&quot;: &quot;Your server is sending IPV4 IP addresses through the Conversions API. We recommend updating to IPV6 IP addresses because this is the industry standard and offers better durability for this integration.&quot;,
+            &quot;solution&quot;: &quot;You can update your web server and DNS provider configuration to support IPv6. In your server payload, send the client_ip_address retrieved from customer interactions. Use the payload helper to see how this value should be structured when it&#039;s sent to Meta. If this issue is not applicable or actionable, you can ignore it.&quot;,
+            &quot;percentage&quot;: 59.5,
+            &quot;affected_event_count&quot;: 18930,
+            &quot;total_event_count&quot;: 31830
+          &#125;,
+          &#123;
+            &quot;name&quot;: &quot;Server sending mismatched IP addresses&quot;,
+            &quot;description&quot;: &quot;Your server is sending client IP addresses that do not match those from Meta Pixel. This may impact the attribution and optimization of your ad campaigns.&quot;,
+            &quot;solution&quot;: &quot;In your server payload, send the client_ip_address retrieved from customer interactions. Use the payload helper to see how this value should be structured when it&#039;s sent to Meta.&quot;,
+            &quot;percentage&quot;: 61.5,
+            &quot;affected_event_count&quot;: 19567,
+            &quot;total_event_count&quot;: 31830
+          &#125;
+        ]
+      &#125;
+      &quot;event_name&quot;: &quot;Purchase&quot;
+    &#125;,
+  ]
+&#125;
+```
+
+## Event coverage &#123;#event-coverage&#125;
+
+Event coverage is the 7-day average percentage of Meta Pixel events that are covered by the Conversions API, and share deduplication keys with events from the Conversions API.
+
+**Learn more about event coverage best practices by reading this [Business Help Center](https://www.facebook.com/business/help/1541268312717919?id=818859032317965) article**.
+
+**Use case**: Evaluate the events which are connected by server versus those which are not. For example, if an advertiser has three events, ViewContent, AddToCart, and Purchase, but only Purchase is sent by server, the event coverage will be 33%.
+
+**Documentation**: All fields available for event coverage can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-event-coverage).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;event_coverage&#123;percentage,goal_percentage,description&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;event_coverage&#123;percentage,goal_percentage,description&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;event_coverage&quot;: &#123;
+        &quot;percentage&quot;: 34.1,
+        &quot;goal_percentage&quot;: 75,
+        &quot;description&quot;: &quot;The percentage of events received from your Conversions API compared to unique browser events from the Meta Pixel.&quot;
+      &#125;,
+      &quot;event_name&quot;: &quot;B2B Purchase&quot;
+    &#125;,
+  ]
+&#125;
+```
+
+## Additional Conversions Reported (ACR) for Event Coverage &#123;#acr-event-coverage&#125;
+
+Additional Conversions Reported (ACR) for Event Coverage is a metric that helps you understand how much your business benefits from using the Conversions API alongside the Meta Pixel. For event coverage, you can see the potential improvement in additional conversions reported if the event coverage and deduplication both meet the best practices.
+
+**To learn more about additional conversions reported, see the [About ACR](https://www.facebook.com/business/help/453888373437795) article and the [Learn More](https://developers.facebook.com/documentation/ads-commerce/conversions-api/dataset-quality-api#learn-more) section.**
+
+**Use case**: For events connected to the Conversions API that have event coverage below 75% threshold, monitor the uplift in additional conversions which the Conversions API is able to add when covering more events (increasing server versus browser ratio).
+
+**Documentation**: All fields available for ACR for Event Coverage can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-capi-event-coverage-alyacr).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;event_coverage&#123;potential_aly_acr_increase&#123;percentage,description&#125;&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;event_coverage&#123;potential_aly_acr_increase&#123;percentage,description&#125;&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;event_coverage&quot;: &#123;
+        &quot;potential_aly_acr_increase&quot;: &#123;
+          &quot;percentage&quot;: 35.8,
+          &quot;description&quot;: &quot;Similar advertisers who send the same AddToCart pixel events with matching deduplication keys through Conversions API saw a median of 35.8% additional conversions reported versus those that only used Meta Pixel.&quot;
+        &#125;
+      &#125;,
+      &quot;event_name&quot;: &quot;AddToCart&quot;
+    &#125;,
+  ]
+&#125;
+```
+
+## Event deduplication &#123;#event-deduplication&#125;
+
+The Meta Pixel and the Conversions API enable you to share standard and custom events with Meta so you can measure and optimize ad performance. The Pixel enables you to share web events from a web browser, while the Conversions API enables you to share web events directly from your server.
+
+If you connect website activity using both the Pixel and the Conversions API, Meta may receive the same events from the browser and the server. If Meta detects that the events are the same and therefore redundant, Meta keeps one and discards the rest. This is called deduplication.
+
+The deduplication key feedback shows the percentages of events from the Pixel and the Conversions API that were received with each deduplication key. Share deduplication keys for all of your events – the higher the percentage, the better.
+
+**To learn more about deduplication best practices, see the [Business Help](https://www.facebook.com/business/help/823677331451951?id=1205376682832142) Center article.**
+
+**Use case**: Monitor the rate of deduplication between browser and server events to help to increase event coverage rate for your Conversions API-connected events.
+
+**Documentation**: All fields available for dedupe key feedback can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-dedup-key-feedback).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;agent_name=&lt;AGENT_NAME&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;dedupe_key_feedback&#123;dedupe_key,browser_events_with_dedupe_key&#123;percentage,description&#125;,server_events_with_dedupe_key&#123;percentage,description&#125;,overall_browser_coverage_from_dedupe_key&#123;percentage,description&#125;&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;dedupe_key_feedback&#123;dedupe_key,browser_events_with_dedupe_key&#123;percentage,description&#125;,server_events_with_dedupe_key&#123;percentage,description&#125;,overall_browser_coverage_from_dedupe_key&#123;percentage,description&#125;&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;agent_name=&lt;AGENT_NAME&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;dedupe_key_feedback&quot;: [
+        &#123;
+          &quot;dedupe_key&quot;: &quot;event_id&quot;,
+          &quot;browser_events_with_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 100,
+            &quot;description&quot;: &quot;The percentage of browser events that contain this dedupe key.&quot;
+          &#125;,
+          &quot;server_events_with_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 100,
+            &quot;description&quot;: &quot;The percentage of server events that contain this dedupe key.&quot;
+          &#125;,
+          &quot;overall_browser_coverage_from_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 14.8,
+            &quot;description&quot;: &quot;The overall percentage of browser events that are deduped with Conversions API events using this key. This percentage is incremental for each dedupe key.&quot;
+          &#125;
+        &#125;,
+        &#123;
+          &quot;dedupe_key&quot;: &quot;external_id&quot;,
+          &quot;browser_events_with_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 100,
+            &quot;description&quot;: &quot;The percentage of browser events that contain this dedupe key.&quot;
+          &#125;,
+          &quot;server_events_with_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 100,
+            &quot;description&quot;: &quot;The percentage of server events that contain this dedupe key.&quot;
+          &#125;,
+          &quot;overall_browser_coverage_from_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 15.96,
+            &quot;description&quot;: &quot;The overall percentage of browser events that are deduped with Conversions API events using this key. This percentage is incremental for each dedupe key.&quot;
+          &#125;
+        &#125;,
+        &#123;
+          &quot;dedupe_key&quot;: &quot;fbp&quot;,
+          &quot;browser_events_with_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 0,
+            &quot;description&quot;: &quot;The percentage of browser events that contain this dedupe key.&quot;
+          &#125;,
+          &quot;server_events_with_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 0,
+            &quot;description&quot;: &quot;The percentage of server events that contain this dedupe key.&quot;
+          &#125;,
+          &quot;overall_browser_coverage_from_dedupe_key&quot;: &#123;
+            &quot;percentage&quot;: 0,
+            &quot;description&quot;: &quot;The overall percentage of browser events that are deduped with Conversions API events using this key. This percentage is incremental for each dedupe key.&quot;
+          &#125;
+        &#125;
+      ],
+      &quot;event_name&quot;: &quot;AddToCart&quot;
+    &#125;,
+  ]
+&#125;
+```
+
+## Data freshness &#123;#data-freshness&#125;
+
+Data freshness indicates the delay between the time the event occurred and when Meta received it. Best practice is to share your events in real time, or as close to real time as possible.
+
+The Meta Pixel defaults to sending web browser events in real time. To get the most value from your events, send them in real time or as close to real time as possible. Events sent with a delay may impact how effectively your ads can be delivered to the right audiences.
+
+**To learn more about data freshness best practices, see the [Business Help](https://www.facebook.com/business/help/379226453470947?id=818859032317965) Center article.**
+
+**Use case**: Evaluate how quickly events are received from server versus browser. Improve frequency to real_time when possible to get the most value from your event data.
+
+**Documentation**: All fields available for data freshness can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-data-freshness).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;agent_name=&lt;AGENT_NAME&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;data_freshness&#123;upload_frequency,description&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;data_freshness&#123;upload_frequency,description&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;agent_name=&lt;AGENT_NAME&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;data_freshness&quot;: &#123;
+        &quot;upload_frequency&quot;: &quot;real_time&quot;,
+        &quot;description&quot;: &quot;The average frequency with which instances of this event are received through the Conversions API.&quot;
+      &#125;,
+      &quot;event_name&quot;: &quot;ViewContent&quot;
+    &#125;,
+    &#123;
+      &quot;data_freshness&quot;: &#123;
+        &quot;upload_frequency&quot;: &quot;hourly&quot;,
+        &quot;description&quot;: &quot;The average frequency with which instances of this event are received through the Conversions API.&quot;
+      &#125;,
+      &quot;event_name&quot;: &quot;Lead&quot;
+    &#125;,
+  ]
+&#125;
+```
+
+## Additional Conversions Reported (ACR) for Conversions API Event &#123;#acr-capi-event&#125;
+
+Additional Conversions Reported (ACR) for Conversions API Event is a metric that estimates how many conversions (for example, purchases, or link clicks) are measured as a result of an advertiser&#039;s Conversions API setup.
+
+**To learn more about additional conversions reported, see the [About ACR](https://www.facebook.com/business/help/453888373437795) article and the [Learn More](https://developers.facebook.com/documentation/ads-commerce/conversions-api/dataset-quality-api#learn-more) section.**
+
+**Use case**: For Meta Pixels not connected to the Conversions API, extract the additional conversions reported metric to estimate the impact a Conversions API integration may have.
+
+**Documentation**: All fields available for ACR for Conversion API event can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-pixel-capi-event-alyacr).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;event_potential_aly_acr_increase&#123;description,percentage&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;event_potential_aly_acr_increase&#123;description,percentage&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;event_potential_aly_acr_increase&quot;: &#123;
+        &quot;description&quot;: &quot;Similar advertisers who set up Conversions API for Search events saw a median of 32.9% additional conversions reported versus those that only used Meta Pixel.&quot;,
+        &quot;percentage&quot;: 32.9
+      &#125;,
+      &quot;event_name&quot;: &quot;Search&quot;
+    &#125;,
+    &#123;
+      &quot;event_potential_aly_acr_increase&quot;: &#123;
+        &quot;description&quot;: &quot;Similar advertisers who set up Conversions API for PageView events saw a median of 30.1% additional conversions reported versus those that only used Meta Pixel.&quot;,
+        &quot;percentage&quot;: 30.1
+      &#125;,
+      &quot;event_name&quot;: &quot;PageView&quot;
+    &#125;
+  ]
+&#125;
+```
+
+## Additional Conversions Reported (ACR) &#123;#acr-main&#125;
+
+Additional Conversions Reported (ACR) is a metric that helps you understand how much your business benefits from using the Conversions API alongside the Meta Pixel. It also can help you determine if you can improve your Conversions API setup to measure more reported conversions. More reported conversions can help you decrease your cost per result and show your ads to people that find them relevant.
+
+**To learn more about additional conversions reported, see the [About ACR](https://www.facebook.com/business/help/453888373437795) article and the [Learn More](https://developers.facebook.com/documentation/ads-commerce/conversions-api/dataset-quality-api#learn-more) section.**
+
+**Use case**: For events connected to the Conversions API and have an EMQ score, monitor the uplift in additional conversions which the Conversions API is able to drive.
+
+**Documentation**: All fields available for ACR can be found in the developer documentation [here](https://developers.facebook.com/docs/marketing-api/reference/ads-dataset-capiacr).
+
+### Example
+
+**Graph API Explorer**
+
+```html
+GET/v25.0/dataset_quality?dataset_id=&lt;DATASET_ID&gt;&amp;access_token=&lt;ACCESS_TOKEN&gt;&amp;fields=web&#123;acr&#123;description,percentage&#125;,event_name&#125;
+```
+
+**cURL**
+
+```html
+curl -X GET -G \
+  -d &#039;fields=web&#123;acr&#123;description,percentage&#125;,event_name&#125;&#039; \
+  -d &#039;dataset_id=&lt;DATASET_ID&gt;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;LATEST_VERSION&gt;/dataset_quality
+```
+
+**API Response**
+
+```json
+&#123;
+  &quot;web&quot;: [
+    &#123;
+      &quot;acr&quot;: &#123;
+        &quot;description&quot;: &quot;In the last 7 days, you saw about 37.9% more conversions reported for Search events by using the Conversions API alongside the Meta Pixel.&quot;,
+        &quot;percentage&quot;: 37.9
+      &#125;,
+      &quot;event_name&quot;: &quot;Search&quot;
+    &#125;,
+    &#123;
+      &quot;acr&quot;: &#123;
+        &quot;description&quot;: &quot;In the last 7 days, you saw about 45.5% more conversions reported for Page View events by using the Conversions API alongside the Meta Pixel..&quot;,
+        &quot;percentage&quot;: 45.5
+      &#125;,
+      &quot;event_name&quot;: &quot;PageView&quot;
+    &#125;
+  ]
+&#125;
+```
+
+## FAQs
+
+**What Is the Dataset Quality API?**
+
+Advertisers that share server events using the Conversions API can see the event match quality score in Events Manager. However, this only works on an individual basis and is difficult to scale in cases where a tech provider partner, agency partner or advertiser is managing hundreds and thousands of Meta Pixels for their businesses. The Dataset Quality (formerly known as Integration Quality) API can help solve this problem by consolidating dataset quality metrics programmatically at scale.
+
+**What is the access token used for? **
+
+The access token is used when partners send signal events or access the Setup Quality API on behalf of advertisers. The [client system user access token](https://developers.facebook.com/documentation/ads-commerce/conversions-api/set-up-conversions-api-as-a-platform#for-facebook-pixels-not-managed-by-the-partner) onboarding method is not compatible with the EMQ API at the moment.
+
+**How should the partner_agent field be formatted? **
+
+The `partner_agent` value in your API GET request should be a normalized lowercase format. This field is now optional.
+
+**Can an Access Token Generated Using Events Manager Prior to July 2025 Access the Dataset Quality API Directly?**
+
+The advertiser will need to go to Events Manager to accept by using the instructions in the [Client Generates Token Manually Using Events Manager](https://developers.facebook.com/documentation/ads-commerce/conversions-api/dataset-quality-api#ownership-and-access) section explained above. Once the advertiser completes the opt-in process, both the new token and existing generated tokens by the same user will be able to send events or access the Dataset Quality API.
+
+## Learn more
+
+1. [Conversions API Best Practices](https://developers.facebook.com/documentation/ads-commerce/conversions-api/best-practices).
+
+2. [Drive performance with an optimized Conversions API setup](https://www.facebook.com/business/inspiration/video/drive-performance-optimized-conversions-api).
+
+3. [Optimizing your setup can help improve your marketing performance](https://www.facebook.com/business/inspiration/video/drive-performance-optimized-conversions-api).
+
+4. [Best practices to onboard the Conversions API for partners](https://www.facebook.com/business/m/conversions-api-resources).
+
+5. Conversions API dataset quality guidance in the Business Help Center:
+
+* [Best practices for Conversions API to help improve ad performance.](https://www.facebook.com/business/help/308855623839366?id=818859032317965) These Conversions API best practices can help businesses improve their ad performance by lowering their cost per action. Follow these best practices upon initial setup, but you can also use them to update existing setups.
+
+* [View server event details in Meta Events Manager.](https://www.facebook.com/business/help/1541268312717919?id=818859032317965) After businesses set up the Conversions API, they can use this article to learn how to monitor events and parameters to make sure their setup is working effectively and identify opportunities for improvement. Businesses can use this article to learn how to use server event details (Event Match Quality, Data Freshness, Event Overview and Event Deduplication) in Events Manager to improve their Conversions API setup.
+
+6. Additional Conversions Reported:
+
+* [About additional conversions reported.](https://www.facebook.com/business/help/453888373437795)
+* [Troubleshoot reasons why your additional reported conversions are not available.](https://www.facebook.com/business/help/478879057492537)  
+* [How to interpret additional conversions reported](https://www.facebook.com/business/help/400970175546156)
+</pre></body></html>

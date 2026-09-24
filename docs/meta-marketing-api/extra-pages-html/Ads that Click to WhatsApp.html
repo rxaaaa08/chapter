@@ -1,0 +1,665 @@
+<html><head><title>Ads that Click to WhatsApp</title><meta charset="UTF-8" /><style nonce="Qilmnip6">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Ads that Click to WhatsApp
+
+
+
+This guide explains how to create and publish ads that Click to WhatsApp using the Marketing API.
+
+Ads that click to WhatsApp send people who click on your ads directly into conversations with your business in WhatsApp. You can use these ads to start conversations with a large audience and respond to each person individually.
+
+Ads that click to WhatsApp support ads with an image, a video, a carousel, or a slideshow. You can also include call prompts in your ad.
+
+If you&#039;re interested in creating ads that send people to Messenger or Instagram chats, see [Ads that Click to Messenger](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/messaging-ads/click-to-messenger) or [Ads that Click to Instagram](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/messaging-ads/click-to-instagram) for guidance. You can also create ads that pick the destination the user is most likely to respond from, see [Ads that Click to Multidestination](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/messaging-ads/click-to-multidestination) for more information.
+
+### Ad creation overview
+
+This document outlines the steps you need to follow to set up your integration for click to WhatsApp ads.
+
+You will need to:
+
+1. [Create an ad campaign](#step-1)
+2. [Create an ad set that links your ads to your ad campaign](#step-2)
+3. [Create an ad creative for the WhatsApp ad type you want to serve](#step-3)
+4. [Create an ad by linking your ad creative to your ad set](#step-4)
+5. [Publish your ad to Facebook, Instagram, and Messenger](#step-5)
+
+## Before you start
+
+This guide assumes you have:
+
+* [An ad account with Meta](https://adsmanager.facebook.com/adsmanager/)
+* [Uploaded any assets, such as images or videos, to be used in your ads to Meta servers](https://developers.facebook.com/documentation/business-messaging/messenger-platform/reference/attachment-upload-api)
+* [A Facebook page with WhatsApp number linked](https://www.facebook.com/business/help/1583303048513172?id=2129163877102343) manually or [via API](https://developers.facebook.com/docs/graph-api/reference/page/page_whatsapp_number_verification)
+
+To make successful calls to all endpoints in this guide, you will need:
+
+* A Page access token requested by a person who can perform the ADVERTISE task on the Page
+* The following permissions must be granted a person using your app:
+    * `ads_management`
+    * `pages_manage_ads`
+    * `pages_read_engagement`
+    * `pages_show_list`
+
+## Step 1: Create an ad campaign &#123;#step-1&#125;
+
+Start by creating your ad campaign. To do this, make a `POST` request to the `/act_&lt;AD_ACCOUNT_ID&gt;/campaigns` endpoint where `&lt;AD_ACCOUNT_ID&gt;` is the ID for your Meta ad account. Your request must include:
+
+### Parameters
+
+| Name | Description |
+| --- | --- |
+| `name`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;Name for the click to WhatsApp campaign. |
+| `objective`&lt;br&gt;&lt;br&gt;enum | **Required.**  &lt;br&gt;Campaign&#039;s objective.  &lt;br&gt;Supported objectives are `OUTCOME_ENGAGEMENT`, `OUTCOME_LEADS`, `OUTCOME_SALES`, and `OUTCOME_TRAFFIC`.  &lt;br&gt;**Note:** For campaigns with call prompts, `objective` must be `OUTCOME_ENGAGEMENT`. |
+| `special_ad_categories`&lt;br&gt;&lt;br&gt;list&lt;Object&gt; | **Required.**  &lt;br&gt;Special ad categories associated with the click to WhatsApp campaign. See the [Ad Campaign reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-campaign-group) for more details. |
+| `status`  &lt;br&gt;&lt;br&gt;enum | **Optional.**  &lt;br&gt;Valid options are `PAUSED` and `ACTIVE`.  &lt;br&gt;If this status is `PAUSED`, Meta pauses all the campaign&#039;s active ad sets and ads and gives them an effective status of `CAMPAIGN_PAUSED`. |
+
+#### Standard request
+
+```curl
+curl -X POST \
+  -F &#039;name=Click to WhatsApp Campaign&#039; \
+  -F &#039;objective=OUTCOME_ENGAGEMENT&#039; \
+  -F &#039;status=ACTIVE&#039; \
+  -F &#039;special_ad_categories=[]&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/campaigns
+```
+
+#### Calling campaign request
+
+```bash
+curl -X POST \
+  -F &#039;name=Click to WhatsApp Calling Campaign&#039; \
+  -F &#039;objective=OUTCOME_ENGAGEMENT&#039; \
+  -F &#039;status=PAUSED&#039; \
+  -F &#039;special_ad_categories=[]&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/campaigns
+```
+
+#### Response
+
+On success, your app receives a JSON response with the ID of your newly created campaign.
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;AD_CAMPAIGN_ID&gt;&quot;
+&#125;
+```
+
+### Updating
+
+You can update a campaign by making a `POST` request to `/&lt;AD_CAMPAIGN_ID&gt;`.
+
+### Reading
+
+To verify that you have successfully created a click to WhatsApp campaign, you can make a `GET` request to `/&lt;AD_CAMPAIGN_ID&gt;`. See the [Ad Campaign reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-campaign-group#Reading) for the complete list of available parameters.
+
+#### Request
+
+```curl
+curl -X GET -G \
+  -d &#039;fields=name,status,objective&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/&lt;AD_CAMPAIGN_ID&gt;
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;name&quot;: &quot;Click to WhatsApp Campaign&quot;,
+  &quot;status&quot;: &quot;PAUSED&quot;,
+  &quot;objective&quot;: &quot;OUTCOME_ENGAGEMENT&quot;,
+  &quot;id&quot;: &quot;&lt;AD_CAMPAIGN_ID&gt;&quot;
+&#125;
+```
+
+## Step 2: Create an ad set &#123;#step-2&#125;
+
+Once you have an ad campaign, create your ad set. To create an ad set, make a `POST` request to the `/act_&lt;AD_ACCOUNT_ID&gt;/adsets` endpoint where `&lt;AD_ACCOUNT_ID&gt;` is the ID for your Meta ad account. Your request must include:
+
+### Parameters
+
+| Name | Description | Sample value |
+| --- | --- | --- |
+| `bid_amount`&lt;br&gt;&lt;br&gt;unsigned int32 | **Required** if `bid_strategy` is set to `LOWEST_COST_WITH_BID_CAP` or `COST_CAP`.  &lt;br&gt;The maximum amount you want to pay for a result based on your `optimization_goal`. | `1000` |
+| `bid_strategy`&lt;br&gt;&lt;br&gt;enum | **Optional.**  &lt;br&gt;The bid strategy for this campaign to suit your specific business goals. See the [Ad Campaign reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-campaign-group) for more details.  &lt;br&gt;**Values:** `LOWEST_COST_WITHOUT_CAP`, `LOWEST_COST_WITH_BID_CAP`, `COST_CAP` | `LOWEST_COST_WITHOUT_CAP` |
+| `billing_event`&lt;br&gt;&lt;br&gt;enum | **Required.**  &lt;br&gt;Set this to `IMPRESSIONS` for ads that click to WhatsApp. Meta bills you when your ad is shown to people. | `IMPRESSIONS` |
+| `campaign_id`&lt;br&gt;&lt;br&gt;numeric string or integer | **Required.**  &lt;br&gt;A valid click to WhatsApp campaign you wish to add this ad set to. | `4523897324` |
+| `daily_budget`&lt;br&gt;&lt;br&gt;int64 | **Required** if `lifetime_budget` is not set.  &lt;br&gt;The daily budget defined in your account currency. Allowed only for ad sets with a duration (difference between `end_time` and `start_time`) longer than 24 hours.  &lt;br&gt;Either `daily_budget` or `lifetime_budget` must be greater than `0`. | `1` |
+| `destination_type`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;Set to `WHATSAPP` for single-destination click to WhatsApp ads. | `WHATSAPP` |
+| `end_time`&lt;br&gt;&lt;br&gt;datetime | **Required** when `lifetime_budget` is specified.  &lt;br&gt;When creating an ad set with a `daily_budget`, specify `end_time=0` or leave this field empty to set the ad set as ongoing with no end date.  &lt;br&gt;**Example:** `2015-03-12 23:59:59-07:00` or `2015-03-12 23:59:59 PDT`. UTC UNIX timestamp. | `2026-05-12 23:59:59-07:00` |
+| `lifetime_budget`&lt;br&gt;&lt;br&gt;int64 | **Required** if `daily_budget` is not set.  &lt;br&gt;The lifetime budget of the ad set defined in your account currency. If specified, you must also specify an `end_time`.  &lt;br&gt;Either `daily_budget` or `lifetime_budget` must be greater than `0`. | `1` |
+| `name`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;The name of the click to WhatsApp ad set. | `Jasper&#039;s Market` |
+| `optimization_goal`&lt;br&gt;&lt;br&gt;enum | **Required.**  &lt;br&gt;What the ad set is optimizing for. Depending on the campaign&#039;s objective, the ad set may be eligible for different optimization goals.&lt;br&gt;&lt;br&gt;* `OUTCOME_ENGAGEMENT`: Engagement objective can optimize for `CONVERSATIONS`, and `LINK_CLICKS`.  &lt;br&gt;* `OUTCOME_SALES`: Sales objective can optimize for `CONVERSATIONS`, `OFFSITE_CONVERSIONS`, `LINK_CLICKS`, `IMPRESSIONS`, and `REACH`.  &lt;br&gt;* `OUTCOME_TRAFFIC`: Traffic objective can optimize for `CONVERSATIONS`, `LANDING_PAGE_VIEWS`, `LINK_CLICKS`, `IMPRESSIONS`, `REACH`, and `POST_ENGAGEMENT`.  &lt;br&gt;* `OUTCOME_LEADS`: Leads objective can optimize for `CONVERSATIONS`. | `OUTCOME_SALES` |
+| `promoted_object`&lt;br&gt;&lt;br&gt;[AdPromotedObject](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-promoted-object) | **Required.**  &lt;br&gt;The object this ad set is promoting across all its ads. For ads that click to WhatsApp, `promoted_object` has the following conditions:&lt;br&gt;&lt;br&gt;Required:&lt;br&gt;&lt;br&gt;* `page_id`: **Required.** The ID of the Facebook Page.&lt;br&gt;&lt;br&gt;Optional:&lt;br&gt;&lt;br&gt;* `whatsapp_phone_number`: The WhatsApp phone number associated with the click to WhatsApp ad set.&lt;br&gt;&lt;br&gt;See [Ad Set, Promoted Object](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-promoted-object) for more details. | `&#123;&lt;br&gt;&quot;page_id&quot;: &quot;452645324&quot;&lt;br&gt;&#125;` |
+| `start_time`&lt;br&gt;&lt;br&gt;datetime | **Optional.**  &lt;br&gt;The start time of the ad set. This field will default to the current time if no value is provided.  &lt;br&gt;**Example:** `2015-03-12 23:59:59-07:00` or `2015-03-12 23:59:59 PDT`. UTC UNIX timestamp. | `2026-03-12 23:59:59-07:00` |
+| `status`&lt;br&gt;&lt;br&gt;enum | **Optional.**  &lt;br&gt;The status of the ad set. The ad set status can be different from the effective status due to its parent campaign. This field will default to `ACTIVE` if no value is provided.  &lt;br&gt;**Values:** `ACTIVE`, `PAUSED`, `DELETED`, `ARCHIVED` | `ACTIVE` |
+| `targeting`&lt;br&gt;&lt;br&gt;Targeting object | **Required.**  &lt;br&gt;The targeting structure of an ad that clicks to WhatsApp. See [Targeting](https://developers.facebook.com/documentation/ads-commerce/marketing-api/audiences/reference/basic-targeting) for more details.&lt;br&gt;&lt;br&gt;To enable the WhatsApp Status feature, see [Placement targeting](https://developers.facebook.com/documentation/ads-commerce/marketing-api/audiences/reference/placement-targeting) for more details. | `&lt;br&gt;&#123;&lt;br&gt;&quot;device_platforms&quot;: [&quot;mobile&quot;],&lt;br&gt;&quot;geo_locations&quot;: &#123;&lt;br&gt;&quot;countries&quot;: [&quot;US&quot;]&lt;br&gt;&#125;&lt;br&gt;&#125;&lt;br&gt;` |
+| `time_start`&lt;br&gt;&lt;br&gt;datetime | **Optional.**  &lt;br&gt;Interchangeable with `start_time`. | `2026-02-14 22:59:59-07:00` |
+| `time_stop`&lt;br&gt;&lt;br&gt;datetime | **Required** when `lifetime_budget` is specified.  &lt;br&gt;Interchangeable with `end_time`. | `2026-05-12 23:59:59-07:00` |
+
+Visit the [Ad Account Ad Set reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-account/adsets) for the complete list of available parameters.
+
+#### Request
+
+```curl
+curl -X POST \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#039;&#123;
+    &quot;access_token&quot;:&quot;&lt;ACCESS_TOKEN&gt;&quot;,
+    &quot;bid_amount&quot;:&quot;&lt;BID_AMOUNT&gt;&quot;,
+    &quot;billing_event&quot;:&quot;IMPRESSIONS&quot;,
+    &quot;campaign_id&quot;:&quot;&lt;CAMPAIGN_ID&gt;&quot;,
+    &quot;daily_budget&quot;:&quot;&lt;DAILY_BUDGET&gt;&quot;,
+    &quot;destination_type&quot;:&quot;WHATSAPP&quot;,
+    &quot;name&quot;: &quot;&lt;AD_SET_NAME&gt;&quot;,
+    &quot;optimization_goal&quot;: &quot;IMPRESSIONS&quot;,
+    &quot;promoted_object&quot;: &#123;
+      &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;
+    &#125;,
+    &quot;status&quot;: &quot;PAUSED&quot;,
+    &quot;start_time&quot;: &quot;&lt;START_TIME&gt;&quot;,
+    &quot;targeting&quot;: &#123;
+      &quot;geo_locations&quot;: &#123; &quot;countries&quot;:[&quot;US&quot;,&quot;CA&quot;] &#125;,
+      &quot;device_platforms&quot;: [&quot;mobile&quot;, &quot;desktop&quot;]
+    &#125;
+  &#125;&#039; \
+&quot;https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adsets&quot;
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;AD_SET_ID&gt;&quot;
+&#125;
+```
+
+### Updating
+
+You can update an ad set by making a `POST` request to `/&lt;AD_SET_ID&gt;`.
+
+### Reading
+
+To verify that you have successfully created a click to WhatsApp ad set, you can make a `GET` request to `/&lt;AD_SET_ID&gt;`. See the [Ad Set reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-campaign) for the complete list of available parameters.
+
+#### Request
+
+```curl
+curl -X GET -G \
+  -d &#039;fields=name,destination_type,optimization_goal,bid_strategy,status&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+  https://graph.facebook.com/v25.0/&lt;AD_SET_ID&gt;
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;name&quot;: &quot;Click to WhatsApp Campaign&quot;,
+  &quot;status&quot;: &quot;PAUSED&quot;,
+  &quot;objective&quot;: &quot;OUTCOME_ENGAGEMENT&quot;,
+  &quot;id&quot;: &quot;&lt;AD_SET_ID&gt;&quot;
+&#125;
+```
+
+## Step 3: Create an ad creative &#123;#step-3&#125;
+
+The ad creative allows you to add assets to your ads. To create an ad creative, make a `POST` request to the `/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives` endpoint where `&lt;AD_ACCOUNT_ID&gt;` is the ID for your Meta ad account. Your request must include:
+
+### Parameters
+
+| Name | Description |
+| --- | --- |
+| `name`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;The name for your ad creative. |
+| `object_story_spec`&lt;br&gt;&lt;br&gt;[AdCreativeObjectStorySpec](https://developers.facebook.com/docs/marketing-api/reference/ad-creative-object-story-spec) | **Required.**  &lt;br&gt;An object containing information about a message. See [Ad Creative Object Story Spec](https://developers.facebook.com/docs/marketing-api/reference/ad-creative-object-story-spec) for more details.&lt;br&gt;&lt;br&gt;Required:&lt;br&gt;&lt;br&gt;* `page_id`: The ID of the Facebook Page&lt;br&gt;&lt;br&gt;Optional:&lt;br&gt;&lt;br&gt;* `link_data`: The spec for a link page post or [carousel ad](https://developers.facebook.com/documentation/ads-commerce/marketing-api/guides/videoads)&lt;br&gt;* `photo_data`: The spec for a photo page post&lt;br&gt;* `text_data`: The spec for a text page post&lt;br&gt;* `video_data`: The spec for a video page post |
+| `degrees_of_freedom_spec` | **Optional.**  &lt;br&gt;See [Standard Enhancements for Advantage+ Creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/standard-enhancements) for more details. |
+
+Visit the [Ad Creative reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-creative) for the complete list of available parameters.
+
+### Filling out a Page welcome message
+
+The default message that a customer sees is &quot;Hello! Can I get more info on this?&quot;. You can create more tailored user experiences for your ads that click to WhatsApp by customizing your ads&#039; greeting message in the `page_welcome_message` field under `object_story_spec`.
+
+**Note:** If you are using the WhatsApp message to trigger any WhatsApp Flows, please make sure to work with your BSP and agencies when updating it to ensure your Flows aren&#039;t disrupted.
+
+### Examples
+
+#### Adding autofill message with a greeting message
+
+```json
+&quot;page_welcome_message&quot;: &#123;
+  &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+  &quot;version&quot;: 2,
+  &quot;landing_screen_type&quot;: &quot;welcome_message&quot;,
+  &quot;media_type&quot;: &quot;text&quot;,
+  &quot;text_format&quot;: &#123;
+    &quot;customer_action_type&quot;: &quot;autofill_message&quot;,
+    &quot;message&quot;: &#123;
+      &quot;autofill_message&quot;: &#123;
+        &quot;content&quot;: &quot;&lt;AUTOFILL_MESSAGE&gt;&quot;
+      &#125;,
+      &quot;text&quot;: &quot;&lt;GREETING_MESSAGE&gt;&quot;
+    &#125;
+  &#125;
+&#125;
+```
+
+#### Adding an automated greeting message with Call Now call to action
+
+```json
+     &quot;page_welcome_message&quot;: &#123;
+    &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+    &quot;version&quot;: 2,
+    &quot;landing_screen_type&quot;: &quot;welcome_message&quot;,
+    &quot;media_type&quot;: &quot;text&quot;,
+    &quot;text_format&quot;: &#123;
+      &quot;customer_action_type&quot;: &quot;autofill_message&quot;,
+      &quot;message&quot;: &#123;
+        &quot;text&quot;: &quot;&lt;AUTOMATED_GREETING_MESSAGE_TEXT&gt;&quot;,
+        &quot;automated_greeting_message_cta&quot;: &#123;
+          &quot;type&quot;: &quot;call&quot;
+        &#125;,
+        &quot;autofill_message&quot;: &#123;
+          &quot;content&quot;: &quot;&lt;AUTOFILL_MESSAGE_CONTENT&gt;&quot;
+        &#125;
+      &#125;
+    &#125;
+&#125;
+```
+
+#### Adding an automated greeting message with View Website call to action
+
+```json
+&quot;page_welcome_message&quot;: &#123;
+    &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+    &quot;version&quot;: 2,
+    &quot;landing_screen_type&quot;: &quot;welcome_message&quot;,
+    &quot;media_type&quot;: &quot;text&quot;,
+    &quot;text_format&quot;: &#123;
+      &quot;customer_action_type&quot;: &quot;autofill_message&quot;,
+      &quot;message&quot;: &#123;
+        &quot;text&quot;: &quot;&lt;AUTOMATED_GREETING_MESSAGE_TEXT&gt;&quot;,
+        &quot;automated_greeting_message_cta&quot;: &#123;
+          &quot;type&quot;: &quot;url&quot;,
+          &quot;url&quot;: &quot;&lt;WEBSITE_URL&gt;&quot;
+        &#125;,
+        &quot;autofill_message&quot;: &#123;
+         &quot;content&quot;: &quot;&lt;AUTOFILL_MESSAGE_CONTENT&gt;&quot;
+        &#125;
+      &#125;
+    &#125;
+  &#125;
+```
+
+#### Adding an automated greeting message with View Catalog call to action
+
+```
+&quot;page_welcome_message&quot;: &#123;
+  &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+  &quot;version&quot;: 2,
+  &quot;landing_screen_type&quot;: &quot;welcome_message&quot;,
+  &quot;media_type&quot;: &quot;text&quot;,
+  &quot;text_format&quot;: &#123;
+    &quot;customer_action_type&quot;: &quot;autofill_message&quot;,
+    &quot;message&quot;: &#123;
+      &quot;text&quot;: &quot;&lt;AUTOMATED_GREETING_MESSAGE_TEXT&gt;&quot;,
+      &quot;automated_greeting_message_cta&quot;: &#123;
+        &quot;type&quot;: &quot;catalog&quot;
+      &#125;,
+      &quot;autofill_message&quot;: &#123;
+        &quot;content&quot;: &quot;&lt;AUTOFILL_MESSAGE_CONTENT&gt;&quot;
+      &#125;
+    &#125;
+  &#125;
+&#125;
+```
+
+#### Adding an automated greeting message with a Flows call to action
+
+Only Flows that fit the following criteria can be used to create an ad creative:
+
+* WhatsApp Flows version &gt; 5.1
+* No validation errors
+* Static Flow (i.e., a Flow without data exchange)
+* Single screen
+* Only eligible components:
+    * Text Heading
+    * Text Subheading
+    * Text Body
+    * Text Caption
+    * Text Input
+    * Text Area
+    * Date Picker
+    * Radio Buttons Group
+    * Footer
+    * Checkbox Group
+* No more than 8 components in the screen
+* At least 1 input component such as:
+    * Text Input
+    * Text Area
+    * Date Picker
+    * Radio Buttons Group
+    * Checkbox Group
+
+```json
+&quot;page_welcome_message&quot;: &#123;
+  &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+  &quot;version&quot;: 2,
+  &quot;landing_screen_type&quot;: &quot;ctwa_flows&quot;,
+  &quot;media_type&quot;: &quot;text&quot;,
+  &quot;text_format&quot;: &#123;
+    &quot;customer_action_type&quot;: &quot;whatsapp_flow&quot;,
+    &quot;message&quot;: &#123;
+      &quot;text&quot;: &quot;&lt;AUTOMATED_GREETING_MESSAGE_TEXT&gt;&quot;,
+      &quot;automated_greeting_message_cta&quot;: &#123;
+        &quot;type&quot;: &quot;flow&quot;,
+        &quot;flow_data&quot;:&#123;
+          &quot;call_to_action&quot;:&quot;Apply now&quot;,
+          &quot;flow_id&quot;:&quot;&lt;FLOW_ID&gt;&quot;
+        &#125;
+      &#125;,
+      &quot;autofill_message&quot;: &#123;
+        &quot;content&quot;: &quot;&lt;AUTOFILL_MESSAGE_CONTENT&gt;&quot;
+      &#125;
+    &#125;
+  &#125;
+&#125;
+```
+
+**Note:** The `flow_id` passed above, should belong to the same WhatsApp Business account as that of the phone number that is promoted in the ad set. See more about [WhatsApp Flows](https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/gettingstarted).
+
+#### Adding icebreakers with a greeting message
+
+```
+&quot;page_welcome_message&quot;: &#123;
+  &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+  &quot;version&quot;: 2,
+  &quot;landing_screen_type&quot;: &quot;welcome_message&quot;,
+    &quot;media_type&quot;: &quot;text&quot;,
+    &quot;text_format&quot;: &#123;
+      &quot;customer_action_type&quot;: &quot;ice_breakers&quot;,
+      &quot;message&quot;: &#123;
+        &quot;text&quot;: &quot;&lt;GREETING_MESSAGE&gt;&quot;,
+        &quot;ice_breakers&quot;: [
+          &#123;
+            &quot;title&quot;: &quot;&lt;ICEBREAKER&gt;&quot;
+          &#125;,
+          &#123;
+            &quot;title&quot;: &quot;&lt;ICEBREAKER&gt;&quot;
+          &#125;,
+          &#123;
+            &quot;title&quot;: &quot;&lt;ICEBREAKER&gt;&quot;
+          &#125;
+        ]
+      &#125;
+    &#125;
+  &#125;
+&#125;
+```
+
+#### Adding message with a call prompt
+
+```
+curl \
+  -F &#039;object_story_spec=&#123;
+      &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;
+      &quot;link_data&quot;: &#123;
+     &quot;image_hash&quot;:&lt;IMAGE_HASH&gt;
+            &quot;call_to_action&quot;: &#123;
+                &quot;type&quot;: &quot;WHATSAPP_MESSAGE&quot;,
+                &quot;value&quot;: &#123;
+                    &quot;app_destination&quot;: &quot;WHATSAPP&quot;
+                &#125;
+          &#125;,
+          &quot;link&quot;: &quot;https://api.whatsapp.com/send&quot;,
+          &quot;name&quot;: &lt;AD_HEADLINE&gt;&quot;,
+          &quot;page_welcome_message&quot;:
+       &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+        &quot;version&quot;: 2,
+        &quot;landing_screen_type&quot;: &quot;ctwa_call_prompt&quot;,
+        &quot;media_type&quot;: &quot;text&quot;,
+        &quot;text_format&quot;: &#123;
+          &quot;message&quot;: &#123;
+            &quot;text&quot;: &quot;&lt;MESSAGE&gt;&quot;,
+            &quot;call_prompt_data&quot;: &#123;
+              &quot;call_prompt_message&quot;: &quot;&lt;CALL_PROMPT_MESSAGE&gt;&quot;
+            &#125;
+          &#125;
+        &#125;,
+        &quot;user_edit&quot;: false
+      &#125;,
+  https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;AD_CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+### Ad creative create examples
+
+#### Request
+
+```curl
+curl -X POST \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#039;&#123;
+        &quot;name&quot;: &quot;Sample ad creative&quot;,
+        &quot;object_story_spec&quot;: &#123;
+          &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;,
+          &quot;link_data&quot;: &#123;
+            &quot;name&quot;: &quot;&lt;AD_HEADLINE&gt;&quot;,
+            &quot;message&quot;: &quot;&lt;AD_PRIMARY_TEXT&gt;&quot;,
+            &quot;description&quot;: &quot;&lt;AD_DESCRIPTION&gt;&quot;,
+            &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH&gt;&quot;,
+            &quot;link&quot;: &quot;https://api.whatsapp.com/send&quot;,
+            &quot;page_welcome_message&quot;: &quot;&lt;PAGE_WELCOME_MESSAGE&gt;&quot;,
+            &quot;call_to_action&quot;: &#123;
+              &quot;type&quot;: &quot;WHATSAPP_MESSAGE&quot;,
+              &quot;value&quot;: &#123;
+                &quot;app_destination&quot;: &quot;WHATSAPP&quot;
+              &#125;
+            &#125;
+          &#125;
+        &#125;,
+        &quot;degrees_of_freedom_spec&quot;: &#123;
+          &quot;creative_features_spec&quot;: &#123;
+            &quot;standard_enhancements&quot;: &#123;
+              &quot;enroll_status&quot;: &quot;OPT_IN&quot;
+            &#125;
+          &#125;
+        &#125;
+      &#125;&#039; \
+&quot;https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives&quot;
+```
+
+#### Response
+
+On success, your app receives a JSON response with the ID of your newly created ad creative.
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;AD_CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+### Ad that uses a messaging sequence configured on a partner app
+
+```curl
+curl -X POST &quot;https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives&quot;
+     -H &quot;Content-Type: application/json&quot;
+     -d &#039;&#123;
+           &quot;access_token&quot;: &quot;&lt;PAGE_ACCESS_TOKEN&gt;&quot;,
+           &quot;name&quot;: &quot;&lt;IMAGE_AD_NAME&gt;&quot;,
+           &quot;object_story_spec&quot;: &#123;
+             &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;,
+             &quot;link_data&quot;: &#123;
+               &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH&gt;&quot;,
+               &quot;link&quot;: &quot;&lt;IMAGE_URL&gt;&quot;,
+               &quot;call_to_action&quot;: &#123;
+                 &quot;type&quot;: &quot;WHATSAPP_MESSAGE&quot;,
+                 &quot;value&quot;:&#123;&quot;app_destination&quot;:&quot;WHATSAPP&quot;&#125;
+               &#125;
+             &#125;
+           &#125;,
+           &quot;asset_feed_spec&quot;: &#123;
+             &quot;additional_data&quot;: &#123;
+               &quot;partner_app_welcome_message_flow_id&quot;: &quot;SEQUENCE-ID&quot;
+             &#125;
+           &#125;
+         &#125;&#039;
+```
+
+For more information about message sequences, refer to [Welcome message sequences](https://developers.facebook.com/documentation/business-messaging/whatsapp/ctwa/welcome-message-sequences) in the WhatsApp Business Platform documentation.
+
+### Creating ad creatives using Instagram content
+
+You can also use your existing Instagram content for your ad creatives.
+
+```curl
+curl -X POST \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#039;&#123;
+        &quot;source_instagram_media_id&quot;: &quot;&lt;INSTAGRAM_MEDIA_ID&gt;&quot;,
+        &quot;instagram_user_id&quot;: &quot;&lt;INSTAGRAM_USER_ID&gt;&quot;,
+        &quot;object_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;,
+        &quot;call_to_action&quot;: &#123;
+          &quot;type&quot;: &quot;WHATSAPP_MESSAGE&quot;,
+            &quot;value&quot;: &#123;
+              &quot;link&quot;: &quot;https://api.whatsapp.com/send&quot;,
+              &quot;app_destination&quot;: &quot;WHATSAPP&quot;
+            &#125;
+          &#125;
+        &#125;,
+        &quot;degrees_of_freedom_spec&quot;: &#123;
+          &quot;creative_features_spec&quot;: &#123;
+            &quot;standard_enhancements&quot;: &#123;
+              &quot;enroll_status&quot;: &quot;OPT_IN&quot;
+            &#125;
+          &#125;
+        &#125;
+      &#125;&#039; \
+  https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+### Updating
+
+You can update an [ad creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-creative) by making a `POST` request to `/&lt;AD_CREATIVE_ID&gt;`.
+
+### Reading
+
+To verify that you have successfully created a click to WhatsApp ad creative, you can make a `GET` request to `/&lt;AD_CREATIVE_ID&gt;`. See [Ad Creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-creative) for the complete list of available parameters.
+
+#### Request
+
+```curl
+curl -X GET -G \
+  -d &#039;fields=name,object_story_spec&#123;link_data&#123;call_to_action,page_welcome_message&#125;&#125;&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+  https://graph.facebook.com/v25.0/&lt;AD_CREATIVE_ID&gt;
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;name&quot;: &quot;Sample ad creative&quot;,
+  &quot;object_story_spec&quot;: &#123;
+    &quot;page_welcome_message&quot;: &#123;
+      &quot;type&quot;: &quot;VISUAL_EDITOR&quot;,
+      &quot;version&quot;: 2,
+      &quot;landing_screen_type&quot;: &quot;welcome_message&quot;,
+      &quot;media_type&quot;: &quot;text&quot;,
+      &quot;text_format&quot;: &#123;
+        &quot;customer_action_type&quot;: &quot;autofill_message&quot;,
+        &quot;message&quot;: &#123;
+          &quot;autofill_message&quot;: &#123;
+            &quot;content&quot;: &quot;Sample autofill message&quot;
+          &#125;,
+        &quot;text&quot;: &quot;Sample greeting message&quot;
+        &#125;
+      &#125;
+    &#125;
+  &#125;,
+  &quot;id&quot;: &quot;&lt;AD_CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+## Step 4: Create an ad &#123;#step-4&#125;
+
+Ads allow you to associate ad creative information with your ad sets. To create an ad, make a `POST` request to the `/act_&lt;AD_ACCOUNT_ID&gt;/ads` endpoint where `&lt;AD_ACCOUNT_ID&gt;` is the ID for your Meta ad account. Your request must include:
+
+### Parameters
+
+| Name | Description |
+| --- | --- |
+| `name`&lt;br&gt;&lt;br&gt;string | **Required.**  &lt;br&gt;The name for your ad. |
+| `adset_id`&lt;br&gt;&lt;br&gt;numeric string or integer | **Required.**  &lt;br&gt;The ID of the ad set. |
+| `creative`&lt;br&gt;&lt;br&gt;[AdCreative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-creative) | **Required.**  &lt;br&gt;The ad creative to be used by this ad. You may supply the `creative_id` of an existing ad creative or create a new ad creative by including all required fields. See [Ad Creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-creative) for more details. |
+| `status`&lt;br&gt;&lt;br&gt;enum | **Required.**  &lt;br&gt;The configured status of the ad.  &lt;br&gt;**Values:** `ACTIVE`, `PAUSED`, `DELETED`, `ARCHIVED` |
+
+#### Request
+
+```curl
+curl -X POST \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#039;&#123;
+        &quot;name&quot;: &quot;Sample ad&quot;,
+        &quot;adset_id&quot;: &quot;&lt;AD_SET_ID&gt;&quot;,
+        &quot;creative&quot;: &#123;
+          &quot;creative_id&quot;: &quot;&lt;AD_CREATIVE_ID&gt;&quot;
+        &#125;,
+        &quot;status&quot;: &quot;PAUSED&quot;
+     &#125;&#039; \
+  &quot;https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/ads&quot;
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;id&quot;: &quot;&lt;AD_ID&gt;&quot;
+&#125;
+```
+
+### Updating
+
+You can update an [ad](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/adgroup) by making a `POST` request to `/&lt;AD_ID&gt;`.
+
+### Reading
+
+To verify that you have successfully created a click to WhatsApp ad, you can make a `GET` request to `/&lt;AD_ID&gt;`. See the [ad reference](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/adgroup) for the complete list of available parameters.
+
+#### Request
+
+```curl
+curl -X GET -G \
+  -d &#039;fields=status,adset_id,campaign_id&#039; \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/&lt;AD_ID&gt;
+```
+
+#### Response
+
+```json
+&#123;
+  &quot;status&quot;: &quot;PAUSED&quot;,
+  &quot;adset_id&quot;: &quot;&lt;AD_SET_ID&gt;&quot;,
+  &quot;campaign_id&quot;: &quot;&lt;AD_CAMPAIGN_ID&gt;&quot;,
+  &quot;id&quot;: &quot;&lt;AD_ID&gt;&quot;
+&#125;
+```
+
+## Step 5: Publish your ad &#123;#step-5&#125;
+
+Verify your ad exists in Ads Manager. When you are ready to publish your changes, select your campaign, the ad set for the campaign, and the ad, and click the **Publish** button.
+
+You can also publish your ad using the API. Send a `POST` request to `/&lt;AD_ID&gt;` with the `status` parameter set to `ACTIVE` where `&lt;AD_ID&gt;` is the ad you want to publish.
+
+Meta reviews your ad, and the status will be `PENDING_REVIEW`. Once approved, the status will automatically update to `ACTIVE`, and your ad will be delivered.
+</pre></body></html>

@@ -1,0 +1,72 @@
+<html><head><title>Threads Advantage+ Catalog Ads</title><meta charset="UTF-8" /><style nonce="salMqRXs">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Threads Advantage+ Catalog Ads
+
+
+
+[Advantage+ catalog ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started) are available for Threads. To ensure an Advantage+ Catalog Ad is delivered to Threads, include both `instagram` and `threads` under `publisher_platforms` in your ad set. Then, use the Threads `threads_stream` placement; remember you must select the Instagram `stream` placement too.
+
+To create a [template creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started#step-3--provide-an-ad-creative) for [Advantage+ catalog ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads) on Threads, set `template_data` under `object_story_spec` for `threads_stream`. Also, ensure that you specify the `product_set_id` in `promoted_object` for your ad set level to promote products from that product set.
+
+### Limitations
+
+* Images and image carousels are the only supported creative formats for Advantage+ catalog ads at this time. [Slideshow, video, and static cards](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started#build-a-template-creative) are not currently supported.
+* Ad engagement (reply, quote, save, share) is disabled for Advantage+ catalog ads in Threads at this time.
+* `OUTCOME_APP_PROMOTION` is not a supported objective at this time.
+
+## Create a Threads Advantage+ catalog ad creative
+
+* See the [media requirements](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#media-requirements) for supported image specifications.
+* See the [ad creative creation section for Advantage+ catalog ad creatives](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started#step-3--provide-an-ad-creative) for more information on the parameters and parameter descriptions for Threads Advantage+ catalog ad creation. All parameters are supported and expect the same behavior for Threads as Instagram but note the special behavior:
+    * Threads Advantage+ catalog ads will not render catalog product videos and will always default to catalog product images.
+    * Threads Advantage+ catalog ads always follow the behavior of looking for the images in a category, and then defaulting to the 2x2 collage.
+    * Advantage+ catalog ads with static cards before all the Advantage+ catalog ads (also known as entry cards) will not be delivered to Threads. Advantage+ catalog ads with static cards after all the Advantage+ catalog ads will be delivered to Threads, but the static cards will not be displayed.
+    * Threads Advantage+ catalog ads will always default to single image and image carousel, even for catalogs with videos and with the format option as video or slideshow.
+
+### Parameters
+
+| Name | Description of Threads Behavior |
+| --- | --- |
+| `child_attachments`  &lt;br&gt;([Advantage+ Catalog Ad Creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started#build-a-template-creative)) | Static cards appearing before all Advantage+ catalog ads will cause the ad to not be delivered to Threads. Ads with the static card appearing after the ads will still deliver to Threads. |
+| `preferred_video_tags`  &lt;br&gt;([Advantage+ Catalog Ad Creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started#build-a-template-creative)) | Won&#039;t be used as Threads Advantage+ catalog ads will not render catalog product videos and will always default to catalog product images. |
+| `format_option`  &lt;br&gt;([Allow product video](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/allow-product-video#create-ads-with-product-video)) | When the format is `single_video`, the ad will deliver on Threads as a single image. When the format is `carousel_slideshows` all items in the slideshow will render as static images instead. When the format is `collection_video`, all items in the slideshow will render as static images instead. The `carousel_images_single_item` and `carousel_images_multi_items` formats will be rendered as expected (as static image and image carousel, respectively). |
+| `media_type_automation`  &lt;br&gt;([Allow product video](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/allow-product-video#create-ads-with-product-video)) | Even when `media_type_automation` is set to `OPT_IN`, Threads Advantage+ catalog ads will not render catalog product videos and will always default to catalog product images. |
+
+### Example request
+
+The `product` variable in the request below is a [template parameter](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started#use-product-feed-data-in-your-template) which makes it possible to use the product feed data in the template.
+
+```bash
+curl \
+  -F &#039;name=Advantage+ Catalog Ads Template Creative Sample&#039; \
+  -F &#039;object_story_spec=&#123;
+    &quot;instagram_user_id&quot;: &quot;&lt;IG_USER_ID&gt;&quot;,
+    &quot;threads_user_id&quot;: &quot;&lt;THREADS_USER_ID&gt;&quot;,
+    &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;,
+    &quot;template_data&quot;: &#123;
+      &quot;description&quot;: &quot;Description &#123;&#123;product.description&#125;&#125;&quot;,
+      &quot;link&quot;: &quot;&lt;LINK&gt;&quot;,
+      &quot;message&quot;: &quot;Test &#123;&#123;product.name | titleize&#125;&#125;&quot;,
+      &quot;name&quot;: &quot;Headline &#123;&#123;product.price&#125;&#125;&quot;
+    &#125;
+  &#125;&#039; \
+  -F &#039;product_set_id=&lt;PRODUCT_SET_ID&gt;&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+### Example response
+
+The response to this call is the ID of a new Advantage+ catalog ads template creative.
+
+```json
+&#123;
+  &quot;id&quot;:&quot;&lt;AD_CREATIVE_ID&gt;&quot;
+&#125;
+```
+
+## Learn more
+
+* [Advantage+ Catalog Ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads)
+* [Advantage+ Catalog Ads - Get Started](https://developers.facebook.com/documentation/ads-commerce/marketing-api/advantage-catalog-ads/get-started)
+* [Instagram Advantage+ Catalog Ads](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/advantage-catalog-ads)
+* [Threads Ads Creation: Media Requirements](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#media-requirements)
+</pre></body></html>

@@ -1,0 +1,132 @@
+<html><head><title>Set Up Instagram Accounts On Business Manager</title><meta charset="UTF-8" /><style nonce="rvVfZuea">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Set Up Instagram Accounts On Business Manager
+
+
+
+**Note:** Before you start running ads on Instagram, you need an Instagram account ID. There are multiple methods to set this up, but we recommend that you use the [Business Manager](https://developers.facebook.com/docs/business-manager-api) process described in this guide.
+
+The Business Manager offers a single interface for you to manage your Instagram presence. In addition to running ads, you can use it to add non-advertising posts, reply to comments as your Instagram profile, and so on.
+
+Use this guide to set up your Instagram accounts on Business Manager:
+
+- Step 1: [Create a business account on Instagram](#before-you-start).
+- Step 2: [Use the Business Manager to claim the ownership of your account](#claim_account).
+- Optional Step 3: [If you are using a third party to run ads on behalf of your business, assign it as an agency](#assign_account).
+- Step 4: [To fund your ads, assign one or more ad accounts to your Instagram accounts](#assing_ad_account).
+- Step 5: You need your Instagram account ID to run your ads. [Get all Instagram accounts associated with a business to get this information](#account_api).
+
+## Step 1: Create a Business Account on Instagram &#123;#before-you-start&#125;
+
+In this implementation, your business needs to have a Business Account on Instagram. See [Set Up a Business Account on Instagram](https://www.facebook.com/help/502981923235522).  
+
+## Step 2: Use Business Manager to Claim Instagram Accounts &#123;#claim_account&#125;
+
+To claim an Instagram account for a business, you need the username and password of the account. See [Add an Instagram Account to Your Business Manager](https://www.facebook.com/business/help/620548115562686).
+
+## Optional Step 3: Assign Agency &#123;#assign_account&#125;
+
+If an advertiser owns an Instagram account and a third party wants to run ads on its behalf, assign it as an partner. From the Business Manager, click on **Assign Partners** and enter the agency&#039;s business ID.
+
+See [Advertise on Behalf of Another Business](https://www.facebook.com/business/help/375950529870841) for more information.
+
+## Step 4: Assign Ad Accounts &#123;#assing_ad_account&#125;
+
+**Note:** If you already have an Instagram account and are using the following steps as a guide, be aware that the `InstagramUserID` endpoint is deprecated for v22.0 and will be deprecated for all versions April 21, 2025. You can use the [`IGUserID` endpoint](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user) from the Instagram Platform instead.
+
+Once you have access to an Instagram Account in Business Manager, you can assign one or more ad accounts to it. From the Business Manager, select your Instagram account, click on **Add Assets**, and select the ad accounts you want to associate.
+
+You can also do this API by sending a `POST` request with `business` and `account_id`. You must be at least an `ADMIN` of the business.
+
+The ad account needs to:
+
+- Be owned by this business, or
+- Be accessible by this business while being owned by the business that owns the Instagram account.
+
+For example, if your business gets access to an ad account and an Instagram account from a client, you can assign them together within your business. But you cannot assign an ad account belonging to one client&#039;s business to an Instagram account belonging to another business, even if your business have admin access to both of them.
+
+```
+curl \
+-F &quot;access_token=&lt;ACCESS_TOKEN&gt;&quot;\
+-F &quot;business=&lt;BUSINESS_ID&gt;&quot;\
+-F &quot;account_id=&lt;AD_ACCOUNT_ID&gt;&quot;\
+&quot;https://graph.facebook.com/&lt;API_VERSION&gt;/&lt;IG_USER_ID&gt;/authorized_adaccounts&quot;
+```
+
+You can see which ad accounts for a given business are associated with an Instagram account. You must provide the `business` parameter and must be at least an `EMPLOYEE` of this business. We only return ad accounts of the given business and those accounts associated with the given Instagram account. If this Instagram account is associated with ad accounts of other businesses, you won&#039;t get them in the response. You can send a `GET` request:
+
+```
+curl -G \
+-d &quot;access_token=&lt;ACCESS_TOKEN&gt;&quot;\
+-d &quot;business=&lt;BUSINESS_ID&gt;&quot;\
+&quot;https://graph.facebook.com/&lt;API_VERSION&gt;/&lt;IG_USER_ID&gt;/authorized_adaccounts&quot;
+```
+
+After assigning an ad account, all users of the business who can run ads for that account can run ads on the associated Instagram account.
+
+## Step 5: Get Associated Accounts &#123;#account_api&#125;
+
+To check all the Instagram accounts that are owned by a business or that can be accessed by a business, make a `GET` request:
+
+```
+curl -G \
+-d &quot;access_token=&lt;ACCESS_TOKEN&gt;&quot;\
+-d &quot;fields=username,profile_pic&quot; \
+&quot;https://graph.facebook.com/&lt;API_VERSION&gt;/&lt;BUSINESS_ID&gt;/instagram_accounts&quot;
+```
+
+The access token is associated with an app. In order to call this API, you need:
+
+- `STANDARD` [access level](https://developers.facebook.com/documentation/ads-commerce/marketing-api/get-started/authorization) for the app, or
+- The business you are querying for should own that app
+
+To check all the Instagram accounts associated with an ad account, make a `GET` call to:
+
+```
+curl -G \
+-d &quot;access_token=&lt;ACCESS_TOKEN&gt;&quot;\
+-d &quot;fields=username,profile_pic&quot; \
+&quot;https://graph.facebook.com/&lt;API_VERSION&gt;/act_&lt;ADACCOUNT_ID&gt;/instagram_accounts&quot;
+```
+
+The response of the two previous API calls contains an array of Instagram accounts, each may contain the following fields:
+
+| Field Name | Description |
+| --- | --- |
+| `id`&lt;br&gt;&lt;br&gt;type: numeric string | The Instagram account id. Required for creating ads |
+| `username`&lt;br&gt;&lt;br&gt;type: string | The Instagram user name |
+| `profile_pic`&lt;br&gt;&lt;br&gt;type: string | A URL pointing to the profile picture of this Instagram account |
+
+For example:
+
+```
+&#123;
+  &quot;data&quot;: [
+    &#123;
+      &quot;username&quot;: &quot;jaspersmarket&quot;,
+      &quot;profile_pic&quot;: &quot;https://igcdn-photos-a-a.akamaihd.net/hphotos-ak-xaf1/t51.2885-19/11311930_826942667396992_856534255_a.jpg&quot;,
+      &quot;id&quot;: &quot;1023317097692584&quot;
+    &#125;
+  ],
+  &quot;paging&quot;: &#123;
+    &quot;cursors&quot;: &#123;
+      &quot;before&quot;: &quot;MTM4OTY1MDkwNzkyMTE4NQ==&quot;,
+      &quot;after&quot;: &quot;MTAyMzMxNzA5NzY5MjU4NA==&quot;
+    &#125;
+  &#125;
+&#125;
+```
+
+You cannot grant permissions to someone directly from an Instagram account. Instead, you should grant someone permissions to the Page or business which is connected to the Instagram account. Anyone in your business who has permission to run ads using an ad account linked to an Instagram account, can also run ads for that Instagram account.
+
+To create ad units, you can use the access token of a user or [system user](https://www.facebook.com/business/help/327596604689624) who can access the associated ad account.
+
+## Connection Objects &#123;#co&#125;
+
+Once you create an Instagram account, you cannot use [Connection Objects](https://developers.facebook.com/docs/marketing-api/connectionobjects) to view these accounts. You should use assets under business instead of `connection objects`.
+
+For Instagram accounts, use the following endpoints:
+
+- `&#123;business_id&#125;/instagram_accounts`
+- `act_&#123;adaccount_id&#125;/instagram_accounts`
+- `&#123;page_id&#125;/instagram_accounts`
+
+</pre></body></html>

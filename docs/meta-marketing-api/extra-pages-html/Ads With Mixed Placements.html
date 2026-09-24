@@ -1,0 +1,134 @@
+<html><head><title>Ads With Mixed Placements</title><meta charset="UTF-8" /><style nonce="KmloXN8V">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Ads With Mixed Placements
+
+
+
+You can create an ad set with &quot;mixed placement&quot; that runs on Facebook placements and Instagram Stream. All ad creatives used by ads in that set work on both platforms. Provide different [image crop specs](https://developers.facebook.com/documentation/ads-commerce/marketing-api/image-crops) for the same image, with 100x100 or 191x100 for Instagram, and 100x100 for Facebook. Or you can use different images for Facebook and Instagram.
+
+Instagram ignores the image crop spec `191x100` in ad creative, but only takes it in case you use `platform_customizations`.
+
+## Get Started
+
+Create the ad creative with the image you want to use on Facebook, including Facebook desktop, mobile, audience network, etc. Then provide a different image as the override for Instagram only, using the `platform_customizations` parameter.
+
+### PHP Business SDK
+```
+use FacebookAds\Object\AdCreative;
+use FacebookAds\Object\AdCreativeLinkData;
+use FacebookAds\Object\Fields\AdCreativeLinkDataFields;
+use FacebookAds\Object\AdCreativeObjectStorySpec;
+use FacebookAds\Object\Fields\AdCreativeObjectStorySpecFields;
+use FacebookAds\Object\Fields\AdCreativeFields;
+
+$link_data = new AdCreativeLinkData();
+$link_data-&gt;setData(array(
+AdCreativeLinkDataFields::MESSAGE =&gt; &#039;Great looking SXT handbags in store. #prettybag&#039;,
+AdCreativeLinkDataFields::LINK =&gt; &#039;http://example.com&#039;,
+AdCreativeLinkDataFields::IMAGE_HASH =&gt; &#039;&lt;IMAGE_HASH&gt;&#039;,
+AdCreativeLinkDataFields::CAPTION =&gt; &#039;www.example.com&#039;,
+AdCreativeLinkDataFields::CALL_TO_ACTION =&gt; array(
+  &#039;type&#039; =&gt; &#039;LEARN_MORE&#039;,
+  &#039;value&#039; =&gt;array(
+    &#039;link&#039; =&gt; &#039;http://example.com&#039;,
+  )
+),
+));
+
+$object_story_spec = new AdCreativeObjectStorySpec();
+$object_story_spec-&gt;setData(array(
+AdCreativeObjectStorySpecFields::PAGE_ID =&gt; &lt;PAGE_ID&gt;,
+AdCreativeObjectStorySpecFields::instagram_user_id =&gt; &lt;IG_USER_ID&gt;,
+AdCreativeObjectStorySpecFields::LINK_DATA =&gt; $link_data,
+));
+
+$platform_customizations = array(
+  &#039;instagram&#039; =&gt; array(
+    &#039;image_url&#039; =&gt; &#039;sample.com/ig-friendly-image.jpg&#039;,
+    &#039;image_crops&#039; =&gt; array(
+      &#039;100x100&#039;=&gt; array(array(200,90),array(900,790))
+    ),
+));
+
+$creative = new AdCreative(null, &#039;act_&lt;AD_ACCOUNT_ID&gt;&#039;);
+
+$creative-&gt;setData(array(
+AdCreativeFields::NAME =&gt; &#039;Instagram only creative&#039;,
+AdCreativeFields::OBJECT_STORY_SPEC =&gt; $object_story_spec,
+&#039;platform_customizations&#039; =&gt; $platform_customizations,
+));
+
+$creative-&gt;create();
+```
+
+### Python Business SDK
+```
+from facebookads.objects import AdCreative
+from facebookads.specs import ObjectStorySpec, LinkData
+
+link_data = LinkData()
+link_data[LinkData.Field.message] = &#039;Great looking SXT handbags in store. #prettybag&#039;
+link_data[LinkData.Field.link] = &#039;http://example.com&#039;
+link_data[LinkData.Field.caption] = &#039;www.example.com&#039;
+link_data[LinkData.Field.image_hash] = &#039;&lt;IMAGE_HASH&gt;&#039;
+
+call_to_action = &#123;
+  &#039;type&#039;: &#039;LEARN_MORE&#039;,
+&#125;
+call_to_action[&#039;value&#039;] = &#123;
+  &#039;link&#039;:&#039;http://example.com&#039;,
+&#125;
+
+link_data[LinkData.Field.call_to_action] = call_to_action
+
+object_story_spec = ObjectStorySpec()
+object_story_spec[ObjectStorySpec.Field.page_id] = &lt;PAGE_ID&gt;
+object_story_spec[ObjectStorySpec.Field.instagram_user_id] = &lt;IG_USER_ID&gt;
+object_story_spec[ObjectStorySpec.Field.link_data] = link_data
+
+platform_customizations = &#123;
+  &#039;instagram&#039;: &#123;
+      &#039;image_url&#039;: &#039;sample.com/ig-friendly-image.jpg&#039;,
+      &#039;image_crops&#039;: &#123;&#039;100x100&#039;:[[200,90],[900,790]],&#125;
+  &#125;
+&#125;
+
+creative = AdCreative(parent_id=&#039;act_&lt;AD_ACCOUNT_ID&gt;&#039;)
+creative[AdCreative.Field.name] = &#039;Instagram only creative&#039;
+creative[AdCreative.Field.object_story_spec] = object_story_spec
+creative[&#039;platform_customizations&#039;] = platform_customizations
+creative.remote_create()
+```
+
+### cURL
+```
+curl \
+-F &#039;name=Instagram only creative&#039; \
+-F &#039;object_story_spec=&#123;
+   &quot;page_id&quot;:&lt;PAGE_ID&gt;,
+   &quot;instagram_user_id&quot;:&lt;IG_USER_ID&gt;,
+   &quot;link_data&quot;:&#123;
+       &quot;call_to_action&quot;:&#123;
+           &quot;type&quot;:&quot;LEARN_MORE&quot;,
+           &quot;value&quot;:&#123;
+               &quot;link&quot;:&quot;http://example.com&quot;,
+        &#125;&#125;,
+        &quot;image_hash&quot;:&quot;&lt;IMAGE_HASH&gt;&quot;,
+        &quot;link&quot;:&quot;http://example.com&quot;,
+        &quot;message&quot;:&quot;Great looking SXT handbags in store. #prettybag&quot;,
+        &quot;caption&quot;:&quot;www.example.com&quot;,
+        &#125;&#125;&#039; \
+-F &#039;platform_customizations=&#123;
+   &quot;instagram&quot;: &#123;
+        &quot;image_url&quot;: &quot;sample.com/ig-friendly-image.jpg&quot;,
+        &quot;image_crops&quot;: &#123;&quot;100x100&quot;: [[0, 0],[800, 800]]&#125;&#125;,
+  &#125;&#039; \
+-F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/&lt;API_VERSION&gt;/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+`platform_customizations` parameter may contain only one `instagram` key. With that, you can specify an alternate image using `image_url` or `image_hash`, and an optional image crop spec. You can also specify a different video using `video_id`.
+
+You can use this to override images and videos for Instagram ads. You can use it for `link_data`, `photo_data` and `video_data`. You cannot use it to override text, or to provide overrides for Facebook ads. If the original image for Facebook is specified in a post with `object_story_id`, you can also use this option to display an image or video, instead of the one included in the `object_story_spec`.
+
+**Note:** This feature does not work with [Advantage+ catalog ads](https://developers.facebook.com/docs/instagram/ads-api/guides/dynamic-ads).
+
+</pre></body></html>

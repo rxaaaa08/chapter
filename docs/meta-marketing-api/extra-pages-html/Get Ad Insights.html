@@ -1,0 +1,74 @@
+<html><head><title>Get Ad Insights</title><meta charset="UTF-8" /><style nonce="eIARSQNj">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Get Ad Insights
+
+
+
+**Warning:** Beginning June 3, 2024, you can use the `boost_ads_list` field as a convenient and efficient way to to trace past boost Instagram ad information related to the ad. See the [blog](https://developers.facebook.com/blog/post/2024/06/03/instagram-boost-signal-for-ad-eligibility/) for more information.
+
+For stats on your Instagram ads, use the [Insights API](https://developers.facebook.com/documentation/ads-commerce/marketing-api/insights) from ad account to ads.
+
+```html
+curl -G \
+  -d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/&lt;CAMPAIGN_ID&gt;/insights
+```
+
+If you are running a campaign on Instagram and Facebook, add `breakdowns=publisher_platform, platform_position` to see the stats of Facebook and Instagram placements separately:
+
+```
+curl -X GET \
+-d &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+-d &#039;fields=impressions&#039; \
+-d &#039;breakdown=publisher_platform, platform_position&#039; \
+&quot;https://graph.facebook.com/&lt;API_VERSION&gt;/&lt;AD_SET_ID&gt;/insights&quot;
+```
+
+The result looks like this:
+
+```
+&#123;
+&quot;data&quot;: [
+    &#123;
+      &quot;impressions&quot;: &quot;322&quot;,
+      &quot;date_start&quot;: &quot;2024-03-26&quot;,
+      &quot;date_stop&quot;: &quot;2024-04-24&quot;,
+      &quot;publisher_platform&quot;: &quot;instagram&quot;,
+      &quot;platform_position&quot;: &quot;feed&quot;
+    &#125;,
+    &#123;
+      &quot;impressions&quot;: &quot;13&quot;,
+      &quot;date_start&quot;: &quot;2024-03-26&quot;,
+      &quot;date_stop&quot;: &quot;2024-04-24&quot;,
+      &quot;publisher_platform&quot;: &quot;instagram&quot;,
+      &quot;platform_position&quot;: &quot;instagram_explore&quot;
+    &#125;,
+    &#123;
+      &quot;impressions&quot;: &quot;168&quot;,
+      &quot;date_start&quot;: &quot;2024-03-26&quot;,
+      &quot;date_stop&quot;: &quot;2024-04-24&quot;,
+      &quot;publisher_platform&quot;: &quot;instagram&quot;,
+      &quot;platform_position&quot;: &quot;instagram_reels&quot;
+    &#125;,
+    &#123;
+      &quot;impressions&quot;: &quot;617&quot;,
+      &quot;date_start&quot;: &quot;2024-03-26&quot;,
+      &quot;date_stop&quot;: &quot;2024-04-24&quot;,
+      &quot;publisher_platform&quot;: &quot;instagram&quot;,
+      &quot;platform_position&quot;: &quot;instagram_stories&quot;
+    &#125;
+  ],
+  &quot;paging&quot;: &#123;
+    ...
+  &#125;
+&#125;
+```
+
+When requesting breakdown by `publisher_platform, platform_position` for insights on an ad campaign, the four placement locations in the Instagram Platform are: `feed`, `instagram_explore`, `instagram_reels`, and `instagram_stories`.
+
+There are other breakdown combinations which include `publisher_platform, platform_position` that you can use. To track performance of ads with both Facebook and Instagram placements with external tools, use the `url_tags` macro [SITE_SOURCE_NAME](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/carousel-ads#tag) to distinguish different placements.
+
+### Tracking Tags &#123;#view&#125;
+
+View tags are not publicly available. If we permit view tags by an approved vendor on Facebook mobile campaigns, we also allow them for Instagram ads. You can use [Ad creative&#039;s](https://developers.facebook.com/docs/marketing-api/adcreative) `url_tag` field with Instagram ads.
+
+You can use third-party tracking tags for Instagram ads, however note do not optimize ads delivery for third-party tracking tools. To make sure that the third party tracking tool can track Instagram ads properly, use [Ad creative&#039;s](https://developers.facebook.com/docs/marketing-api/adcreative) `url_tag` field with `utm_source=instagram`.
+</pre></body></html>

@@ -1,0 +1,199 @@
+<html><head><title>Add Interactive Elements</title><meta charset="UTF-8" /><style nonce="9kFqymjJ">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Add Interactive Elements
+
+
+
+You can add interactive elements so people can engage in your Instagram ads.
+
+## Product Tags
+
+You can add product tags to your ads, using the `product_tag_spec` under `interactive_components_spec`. Under `component`, you will need to specify:
+
+* `type` as `product_tag`
+* `product_id` under `product_tag_spec`  
+**Note:** The products need to be approved before it can be tagged.
+* The `x` and `y` parameters of `position_spec`  
+**Note:** The `x` and `y` parameters are **required** for image ads and **optional** for video ads.
+
+Sample of a single `interactive_components_spec` feed image/video media
+
+```html
+curl \
+  -F &#039;name=Sample Creative TESTING&#039; \
+  -F &#039;object_story_spec=&#123;
+      &quot;link_data&quot;: &#123;
+            &quot;link&quot;: &quot;https://www.facebook.com/&quot;,
+            &quot;attachment_style&quot;: &quot;link&quot;,
+            &quot;call_to_action&quot;: &#123;
+                &quot;value&quot;: &#123;&#125;,
+                &quot;type&quot;: &quot;LEARN_MORE&quot;
+            &#125;,
+            &quot;image_hash&quot;: &quot;IMAGE_HASH&quot;,
+            &quot;image_crops&quot;: &#123;&#125;,
+            &quot;preferred_image_tags&quot;: &#123;&#125;,
+            &quot;media_elements&quot;: &#123;&#125;,
+            &quot;customization_rules_spec&quot;: &#123;&#125;,
+            &quot;retailer_item_ids&quot;: &#123;&#125;,
+            &quot;collection_thumbnails&quot;: &#123;&#125;
+        &#125;,
+       &quot;page_id&quot;: &quot;PAGE_ID&quot;,
+       &quot;instagram_user_id&quot;: &quot;&lt;IG_USER_ID&gt;&quot;
+    &#125;
+
+&#039; \
+  -F &#039;interactive_components_spec=&#123;
+      &quot;components&quot;: [
+    &#123;
+      &quot;type&quot;: &quot;product_tag&quot;,
+      &quot;product_tag_spec&quot;: &#123;
+        &quot;product_id&quot;: 4382881195057752
+      &#125;,
+      &quot;position_spec&quot;: &#123;
+        &quot;x&quot;: 0.5,
+        &quot;y&quot;: 0.5,
+      &#125;
+    &#125;
+  ]
+&#125;&#039; \
+  -F &#039;access_token=&lt;ACCESS TOKEN&gt;&#039; \
+  https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+Sample of multiple `interactive_components_spec` objects for feed carousel media
+
+```html
+curl \
+  -F &#039;name=Sample Creative TESTING&#039; \
+  -F &#039;object_story_spec=&#123;
+      &quot;link_data&quot;: &#123;
+            &quot;link&quot;: &quot;https://www.facebook.com/&quot;,
+            &quot;attachment_style&quot;: &quot;link&quot;,
+            &quot;call_to_action&quot;: &#123;
+                &quot;value&quot;: &#123;&#125;,
+                &quot;type&quot;: &quot;LEARN_MORE&quot;
+            &#125;,
+            &quot;image_hash&quot;: &quot;IMAGE_HASH&quot;,
+            &quot;image_crops&quot;: &#123;&#125;,
+            &quot;preferred_image_tags&quot;: &#123;&#125;,
+            &quot;media_elements&quot;: &#123;&#125;,
+            &quot;customization_rules_spec&quot;: &#123;&#125;,
+            &quot;retailer_item_ids&quot;: &#123;&#125;,
+            &quot;collection_thumbnails&quot;: &#123;&#125;
+        &#125;,
+       &quot;page_id&quot;: &quot;PAGE_ID&quot;,
+       &quot;instagram_user_id&quot;: &quot;&lt;IG_USER_ID&gt;&quot;
+    &#125;&#039; \
+  -F &#039;interactive_components_spec=&#123;
+        &quot;child_attachments&quot;: [
+            &#123;
+                &quot;components&quot;: [
+                    &#123;
+                        &quot;type&quot;: &quot;product_tag&quot;,
+                        &quot;position_spec&quot;: &#123;
+                            &quot;x&quot;: 0.5,
+                            &quot;y&quot;: 0.5
+                        &#125;,
+                        &quot;product_tag_spec&quot;: &#123;
+                            &quot;product_id&quot;: 4382881195057752
+                        &#125;
+                    &#125;
+                ]
+            &#125;,
+            &#123;
+                &quot;components&quot;: [
+                    &#123;
+                        &quot;type&quot;: &quot;product_tag&quot;,
+                        &quot;position_spec&quot;: &#123;
+                            &quot;x&quot;: 0.2,
+                            &quot;y&quot;: 0.8
+                        &#125;,
+                        &quot;product_tag_spec&quot;: &#123;
+                            &quot;product_id&quot;: 4382881195057752
+                        &#125;
+                    &#125;
+                ]
+            &#125;,
+            &#123;
+                &quot;components&quot;: [
+                    &#123;
+                        &quot;type&quot;: &quot;product_tag&quot;,
+                        &quot;position_spec&quot;: &#123;
+                            &quot;x&quot;: 0.3,
+                            &quot;y&quot;: 0.7
+                        &#125;,
+                        &quot;product_tag_spec&quot;: &#123;
+                            &quot;product_id&quot;: 4382881195057752
+                        &#125;
+                    &#125;
+                ]
+            &#125;
+        ]
+    &#125;&#039;\
+  -F &#039;access_token=&lt;ACCESS TOKEN&gt;&#039; \
+  https://graph.facebook.com/v25.0/act&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+### Read Product Tag Information
+
+You can get information about the `product_id` in your `product_tag_spec` object from an [ad creative](https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-creative) you created with the `product_tag` type.
+
+To retrieve the `product_tag_spec` information from your ad creative:
+
+```html
+curl -G \
+  -d &quot;fields=interactive_components_spec&quot; \
+  -d &quot;access_token=&lt;ACCESS_TOKEN&gt;&quot; \
+  &quot;https://graph.facebook.com/v25.0/&lt;AD_CREATIVE_ID&gt;&quot;
+```
+
+Sample Response
+
+```html
+&#123;
+  &quot;interactive_components_spec&quot;: &#123;
+    &quot;components&quot;: [
+      &#123;
+        &quot;position_spec&quot;: &#123;
+          &quot;x&quot;: 0.5,
+          &quot;y&quot;: 0.5
+        &#125;,
+        &quot;type&quot;: &quot;PRODUCT_TAG&quot;,
+        &quot;product_tag_spec&quot;: &#123;
+          &quot;product_id&quot;: &quot;4382881195057752&quot;
+        &#125;
+      &#125;
+    ]
+  &#125;,
+  &quot;id&quot;: &quot;23862467608880374&quot;
+&#125;
+```
+
+### Automated tagging for static ads
+
+This feature automatically tags best-matched products from the your product catalog when you create ads using single images or carousel images you&#039;ve uploaded and applies the relevant product tags to ads.
+
+The automated tagging ad system detects matches in two ways:
+
+* Images in your catalog — If the features of your ad creative match with those in product images in your catalog, the ad system will automatically add the product tag to your ad creative.
+* Website URL in ad destination — If the website URL that you enter in the destination section at the ad level matches with items in your catalog, the ad system will automatically add the product tag to your ad creative.
+
+If product tags are specified in the `interactive_components_spec` parameter, the automated tagging feature will be disabled for the ad to respect product tags that are specified by you.
+
+**Note:** This feature is enabled by default. Set `enroll_status` to `opt_out` in the `interactive_components_spec` parameter to opt out of the feature per product item.
+
+```html
+&quot;interactive_components_spec&quot;: &#123;
+  &quot;components&quot;: [
+    &#123;
+      &quot;type&quot;: &quot;product_tag&quot;,
+      &quot;enroll_status&quot;: &quot;opt_out&quot;
+    &#125;
+  ]
+&#125;
+```
+
+**Note:** You cannot set `enroll_status` and `product_tag_spec` at the same time; it will return an error.
+
+## Resources
+
+- Ads Manager: [About automated product tags in Meta Ads Manager](https://www.facebook.com/business/help/help.instagram.com/1157716325492082)
+</pre></body></html>

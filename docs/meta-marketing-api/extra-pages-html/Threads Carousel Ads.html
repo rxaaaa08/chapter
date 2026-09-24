@@ -1,0 +1,64 @@
+<html><head><title>Threads Carousel Ads</title><meta charset="UTF-8" /><style nonce="UUeAFpid">body { font-family: monospace; margin: 20px; }pre { white-space: pre-wrap; word-wrap: break-word; }</style></head><body><pre data-testid="developer-docs-markdown-page"># Threads Carousel Ads
+
+
+
+To create [carousel ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/guides/videoads#carousel), provide an ad creative with multiple `child_attachments` in `link_data` for `threads_stream`. You need to provide the `threads_user_id` and only use [objectives](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#step-2--create-an-ad-campaign) supported in Threads ads.
+
+There are some differences between Threads and [Instagram carousel ads](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/carousel-ads). These differences only happen with the Threads placement. If you have an ad set with Facebook, Instagram, and Threads placements enabled, what works on Facebook and/or Instagram may be different from that on Threads.
+
+* Each attachment must have a `link` specified, which is the destination of the image click.
+* There is no call to action button on the ad. If a headline or name is provided for an attachment, it will overwrite the call to action text. If no headline or name is provided, the call to action text will be used for the attachment.
+* Only 10 children are allowed for [inline creation](https://developers.facebook.com/documentation/ads-commerce/marketing-api/guides/videoads#inline).
+
+## Image cards
+
+* Each attachment must have either a `picture` or `image_hash` set. The image is not defaulted from `link_data`.
+* See the [media requirements](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#media-requirements) for supported image specifications.
+
+## Create a Threads image carousel ad creative
+
+### Example request
+
+```bash
+curl -X POST \
+  -F &#039;name=Threads Carousel Creative&#039; \
+  -F &#039;object_story_spec=&#123;
+      &quot;instagram_user_id&quot;: &quot;&lt;IG_USER_ID&gt;&quot;,
+      &quot;threads_user_id&quot;: &quot;&lt;THREADS_USER_ID&gt;&quot;,
+      &quot;page_id&quot;: &quot;&lt;PAGE_ID&gt;&quot;,
+      &quot;link_data&quot;: &#123;
+        &quot;child_attachments&quot;: [
+          &#123;
+            &quot;link&quot;: &quot;&lt;LINK_1&gt;&quot;,
+            &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH_1&gt;&quot;,
+            &quot;description&quot;: &quot;$8.99&quot;,
+            &quot;name&quot;: &quot;Product 1&quot;
+          &#125;,
+          &#123;
+            &quot;link&quot;: &quot;&lt;LINK_2&gt;&quot;,
+            &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH_2&gt;&quot;,
+            &quot;description&quot;: &quot;$9.99&quot;,
+            &quot;name&quot;: &quot;Product 2&quot;
+          &#125;,
+          &#123;
+            &quot;link&quot;: &quot;&lt;LINK_3&gt;&quot;,
+            &quot;image_hash&quot;: &quot;&lt;IMAGE_HASH_3&gt;&quot;,
+            &quot;call_to_action&quot;: &#123;
+              &quot;type&quot;: &quot;LEARN_MORE&quot;
+            &#125;
+          &#125;
+        ],
+        &quot;message&quot;: &quot;&lt;MESSAGE_TEXT&gt;&quot;
+      &#125;
+    &#125;
+&#039; \
+  -F &#039;access_token=&lt;ACCESS_TOKEN&gt;&#039; \
+https://graph.facebook.com/v25.0/act_&lt;AD_ACCOUNT_ID&gt;/adcreatives
+```
+
+## Learn more
+
+* [Video and Carousel ads](https://developers.facebook.com/documentation/ads-commerce/marketing-api/guides/videoads#carousel)
+* [Instagram Carousel Ads](https://developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/carousel-ads)
+* [Threads Ads Creation: Media Requirements](https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/threads-ads/creation#media-requirements)
+</pre></body></html>
