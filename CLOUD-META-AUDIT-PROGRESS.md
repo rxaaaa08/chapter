@@ -19,8 +19,8 @@ Two jobs, kept strictly separate:
 ## Phase status
 | Phase | Status |
 |---|---|
-| 1. Inventory | in progress |
-| 2. Plan + plan review | not started |
+| 1. Inventory | DONE 2026-09-24 — 1 researcher; code map (Pixel, CAPI, 7 API pins, webhooks, audiences, catalog, panel RPCs, 37 migrations, cron order) + docs map (~995 pages, [REQ] pages flagged, HTML duplicates mapped). Notable: `_shared/metaCapi` has 5 real importers — the CLAUDE.md grep also matches 2 comments in meta-signal-watchdog; `retarget-check` has no Meta touchpoint; `api/webhook.js` pins WhatsApp Cloud API v19.0 (not ads). |
+| 2. Plan + plan review | plan drafted; plan reviewer running |
 | 3. Progress file | this file |
 | 4. Research (A + B) | not started |
 | 5. Verify | not started |
