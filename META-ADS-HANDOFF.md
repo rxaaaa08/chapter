@@ -6902,15 +6902,169 @@ correctly evaluates true for the 38-day-old ad carrying a 44-day-old asset.
 - **A daily AI summary.** Explicitly removed by the founder. The data is on disk
   for him to look at; asking Claude about it is a thing he can do any day he
   wants, at the cost of that one conversation instead of 365 of them.
-- **Supabase mirror and a Growth ▸ Ads card.** Rejected above. The upgrade path
-  is real if he ever wants it: `_ledger.json` is a complete history, so it can be
-  loaded into a table later **without losing anything**. That is precisely why
-  the ledger is a durable file rather than derived state recomputed each run.
+- ~~**Supabase mirror and a Growth ▸ Ads card.**~~ **SUPERSEDED — the owner
+  reversed this on 2026-09-18 and both were built (Phase 2 and Phase 5).** The
+  bullet is kept struck through rather than deleted so the reversal stays
+  visible: it was deferred as a second system, then asked for because he wanted
+  competitor ids visible in the admin. Note what made the reversal cheap — only
+  the *metadata* moved. Had the creative been planned into Supabase too, changing
+  course would have been expensive.
 - **More than a handful of watchlist pages.** Meta's terms permit downloading
   creative for an *individual* ad for analysis and prohibit bulk extraction of
   the Ad Library; the Ads MCP tool's own documentation says so in as many words.
   A named watchlist checked once a day is analysis. The watchlist is capped in
   the script so it cannot quietly grow into the other thing.
+
+### 25.5 The Ad Library API question — decision record, open as of 2026-09-22
+
+**Status: applied for, NOT granted, and the live system is unaffected either
+way.** The owner applied around 2026-09-19 expecting a 48-hour answer. Four days
+on nothing has changed. This section exists so the next session does not redo
+the research or re-run the dead ends.
+
+#### What was measured, and when
+
+**Probe re-run 2026-09-22 — identical to 2026-09-19, no movement:**
+
+| Call | Result |
+|---|---|
+| India commercial, keyword `meetup` | `code 10, subcode 2332002` |
+| India commercial, thirdspace page id | `code 10, subcode 2332002` |
+| **India political (control)** | `code 10, subcode 2332002` |
+| **UK commercial (control)** | `code 10, subcode 2332002` |
+
+**All four fail identically, and that is the finding.** The block sits at **app
+authorization, upstream of any country or ad-type logic** — so this probe can
+neither confirm nor refute the India question. It only says "not authorised
+yet". Do not read the India failure as evidence about India.
+
+App state, same date: `chaptera-ads` (`38444690021845940`) reports
+`submission_status: NO_SUBMISSION` and **zero App Review privileges**. Two apps
+exist on the account — `chaptera-ads` and `Automation WA`
+(`1221239236143201`). **`NO_SUBMISSION` does NOT prove the owner did not
+apply**: the Ad Library route goes through identity confirmation at
+`facebook.com/ID`, which is a separate flow and does not create an App Review
+submission. Whether that identity flow was completed is **unverified** — a
+password re-auth wall stopped the 2026-09-19 session there, and entering the
+owner's password is not something an agent does.
+
+#### Why approval may not help, and the mechanism
+
+Meta's own documentation, three independent secondary sources, and the field
+list all agree: **commercial ads are archived only for the EU and UK.** The
+mechanism matters more than the rule — that coverage exists because the **EU
+Digital Services Act legally requires it**. It is compliance, not a product
+decision. India has no equivalent law, so Meta does not archive Indian
+commercial ads at all.
+
+**This makes it a data-availability problem, not a permissions problem.**
+Approval would grant access to an archive that has no Indian commercial rows in
+it. One source states it plainly: an ad delivered outside the EU/UK "is not
+archived, not searchable, and not retrievable" — while remaining perfectly
+visible on the consumer website, which is exactly the asymmetry the scraper
+exploits.
+
+**The owner's counter-position is on the record and is not unreasonable**
+(2026-09-19): §9 of this document records that Meta's docs and Meta's API
+disagree in both directions, so documentation is not evidence here. He applied
+in order to test it against his own account. That is the right instinct and the
+probe exists to settle it in about ten seconds.
+
+#### If India data DOES come back, the prize is real
+
+Not marginal — it would obsolete a large part of what was built:
+
+- **`ad_delivery_stop_time`, direct from Meta.** The entire daily-observation
+  design exists *because* the public pages never say an ad stopped. This field
+  is that answer, handed over.
+- **`ad_active_status: INACTIVE` becomes queryable → BACKFILL.** Months of
+  competitor history retrievable at once. The "not backfillable at any price"
+  premise of §25 would no longer hold.
+- **Structured `ad_creative_bodies` / `ad_creative_link_titles` /
+  `publisher_platforms`.** No card-walking, no three invariants, no
+  `adCopy()`, no self-test to maintain.
+
+#### What would NOT improve, even in the best case
+
+- **No creative media URLs.** The API returns `ad_snapshot_url` — a link back to
+  the web page. **Chrome would still be required for the video and images.** The
+  API could replace the metadata half only.
+- **No spend, no reach, no engagement** for commercial ads. Spend ranges are
+  political-only. The §25.3 table stands unchanged.
+- **~200 calls/hour** on a development-tier app, and pagination burns quota.
+
+#### The bar the API has to beat: what four days of live running showed
+
+The system has run daily since 2026-09-18 and **the disappearance path is no
+longer theoretical — three real stop events have been recorded** (2026-09-19 ×2,
+2026-09-20 ×1). Six runs, all `ok`, launchd firing 18:00 IST.
+
+| Library ID | Started | Gone | Days | Media |
+|---|---|---|---|---|
+| `1028535673493135` | 11 Aug | **still running** | **41** | video, asset age 44 |
+| `4654351548178711` | 18 Sep | 19 Sep | 1 | image |
+| `1579327690656776` | 18 Sep | 19 Sep | 1 | image (cricket, 20 Sep event) |
+| `1569934310862653` | 19 Sep | 20 Sep | 1 | image (cricket, **same copy, NEW id**) |
+
+**TWO CORRECTIONS TO THE ORIGINAL THESIS, both found by the data rather than by
+reasoning. Do not re-derive these:**
+
+1. **Longevity is only a "what works" signal for EVERGREEN creative.** §25 said
+   run-length is the proxy for what is working. The evidence refines that: the
+   brand/lineup video has run 41 days, while **event-dated ads stop because the
+   event happened, not because they failed.** A one-day cricket-meetup ad for a
+   20 Sep event is not a loser. Sorting the panel purely by days-running will
+   therefore rank event ads as failures, which is wrong. **Any future analysis
+   must separate evergreen from event-dated creative before reading longevity as
+   performance.**
+2. **"Disappeared" can mean "edited and relaunched", not "abandoned".** The
+   cricket ad reappeared on 19 Sep under a **different library ID with identical
+   copy**. Some edits in Meta mint a new ad id. So a disappearance plus a
+   same-copy arrival on the same or next day is one campaign continuing, not two
+   decisions. The `competitor_ad_events` log holds the raw transitions; the
+   interpretation layer does not yet account for this.
+
+Neither correction is reflected in the Growth ▸ Ads card yet.
+
+#### What to do when the answer arrives
+
+1. **Re-run the probe first** — it is still deployed as `adlib-probe`
+   (secret-gated on the same `ad_library_ingest_secret_sha256`, called with the
+   keychain item `chaptera-ad-library-ingest`). Ten seconds, four calls,
+   including the UK control. **Read the UK control**: UK returning commercial ads
+   while India returns none confirms the geographic restriction from the owner's
+   own account, which is the evidence that settles this for good.
+2. **If India commercial data returns:** migrate the metadata half onto the API
+   for stop-times and a historical backfill, keep Chrome for creative only, and
+   revisit both thesis corrections above with the fuller history.
+3. **If it does not:** delete `adlib-probe` (it is a throwaway, kept only for
+   this test), record the negative result here with the date, and leave the
+   running system alone. **Nothing is lost** — it has been working the whole
+   time.
+
+#### Boundaries that held, and should keep holding
+
+The 2026-09-19 session drove the owner's Chrome to inspect the Developer
+dashboard and stopped at a password re-auth wall. **Four things stay the
+owner's**: entering his password, uploading government ID for identity
+confirmation, accepting the Ad Library API terms of service, and generating or
+handling an access token. If a token is ever issued it goes straight into
+Supabase secrets — never into a chat transcript, never into this repo.
+
+Also on the record: the Ad Library search used *in conversation*
+(`ads_library_search`, Meta's advertiser-facing MCP) is **not** the same thing as
+`/ads_archive` and a script cannot call it. It remains genuinely better for one
+job the daily watcher cannot do — **discovery**, i.e. keyword search across all
+advertisers to find competitors worth adding to the watchlist. That is how
+thirdspace_by_losh, DriftedCircle and Twisty Events were found. Use it on
+request; do not try to automate it.
+
+#### Git state as of 2026-09-22
+
+Committed locally, **NOT pushed** (golden rule): `3643837` "feat(ads): capture
+competitor activity from the Ad Library" and `bd74001`. Part of 38 unpushed
+commits on `main`. The Growth ▸ Ads card is in `src/AdminPanel.tsx` and is the
+only piece the owner cannot see until a push happens.
 
 ---
 
