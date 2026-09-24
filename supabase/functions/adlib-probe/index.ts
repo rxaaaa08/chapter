@@ -24,10 +24,13 @@ Deno.serve(async (req) => {
     return new Response('unauthorized', { status: 401 });
   }
 
-  const token = Deno.env.get('META_ADS_ACCESS_TOKEN');
-  if (!token) return new Response('no META_ADS_ACCESS_TOKEN', { status: 500 });
+  // This token belongs to the founder's identity-verified Ad Library access.
+  // Keep it separate from META_ADS_ACCESS_TOKEN, which is the production
+  // reporting system-user credential used by several unrelated functions.
+  const token = Deno.env.get('META_ADLIB_ACCESS_TOKEN');
+  if (!token) return new Response('no META_ADLIB_ACCESS_TOKEN', { status: 500 });
 
-  const fields = 'id,page_id,page_name,ad_delivery_start_time,ad_creative_bodies,ad_snapshot_url';
+  const fields = 'id,page_id,page_name,ad_active_status,ad_delivery_start_time,ad_delivery_stop_time,ad_creative_bodies,ad_snapshot_url,publisher_platforms';
   const call = async (label: string, params: Record<string, string>) => {
     const qs = new URLSearchParams({ ...params, fields, limit: '5', access_token: token });
     const r = await fetch(`https://graph.facebook.com/${API}/ads_archive?${qs}`);
@@ -42,7 +45,10 @@ Deno.serve(async (req) => {
       returned: Array.isArray(body?.data) ? body.data.length : null,
       sample: Array.isArray(body?.data)
         ? body.data.slice(0, 3).map((a: any) => ({
-            id: a.id, page: a.page_name,
+          id: a.id, page: a.page_name,
+            status: a.ad_active_status,
+            started: a.ad_delivery_start_time,
+            stopped: a.ad_delivery_stop_time,
             body: (a.ad_creative_bodies?.[0] ?? '').slice(0, 90),
           }))
         : null,
@@ -56,6 +62,10 @@ Deno.serve(async (req) => {
   // 2. The known competitor, by page id — the sharpest version of the question.
   results.push(await call('IN commercial, thirdspace page id',
     { ad_reached_countries: '["IN"]', ad_type: 'ALL', search_page_ids: '["1042347828962277"]', ad_active_status: 'ACTIVE' }));
+  // 2b. If active is empty, this distinguishes "nothing running today" from
+  //     "Meta has no archive for this Indian commercial page".
+  results.push(await call('IN commercial, thirdspace page id, all statuses',
+    { ad_reached_countries: '["IN"]', ad_type: 'ALL', search_page_ids: '["1042347828962277"]', ad_active_status: 'ALL' }));
   // 3. SECOND READ (§9): if this works and #1/#2 are empty, the endpoint is
   //    reachable and the gap is genuinely the commercial/India restriction —
   //    not a dead token or a missing permission.
