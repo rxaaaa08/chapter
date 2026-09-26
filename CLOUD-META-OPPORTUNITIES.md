@@ -50,7 +50,7 @@ Counts after verification: **9 VIABLE, 7 NEEDS YOUR INPUT, 6 already on file, 20
 
 **What it is.** The Dataset Quality API call you approved on 2026-09-21 (handoff §13 item 2, store EMQ daily) also returns: *event coverage* (the share of Pixel events that Meta could pair with a server event) and *dedup key feedback* (which key did the pairing). §13 item 2 plans to store only the match-quality score, key coverage and data freshness.
 
-**Why it helps us.** Pairing is the one quality measure that has already caught a real silent bug in this codebase: `src/AppFlow.tsx:1218-1221` records that the open flow's browser Lead "arrived with no event_id at all … which is what held Lead event coverage at 33% against Meta's 75% guidance". Nothing checks pairing automatically today — the watchdog compares counts, not pairing. The audit also found a new pairing gap (audit finding A-2: returning open-event applicants).
+**Why it helps us.** Pairing is the one quality measure that has already caught a real silent bug in this codebase: `src/AppFlow.tsx:1218-1221` records that the open flow's browser Lead "arrived with no event_id at all … which is what held Lead event coverage at 33% against Meta's 75% guidance". Nothing checks pairing automatically today — the watchdog compares counts, not pairing. The audit also found a new pairing gap (audit finding A-2 in `CLOUD-META-AUDIT.md`: returning open-event applicants).
 
 **The docs.** `docs/meta-marketing-api/conversions-api/11 Dataset Quality API/01 Dataset Quality API.md:314` — "Event coverage is the 7-day average percentage of Meta Pixel events that are covered by the Conversions API, and share deduplication keys with events from the Conversions API"; `:348` `"goal_percentage": 75`; `:409` "The deduplication key feedback shows the percentages of events from the Pixel and the Conversions API that were received with each deduplication key."
 
@@ -189,7 +189,7 @@ A lookalike seeded with each customer's value (`guides/07 Audience Guides/06 Val
 ### OPP-13 — WhatsApp marketing messages as an ad placement, or at least a watch for it
 **NEEDS-OWNER-INPUT — value low (as a channel), low-medium (as a watch).** (B5b-3)
 
-Meta can send paid promotional WhatsApp messages from your number as an ad placement (`guides/04 Ad Creative/11 Marketing Messages.md:9`), and `:102` says "With Advantage+ placements, marketing messages are added automatically for eligible campaigns." **Question:** do you ever want this? It needs onboarding and a marketing opt-in you do not collect, and an unsolicited paid broadcast is a brand risk. If not, the placement watch should at least be able to see it — see audit finding A-5 in `CLOUD-META-AUDIT.md`.
+Meta can send paid promotional WhatsApp messages from your number as an ad placement (`guides/04 Ad Creative/11 Marketing Messages.md:9`), and `:102` says "With Advantage+ placements, marketing messages are added automatically for eligible campaigns." **Question:** do you ever want this? It needs onboarding and a marketing opt-in you do not collect, and an unsolicited paid broadcast is a brand risk. If not, the placement watch should at least be able to see it — see audit finding A-14 (and A-6) in `CLOUD-META-AUDIT.md`.
 
 ### OPP-14 — Creator partnership ads
 **NEEDS-OWNER-INPUT — value low.** (B9-1)

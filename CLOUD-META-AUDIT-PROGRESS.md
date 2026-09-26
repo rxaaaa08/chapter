@@ -23,8 +23,8 @@ Two jobs, kept strictly separate:
 | 2. Plan + plan review | DONE 2026-09-24 — plan reviewer (Opus) raised 26 points: 25 AGREED (one with modification), 1 DISAGREED. Final plan below. |
 | 3. Progress file | this file |
 | 4. Research (A + B) | DONE. Round 1: 20 researchers. Round 2: 3 researchers (doc-first sweeps of the CAPI/Pixel and Marketing API requirement pages, and the browser→server capture chain) → 5 new candidates; verifiers surfaced 2 more. |
-| 5. Verify | Part B DONE (9 batches). Part A: batches 1–7 done; final batches 8–9 (round-2 and side-finding candidates) running. |
-| 6. Reports | CLOUD-META-OPPORTUNITIES.md drafted (finding cross-references to be finalised with the audit report); CLOUD-META-AUDIT.md next. |
+| 5. Verify | DONE 2026-09-26. Part A: 9 batches → 18 CONFIRMED, 5 UNCERTAIN, 11 DISPROVED, 5 CONFIRMS-KNOWN; 8/8 planted claims caught. Part B: 9 batches → 10 VIABLE (9 after merge), 7 NEEDS-OWNER-INPUT, 6 NOT-NEW, 20 NOT VIABLE; 9/9 planted caught. |
+| 6. Reports | DONE 2026-09-26: CLOUD-META-AUDIT.md (19 findings: 0 HIGH, 6 MEDIUM, 13 LOW) and CLOUD-META-OPPORTUNITIES.md (9 viable, 6 owner questions). |
 
 ## Audited snapshot
 Repo at `782b6c8` on `cloud/meta-audit` (2026-09-24). This clone's history is squashed, so hashes quoted in the handoff do not resolve here and git cannot tell pushed from unpushed. A finding is called "live" only where `META-ADS-HANDOFF.md`'s own status notes say so.
@@ -99,3 +99,6 @@ Opus verifier, batches of ~5, receives only claims + citations (not researcher r
 | 26 | AdminPanel is 13,732 lines | AGREED (measured) |
 
 Counts: **25 AGREED, 1 DISAGREED.**
+
+## Resuming
+All phases are complete. If resumed, the open work is: run the live checks listed at the end of CLOUD-META-AUDIT.md, and (in a session allowed to edit other files) add pointers to both reports in META-ADS-HANDOFF.md §23 and settled lines in META-AUDIT-CONTEXT.md.
