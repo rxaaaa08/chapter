@@ -14,8 +14,9 @@ import { sendLeadToMeta } from '../_shared/metaCapi.ts';
 // actually produced. That makes Lead the number Meta bids against, so it has to
 // be as complete as Purchase is.
 //
-// The browser alone cannot deliver that. Roughly half of visitors block
-// fbevents.js, and their Lead never fires. This endpoint sits on our own domain,
+// The browser alone cannot deliver that. Some visitors block fbevents.js and
+// their Lead never fires — measured 11-16% in August and ~2-7% in September
+// 2026 (the old "roughly half" here was never a measurement). This endpoint sits on our own domain,
 // which an ad blocker has no reason to touch, so the same event still reaches
 // Meta for exactly those people. They stay matchable too: _fbc is written by our
 // own code (ensureFbcCookie in src/metaPixel.ts) before fbevents.js is even
@@ -89,10 +90,15 @@ const META_COOKIE = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)?$/;
 // Matches MAX_META_COOKIE_LEN in src/metaPixel.ts. An _fbc is a 19-character
 // prefix plus an fbclid of whatever length Meta minted, and ours reach 187 —
 // a 206-character cookie that the old 200 cap threw away, on exactly the
-// visitors the click id exists to identify. _fbp is a fixed short shape, so it
-// keeps its own tight ceiling.
+// visitors the click id exists to identify.
+//
+// _fbp used to keep a tighter 120 ceiling on the grounds that it is a short fixed
+// shape. Meta documents no length for it, and the browser accepts 512, so a
+// longer one would have passed the browser and been silently dropped here —
+// the exact failure described above for fbc. Aligned 2026-09-26 (cloud audit
+// A-19); the META_COOKIE shape check is what actually validates it.
 const MAX_FBC_LEN = 512;
-const MAX_FBP_LEN = 120;
+const MAX_FBP_LEN = 512;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // The columns both modes need off an applications row.

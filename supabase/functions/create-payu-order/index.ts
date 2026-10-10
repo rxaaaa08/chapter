@@ -271,8 +271,13 @@ Deno.serve(async (req) => {
     // rejected here and silently stored as null.
     const META_COOKIE = /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)?$/;
 
+    // 512, the same ceiling the browser applies (MAX_META_COOKIE_LEN in
+    // src/metaPixel.ts). Was 120 — fine for today's ~30-character _fbp, but Meta
+    // documents no length for it, and a longer one the browser happily sent would
+    // have been dropped here with no fallback: the same silent loss the old 200
+    // cap caused for fbc. The shape check above is the real validation. A-19.
     const rawFbp = String(body.fbp ?? '').trim();
-    const fbp = META_COOKIE.test(rawFbp) && rawFbp.length <= 120 ? rawFbp : null;
+    const fbp = META_COOKIE.test(rawFbp) && rawFbp.length <= 512 ? rawFbp : null;
 
     // Meta's click id as the browser recorded it. Preferred over rebuilding it
     // server-side, so both reports of one sale carry the same string. Same
