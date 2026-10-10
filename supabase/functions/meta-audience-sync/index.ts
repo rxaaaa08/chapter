@@ -3,10 +3,11 @@ import { sha256Hex, normaliseEmail, normalisePhone, normaliseNamePart } from '..
 
 // meta-audience-sync
 //
-// Keeps three Meta Custom Audiences in step with our own customer records:
-//   customers_all_paid   — exclude from prospecting
-//   customers_completed  — lookalike seed
-//   leads_unpaid         — retargeting
+// Keeps Meta Custom Audiences in step with our own customer records:
+//   customers_all_paid   — exclude from prospecting (or target past guests)
+//   customers_completed  — lookalike seed   · RETIRED 2026-09-30
+//   leads_unpaid         — retargeting      · RETIRED 2026-09-30
+// Retired rows keep meta_audiences.retired_at set and are skipped below.
 //
 // WHY DIFF RATHER THAN RE-UPLOAD
 // Meta's /users edge adds people and dedupes, so re-sending everyone every day
@@ -108,6 +109,54 @@ async function graph(path: string, token: string, body?: unknown, override?: 'de
   };
 }
 
+// ── Replace, not add/remove (cloud audit A-3, 2026-09-26) ─────────────────
+// Meta, in bold: POST or DELETE to /<audience>/users RESETS THE LEARNING PHASE
+// of every active ad set using the audience; /<audience>/usersreplace does not
+// (Customer File Custom Audiences guide :409). This system itself recommends
+// attaching customers_all_paid as an exclusion (§19), so the day that is done,
+// the old daily add/remove would have restarted learning on most booking days —
+// on an account that can barely leave learning at all (§9).
+//
+// So when membership changes, the WHOLE desired list is sent through a replace
+// session. Rules from the guide (:411-432, :458-487): batch_seq starts at 1, the
+// last batch carries last_batch_flag, a session must finish within 90 minutes,
+// and nothing may be added or removed through /users while it runs. Our lists
+// are hundreds of people, so this is one batch; the loop is for the day it isn't.
+//
+// FALLBACK. Whether usersreplace is allowed on this ads_read token has not been
+// tested live (plain /users writes are — M10). If the FIRST batch is refused on
+// permission grounds, the caller falls back to the old add/remove so audiences
+// never stop updating, and says so in the report and the log. Any other failure
+// — or one after the first batch, when a replace is already under way — is a
+// real failure: adding/removing during a replace is exactly what Meta forbids.
+type ReplaceResult =
+  | { ok: true; batches: number }
+  | { ok: false; fallback: boolean; res: Extract<GraphResult, { ok: false }> };
+
+async function replaceAudience(audienceId: string, people: Person[], token: string): Promise<ReplaceResult> {
+  // int64 per the reference; stays inside JS's safe-integer range.
+  const sessionId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const batches = Math.max(1, Math.ceil(people.length / UPLOAD_BATCH));
+  for (let b = 0; b < batches; b++) {
+    const slice = people.slice(b * UPLOAD_BATCH, (b + 1) * UPLOAD_BATCH);
+    const data = await Promise.all(slice.map((p) => toRow(p)));
+    const res = await graph(`${audienceId}/usersreplace`, token, {
+      session: {
+        session_id: sessionId,
+        batch_seq: b + 1,
+        last_batch_flag: b === batches - 1,
+        estimated_num_total: people.length,
+      },
+      payload: { schema: SCHEMA, data },
+    });
+    if (!res.ok) {
+      const permission = res.code === 200 || res.code === 294 || res.code === 10;
+      return { ok: false, fallback: b === 0 && permission, res };
+    }
+  }
+  return { ok: true, batches };
+}
+
 // The two failures worth naming, because the message alone does not tell a
 // non-engineer what to do about them.
 function explain(r: Extract<GraphResult, { ok: false }>, accountId: string): string {
@@ -123,11 +172,26 @@ function explain(r: Extract<GraphResult, { ok: false }>, accountId: string): str
   if (r.code === 200 && r.subcode === 1870092) {
     return 'Meta Business Tools Terms have not been accepted for this business.';
   }
+  // Two documented failures the translations below used to misfile as "widen
+  // the token" (cloud audit A-15). Both are fixed in Business Settings, not by
+  // a new token.
+  if (r.code === 100 && r.subcode === 33) {
+    return 'The reporting system user is not on this ad account (or not as Admin). Business Settings → Ad accounts → this account → Add people → add the system user as Admin.';
+  }
+  if (r.code === 200 && r.subcode === 1870050) {
+    return 'The ad account is not linked to the Meta Business Suite business that owns the system user. Link it in Business Settings → Ad accounts.';
+  }
+  // NOT "the token needs ads_management". Audience writes were verified working
+  // on this ads_read token (settled finding M10, META-AUDIT-CONTEXT.md): the
+  // system user's asset-level Full access on the ad account is what authorises
+  // them. So a permission refusal here almost always means that ACCESS changed,
+  // and widening the token would be the wrong fix — M10 says not to without a
+  // reason. The raw code is still appended by fail(), so nothing is hidden.
   if (r.code === 294 || r.code === 10) {
-    return 'The access token lacks ads_management, or the system user lacks write access to the ad account.';
+    return 'Permission refused. Check the system user still has Full access on the ad account in Business Settings (audience writes work on the ads_read token when it does — do not widen the token).';
   }
   if (r.code === 200) {
-    return 'Permission refused by Meta. Most likely the token is ads_read only — creating an audience is a write and needs ads_management.';
+    return 'Permission refused by Meta. Check the system user still has Full access on the ad account, and that Custom Audience Terms are accepted for it. The ads_read token is sufficient when access is right (M10).';
   }
   if (r.code === 190) return 'The access token is expired or revoked.';
   return r.message;
@@ -150,7 +214,9 @@ Deno.serve(async () => {
   }
 
   const { data: audiences, error: audErr } = await supabase
-    .from('meta_audiences').select('*').order('key');
+    // Retired lists (2026-09-30: customers_completed, leads_unpaid) keep their
+    // row as history but are never uploaded again. See meta_audiences.retired_at.
+    .from('meta_audiences').select('*').is('retired_at', null).order('key');
   if (audErr || !audiences) {
     return new Response(JSON.stringify({ ok: false, error: 'cannot_read_audiences', detail: audErr?.message }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
@@ -208,14 +274,29 @@ Deno.serve(async () => {
     try {
       // ── Create at Meta on first run ───────────────────────────────────────
       if (!audienceId) {
-        const created = await graph(`act_${accountId}/customaudiences`, token, {
+        const createBody: Record<string, unknown> = {
           name: aud.name,
           description: aud.description,
           subtype: 'CUSTOM',
           // We collected this ourselves from our own customers — which is both
           // true and the declaration Meta requires before it will accept a list.
           customer_file_source: 'USER_PROVIDED_ONLY',
-        });
+        };
+        // Tell Meta what the list IS (cloud audit OPP-9, 2026-09-26; field added
+        // by Meta 2026-04-30, CREATE-only per its changelog). The label lives in
+        // meta_audiences.audience_label so it is data, not code. Meta's pages
+        // disagree on string-vs-array; the guide's example sends an array, so
+        // that goes first — and if Meta refuses the create with a bad-parameter
+        // error while a label is attached, it is retried WITHOUT the label. A
+        // label is a hint to Meta, never worth an audience that fails to exist.
+        const label = typeof aud.audience_label === 'string' && aud.audience_label.trim()
+          ? aud.audience_label.trim().toUpperCase() : null;
+        let created = await graph(`act_${accountId}/customaudiences`, token,
+          label ? { ...createBody, audience_labels: [label] } : createBody);
+        if (!created.ok && label && created.code === 100) {
+          console.warn(`[meta-audience-sync] create with audience_labels refused for ${key}, retrying without`, created.message);
+          created = await graph(`act_${accountId}/customaudiences`, token, createBody);
+        }
         if (!created.ok) { await fail(explain(created, accountId), created); continue; }
         audienceId = String(created.body.id);
         await supabase.from('meta_audiences').update({ audience_id: audienceId }).eq('key', key);
@@ -237,9 +318,46 @@ Deno.serve(async () => {
       const toAdd = [...desired.keys()].filter((ph) => !uploaded.has(ph));
       const toRemove = [...uploaded].filter((ph) => !desired.has(ph));
 
-      // ── Additions ─────────────────────────────────────────────────────────
+      // ── Replace when anything changed (see replaceAudience) ───────────────
+      // Nothing changed -> no call at all, same as before. An EMPTY desired list
+      // cannot be sent as a replace, so that one case uses the old removal path.
+      let method: 'unchanged' | 'replace' | 'add_remove' = 'unchanged';
       let added = 0;
-      for (let i = 0; i < toAdd.length; i += UPLOAD_BATCH) {
+      let removed = 0;
+      if (toAdd.length || toRemove.length) {
+        if (desired.size === 0) {
+          method = 'add_remove';
+        } else {
+          const r = await replaceAudience(audienceId!, [...desired.values()], token);
+          if (r.ok) {
+            method = 'replace';
+            const now = new Date().toISOString();
+            if (toAdd.length) {
+              await supabase.from('meta_audience_members').upsert(
+                toAdd.map((ph) => ({ audience_key: key, phone: ph, added_at: now, removed_at: null })),
+                { onConflict: 'audience_key,phone' },
+              );
+            }
+            for (const ph of toRemove) {
+              await supabase.from('meta_audience_members')
+                .update({ removed_at: now })
+                .eq('audience_key', key).eq('phone', ph);
+            }
+            added = toAdd.length;
+            removed = toRemove.length;
+          } else if (r.fallback) {
+            method = 'add_remove';
+            console.warn('[meta-audience-sync] usersreplace refused on permission grounds — falling back to add/remove, which RESETS learning on active ad sets',
+              key, `${r.res.code}/${r.res.subcode}: ${r.res.message}`);
+          } else {
+            await fail(explain(r.res, accountId), r.res);
+            throw new Error('replace_failed');
+          }
+        }
+      }
+
+      // ── Additions (fallback path only) ────────────────────────────────────
+      for (let i = 0; method === 'add_remove' && i < toAdd.length; i += UPLOAD_BATCH) {
         const slice = toAdd.slice(i, i + UPLOAD_BATCH);
         const data = await Promise.all(slice.map((ph) => toRow(desired.get(ph)!)));
         const res = await graph(`${audienceId}/users`, token, { payload: { schema: SCHEMA, data } });
@@ -251,9 +369,8 @@ Deno.serve(async () => {
         added += slice.length;
       }
 
-      // ── Removals ──────────────────────────────────────────────────────────
-      let removed = 0;
-      for (let i = 0; i < toRemove.length; i += UPLOAD_BATCH) {
+      // ── Removals (fallback path only) ─────────────────────────────────────
+      for (let i = 0; method === 'add_remove' && i < toRemove.length; i += UPLOAD_BATCH) {
         const slice = toRemove.slice(i, i + UPLOAD_BATCH);
         // Removal only needs the key we match on, and phone is ours.
         const data = await Promise.all(slice.map(async (ph) => [
@@ -275,7 +392,7 @@ Deno.serve(async () => {
         last_error: null,
       }).eq('key', key);
 
-      report.push({ audience: key, ok: true, audience_id: audienceId, members: desired.size, added, removed });
+      report.push({ audience: key, ok: true, audience_id: audienceId, members: desired.size, added, removed, method });
     } catch (e) {
       // fail() already recorded the reason; this only stops this audience from
       // taking the other two down with it.
