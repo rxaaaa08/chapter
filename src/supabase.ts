@@ -42,14 +42,27 @@ export function parseHeroImages(raw: unknown): string[] {
 }
 
 // ─── ANALYTICS ───────────────────────────────────────────────────────────────
+// Falls back to an in-memory id when sessionStorage throws (storage blocked,
+// some privacy modes). It used to throw straight into trackEvent's catch, which
+// dropped EVERY funnel event for that visitor with no trace — found by the
+// 2026-09-28 tracking audit (C4). Memory lives for this page load, which for an
+// SPA is close to the visit. Deliberately NOT localStorage: a session id that
+// outlives the tab would merge separate visits (see the note on getVisitorId).
+let memorySessionId: string | null = null;
+
 export function getSessionId(): string {
   const key = 'ca_session_id';
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    sessionStorage.setItem(key, id);
+  try {
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    if (!memorySessionId) memorySessionId = crypto.randomUUID();
+    return memorySessionId;
   }
-  return id;
 }
 
 // A stable id for this BROWSER, as opposed to this visit.
@@ -197,8 +210,8 @@ export async function trackEvent(
 // conversion the ad produced. That makes Lead a number Meta bids against, and it
 // has to be as complete as Purchase.
 //
-// The browser Lead alone is not: roughly half of visitors block fbevents.js and
-// it never fires for them. The capi-lead function sits on our own domain, which
+// The browser Lead alone is not: some visitors block fbevents.js (measured
+// 11-16% in Aug, ~2-7% in Sep 2026) and it never fires for them. The capi-lead function sits on our own domain, which
 // an ad blocker has no reason to block, so the same event still lands for those
 // people. Both carry the same id, so Meta counts one.
 
