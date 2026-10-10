@@ -17,11 +17,15 @@ In Ads Manager, in each **ad** (not campaign, not ad set), scroll to
 **Tracking → URL parameters** and paste exactly this:
 
 ```
-utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}
+utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}&site_source_name={{site_source_name}}
 ```
 
-Meta swaps `{{ad.id}}` for the real numeric ad ID at click time. Our site
-already stores it — `src/attribution.ts` has been capturing `utm_content` since
+Meta swaps `{{ad.id}}` for the real numeric ad ID at click time. The last two
+(`{{placement}}`, `{{site_source_name}}`, added 2026-09-26, cloud audit A-13) say
+WHICH surface the click came from — Facebook feed, Instagram Reels, and so on —
+which can never be filled in afterwards for a click that arrived without them.
+If Meta ever leaves one unfilled, our site drops it rather than storing the
+literal text. Our site already stores all of these — `src/attribution.ts` has been capturing `utm_content` since
 13 August, so this needs no code change.
 
 If you forget it on one ad, the panel's **Tracking health** strip will say so:

@@ -14,7 +14,7 @@
 --   2. applications.attribution — already live since 2026-08-13 (src/attribution.ts).
 --
 -- THE JOIN CONTRACT: every ad's "URL parameters" field in Ads Manager must be
---   utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}
+--   utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}&site_source_name={{site_source_name}}
 -- Meta substitutes the real ids at click time, and attribution.ts already
 -- captures utm_content/utm_term verbatim. So attribution->>'utm_content' IS the
 -- ad id, with no code change anywhere in the client.
