@@ -438,7 +438,32 @@ Deno.serve(async (req) => {
       return reply(502, { error: `We could not send your ${delivery === 'email' ? 'verification email' : 'WhatsApp code'}. Please try again.` }, cors);
     }
 
-    return reply(200, { verification_token: verificationToken, expires_at: expiresAt, delivery }, cors);
+    // The Meta Lead dedup id for this booking (cloud audit A-2, 2026-09-26).
+    //
+    // The browser fires its Lead the moment this code is sent, and it used to
+    // mint a fresh id on every page load. A RETURNING applicant — very often
+    // someone the cart-abandonment nudge brought back — already has a row whose
+    // lead_id the server reported the first time, so the new browser Lead could
+    // never pair with anything and Meta counted an extra Lead per return visit.
+    // Seen live on 18 Sep (META-ADS-HANDOFF.md §28.3).
+    //
+    // So the server hands back the id to use: the row's own lead_id when one
+    // exists, otherwise a fresh one the client then writes onto the row it
+    // inserts. ALWAYS a uuid either way, so this public, unauthenticated
+    // response never reveals whether this phone has booked before — the same
+    // rule capi-lead follows. Best effort: a lookup failure still returns a
+    // fresh id and never blocks the code that was just sent.
+    let leadId: string = crypto.randomUUID();
+    try {
+      const { data: existing } = await supabase
+        .from('applications').select('lead_id')
+        .eq('event_slug', event.slug).eq('phone', phone)
+        .maybeSingle();
+      const rowLead = String(existing?.lead_id ?? '');
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rowLead)) leadId = rowLead;
+    } catch { /* keep the fresh id */ }
+
+    return reply(200, { verification_token: verificationToken, expires_at: expiresAt, delivery, lead_id: leadId }, cors);
   }
 
   const verificationToken = String(body.verification_token ?? '');

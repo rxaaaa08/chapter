@@ -590,8 +590,8 @@ function ApplicationForm({
       // reported twice: once from this browser, once from our server. They share
       // one id, so Meta counts a single application.
       //
-      // The server copy is what reaches Meta for the ~half of visitors whose
-      // browser blocks fbevents.js entirely. It is safe to fire here and only
+      // The server copy is what reaches Meta for the visitors whose browser
+      // blocks fbevents.js entirely (~2-16%, measured Aug-Sep 2026). It is safe to fire here and only
       // here: the applications row was inserted immediately above and the insert
       // succeeded, so capi-lead's "no application, no Lead" guard will find it.
       // (The open flow reports its Lead the same way, but in two halves: the
@@ -1200,11 +1200,31 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   // the row exists, and the cron sweep that reads lead_id back off that row.
   // Mirrors the invite flow — a second id generated anywhere would collide with
   // nothing and count one applicant twice.
-  const openLeadIdRef = React.useRef<string>('');
+  //
+  // Keyed by the plan, because one visit can book two plans and each needs its
+  // own id — sharing one would make Meta merge two real Leads into one.
+  //
+  // RETURNING APPLICANTS (cloud audit A-2, 2026-09-26): open-event-otp now hands
+  // back the id to use, which for someone who already applied is their row's
+  // ORIGINAL lead_id — the one the server already reported. Adopted before the
+  // browser Lead fires, so that Lead pairs with the server copy instead of
+  // counting as a second applicant. Only adopted while this plan has no id yet
+  // this visit, so a resend or the email fallback cannot swap the id out from
+  // under a Lead that already fired with it.
+  const openLeadIdRef = React.useRef<{ slug: string; id: string }>({ slug: '', id: '' });
   const openLeadId = React.useCallback((): string => {
-    if (!openLeadIdRef.current) openLeadIdRef.current = newLeadId();
-    return openLeadIdRef.current;
-  }, []);
+    const slug = String(selectedEvent?.id ?? '').toLowerCase();
+    if (openLeadIdRef.current.slug !== slug || !openLeadIdRef.current.id) {
+      openLeadIdRef.current = { slug, id: newLeadId() };
+    }
+    return openLeadIdRef.current.id;
+  }, [selectedEvent]);
+  const adoptServerLeadId = React.useCallback((serverId: unknown) => {
+    const slug = String(selectedEvent?.id ?? '').toLowerCase();
+    if (typeof serverId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) return;
+    if (openLeadIdRef.current.slug === slug && openLeadIdRef.current.id) return;
+    openLeadIdRef.current = { slug, id: serverId };
+  }, [selectedEvent]);
   const pingOpenFunnel = React.useCallback((stage: 'details_form_opened' | 'details_form_submitted') => {
     if (!isPayUFlow || !selectedEvent) return;
     const key = `${stage}:${selectedEvent.id}`;
@@ -2016,6 +2036,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         name: detailsForm.name,
         city: selectedCity,
       });
+      // Before the Lead fires: a returning applicant must reuse their row's id.
+      adoptServerLeadId(data.lead_id);
       pingOpenFunnel('details_form_submitted');
       setOpenOtpSession(data.verification_token);
       setOpenOtpDigits(Array(6).fill(''));
@@ -2225,7 +2247,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
       // The server copy of the Lead the browser already fired at OTP-request
       // time. Same id, so Meta counts one — and this is the copy that survives
-      // for the ~half of visitors whose browser blocks fbevents.js entirely.
+      // for the visitors whose browser blocks fbevents.js entirely (~2-16%,
+      // measured Aug-Sep 2026).
       //
       // Fired HERE, not next to the browser event, and that ordering is the
       // whole trick: capi-lead refuses to report a Lead with no matching
@@ -2234,8 +2257,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       // and still describe one action.
       //
       // A returning lead hits the (event_slug, phone) unique key above, so their
-      // row keeps its original lead_id — but this call passes the id from THIS
-      // visit, which is the one the browser Lead used, so the pair still matches.
+      // row keeps its original lead_id. Since 2026-09-26 the browser Lead used
+      // that same id (adoptServerLeadId, from open-event-otp), so all three
+      // copies — browser, this call, the cron sweep — now name one Lead. Before
+      // that, this comment claimed the pair matched; capi-lead reported the
+      // row's id instead and the browser's never paired (cloud audit A-2).
       reportLead({
         leadId: openLeadId(),
         eventSlug: openSlug,
