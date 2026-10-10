@@ -922,7 +922,8 @@ Deno.serve(async (req) => {
           // The webhook is the ONLY path that sees a payment when the customer
           // closed the tab on PayU — precisely the case the browser pixel can
           // never report. Same event_id (txnid) as the callback and the browser
-          // event, so however many of the three fire, Meta records one sale.
+          // event. Meta only documents merging browser+server copies, so the
+          // server copies are kept to ONE by the claim in sendPurchaseToMeta.
           await sendPurchaseToMeta({
             txnid,
             // The BOOKING's value, not the amount charged. On a split booking those
@@ -964,6 +965,9 @@ Deno.serve(async (req) => {
             // How late this fires is exactly why event_time must come from PayU
             // rather than from now().
             eventTime: payuAddedOnToUnix((stored as any)?.payu_response?.addedon),
+            // Claim-then-send: this and the callback usually both land here for
+            // one payment; only the claim winner reports it.
+            db: supabase,
           });
 
           if (paymentType === 'advance') {

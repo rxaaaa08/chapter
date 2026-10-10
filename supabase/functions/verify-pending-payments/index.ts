@@ -743,6 +743,93 @@ function ticketCountPatch(paymentType: string, quantity: unknown): Record<string
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
+// ── Retry sales Meta never confirmed (cloud audit A-1, 2026-09-26) ─────────
+// sendPurchaseToMeta used to give up after one try, and every sale gets exactly
+// one: PayU's webhook has not been calling us since 17 Jul (§28.12), and this
+// cron marks a rescued payment done BEFORE it sends. Meta's own guidance is to
+// retry a non-client error. Now that the claim-then-send lock stamps
+// payu_payments.meta_purchase_sent_at only on a CONFIRMED send (§28.13), the
+// sales still owed to Meta are simply the successful rows without it.
+//
+// Bounds, each for a reason:
+//   * created after LOCK_LIVE_AT — older rows have sent_at NULL because the
+//     column did not exist, not because the send failed. Never retry those.
+//   * older than 15 min — give the callback its moment; the lock makes a clash
+//     harmless anyway.
+//   * younger than 6 days — Meta drops events older than 7 days, and
+//     safeEventTime() stops trusting the real time an hour before that.
+//   * fewer than 5 attempts — a permanently rejected event must not be re-sent
+//     every 15 minutes for a week.
+//   * not balance payments, not 90000000xx test phones — sendPurchaseToMeta
+//     skips both without claiming, so they would otherwise be picked up forever.
+// Runs on the scheduled cron only, never on a ?force run, and never throws:
+// reconciling payments is this function's job and this must not get in its way.
+const LOCK_LIVE_AT = '2026-09-26T12:05:00Z';
+const PURCHASE_RETRY_MAX_ATTEMPTS = 5;
+
+async function retryUnconfirmedPurchases(supabase: any): Promise<number> {
+  try {
+    const now = Date.now();
+    const newest = new Date(now - 15 * 60 * 1000).toISOString();
+    const oldestAllowed = new Date(now - 6 * 24 * 60 * 60 * 1000).toISOString();
+    const oldest = oldestAllowed > LOCK_LIVE_AT ? oldestAllowed : LOCK_LIVE_AT;
+    const { data: owed, error } = await supabase
+      .from('payu_payments')
+      .select('txnid, event_slug, phone, payment_type, event_title, amount, name, email, fbp, fbc, client_ip, client_user_agent, source_url, reported_value, addedon:payu_response->>addedon')
+      .eq('status', 'success')
+      .is('meta_purchase_sent_at', null)
+      .lt('meta_purchase_attempts', PURCHASE_RETRY_MAX_ATTEMPTS)
+      .or('payment_type.is.null,payment_type.neq.balance')
+      .not('phone', 'like', '90000000%')
+      .gt('created_at', oldest)
+      .lt('created_at', newest)
+      .order('created_at', { ascending: true })
+      .limit(20);
+    if (error) {
+      console.error('[verify-pending-payments] purchase retry query failed', error.message);
+      return 0;
+    }
+    let retried = 0;
+    for (const row of owed ?? []) {
+      const phone = row.phone as string | null;
+      const eventSlug = row.event_slug ? await resolveCanonicalSlug(supabase, row.event_slug) : null;
+      const { data: appRow } = eventSlug && phone
+        ? await supabase.from('applications').select('selected_city, attribution')
+            .eq('event_slug', eventSlug).eq('phone', phone).maybeSingle()
+        : { data: null };
+      console.log('[verify-pending-payments] retrying unconfirmed Meta Purchase', row.txnid);
+      // Same argument set as the rescue call below, read from the stored row:
+      // the cron's own headers describe the scheduler, not the customer.
+      await sendPurchaseToMeta({
+        txnid: row.txnid,
+        value: Number(row.reported_value ?? row.amount ?? 0) || 0,
+        currency: 'INR',
+        email: row.email ?? null,
+        phone,
+        eventSlug,
+        eventTitle: row.event_title ?? null,
+        sourceUrl: row.source_url ?? null,
+        clientIp: row.client_ip ?? null,
+        userAgent: row.client_user_agent ?? null,
+        name: row.name ?? null,
+        city: (appRow as any)?.selected_city ?? null,
+        fbclid: (appRow as any)?.attribution?.fbclid ?? null,
+        fbclidSeenAt: (appRow as any)?.attribution?.landed_at ?? null,
+        fbp: row.fbp ?? null,
+        fbc: row.fbc ?? null,
+        paymentType: row.payment_type ?? null,
+        eventTime: payuAddedOnToUnix(row.addedon),
+        db: supabase,
+      });
+      retried++;
+    }
+    return retried;
+  } catch (err) {
+    console.error('[verify-pending-payments] purchase retry sweep failed', err);
+    return 0;
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     const PAYU_MERCHANT_KEY  = Deno.env.get('PAYU_MERCHANT_KEY');
@@ -778,6 +865,14 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
+
+    // A-1: re-send sales Meta never confirmed. Before the pending query so the
+    // early "nothing pending" return below cannot skip it; self-contained and
+    // never throws. Scheduled runs only.
+    if (!isForce) {
+      const retried = await retryUnconfirmedPurchases(supabase);
+      if (retried) console.log('[verify-pending-payments] purchase retries', retried);
+    }
 
     // Target rows: still 'pending'. Normal run = 15 min–24 h old (give the
     // push paths time to land; ignore ancient abandoned-at-create rows). Force
@@ -968,6 +1063,8 @@ Deno.serve(async (req) => {
               // this cron can run up to 24 h late, and Meta attributes on
               // event_time, so "now" would date the sale to the reconcile.
               eventTime: payuAddedOnToUnix(txn?.addedon),
+              // Claim-then-send (see sendPurchaseToMeta).
+              db: supabase,
             });
           }
           resolvedSuccess++;

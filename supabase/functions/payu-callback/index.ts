@@ -1022,6 +1022,9 @@ Deno.serve(async (req) => {
             // seconds ago here, but the same call in payu-webhook can run much
             // later, and Meta attributes on event_time.
             eventTime: payuAddedOnToUnix((stored as any)?.payu_response?.addedon),
+            // Claim-then-send: only one of callback / webhook / cron reports
+            // this txnid (see sendPurchaseToMeta).
+            db: supabase,
           });
 
           if (paymentType === 'advance') {

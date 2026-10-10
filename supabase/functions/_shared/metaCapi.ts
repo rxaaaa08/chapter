@@ -4,8 +4,9 @@
 // Measured on 2026-08-15: the browser pixel captured 6 of 13 real payments —
 // about 46%. Two failure modes stack on top of each other:
 //
-//   1. The tracker is blocked outright for roughly half of visitors (ad
-//      blockers, Safari tracking prevention, iOS ATT, hardened browsers). Those
+//   1. The tracker is blocked outright for some visitors (ad blockers,
+//      Safari tracking prevention, iOS ATT, hardened browsers) — measured
+//      11-16% in August and ~2-7% in September 2026. Those
 //      people browse and buy completely normally and are invisible to Meta.
 //   2. The browser Purchase fires on the PayU RETURN screen. A customer who
 //      closes the tab after paying, or who returns through a UPI app into a
@@ -270,6 +271,14 @@ export type CapiPurchaseArgs = {
    * only thing tying the sale back to the browser that saw the ad in-feed.
    */
   fbp?: string | null;
+  /**
+   * The caller's service-role Supabase client, for the claim-then-send lock
+   * (claim_meta_purchase / finish_meta_purchase). Required, not optional: a
+   * caller that forgot it would silently skip the lock, which is the exact
+   * double-count this exists to stop. Typed loosely so _shared does not pin a
+   * supabase-js version onto its five importers.
+   */
+  db: { rpc: (fn: string, args: Record<string, unknown>) => any };
 };
 
 // ─── Shared plumbing ─────────────────────────────────────────────────────────
@@ -513,7 +522,34 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
       return;
     }
 
-    await postEventToMeta({
+    // CLAIM-THEN-SEND. payu-callback, payu-webhook and verify-pending-payments
+    // can all reach this line for the same txnid — the callback and the webhook
+    // usually within seconds of each other, and a customer's browser can replay
+    // the callback. They share an event_id, but Meta only documents merging a
+    // BROWSER copy with a SERVER copy; two server copies may both count (cloud
+    // audit A-4, META-ADS-HANDOFF.md §28.4). So exactly one caller gets to send:
+    // whoever wins the atomic claim on the payu_payments row.
+    //
+    // Fails OPEN. If the claim itself errors (a DB blip, or this code deployed
+    // before its migration) we send anyway, which is exactly the old behaviour.
+    // A possible duplicate is the lesser harm; a sale Meta never hears about is
+    // the one A-1 is about and cannot be undone.
+    let holdsClaim = false;
+    try {
+      const { data, error } = await args.db.rpc('claim_meta_purchase', { p_txnid: args.txnid });
+      if (error) {
+        console.error('[meta-capi] purchase claim failed — sending without the lock', args.txnid, error.message ?? error);
+      } else if (data !== true) {
+        console.log('[meta-capi] Purchase already reported or in flight on another path, skipped', args.txnid);
+        return;
+      } else {
+        holdsClaim = true;
+      }
+    } catch (err) {
+      console.error('[meta-capi] purchase claim threw — sending without the lock', args.txnid, err);
+    }
+
+    const sent = await postEventToMeta({
       eventName: 'Purchase',
       // Shared with the browser event so Meta counts this sale once.
       eventId: args.txnid,
@@ -541,6 +577,19 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
         ...(args.eventTitle ? { content_name: args.eventTitle } : {}),
       },
     });
+
+    // Confirmed -> stamp meta_purchase_sent_at so no other path sends again.
+    // Not confirmed (rejected, timed out, no token) -> release the claim so a
+    // later path can try. A timeout can mean Meta got it and we never heard,
+    // so a retry may duplicate; accepted, for A-1's reason above.
+    if (holdsClaim) {
+      const { error } = await args.db.rpc('finish_meta_purchase', { p_txnid: args.txnid, p_sent: sent });
+      if (error) {
+        // The claim then expires on its own after 2 minutes (see the migration),
+        // so the worst case is one extra send, never a stuck row.
+        console.error('[meta-capi] purchase claim not finished', args.txnid, error.message ?? error);
+      }
+    }
   } catch (err) {
     console.error('[meta-capi] purchase send failed', args.txnid, err);
   }
@@ -556,8 +605,8 @@ export async function sendPurchaseToMeta(args: CapiPurchaseArgs): Promise<void> 
 // produced; the payment is a downstream business step.
 //
 // That makes Lead the number Meta bids against for those campaigns, so it has to
-// be as complete as Purchase is. The browser alone cannot deliver that: roughly
-// half of visitors block fbevents.js outright. Routing the same event through our
+// be as complete as Purchase is. The browser alone cannot deliver that: some
+// visitors (~2-16% as measured Aug-Sep 2026) block fbevents.js outright. Routing the same event through our
 // own domain reaches Meta for exactly those people, because an ad blocker that
 // blocks connect.facebook.net has no reason to block our backend.
 //
