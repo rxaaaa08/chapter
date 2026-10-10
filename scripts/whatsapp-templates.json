@@ -1,0 +1,160 @@
+{
+  "_about": [
+    "The WhatsApp message templates our code sends, as they must exist in OUR account",
+    "(chapter அ, 1438047108420416). scripts/whatsapp-create-templates.py creates any",
+    "that are missing. Wording was copied on 2026-10-10 from the Wamafy-era account;",
+    "see docs/WHATSAPP-TEMPLATE-PACK-2026-10-10.md.",
+    "",
+    "RULES THE CODE DEPENDS ON",
+    "1. Every template is language 'en'. The senders pass one language for all of them.",
+    "2. Names must match what the edge functions send (cloudTemplate / template: ...).",
+    "3. EVERY button is dynamic: https://chaptera.in/invite{{1}}. The code supplies the",
+    "   tail (?phone=...&name=...&wa=<tap code>.<button>), one value per button. That",
+    "   includes invitation_with_contact, whose buttons were fixed links on Wamafy and",
+    "   AiSensy: here they are dynamic so the invite can carry a tap code too.",
+    "4. Body {{n}} order must match the order the code passes its values in."
+  ],
+  "language": "en",
+  "templates": [
+    {
+      "name": "otp",
+      "category": "AUTHENTICATION",
+      "components": [
+        { "type": "BODY", "add_security_recommendation": false },
+        { "type": "FOOTER", "code_expiration_minutes": 8 },
+        { "type": "BUTTONS", "buttons": [ { "type": "OTP", "otp_type": "COPY_CODE" } ] }
+      ]
+    },
+    {
+      "name": "advancepaid",
+      "category": "UTILITY",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "Advance Paid!" },
+        { "type": "BODY",
+          "text": "Your advance payment of {{1}} is successful.\n\nPress *Join Groupchat* & you’ll receive further details a few days before the plan.\n\nIn case of any queries, press *Contact Us*.",
+          "example": { "body_text": [ [ "₹88.00" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Join Groupchat", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "advance_success_dpl",
+      "category": "UTILITY",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "Advance Paid!" },
+        { "type": "BODY",
+          "text": "Your advance payment of {{1}} is successful.\n\nPress *Pay Balance* & settle balance by {{2}}.\n\nIn case of any queries, press *Contact Us*.",
+          "example": { "body_text": [ [ "₹888.00", "May 22nd" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Pay Balance", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "balance_success",
+      "category": "UTILITY",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "Balance Paid!" },
+        { "type": "BODY",
+          "text": "Your payment of {{1}} is successful.\n\nPress *Join Groupchat* & you’ll receive further details by {{2}}.\n\nIn case of any queries, press *Contact Us*.",
+          "example": { "body_text": [ [ "₹100.00", "May 23rd" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Join Groupchat", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "single_payment_sucess_dpl",
+      "category": "UTILITY",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "Payment Success!" },
+        { "type": "BODY",
+          "text": "Your payment of {{1}} is successful.\n\nPress *Join Groupchat* & you’ll receive further details by {{2}}.\n\nIn case of any queries, press *Contact Us*.",
+          "example": { "body_text": [ [ "₹888.00", "May 23rd" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Join Groupchat", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "payment_failed",
+      "category": "UTILITY",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "Payment Failed :(" },
+        { "type": "BODY",
+          "text": "Hi {{1}}, your payment of {{2}} has failed.\n\nPlease *Retry Payment.*\n\nIf you have any doubts - press *Contact Us*.",
+          "example": { "body_text": [ [ "Sam", "₹199.00" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Retry Payment", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "cart_abandon",
+      "category": "MARKETING",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "We’re here for you..." },
+        { "type": "BODY",
+          "text": "Hi {{1}}, we don’t want you to miss our {{2}} - {{3}}.\n\nIf something is unclear & you wanna talk to us - press *Contact Us*.",
+          "example": { "body_text": [ [ "Sam", "Creators Meet", "Sunday, August 30th" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "resend_details",
+      "category": "MARKETING",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "We’re happy to help!" },
+        { "type": "BODY",
+          "text": "Hey {{1}}, re-check {{2}} details & reserve your spot :)",
+          "example": { "body_text": [ [ "Sam", "Creators Meet" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Reserve my Spot", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "invitation_with_contact",
+      "category": "MARKETING",
+      "components": [
+        { "type": "BODY",
+          "text": "You’re invited to our {{1}} on {{2}}.\n\n*Press Confirm to Reserve Your Spot.*\n\nIn case of any queries, press Contact Us.",
+          "example": { "body_text": [ [ "Beach Houseparty", "Aug 28th" ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Confirm", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] },
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    },
+    {
+      "name": "doubt_assisstance",
+      "category": "MARKETING",
+      "components": [
+        { "type": "BODY",
+          "text": "Hi, we’re reaching regarding your query \"{{1}}\".\n\n{{2}}\n\nNeed help? Press *Contact Us*.",
+          "example": { "body_text": [ [ "Is the advance refundable?", "No, the advance is not refundable." ] ] } },
+        { "type": "FOOTER", "text": "This is an automatic message. Do not reply here!" },
+        { "type": "BUTTONS", "buttons": [
+          { "type": "URL", "text": "Contact Us", "url": "https://chaptera.in/invite{{1}}", "example": [ "https://chaptera.in/invite?phone=9000000001&name=Sam" ] }
+        ] }
+      ]
+    }
+  ]
+}
