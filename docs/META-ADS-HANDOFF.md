@@ -1,6 +1,6 @@
 # Meta Ads Systems — Handoff
 
-**Last updated:** 2026-09-18 (§21 what Meta is told and why, where the price lives, pre-spend economics audit; §21.3 **true ROAS without gateway fees, per payment method — BUILT**; §22 signal watchdog — BUILT, runs daily 09:11 IST; §23 deleted/archived ads kept in spend + account-level spend check — BUILT; §23 ad set learning status + "too few tickets to judge" — BUILT; §23 delivery settings history + "What's switched on" card — BUILT; §21.7 item 1 **ticket economics — BUILT**: the cost alarm now judges an ad against the ad money a ticket leaves, plus a per-plan click ceiling; §21.8 **open events pay no marketer/manager commission — FIXED**, and event costs are deferred until he starts spending; **§24 the before-the-first-ad checklist**; §23 four Meta "get started" docs reviewed, **nothing to adopt** — the ad-creative one found the Page every creative needs; §15 **every ad lands on `/lifestyle`**, the founder's decision; §9 two new read-tool traps — an empty list can mean "not allowed to see", and a read enum is not the create vocabulary; §23 rate limiting / versioning / overview — **the 613 that must not be retried, FIXED** in `meta-ads-sync` v18 with `error_subcode` now recorded, and **`meta-ads-alerts` caller secret, BUILT** (v6); **`app_secrets` client grants REVOKED** so RLS is no longer its only guard; §23 Reels Ads — **effective placements captured with history, BUILT** (`meta-ads-sync` v20): we stored what an ad set was configured with and never what is actually running, which is where §10's Audience Network `rewarded_video` leak lives, and an unknown now reports itself instead of reading as clean; **the push for unchosen Audience Network, BUILT** on his instruction (v21) — but it cannot fire before spend starts, because Meta reports no placements for an ad set that has never delivered; §23 **Lead Ads DECLINED by the founder** and **Threads Ads** audited — nothing built in either; §10 **Audience Network turned OFF and Threads kept, the FIRST write this project has made to a Meta ad object**, which also surfaced the trap that a write response echoes what you SENT, not what Meta stored; §23 **the Instagram Ads API guide set (13 docs)** reviewed — **the `{{ad.id}}` pre-flight check BUILT** (`meta-ads-sync` v22 reads every ad creative's `url_tags` and pushes if the macro is absent or *wrong*, before any money moves and including on paused ads); §6 **a function REVOKE must name `public`** — the first cut left a writer anon-callable and `information_schema` said it was fine; three corrections — the placement macro IS documented (`SITE_SOURCE_NAME`), `/generatepreviews` CAN be called with no creative, and a promoted Instagram post CAN be fully tracked if its CTA carries the link; §23 the media spec for the photos that do not yet exist; **§26 the ledger for the 16-18 Sep watchdog + spend-integrity session** — re-verified on production 2026-09-19, including the watchdog's first real sale matched (Purchase 1 of 1) and the deleted-ads change surviving `meta-ads-sync` v15 → v22)
+**Last updated:** 2026-09-26 (**§28 the cloud audit reports + the live checks that settled them** — A-6 placement watch CONFIRMED blind, A-2 seen live, the live ad set is on a 1-day click window, test phones reach Meta via the browser Pixel, PayU stopped calling `payu-webhook` after 17 Jul — owner-side dashboard fix, §28.12). Before that, 2026-09-18 (§21 what Meta is told and why, where the price lives, pre-spend economics audit; §21.3 **true ROAS without gateway fees, per payment method — BUILT**; §22 signal watchdog — BUILT, runs daily 09:11 IST; §23 deleted/archived ads kept in spend + account-level spend check — BUILT; §23 ad set learning status + "too few tickets to judge" — BUILT; §23 delivery settings history + "What's switched on" card — BUILT; §21.7 item 1 **ticket economics — BUILT**: the cost alarm now judges an ad against the ad money a ticket leaves, plus a per-plan click ceiling; §21.8 **open events pay no marketer/manager commission — FIXED**, and event costs are deferred until he starts spending; **§24 the before-the-first-ad checklist**; §23 four Meta "get started" docs reviewed, **nothing to adopt** — the ad-creative one found the Page every creative needs; §15 **every ad lands on `/lifestyle`**, the founder's decision; §9 two new read-tool traps — an empty list can mean "not allowed to see", and a read enum is not the create vocabulary; §23 rate limiting / versioning / overview — **the 613 that must not be retried, FIXED** in `meta-ads-sync` v18 with `error_subcode` now recorded, and **`meta-ads-alerts` caller secret, BUILT** (v6); **`app_secrets` client grants REVOKED** so RLS is no longer its only guard; §23 Reels Ads — **effective placements captured with history, BUILT** (`meta-ads-sync` v20): we stored what an ad set was configured with and never what is actually running, which is where §10's Audience Network `rewarded_video` leak lives, and an unknown now reports itself instead of reading as clean; **the push for unchosen Audience Network, BUILT** on his instruction (v21) — but it cannot fire before spend starts, because Meta reports no placements for an ad set that has never delivered; §23 **Lead Ads DECLINED by the founder** and **Threads Ads** audited — nothing built in either; §10 **Audience Network turned OFF and Threads kept, the FIRST write this project has made to a Meta ad object**, which also surfaced the trap that a write response echoes what you SENT, not what Meta stored; §23 **the Instagram Ads API guide set (13 docs)** reviewed — **the `{{ad.id}}` pre-flight check BUILT** (`meta-ads-sync` v22 reads every ad creative's `url_tags` and pushes if the macro is absent or *wrong*, before any money moves and including on paused ads); §6 **a function REVOKE must name `public`** — the first cut left a writer anon-callable and `information_schema` said it was fine; three corrections — the placement macro IS documented (`SITE_SOURCE_NAME`), `/generatepreviews` CAN be called with no creative, and a promoted Instagram post CAN be fully tracked if its CTA carries the link; §23 the media spec for the photos that do not yet exist; **§26 the ledger for the 16-18 Sep watchdog + spend-integrity session** — re-verified on production 2026-09-19, including the watchdog's first real sale matched (Purchase 1 of 1) and the deleted-ads change surviving `meta-ads-sync` v15 → v22)
 **2026-09-19 addendum — the Meta Pixel docs (20 pages), §23:** automatic advanced matching was **never on** for this Pixel (so §9's reason for leaving automatic setup on was false); automatic setup is now **switched off in code** (`src/metaPixel.ts`, `5bcb721`, committed, **not pushed**) after a sealed-page test proved nothing we rely on changes; and **watchdog check 7, `pixel_config`, is BUILT and live** (`meta-signal-watchdog` v5, alerts on): it reads the settings file Meta serves for the Pixel every day and alarms if Meta starts blocking an event, stripping a parameter, or switching the Pixel off on chaptera.in — the silent failure no count check can see. Also written that day: **§5 "What Meta hears, button by button"** (every event mapped to the button that fires it, read from the live code), **§9 "Mistakes not to repeat"**, and the sealed test page `tools/pixel-harness/` (`d446316`).
 **Status:** All measurement infrastructure built and live on production. **Zero rupees spent on ads. No ad has ever served on the account.**
 
@@ -68,6 +68,13 @@ The clearest illustration, used as the test case for the recommendation scorecar
 
 Bookings up 43% — Meta reports that as success. Cost per booking up 75%. Both
 numbers are true. Only one is about the business.
+
+**It can also read LOW (added 2026-09-26, §28.7).** Meta credits a sale only
+inside the ad set's attribution window, and the live ad set is on **1-day click**.
+72% of open-event bookings pay within a day of applying, so on that window a
+quarter or more of ad-caused sales would never be credited to Meta, while our
+booking-based join still counts them. "Meta says" can be high (value at advance)
+and low (window) at the same time — never read it as our number.
 
 ### Vocabulary used throughout
 
@@ -322,6 +329,8 @@ it changed to; acting means polling, which is a separate concern.
 `product_set_issue`, `with_issues_ad_objects`.
 
 ### Layer 4 — Custom Audiences (`supabase/functions/meta-audience-sync`)
+
+> **RETIRED 2026-09-30 on the owner's instruction ("do the retiring"). What was proposed, as below, is DONE; see §24 for exactly what changed.** The `customers_completed` (lookalike seed) and `leads_unpaid` (retargeting) uploads stopped, and both lists were deleted on Meta. `customers_all_paid` STAYS, although the owner decided on 2026-09-30 that the Founders Meet ad set will NOT exclude it. Reason: after Andromeda the ad creative does the targeting, separate retargeting needs pools we don't have ("Website visitors – 180d" = 20 people), and lookalikes/catalog ads are weak or over-credited. Full list, reasons and the retirement steps: `docs/FOUNDERS-MEET-ADS-PLAN.md`, last section; summary in §24 "First real campaign plan".
 
 Three audiences built from our own customer records, which Meta cannot assemble for
 itself because they depend on who actually paid.
@@ -893,7 +902,10 @@ carries. `placements_observed_at` is stamped even when Meta returns nothing.
 **Read the three states before concluding anything.** `placements_observed_at`
 NULL means never asked. Set, with `placements -> 'placements'` empty, means Meta
 had nothing to report — on this account, an ad set that has never delivered and
-whose placements were never chosen by hand. Neither is evidence that Audience
+whose placements were never chosen by hand. **CORRECTED 2026-09-26 (§28.5): that
+explanation was wrong.** Meta DOES compute `effective_*` for a never-delivered ad
+set, but returns them only nested under `targeting{…}`; we request them top-level,
+so this reading has been empty by construction. Neither is evidence that Audience
 Network is off, which is why `meta_adset_placement_warnings()` emits a
 `placements_unknown` row rather than staying silent. Full design in §23,
 "Reels Ads".
@@ -1306,10 +1318,17 @@ guard in `meta-ads-sync` paces at 75% and stops at 90% (§13 item 4). Do not rea
 "App Review not needed" as covering the tier: it does not. §23,
 "Authorization" carries the decision this feeds.
 
-### Everything monetary in the API is in MINOR UNITS
+### Budgets and bids in the API are in MINOR UNITS — insights spend is NOT
 Paise, for an INR account. ₹299 = `"29900"`. The docs' own examples say
 `$10.00 = 1000`, which reads as dollars and quietly means minor units of *your*
 currency. Getting this wrong by 100x means an alarm that never fires or always does.
+
+**This applies to budgets, bids and spend caps — NOT to Insights.** Insights
+`spend` and `action_values` arrive as plain decimals in major units (₹123.45 is
+`"123.45"`), and `meta-ads-sync` correctly does not divide them. This heading used
+to read "Everything monetary in the API is in MINOR UNITS", which the 2026-09-26
+cloud audit flagged: taken literally, it invites dividing spend by 100.
+(`01 Ad/09 Insights.md:417`; `paiseToRupees()` is for budgets only.)
 
 ### The `_shared/` bundling trap
 `supabase/functions/_shared/*` is bundled at **deploy time**. Editing it changes
@@ -2344,7 +2363,7 @@ change at all.
 **`{{ad.id}}` must be in every ad's URL Parameters field**, in Ads Manager:
 
 ```
-utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}
+utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}&site_source_name={{site_source_name}}
 ```
 
 Meta substitutes the real numeric ad id at click time, and `src/attribution.ts`
@@ -2705,6 +2724,7 @@ Not commitments — a menu, roughly in order of value.
    7-day decay already in `meta_ad_daily` is a complete story with no extra API call.
 4. **Campaign / ad-set rollup** in Growth ▸ Ads. Pure query work.
 5. **A lookalike audience**, once `customers_completed` crosses ~100 matched.
+   **RETIRED 2026-09-30 (owner):** lookalikes are weak after Andromeda, and OPP-12 was already dropped (§32). See the §19 note.
 6. **Deprecation watch.** `API_VERSION` is pinned in **FIVE** places as of
    2026-09-09 — `meta-ads-sync`, `meta-audience-sync`, `meta-ads-alerts`,
    **`meta-insights-features`** and **`_shared/metaCapi.ts:60`** — and they must
@@ -2762,7 +2782,13 @@ Not commitments — a menu, roughly in order of value.
    interpolates `${API_VERSION}` with no unversioned or second-version call left
    anywhere. The real confirmation is the next live booking reporting normally.
 
-   Meta retires a version roughly every 90 days. Re-derive the pin sites with
+   **CORRECTED 2026-09-26 (cloud audit A-17):** the CAPI pin in
+   `_shared/metaCapi.ts` is NOT on the ads clock — Meta supports every Conversions
+   API version for at least two years (`conversions-api/03 Using the API.md:9`).
+   Bumping it is a five-function redeploy through the payment path, so move it
+   only when its own two-year window requires, not in step with the ads pins.
+
+   Meta retires a Marketing API version roughly every 90 days. Re-derive the pin sites with
    `grep -rn "API_VERSION = " supabase/functions/` rather than trusting any list,
    including this one — that grep is what found the fourth site after two
    written lists had both said "three". `product_todos` is the existing to-do
@@ -2940,6 +2966,9 @@ read tools are.
   creates real `applications` rows, fires the real Pixel, and can push real events
   into the live Meta dataset — where they will train ad optimisation. Only the
   `90000000xx` phone convention protects against that, and only if you use it.
+  **CORRECTED 2026-09-26 (§28.8): it protects only the SERVER copy.** The browser
+  Pixel has no test-phone guard, so a `90000000xx` booking still sends a browser
+  Lead and Purchase to Meta — seen live on 19 Sep.
 - **Never `git push` without explicit go-ahead in that conversation turn.**
   Pushing to `main` deploys the live site.
 - **The founder decided small ₹1–3 test transactions may reach the Meta dataset.**
@@ -3443,6 +3472,8 @@ evaluation (§12), and §17.
 
 ## 19. The audience layer — built 2026-09-11
 
+> **RETIRED 2026-09-30 on the owner's instruction ("do the retiring"). What was proposed, as below, is DONE; see §24 for exactly what changed.** The four draft website audiences (`price_seen`, `dates_opened`, `plan_viewed`, `top_engaged`) are marked `retired` and will never be created. The registry, snapshots and `all_visitors` STAY. Reason: after Andromeda the ad creative does the targeting, separate retargeting needs pools we don't have ("Website visitors – 180d" = 20 people), and lookalikes/catalog ads are weak or over-credited. Full list, reasons and the retirement steps: `docs/FOUNDERS-MEET-ADS-PLAN.md`, last section; summary in §24 "First real campaign plan".
+
 Source: Meta's **Audience Rules** doc, supplied by the founder on 2026-09-10 and
 read against the live dataset and ad account rather than on its own.
 
@@ -3556,6 +3587,8 @@ UPI app.
 ---
 
 ## 20. Catalog readiness — built 2026-09-11
+
+> **RETIRED 2026-09-30 on the owner's instruction ("do the retiring"). What was proposed, as below, is DONE; see §24 for exactly what changed.** No catalog will be created, and `meta-catalog-feed` was deleted from Supabase (the URL now answers 404). The readiness RPCs can stay. Reason: after Andromeda the ad creative does the targeting, separate retargeting needs pools we don't have ("Website visitors – 180d" = 20 people), and lookalikes/catalog ads are weak or over-credited. Full list, reasons and the retirement steps: `docs/FOUNDERS-MEET-ADS-PLAN.md`, last section; summary in §24 "First real campaign plan".
 
 Source: Meta's **Advantage+ catalog ads** doc (user signals, catalog association,
 product audiences), supplied by the founder on 2026-09-11 and read against the
@@ -4365,6 +4398,13 @@ build growth systems from before any ad spend. Each is read **against the live
 systems and the business economics**, not on its own. Recorded here so a doc is
 not re-audited, and so it is clear what each one changed. Earlier doc audits are
 in §9, §12, §13, §19 and §20.
+
+**Free learning sources beyond these docs** (Meta's engineering blog, measured
+studies, a change tracker; what was checked and rejected) were researched on
+2026-10-06: `META-FREE-LEARNING-SOURCES-2026-10-06.md`. A synthesis of about 785
+expert posts, blog articles and podcast episodes from the past 12 months, with
+15 unchecked items that touch this system, followed on 2026-10-08:
+`META-EXPERT-SYNTHESIS-2026-10-08.md` §8.
 
 | Date | Doc | Verdict | What it changed |
 |---|---|---|---|
@@ -5750,7 +5790,11 @@ function: **all five bodies are byte-identical once comments are normalised.**
 Offered rather than assumed, because §15 says setup state stays page-only unless
 he asks. He asked the same day: *"add the push for unchosen audience network."*
 
-**Read this limit before relying on it: it CANNOT fire before the first rupee
+**CORRECTED 2026-09-26 (§28.5): the limit below is wrong, and the push has never
+seen a real value.** Meta returns `effective_*` for a never-delivered ad set when
+they are requested inside `targeting{…}`; `meta-ads-sync` requests them top-level
+and gets nothing, before or after spend. Once fixed this becomes a pre-spend check.
+Original text, kept for the record: **Read this limit before relying on it: it CANNOT fire before the first rupee
 moves.** Meta returns no `effective_*` placement fields for an ad set that has
 never delivered, so there is nothing to detect while the account is quiet. This
 is a **first-day-of-spend** alarm, not a pre-spend one. The pre-spend check is
@@ -6510,6 +6554,46 @@ Only after the push:
 - **Limited (development) Marketing API tier.** Usage reads 0% and the sync
   paces itself, so nothing is throttled at this volume. §23, "Authorization".
 
+### First real campaign plan — Founders Meet (drafted 2026-09-30)
+
+`docs/FOUNDERS-MEET-ADS-PLAN.md` is the owner-requested, setting-by-setting plan for the first paid campaign: ₹450 ticket, ₹250 advance, ₹150 cost, so ₹100 of ad money per ticket. It was checked against this document and uses only settled decisions. It is still a DRAFT: nothing has been created in Ads Manager, and the seat count and venue area are open.
+
+**Revision 3, same day: the post-Andromeda audit.** The owner asked which parts of this system are outdated. The answer is at the bottom of that file.
+
+- **RETIRED 2026-09-30 on the owner's instruction:**
+  - the four §19 draft website audiences (three retargeting tiers + `top_engaged`);
+  - the lookalike plan (§13 item 5) and the `customers_completed` upload;
+  - the `leads_unpaid` upload;
+  - catalog readiness and `meta-catalog-feed` (§20).
+- **Why:** the creative is now the targeting, and separate retargeting needs pools we don't have. "Website visitors – 180d" still read **20** on 2026-09-29, unchanged since 2026-09-11. Catalog ads are the most over-credited ad type.
+- **Kept, and more important than before:**
+  - the `customers_all_paid` exclusion;
+  - Pixel/CAPI/EMQ and the watchdog;
+  - the `{{ad.id}}` join and the alarms;
+  - the enhancements guard.
+- **Owner decision, same day:** the Founders Meet ad set will **NOT** exclude past customers, and there will be no separate past-guest campaign. It stays broad and simple, revisited only if ads bring in many repeat customers.
+  - Consequence: once the ad set is active, `adset_no_customer_exclusion` will push weekly. That is expected, not a fault.
+  - Split ad bookings into new vs returning at each read.
+- **Owner decision, same day:** reuse and re-edit the paused test campaign `120248398500750192` / ad set `120248398504180192` instead of archiving it. It has never delivered. The change table is in the plan.
+- **Owner asked, same day: the weekly missing-exclusion push is OFF** (`meta-ads-sync` v29, constant `PUSH_MISSING_CUSTOMER_EXCLUSION = false`). The finding is still shown in the panel. Not committed.
+- **Measured, same day: time from landing to paid.** Median 4.4 min on the paying visit, 83% within 10 min (46 linked payments, 9 Aug–29 Sep). Cross-visit time is not measurable until `visitor_id` ships. Method and caveats are in the plan.
+- **Owner decision, same day: price ₹450 = ₹250 online + ₹200 at the venue.** `cpa_over_ad_budget` went **100 → 75 → back to 100** the same day. The owner dropped the ₹25 profit slice to keep things simple, so the whole advance − cost is the ad limit. The notes column records both changes; the live value is 100, as §5 Layer 7 describes.
+- **Alarm rules changed, same day (owner):**
+  - `ctr_under_half_pct` → `link_ctr_under_1pct`: LINK clicks ÷ impressions < 1%, from 1,000 impressions, no click or spend minimum. `meta_ad_guardrail_breaches()` now sums `inline_link_clicks`, and its context carries `link_clicks`.
+  - `spend_no_ticket_1000` → `spend_no_ticket_500`.
+  - Migration file `20260930_meta_guardrail_link_ctr_and_no_ticket_500.sql`, applied with `db query -f` (not in the migration history).
+  - §5 Layer 7's rule list describes the old values.
+- **What the retirement changed (2026-09-30):**
+  - `meta_audiences.retired_at` added. `customers_completed` and `leads_unpaid` are stamped; `meta-audience-sync` v15 skips stamped rows. The rows, their members and their Meta ids are kept as history.
+  - Both Meta audiences (`120248791740360192`, `120248791741860192`) were deleted via the Meta Ads MCP after `ads_get_custom_audience_adsets` returned 0 ad sets for each. Re-reading one afterwards fails to load; `customers_all_paid` still reads ACTIVE.
+  - The four §19 drafts have `status='retired'`.
+  - `meta-catalog-feed` was deleted from Supabase, and CLAUDE.md's function list updated.
+  - Migration file: `20260930_meta_audiences_retired_at.sql`.
+  - **`customers_all_paid` keeps syncing: owner decision, same night.** No ad set uses it now (Founders Meet runs without the exclusion). He keeps it as the seed for a possible future lookalike of people who have paid, and as the lever if ads bring many repeat customers.
+    - Constraint to remember: a lookalike needs ~100 MATCHED people, and Meta shows customer-list sizes only as a 1,000 floor (§19). With 119 raw people, Meta may refuse the seed until the list grows. Estimate from our own `member_count` × an assumed match rate.
+  - **Verified the same night with a manual run (owner agreed):** `ok:true`, ONE audience (`customers_all_paid`, 119 members, +1 new payer, 0 removed). The two retired rows kept their 2026-09-29 04:50 UTC `last_synced_at`, so they were skipped.
+- **Live counts that day:** list uploads were 118 / 85 / 167 people (all paid / fully paid / unpaid leads); all four website drafts were still `draft` with no Meta id.
+
 ---
 
 ## 25. Competitor ad watching — the Ad Library capture system
@@ -6902,15 +6986,169 @@ correctly evaluates true for the 38-day-old ad carrying a 44-day-old asset.
 - **A daily AI summary.** Explicitly removed by the founder. The data is on disk
   for him to look at; asking Claude about it is a thing he can do any day he
   wants, at the cost of that one conversation instead of 365 of them.
-- **Supabase mirror and a Growth ▸ Ads card.** Rejected above. The upgrade path
-  is real if he ever wants it: `_ledger.json` is a complete history, so it can be
-  loaded into a table later **without losing anything**. That is precisely why
-  the ledger is a durable file rather than derived state recomputed each run.
+- ~~**Supabase mirror and a Growth ▸ Ads card.**~~ **SUPERSEDED — the owner
+  reversed this on 2026-09-18 and both were built (Phase 2 and Phase 5).** The
+  bullet is kept struck through rather than deleted so the reversal stays
+  visible: it was deferred as a second system, then asked for because he wanted
+  competitor ids visible in the admin. Note what made the reversal cheap — only
+  the *metadata* moved. Had the creative been planned into Supabase too, changing
+  course would have been expensive.
 - **More than a handful of watchlist pages.** Meta's terms permit downloading
   creative for an *individual* ad for analysis and prohibit bulk extraction of
   the Ad Library; the Ads MCP tool's own documentation says so in as many words.
   A named watchlist checked once a day is analysis. The watchlist is capped in
   the script so it cannot quietly grow into the other thing.
+
+### 25.5 The Ad Library API question — decision record, open as of 2026-09-22
+
+**Status: applied for, NOT granted, and the live system is unaffected either
+way.** The owner applied around 2026-09-19 expecting a 48-hour answer. Four days
+on nothing has changed. This section exists so the next session does not redo
+the research or re-run the dead ends.
+
+#### What was measured, and when
+
+**Probe re-run 2026-09-22 — identical to 2026-09-19, no movement:**
+
+| Call | Result |
+|---|---|
+| India commercial, keyword `meetup` | `code 10, subcode 2332002` |
+| India commercial, thirdspace page id | `code 10, subcode 2332002` |
+| **India political (control)** | `code 10, subcode 2332002` |
+| **UK commercial (control)** | `code 10, subcode 2332002` |
+
+**All four fail identically, and that is the finding.** The block sits at **app
+authorization, upstream of any country or ad-type logic** — so this probe can
+neither confirm nor refute the India question. It only says "not authorised
+yet". Do not read the India failure as evidence about India.
+
+App state, same date: `chaptera-ads` (`38444690021845940`) reports
+`submission_status: NO_SUBMISSION` and **zero App Review privileges**. Two apps
+exist on the account — `chaptera-ads` and `Automation WA`
+(`1221239236143201`). **`NO_SUBMISSION` does NOT prove the owner did not
+apply**: the Ad Library route goes through identity confirmation at
+`facebook.com/ID`, which is a separate flow and does not create an App Review
+submission. Whether that identity flow was completed is **unverified** — a
+password re-auth wall stopped the 2026-09-19 session there, and entering the
+owner's password is not something an agent does.
+
+#### Why approval may not help, and the mechanism
+
+Meta's own documentation, three independent secondary sources, and the field
+list all agree: **commercial ads are archived only for the EU and UK.** The
+mechanism matters more than the rule — that coverage exists because the **EU
+Digital Services Act legally requires it**. It is compliance, not a product
+decision. India has no equivalent law, so Meta does not archive Indian
+commercial ads at all.
+
+**This makes it a data-availability problem, not a permissions problem.**
+Approval would grant access to an archive that has no Indian commercial rows in
+it. One source states it plainly: an ad delivered outside the EU/UK "is not
+archived, not searchable, and not retrievable" — while remaining perfectly
+visible on the consumer website, which is exactly the asymmetry the scraper
+exploits.
+
+**The owner's counter-position is on the record and is not unreasonable**
+(2026-09-19): §9 of this document records that Meta's docs and Meta's API
+disagree in both directions, so documentation is not evidence here. He applied
+in order to test it against his own account. That is the right instinct and the
+probe exists to settle it in about ten seconds.
+
+#### If India data DOES come back, the prize is real
+
+Not marginal — it would obsolete a large part of what was built:
+
+- **`ad_delivery_stop_time`, direct from Meta.** The entire daily-observation
+  design exists *because* the public pages never say an ad stopped. This field
+  is that answer, handed over.
+- **`ad_active_status: INACTIVE` becomes queryable → BACKFILL.** Months of
+  competitor history retrievable at once. The "not backfillable at any price"
+  premise of §25 would no longer hold.
+- **Structured `ad_creative_bodies` / `ad_creative_link_titles` /
+  `publisher_platforms`.** No card-walking, no three invariants, no
+  `adCopy()`, no self-test to maintain.
+
+#### What would NOT improve, even in the best case
+
+- **No creative media URLs.** The API returns `ad_snapshot_url` — a link back to
+  the web page. **Chrome would still be required for the video and images.** The
+  API could replace the metadata half only.
+- **No spend, no reach, no engagement** for commercial ads. Spend ranges are
+  political-only. The §25.3 table stands unchanged.
+- **~200 calls/hour** on a development-tier app, and pagination burns quota.
+
+#### The bar the API has to beat: what four days of live running showed
+
+The system has run daily since 2026-09-18 and **the disappearance path is no
+longer theoretical — three real stop events have been recorded** (2026-09-19 ×2,
+2026-09-20 ×1). Six runs, all `ok`, launchd firing 18:00 IST.
+
+| Library ID | Started | Gone | Days | Media |
+|---|---|---|---|---|
+| `1028535673493135` | 11 Aug | **still running** | **41** | video, asset age 44 |
+| `4654351548178711` | 18 Sep | 19 Sep | 1 | image |
+| `1579327690656776` | 18 Sep | 19 Sep | 1 | image (cricket, 20 Sep event) |
+| `1569934310862653` | 19 Sep | 20 Sep | 1 | image (cricket, **same copy, NEW id**) |
+
+**TWO CORRECTIONS TO THE ORIGINAL THESIS, both found by the data rather than by
+reasoning. Do not re-derive these:**
+
+1. **Longevity is only a "what works" signal for EVERGREEN creative.** §25 said
+   run-length is the proxy for what is working. The evidence refines that: the
+   brand/lineup video has run 41 days, while **event-dated ads stop because the
+   event happened, not because they failed.** A one-day cricket-meetup ad for a
+   20 Sep event is not a loser. Sorting the panel purely by days-running will
+   therefore rank event ads as failures, which is wrong. **Any future analysis
+   must separate evergreen from event-dated creative before reading longevity as
+   performance.**
+2. **"Disappeared" can mean "edited and relaunched", not "abandoned".** The
+   cricket ad reappeared on 19 Sep under a **different library ID with identical
+   copy**. Some edits in Meta mint a new ad id. So a disappearance plus a
+   same-copy arrival on the same or next day is one campaign continuing, not two
+   decisions. The `competitor_ad_events` log holds the raw transitions; the
+   interpretation layer does not yet account for this.
+
+Neither correction is reflected in the Growth ▸ Ads card yet.
+
+#### What to do when the answer arrives
+
+1. **Re-run the probe first** — it is still deployed as `adlib-probe`
+   (secret-gated on the same `ad_library_ingest_secret_sha256`, called with the
+   keychain item `chaptera-ad-library-ingest`). Ten seconds, four calls,
+   including the UK control. **Read the UK control**: UK returning commercial ads
+   while India returns none confirms the geographic restriction from the owner's
+   own account, which is the evidence that settles this for good.
+2. **If India commercial data returns:** migrate the metadata half onto the API
+   for stop-times and a historical backfill, keep Chrome for creative only, and
+   revisit both thesis corrections above with the fuller history.
+3. **If it does not:** delete `adlib-probe` (it is a throwaway, kept only for
+   this test), record the negative result here with the date, and leave the
+   running system alone. **Nothing is lost** — it has been working the whole
+   time.
+
+#### Boundaries that held, and should keep holding
+
+The 2026-09-19 session drove the owner's Chrome to inspect the Developer
+dashboard and stopped at a password re-auth wall. **Four things stay the
+owner's**: entering his password, uploading government ID for identity
+confirmation, accepting the Ad Library API terms of service, and generating or
+handling an access token. If a token is ever issued it goes straight into
+Supabase secrets — never into a chat transcript, never into this repo.
+
+Also on the record: the Ad Library search used *in conversation*
+(`ads_library_search`, Meta's advertiser-facing MCP) is **not** the same thing as
+`/ads_archive` and a script cannot call it. It remains genuinely better for one
+job the daily watcher cannot do — **discovery**, i.e. keyword search across all
+advertisers to find competitors worth adding to the watchlist. That is how
+thirdspace_by_losh, DriftedCircle and Twisty Events were found. Use it on
+request; do not try to automate it.
+
+#### Git state as of 2026-09-22
+
+Committed locally, **NOT pushed** (golden rule): `3643837` "feat(ads): capture
+competitor activity from the Ad Library" and `bd74001`. Part of 38 unpushed
+commits on `main`. The Growth ▸ Ads card is in `src/AdminPanel.tsx` and is the
+only piece the owner cannot see until a push happens.
 
 ---
 
@@ -7178,3 +7416,1188 @@ unranked-down but not pursued; #5 explained to the owner and not pursued.
 
 Nothing here was implemented. Per the golden rule, implementation of any
 proposal is a separate owner decision.
+
+---
+
+## 28. Cloud audit (Part A + Part B) and the live checks that settled it — 2026-09-26
+
+**The reports.** A cloud session audited the whole Meta integration against Meta's
+own saved docs on 24–26 Sep (snapshot `782b6c8` on `cloud/meta-audit`). Two
+reports, now in the repo root:
+
+- **`CLOUD-META-AUDIT.md`** (Part A: is what we built correct?) — 0 HIGH,
+  6 MEDIUM (A-1…A-6), 13 LOW, 11 candidates disproved, 8/8 planted fakes caught.
+- **`CLOUD-META-OPPORTUNITIES.md`** (Part B: what Meta offers that we have not
+  built) — 9 viable (OPP-1…9), 7 need the owner (OPP-10…15), 20 not viable.
+- Method and team log: `CLOUD-META-AUDIT-PROGRESS.md`.
+
+The cloud session had no live access, so every "UNCERTAIN" and every "live check"
+at the end of Part A was left open. An interactive session ran them on
+**2026-09-26**, read-only: Supabase SQL, Supabase edge logs (`query_logs`), and
+the Meta Ads MCP (`ads_get_dataset_stats`, `ads_get_ad_entities`,
+`ads_get_field_context`, `ads_get_dataset_quality`). **Nothing was changed,
+deployed or pushed.** Results below, finding by finding. Where a result
+contradicts the report, **this section wins** — the report is left as written.
+
+### 28.1 Scoreboard
+
+| Finding | Report said | Live result, 2026-09-26 |
+|---|---|---|
+| A-1 no retry on a failed Purchase send | MEDIUM, confirmed | **FIXED + deployed 2026-09-26** — retry sweep in `verify-pending-payments` (28.14) |
+| A-2 returning open-event applicants → unpaired browser Lead | MEDIUM, confirmed | Observed live 18 Sep (28.3). **FIXED — server half deployed, browser half NOT pushed** (28.14) |
+| A-3 audience add/remove resets learning | MEDIUM, dormant | **FIXED + deployed** — `usersreplace` with a permission fallback; first real replace not yet seen (28.14) |
+| A-4 two server copies of one sale both counted | MEDIUM, uncertain | Not settled on Meta's side — **made moot by the claim-then-send lock, BUILT + deployed 2026-09-26** (28.13) |
+| A-5 `review_feedback` field name on ads | MEDIUM, uncertain | Not settled live (28.6). **FIXED defensively + deployed** — asks for `ad_review_feedback`, falls back without it, reads nested reasons (28.14) |
+| A-6 placement watch reads the wrong level | MEDIUM, uncertain | **CONFIRMED** (28.5), **FIXED + deployed + verified live**: placements now fill (28.14) |
+| A-7 attribution window unrecorded | LOW | Ad set is on 1-day click (28.7). **Now recorded** in `meta_adset_config.attribution_setting` = `1d_click`, verified live; panel line NOT pushed (28.14) |
+| A-9 catalog titles > 100 chars | LOW | No live title exceeds 100; **cap changed to 100, live** (28.14) |
+| A-11 `INITIATE(D)_CHECKOUT` spelling | LOW | **Both spellings mapped, live** (28.14) |
+| A-16 any first-page code 100 drops the status filter | LOW | Had never fired (73 runs, zero `error_code`). **FIXED + deployed** (28.14) |
+| NEW: A-20 browser Pixel does not skip test phones | — | Found live 19 Sep (28.8). **FIXED in `src/metaPixel.ts`, NOT pushed** (28.14) |
+| OPP-10 "creator commissions are off everywhere" | premise | **Wrong** (28.9). **DECIDED + BUILT 2026-09-26: no creator commission on ad bookings** (29.1) |
+
+### 28.2 A-1 — every Purchase gets exactly ONE try, not "usually two"
+
+The report's verifier softened A-1: "most payments get a second chance by
+accident, because PayU often notifies us twice" (callback + webhook). **That
+second chance does not exist.** `payu_payments.payu_response->>'_source'` over
+successful payments since 1 Jun 2026:
+
+| resolved by | payments | first | last |
+|---|---|---|---|
+| `payu-callback` (browser returned) | 151 | 11 Jun | 20 Sep |
+| `verify-pending-payments` (`reconcile`) | **9** | 23 Jul | 18 Sep |
+| `payu-webhook` | **4** | 29 Jun | **7 Jul** |
+
+(`_source` only records which path wrote the row **first**, so it understates the
+webhook — see 28.12 for the real cutoff.) PayU's webhook last called us on
+**17 July 18:39 UTC**, and edge logs for every sale day checked since (20, 23,
+28 Jul; 3, 11, 30 Aug; 16, 18, 19, 20 Sep) show **zero** `payu-webhook`
+invocations. The 2026-08-14 memory note "zero invocations ever" was wrong — it
+had only looked at a 24-hour window. So the only way a
+Purchase is sent twice is an accidental browser replay of the callback (seen
+13–14 Aug, not since). **Every Purchase is effectively one try**, and ~5.5% of
+sales (9/164) go through the rescue job, which is the path A-1 says is most exposed.
+
+**No sale has been lost in the observable window.** Edge logs on 16, 18, 19, 20
+and 22–25 Sep contain zero `[meta-capi] TIMEOUT`, `send failed`, `REJECTED` or
+`200 WITHOUT A COUNT`. Every `purchase_server` watchdog row 17–26 Sep reads
+`ok` with `matched = expected`. The one rescue-path sale in the window
+(`CHA1789714777604JZPA`, 18 Sep, paid 06:59 UTC) was reported by the 07:15 UTC
+cron run with `events_received=1`. A-1 is a real exposure that has not bitten
+yet — the fix in the report stands.
+
+**Separate, NOT a Meta issue:** PayU's server-to-server webhook stopped arriving
+after 17 Jul. Investigated the same day — see 28.12.
+
+### 28.3 A-2 — observed live
+
+Meta's hourly `/stats`, 4–26 Sep, Lead: **WEB_ONLY 12, SERVER_ONLY 11**. Two
+browser Leads have no server partner:
+
+- **18 Sep, 06:00–07:00 UTC** — an open-event applicant on
+  `celebrate-birthday-with-girls` applied at 04:15 UTC (server Lead sent,
+  `lead_reported_at` stamped), was marked `cart_abandoned`, came back and paid at
+  06:59 UTC. On the return visit the browser fired a fresh Lead with a new id;
+  `capi-lead` had already reported the row, so it returned early. **This is
+  exactly A-2**, and it is the cart-abandonment recovery path that causes it.
+- **19 Sep, 03:00 UTC** — a test booking; see A-20 below.
+
+(One server Lead on 20 Sep 08:00 UTC had no browser copy — an ordinary
+blocked Pixel, the ~2–7% measured in September.)
+
+Edge logs never showed `lead_id mismatch between row and request` on the days
+checked — as expected, because the early return at `capi-lead/index.ts:311-314`
+fires before that warning when the row is already reported. **Logs cannot measure
+A-2; only web-vs-server `/stats` can.**
+
+### 28.4 A-4 — not settled, narrower than stated
+
+On every sale day checked, each Purchase was sent **exactly once** (one
+`[meta-capi] sent Purchase <txnid>` line per txnid), and `purchase_server` has
+had `meta_total = expected` every day since 17 Sep. So no double send happened
+to be tested. The report's trigger — callback plus webhook — **cannot occur
+today** because the webhook does not fire (28.2). The only remaining trigger is a
+browser-replayed callback at the same status.
+
+How the first one will show: a `purchase_server` row with `meta_total > expected`.
+Caveat: it is not known whether `/stats` counts events before or after Meta's
+dedup, so a raised `meta_total` would show a second copy *arrived*, not that Meta
+*counted* two conversions. Meta's 28-day `/stats` lookback means the 13–14 Aug
+replays can no longer be examined.
+
+### 28.5 A-6 — CONFIRMED: the Audience Network watch has been blind by construction
+
+Read of ad set `120248398504180192` (PAUSED, never delivered) through the Meta
+Ads MCP, `fields=targeting`:
+
+- `targeting.effective_publisher_platforms` = `facebook, instagram, threads`
+  (Messenger is in `publisher_platforms` but NOT effective — Meta dropped it)
+- `targeting.effective_facebook_positions` (11), `effective_instagram_positions`
+  (6), `effective_threads_positions` = `threads_stream`,
+  `effective_device_platforms` = `mobile, desktop`,
+  `effective_brand_safety_content_filter_levels` =
+  `FACEBOOK_RELAXED, AN_RELAXED, FEED_RELAXED`
+- no `audience_network` anywhere — consistent with the 18 Sep write that turned it off.
+
+Our copy of the same ad set (`meta_adset_config`, synced 26 Sep 03:20 UTC):
+`placements.placements = {}`, and the stored `targeting` contains **no**
+`effective_*` key. `meta-ads-sync` asks for the `effective_*` names as top-level
+ad-set fields (`ADSET_PLACEMENT_FIELDS`, `index.ts:688-696`); Meta returns them
+**only nested under `targeting`**.
+
+So the explanation in §10 and §23 "Reels Ads" — *"Meta returns no `effective_*`
+placement fields for an ad set that has never delivered"* — **was wrong.** Meta
+computes them for a paused, never-delivered ad set. Two consequences:
+
+1. The "unchosen Audience Network" push (v21) and the placement history (v20)
+   have never seen a real value, and would not have seen one after spend started
+   either.
+2. Once fixed (request `targeting{effective_publisher_platforms,…}`), the push
+   **can fire before any money moves** — it becomes a pre-spend check, not a
+   first-day-of-spend one.
+
+Fix, not applied: move the `effective_*` names inside `targeting{…}` in
+`meta-ads-sync` (and add `effective_threads_positions` /
+`effective_whatsapp_positions` per A-14), redeploy with `--no-verify-jwt`, confirm
+`placements.placements` fills on the next run.
+
+Also on the same read: `targeting_optimization: expansion_all` and
+`targeting_automation.advantage_audience: 1` (relevant to OPP-3);
+`targeting_relaxation_types` is not echoed.
+
+### 28.6 A-5 — could not be settled from here
+
+The Meta Ads MCP only accepts fields from its own catalog, and
+`ads_get_field_context` returns **both** `review_feedback` and
+`ad_review_feedback` as unknown — so it cannot tell us which name the Graph API
+accepts on an ad. The one webhook ever received (18 Sep) was about an **ad set**,
+so `meta-ads-alerts` has never exercised its `ad` field list either. Still needs
+one raw call with the stored token:
+`GET /v26.0/<AD_ID>?fields=name,effective_status,configured_status,review_feedback,issues_info`.
+
+### 28.7 A-7 — the live ad set is on a 1-DAY click window
+
+`attribution_setting` on ad set `120248398504180192` = **`1d_click`** (MCP read,
+2026-09-26) — not Meta's `7d_click, 1d_view` default the report assumed.
+`meta_adset_config.learning_attribution_windows` is NULL (Meta has sent no
+learning-stage info for a never-delivered set), so nothing on our side records it.
+
+What that means against real buying behaviour — time from **application** to
+first successful payment, all paid bookings, test phones excluded:
+
+| flow | bookings | median | 90th pct | paid within 1 day | within 7 days |
+|---|---|---|---|---|---|
+| open events (`payu-hosted`) | 119 | 1.2 h | 6.6 days | **72%** | 90% |
+| invite (`native-application`) | 4 | 3.1 h | 4.8 h | 100% | 100% |
+
+Application time is at or after the ad click, so these are the *best case*. On a
+1-day click window **roughly a quarter or more of open-event sales would never be
+credited by Meta** even when the ad caused them, and Meta optimises on what it is
+credited with. Our own ad-level join is unaffected. This is a setting chosen when
+the ad set was made; whether to change it is the owner's call — recorded here,
+not acted on. (The invite sample is too small to read: most invite-era bookings
+no longer join to a `native-application` event.)
+
+### 28.8 A-20 (NEW) — test phones reach Meta through the browser Pixel
+
+On 19 Sep a `90000000xx` test booking on `weekly-creators-meet`
+(`CHA1789788177448M70O`) was correctly withheld by the server (`[meta-capi] test
+application, Lead not reported` and `test booking, not reported`), but Meta's
+`/stats` show a **WEB_ONLY Lead and a WEB_ONLY Purchase in that hour with no
+server partner** (Purchase web 2 vs server 1; Lead web 2 vs server 1). The
+browser Pixel (`src/metaPixel.ts`) has no test-phone guard — only
+`_shared/metaCapi.ts` does. **§15's line "only the `90000000xx` phone convention
+protects against that" is therefore only half true: it protects the server copy,
+not the browser copy.** One fake Purchase is now in the live dataset. Fix, not
+applied: skip `fbq` Lead/Purchase when the phone starts `90000000`. The test rows
+from 19 Sep (`applications` + `payu_payments`, phone ending `23`) are still in
+production.
+
+### 28.9 OPP-10 — creator commissions are NOT off everywhere
+
+The report says creator commissions are "switched off on every event", so the
+ad-plus-creator overlap is "no money at risk". Live, 2026-09-26: **4 events have
+`affiliate_enabled = true`** (`sunrise-at-kovalam`, `anna-nagar-meetup`,
+`celebrate-birthday-with-girls`, and a copy of Kovalam), and `affiliate_sales`
+holds **33 rows**. **0 bookings** so far carry both a numeric `utm_content` and an
+`affiliate_id`. So nothing has overlapped yet, but the question is live the first
+day an ad runs on any of those four — not "before switching commission on".
+
+### 28.10 Other live checks — negative results, recorded so nobody re-runs them
+
+- **Audiences:** all three synced 26 Sep 04:50 UTC, no `last_error`:
+  `customers_all_paid` 114, `customers_completed` 85, `leads_unpaid` 166.
+- **Ads webhook inbox:** 1 row ever (`in_process_ad_objects`, ad set, 18 Sep),
+  handled. The five undrained fields have received nothing.
+- **Deployed state:** `verify_jwt` matches `CLAUDE.md` rule 3 for all 24 listed
+  functions. `ad-library-ingest` and `adlib-probe` are also live with
+  `verify_jwt: false` and are **not in CLAUDE.md's list**. The five
+  `_shared/metaCapi.ts` importers were all redeployed within 15 s on
+  2026-09-21 10:41 UTC; the only later change (`acdbdeb`) is comment-only.
+  Trap: `grep -rl "_shared/metaCapi"` also lists `meta-signal-watchdog`, which
+  only mentions it in comments — it is not a sixth importer.
+- **OPP-2 (event coverage):** `ads_get_dataset_quality` through the MCP returned
+  bare event names with no metrics, and no Purchase or Lead row. This does not
+  contradict §27.1 (the raw API worked); build OPP-2 on the raw call, not the MCP.
+
+### 28.12 Why PayU's webhook went silent — investigated 2026-09-26
+
+**Finding: PayU stopped calling us; nothing on our side changed.** Evidence,
+all read-only (Supabase edge logs reach back to at least mid-July):
+
+- **It worked until 17 July.** 15 Jul: 7 `payu-webhook` POSTs, all `200`,
+  alongside 2 callbacks. 17 Jul: 7 POSTs, all `200` — the day's real payment
+  (07:15 UTC, arriving 21 s *before* the browser callback, exactly as designed)
+  plus four with numeric txnids (`67567516`, `67567584`, `67568949`, `67574783`)
+  that our function logged as `unknown txnid` and answered `200`. **Last call:
+  2026-07-17 18:39:36 UTC.**
+- **Nothing since.** Zero calls on every day with a payment afterwards: 20, 23,
+  28 Jul; 3, 11 (13 payments), 30 Aug; 16, 18, 19, 20 Sep. Callbacks kept arriving
+  normally on all of them.
+- **Not our endpoint.** Every call PayU ever made got a `200`. The function has
+  stayed deployed with `verify_jwt: false` throughout (now v66). A broken function
+  would show failing calls, not an absence of calls.
+- **Not a new merchant account.** Every payment June → September carries the same
+  PayU merchant key (`payu_response->>'key'`).
+- **Not only our payments.** The numeric-txnid calls — PayU notifying this URL
+  about transactions that are not from our checkout (probably another PayU product
+  on the same account, e.g. payment links) — stopped at the same moment. That
+  points to the whole webhook setting on PayU's side being removed, switched off,
+  or auto-disabled, rather than to anything about our transactions.
+- **No code change lines up.** Commits 16–21 Jul are manager-role and creator-
+  onboarding work; none touch the PayU path.
+
+**What it costs today (measured):** 9 successful payments since 17 Jul (the
+first on 23 Jul) were confirmed only by the rescue cron (`verify-pending-payments`,
+every 15 min), where the webhook would have done it in seconds. Where status
+history exists (7 of the 9; `application_events` starts 8 Aug), those
+customers' bookings flipped to paid **15–28 minutes after the order opened**
+(11 Aug ×3: 17, 23, 17 min; 21 Aug: 23; 30 Aug: 28, 19; 18 Sep: 15). No payment
+was lost — the cron caught every one — but that is the delay before their
+confirmation WhatsApp, and the cron is now the ONLY safety net for a customer who
+closes the browser.
+
+**What to do — owner-side, cannot be done from here** (it needs the PayU
+dashboard login): in the PayU merchant dashboard, open the webhooks setting
+(under Settings / Developer), check whether a webhook exists for successful and
+failed payments, and if not add
+`https://txcmismkdttgsyhbnexf.supabase.co/functions/v1/payu-webhook` for both.
+If it IS still there, it is a PayU support question: "webhook configured but not
+delivered since 17 July 2026 18:39 UTC; last delivered txnid 67574783".
+**How to confirm it works:** the next payment shows a `POST | 200 |
+…/payu-webhook` line in edge logs.
+
+**Before re-enabling (ties back to A-4):** with the webhook back, the callback
+and the webhook would both report most payments to Meta. **This is now handled —
+the claim-then-send lock (28.13) went live the same day, before the webhook was
+re-enabled, by the owner's decision.** Only one of the two sends; the other logs
+`Purchase already reported or in flight on another path, skipped`. The
+WhatsApp/email sends were already double-send-safe (claim flags, 5 Jun fix).
+
+### 28.13 A-4 fix — the Purchase claim-then-send lock, BUILT and deployed 2026-09-26
+
+The owner asked for this **before** PayU's webhook is switched back on (28.12),
+because re-enabling it would otherwise send most sales to Meta twice from the
+server.
+
+**What it does.** Only one of `payu-callback`, `payu-webhook` and
+`verify-pending-payments` reports a given txnid to Meta. The lock lives in ONE
+place — `sendPurchaseToMeta` in `_shared/metaCapi.ts` — so the three callers cannot
+drift apart; each just passes its service-role client as the now-required `db`
+argument (a caller that forgot it would fail to compile rather than silently skip
+the lock).
+
+- `claim_meta_purchase(txnid)` — one conditional UPDATE on `payu_payments`
+  stamping `meta_purchase_claimed_at`. Exactly one concurrent caller wins.
+- Send to Meta as before.
+- `finish_meta_purchase(txnid, sent)` — Meta confirmed → stamp
+  `meta_purchase_sent_at` (final; nobody sends again). Not confirmed (rejected,
+  timeout, no token) → clear the claim so a later path can retry.
+- A claim older than **2 minutes** with no `sent_at` is treated as abandoned (the
+  function died mid-send) and can be retaken. The Meta call itself times out at 3 s.
+
+**Deliberate choices — do not "simplify" these away:**
+- **Fails OPEN.** If the claim call errors, or a txnid has no `payu_payments` row,
+  the Purchase is sent anyway (old behaviour). A possible duplicate is the lesser
+  harm; a sale Meta never hears about is A-1's problem and cannot be undone.
+- **Balance and test-phone skips happen BEFORE the claim**, so they never touch it.
+- **A timeout releases the claim**, so a retry may duplicate a send Meta actually
+  received. Accepted for the same A-1 reason.
+- `meta_purchase_sent_at IS NULL` is meaningful only from 2026-09-26; older rows
+  start empty (unknown, not unsent). That column is also what a future A-1 retry
+  sweep would use to find sales Meta never confirmed.
+- Both functions are `SECURITY DEFINER`, executable by `service_role` only;
+  `has_function_privilege` confirms anon/authenticated = false (the REVOKE names
+  `public` — see the function-revoke memory).
+
+**Where:** migration `supabase/migrations/20260926_meta_purchase_send_claim.sql`
+(applied live as two migrations, `meta_purchase_send_claim` and
+`meta_purchase_send_claim_missing_row_fails_open`); `_shared/metaCapi.ts`; one
+`db: supabase` line in each of the three payment functions.
+
+**Tested on production 2026-09-26** with a throwaway row (txnid
+`TESTLOCK-9000000099`, phone `9000000099`, status `test_lock` so no cron or report
+could pick it up), deleted afterwards — **9/9 PASS**: first claim wins; a second
+claim while in flight loses; after a failed send another path may claim; an
+abandoned (>2 min) claim is retaken; after a confirmed send nobody claims, even
+with an old claim; a late failure cannot un-send; an unknown txnid fails open;
+test row gone. Afterwards 0 of 189 real rows carried any lock value. True
+two-session concurrency was not exercised (one SQL session); it rests on Postgres
+re-checking a conditional UPDATE's WHERE after a competing commit (READ COMMITTED).
+
+**Deployed 2026-09-26 12:05 UTC**, all five `_shared/metaCapi.ts` importers,
+each with `--no-verify-jwt`: `payu-webhook` v67, `verify-pending-payments` v39,
+`payu-callback` v72, `capi-lead` v12, `meta-audience-sync` v12 — `list_edge_functions`
+shows `updated_at` moved and `verify_jwt: false` on all five. Before deploying,
+the live source of the three payment functions was diffed against git HEAD: the
+only difference was the comment-only `acdbdeb`, so the lock is the only behaviour
+change that shipped. Smoke checks: empty POST to `payu-webhook` → `400 bad
+request` (its normal missing-fields answer); empty POST to `payu-callback` →
+`302` to `/invite?payment_status=failed` (normal); `capi-lead` GET → `200`.
+**No real payment has run through it yet** — the first real sale should show one
+`[meta-capi] sent Purchase` line and a stamped `meta_purchase_sent_at`:
+`select txnid, meta_purchase_claimed_at, meta_purchase_sent_at from payu_payments where created_at > '2026-09-26 12:05Z' and status='success';`
+
+**Not committed or pushed** — golden rule; awaiting the owner's OK.
+
+### 28.14 Every other audit bug — fixed 2026-09-26, same session
+
+Owner's instruction: *"fix all the other bugs noted in the audit."* Every Part A
+finding, the new A-20, and the hygiene notes. Status column is exact: **deployed**
+means live now; **NOT pushed** means the code is in the working tree and reaches
+customers only when `main` is pushed, which needs the owner's OK (golden rule).
+
+| # | Fix | Where | Status |
+|---|---|---|---|
+| A-1 | `verify-pending-payments` re-sends sales Meta never confirmed: `status='success'`, `meta_purchase_sent_at IS NULL`, created after the lock went live (2026-09-26 12:05 UTC — older rows are unknown, never retried), 15 min–6 days old, fewer than 5 attempts, not balance, not `90000000xx`. New column `payu_payments.meta_purchase_attempts` (counted by `claim_meta_purchase`) + partial index. Runs on scheduled cron runs only, before the pending query, never throws. | `verify-pending-payments`, migration `meta_purchase_send_attempts` (appended to `20260926_meta_purchase_send_claim.sql`) | **deployed** v40 |
+| A-2 | `open-event-otp` (request) now returns `lead_id`: the applicant's existing row id, else a fresh uuid — always a uuid, so the public response never reveals whether the phone booked before. `AppFlow.tsx` adopts it before the browser Lead fires (only if this plan has no id yet this visit), and the per-visit id is now keyed per plan so two plans in one visit are two Leads. Browser+server pair within Meta's 48 h dedup window; a return visit after 48 h still reuses the id, which is the best available. | `open-event-otp` v17; `src/AppFlow.tsx` | server **deployed** (harmless alone: old client ignores the field); client **NOT pushed** |
+| A-3 | Audience membership changes go through `/usersreplace` (session, `batch_seq` from 1, `last_batch_flag`), which Meta says does not reset learning. Only when something changed. Empty desired list → old removal path. Replace refused on the FIRST batch with 200/294/10 → falls back to add/remove and logs it loudly; any other failure is a real failure. Report now carries `method`. | `meta-audience-sync` v13 | **deployed**; ran once at 12:24 UTC, all three `unchanged` — **the first real replace has not happened yet**: check the next run whose report shows `"method":"replace"` (or the fallback warning in logs) |
+| A-5 | Ad poll asks for `ad_review_feedback` (the documented ad field); on a code-100 refusal retries without it so name/status survive; `firstReason()` walks `global` → `placement_specific` up to 3 levels. | `meta-ads-alerts` v8 | **deployed**; untested until a real rejected ad |
+| A-6 + A-14 | Placements read as `targeting{effective_*}` in a separate `fetchAdsetExtras()` call (the targeting history keeps plain `targeting`), with a fallback ladder; `effective_threads_positions` + `effective_whatsapp_positions` added; normaliser keeps both keys; new page-only `whatsapp_on` finding. | `meta-ads-sync` v25; migration `meta_audit_sql_fixes` | **deployed + verified**: manual run 12:14 UTC → `placement_readings: 1`, first placement history row, placements = facebook/instagram/threads, **no Audience Network**; findings = only `brand_safety_relaxed` (page-only). No push (ad set PAUSED). |
+| A-7 | Ad set `attribution_spec` read (NOT `attribution_setting` — that is the insights name and returns nothing on an ad set; the first deploy learned this) and stored as `meta_adset_config.attribution_setting` in insights spelling; a change counts as a config change. | `meta-ads-sync` v25; migration `meta_audit_sql_fixes` | **deployed + verified**: `attribution_setting = '1d_click'`. The panel line under "Meta says" is not written yet. |
+| A-8 | Catalog feed no longer publishes the next open date as `custom_label_4` (changing labels trigger policy review). `internal_label` not adopted — unproven for a commerce CSV; settle at catalog creation. | `meta-catalog-feed` v3 | **deployed**; feed header verified (4 labels) |
+| A-9 | `meta_catalog_items` title cap 150 → 100. | migration `meta_audit_sql_fixes` | **live** |
+| A-10 | Comment in the feed: set delimiter COMMA + quoted fields ON when the feed is created in Meta. No code change possible. | `meta-catalog-feed` | deployed (comment) — **owner-side at catalog creation** |
+| A-11 | `INITIATED_CHECKOUT` mapped alongside `INITIATE_CHECKOUT`. | migration `meta_audit_sql_fixes` | **live** |
+| A-12 | Not changed. Whether a macro typed into the destination link is substituted is still unproven; needs one live click. | — | open |
+| A-13 | `&placement={{placement}}&site_source_name={{site_source_name}}` added to all four paste-ready strings. `src/attribution.ts` already captures both and drops unsubstituted macros. | `src/AdminPanel.tsx`, `META-ADS-SETUP.md`, this file §10, `20260906_meta_ads_performance.sql` (comment) | docs updated; panel **NOT pushed** |
+| A-15 | Audience error texts no longer say "widen the token"; they point at the system user's access (M10). Added 100/33 (system user not on the ad account) and 200/1870050 (ad account not linked to the business). | `meta-audience-sync` v13 | **deployed** |
+| A-16 | `classify()`: code 2 subcodes 1504041/1504042 permanent, 100/1504018 (timeout) retryable. Status-filter step-down (insights, delivery, creatives) now only on a code 100 that is NOT 1504018/3191001, via `isStatusFilterRefusal()`. | `meta-ads-sync` v25 | **deployed** |
+| A-17 | §13 item 6 corrected earlier today. | this file | done |
+| A-18 | Webhook stores `ad_set` as `adset`; comment that the full `ad_object_ids` array lives in `value`. | `meta-ads-webhook` v6 | **deployed** |
+| A-19 | Server `_fbp` cap 120 → 512 (matches the browser). | `create-payu-order` v50, `capi-lead` v13 | **deployed**; `probe=mode` → live/configured, `probe=fees` unchanged |
+| A-20 | Browser Pixel drops Lead and Purchase once `setPixelUserData()` has seen a `90000000xx` phone, and never inits Meta with a test identity. Mid-funnel events unchanged. | `src/metaPixel.ts` | **NOT pushed** |
+| hygiene | "Roughly half of visitors block the Pixel" → measured 11–16% (Aug) / ~2–7% (Sep), in 6 comments. | `_shared/metaCapi.ts`, `capi-lead`, `src/supabase.ts`, `src/AppFlow.tsx` | functions deployed; client comments NOT pushed |
+| hygiene | Watchdog `lead_sends_failing` window 24 h → 25 h (no more 08:11–09:11 IST blind hour). | migration `meta_signal_lead_sends_failing_no_blind_hour` | **live**, verified |
+| hygiene | `landed_at` + referrer kept from the first hit when a reload carries the same click (same fbclid, or same utm_content+campaign). | `src/attribution.ts` | **NOT pushed** |
+| hygiene | Undrained webhook rows: **deliberately not changed** — marking them handled on arrival would hide them from any future consumer; one row ever, no real growth. | — | decided |
+| hygiene | §9 "Everything monetary is in MINOR UNITS" heading — see the note added under it. | this file | done |
+
+**Deploy discipline used (CLAUDE.md rule 3), recorded so it can be checked:**
+before each deploy the live source was fetched and diffed against git HEAD —
+every function matched HEAD except the known comment-only `acdbdeb` in
+`_shared/metaCapi.ts`, so only today's changes shipped. All 12 redeployed
+functions are `verify_jwt: false` (unchanged) with `updated_at` moved
+(list_edge_functions, 12:23 UTC). Because `_shared/metaCapi.ts` changed again
+(comments), **all five importers** were redeployed: `payu-callback` v73,
+`payu-webhook` v68, `verify-pending-payments` v40, `capi-lead` v13,
+`meta-audience-sync` v13. Smoke checks after deploy: `payu-callback` empty POST →
+302 to `/invite?payment_status=failed`; `payu-webhook` empty POST → 400; `capi-lead`
+GET → 200; `open-event-otp` bad action → 400; `meta-ads-alerts` without secret →
+401 (the gate working); `meta-ads-webhook` bad handshake → 403;
+`create-payu-order` probes normal. SQL patches were applied to the LIVE function
+text with an asserted anchor (the migrations folder lags live), then verified with
+row-returning checks (11/11 + watchdog).
+
+**Owner decisions still open from the audit:** OPP-10 (ad + creator on one
+booking), the R2a-1 re-decision (mid-funnel events are Pixel-only; the reason
+given — "no server hook" — stopped being true when `capi-lead` shipped, though the
+measured loss is small), the 1-day attribution window (28.7), and the PayU
+dashboard webhook (28.12).
+
+### 28.11 What changed elsewhere because of this section
+
+- §10 placements note and §23 "Reels Ads" push limit — marked wrong, pointing here.
+- §13 item 6 — the CAPI version is NOT on the 90-day clock (report finding A-17).
+- §2 — Meta can also read LOW, not only high (A-7, 28.7).
+- §15 — the test-phone rule protects only the server copy (28.8).
+- 28.12 — PayU webhook cutoff (17 Jul) replaces the "7 Jul" first stated in 28.2.
+- 28.14 — every remaining audit fix, with exact live / not-pushed status.
+- `META-AUDIT-CONTEXT.md` — new settled lines so the next audit does not repeat these.
+
+Nothing was implemented. Every fix above is a separate owner decision under the
+golden rule; the payment-path ones (A-1, and A-19's `create-payu-order` change)
+also stay out of unattended deploys.
+
+---
+
+## 29. Owner decisions on the audit's open questions — 2026-09-26
+
+### 29.1 OPP-10 — a booking that came from an ad pays NO creator commission (BUILT, live)
+
+Owner: *"creator must not get commission for a booking that also came from an ad."*
+
+- New `public.booking_came_from_meta_ad(attribution jsonb)` — true when
+  `utm_content` is a numeric Meta ad id, the exact test every ad report already
+  uses (`get_meta_ads_performance`, `get_meta_ad_funnel`, guardrails), so the
+  commission rule and the ad numbers can never disagree about which bookings were
+  the ad's.
+- `accrue_affiliate_sale()` skips the `affiliate_sales` insert for those bookings.
+- `get_performance_summary()` (Finances forecast) stops subtracting a creator
+  commission for them.
+- The creator link is **kept** on the booking (`affiliate_id` stays); only the
+  payout is withheld. The creator dashboard (`creator_stats*`) counts paid
+  tickets and earnings from `affiliate_sales`, so a withheld booking never shows
+  as earned there — no dashboard change needed.
+- **Known limit:** `attribution` is stamped on the application's FIRST insert. A
+  person who came via a creator's link first and clicked an ad later carries no
+  ad id, so that creator is still paid. The booking row does not record a later
+  ad click.
+- Tested on production inside a transaction that was forced to fail (so every
+  write — including queued notifications and marketer accruals — rolled back): an
+  ad booking flipped to `fully_paid` created **0** commission rows; an otherwise
+  identical non-ad booking created **1** (₹100). Afterwards 0 test rows remained.
+- Migration: `20260926_no_creator_commission_on_ad_bookings.sql` (patched on the
+  live definitions with asserted anchors). 0 bookings had both before this, so
+  nothing to claw back.
+
+### 29.2 The 1-day attribution window — explained (see 29.4: it MATTERS now that the goal is Purchase)
+
+What it means, plainly: Meta only counts a sale (or any conversion) as "from the
+ad" if it happens within the window after the click. `1d_click` = within 1 day.
+72% of open-event customers pay within a day of applying (28.7), so on a
+Purchase-optimised ad set Meta would never hear about roughly a quarter of the
+sales its ads caused, and it learns from what it hears.
+
+Why it can stay as is: if the ad set optimises on the Book/Contact tap
+(29.4), that tap happens within minutes of the click, so the 1-day window loses
+essentially nothing. It only matters if an ad set ever optimises on Purchase, or
+when reading Meta's own purchase numbers (our own numbers are unaffected either
+way). Revisit only then.
+
+### 29.3 PayU webhook — re-enabled by the owner 2026-09-26
+
+Owner turned the PayU webhooks back on (they had been switched off; 28.12). No
+PayU webhook call had arrived by 12:35 UTC — expected, as no payment had happened.
+Owner offered a ₹1 payment to test. What that test must show:
+1. edge logs: `POST | 200 | …/payu-webhook` next to the `payu-callback` line;
+2. exactly ONE `[meta-capi] sent Purchase <txnid>` line — the other path logs
+   `Purchase already reported or in flight on another path, skipped` (the §28.13
+   lock doing its job);
+3. `payu_payments.meta_purchase_sent_at` stamped, `meta_purchase_attempts = 1`.
+A ₹1 payment on a real phone reaches Meta as a real Purchase — accepted by the
+owner's standing rule (§15, small test transactions).
+
+**RESULT — owner's ₹1 test, 2026-09-26 (txnid `CHA17904276746422GIH`,
+weekly-creators-meet, ₹1.02 advance, order opened 13:01:14 UTC):**
+- **PayU's webhook is back.** It called `payu-webhook` TWICE, at 13:01:31 and
+  13:01:34 UTC (two separate executions) — the PayU double notification §20's
+  memory note describes. The browser then returned through `payu-callback` at
+  13:05:13 UTC. **Three server paths for one sale.**
+- **The §28.13 lock worked on all three.** First webhook: `[meta-capi] sent
+  Purchase … events_received=1`. Second webhook (13:01:36) and the callback
+  (13:05:12): `Purchase already reported or in flight on another path, skipped`.
+  Row: `meta_purchase_sent_at` 13:01:34, `meta_purchase_attempts = 1`. Before the
+  lock this sale would have gone to Meta three times from the server.
+- The Lead went too (`capi-lead`, 13:01:13, fbc + fbp present).
+- Meta's hourly `/stats` had not published the 13:00 UTC bucket yet at 13:06; the
+  next daily watchdog (`purchase_server`, 09:11 IST) compares it automatically —
+  `meta_total` should equal `expected` for that window.
+- Note: PayU's first webhook execution has no edge-log POST line (only its
+  function logs); the second does. Log sampling, not a missed call.
+
+**NEW PROBLEM FOUND BY THIS TEST — advance confirmations on two events send NO
+WhatsApp.** Both webhook runs and the callback logged `aisensy rejected: 400 "No
+Plan active on assistant!"`. Cause: in `payu-callback`, `payu-webhook` and
+`verify-pending-payments`, the ADVANCE confirmation uses Wamafy only when the
+event is pay-at-venue (`wamafyTemplate: payAtVenue ? 'advancepaid' : null`); for
+a split event that is NOT pay-at-venue it goes straight to AiSensy's
+`advance_success_dpl`, and the AiSensy plan is no longer active. Every other
+paid message already goes through Wamafy (`balance_success`,
+`single_payment_sucess_dpl`, `payment_failed`, pay-at-venue `advancepaid`).
+Live events affected (2026-09-26): **weekly-creators-meet** (open, split, not
+pay-at-venue) and **pondicherry-weekend-escape-chennai** (invite, split, not
+pay-at-venue). Their paying customers currently get no WhatsApp confirmation;
+the claim flag is released on failure, so nothing is marked sent. Last good
+Wamafy advance send: 2026-09-20. Fix needs an owner choice: get an
+advance-with-balance-date template approved on Wamafy (then one line in each of
+the three functions), or reactivate AiSensy. Not changed here — sending the
+pay-at-venue `advancepaid` text to a non-pay-at-venue customer would tell them
+the wrong thing.
+
+**Owner decision 2026-09-26: leave it as is.** Only pay-at-venue events are being
+hosted now, and those already confirm through Wamafy. Revisit before hosting a
+split, non-pay-at-venue event again (weekly-creators-meet and pondicherry are
+still `is_active` with `pay_at_venue = false` in the database). Webhook confirmed
+working by the same test.
+
+### 29.4 Learning phase — what to optimise on (EXPLORED, owner's call)
+
+The owner's idea: optimise on the step where someone taps **Book now / Contact
+us** in the calendar sheet, because by then they have seen the plan, the date and
+the price. That tap is already the browser Pixel's **InitiateCheckout**
+(`book_cta_clicked` / `contact_cta_clicked` in `src/supabase.ts` PIXEL_EVENTS).
+
+**The number that matters is ad-driven, not site-wide.** Meta's ~50/week
+learning bar counts optimisation events from the ad set's OWN clicks, so the
+question is "how much ad traffic produces 50 of this event", not "how many happen
+on the site". Measured from `flow_analytics` (distinct sessions) and
+`payu_payments`, test phones excluded:
+
+| Step (Meta event) | per 100 landed, last 8 wk | last 4 wk | Landings needed for 50/wk (8 wk / 4 wk) | Paid tickets per 100 of this event (8 wk / 4 wk) |
+|---|---|---|---|---|
+| Opened a plan (ViewContent) | 45.8 | 39.1 | 109 / 128 | 4.9 / 4.5 |
+| Opened the calendar (AddToCart) | 33.6 | 28.7 | 149 / 174 | 6.6 / 6.2 |
+| Saw the price (ReachedPricing — custom event) | 26.1 | 17.9 | 192 / 279 | — |
+| **Tapped Book / Contact (InitiateCheckout)** | **10.7** | **7.6** | **465 / 657** | **20.7 / 23.2** |
+| Paid (Purchase) | 2.23 | 1.77 | 2,247 / 2,831 | 100 |
+
+(8 weeks = 3,191 landed sessions, 343 InitiateCheckout sessions, 71 paid; the
+10 Aug week was an unusually big one. Book is ~90% of the taps, Contact ~10%.)
+
+**What it says:**
+- InitiateCheckout is about **3x more predictive of a sale than AddToCart** (~1 in
+  5 taps becomes a paid ticket vs ~1 in 15 calendar opens) and ~4-5x better than
+  ViewContent. The owner's reasoning holds in the data: it is the first step
+  AFTER the price is shown, so it filters out people put off by the price.
+- The cost is traffic: it needs roughly **470-660 ad landings a week**
+  (~65-95 a day) to reach 50, versus ~150-175 for AddToCart and ~2,200-2,800 for
+  Purchase. Site-wide it ran 7-168 a week over 8 weeks (median ~25) and only 7-21 a week
+  over the last 4, so it cannot clear the bar on organic traffic alone — it has
+  to come from ad spend.
+- What that costs in rupees depends on the cost per landing, which is unknown
+  until ads run; the first days of spend will show it. At an illustrative
+  ₹5-10 per landing it is ~₹2,300-6,600/week for InitiateCheckout versus
+  ~₹750-1,750/week for AddToCart. Illustrative only.
+- Ad visitors are colder than today's mostly-organic traffic, so real
+  ad-driven rates will likely be lower than these. Said once.
+
+**The "server copy" part of the question: little to gain.** Meta already receives
+this event from the browser essentially completely — `/stats` counted 54
+InitiateCheckout since 4 Sep against 50 in our own data (Meta's figure includes a
+few dev/test sessions). At this step the visitor has not typed a phone or email,
+so a server copy would carry no better identity either. Building one would add a
+few percent at most. The real lever is **which event the ad set optimises on**,
+and that is a setting in Ads Manager, not code.
+
+**Options for the owner (not decided):**
+1. Optimise on **InitiateCheckout** — best signal, needs the most ad traffic.
+   "Learning limited" at lower budgets is not fatal: ads still deliver, Meta just
+   optimises less precisely.
+2. Optimise on **AddToCart** — the earlier plan (memory
+   `meta-ads-learning-phase-constraint`), clears 50/week on ~3x less traffic, but
+   a weaker buyer signal and it fires BEFORE the price is seen.
+3. Start on AddToCart and move to InitiateCheckout once weekly ad-driven
+   InitiateCheckout counts are known. Every change of optimisation event restarts
+   learning, so it should be a deliberate, one-time switch.
+
+**OWNER DECISION 2026-09-26: optimise for Purchase (sales) first.** If an ad set
+takes too long to leave the learning phase, move the optimisation event up the
+funnel then (InitiateCheckout is the measured best candidate above). Consequences
+recorded so nobody re-derives them:
+- The live ad set is already `optimization_goal` OFFSITE_CONVERSIONS on PURCHASE.
+- With Purchase as the goal, the **1-day click window (29.2) now matters**: sales
+  paid more than a day after the click (~28% of open-event bookings, 28.7) are
+  never credited to the ad, so Meta learns from fewer sales and leaves learning
+  even more slowly. Meta's standard 7-day click would credit them. It is an Ads
+  Manager setting on the ad set (our token is read-only); owner's call.
+- `meta-ads-sync` will push "this ad set cannot reach ~50 conversions a week" once
+  the Purchase ad set is ACTIVE (7-day cooldown), and records learning status on
+  every sync. Under this decision that push is the expected signal to consider
+  moving up the funnel, not an alarm.
+
+Things to build only if he picks InitiateCheckout (none built): a watchdog check
+`initiate_checkout_web` like the existing `view_content_web` / `add_to_cart_web`
+(so a Pixel break on this event is noticed); and note that
+`meta_adset_optimization_warnings()` grades volume on SITE-WIDE counts, which
+understates the problem for ad-driven volume — it should grade the ad set's own
+counts once ads run.
+
+### 29.5 Attribution setting — owner's choice, and what Ads Manager actually shows (2026-09-26)
+
+**Owner's decision:** Click-through **7 days**, Engaged-view **1 day** (kept),
+View-through **1 day** (kept) — i.e. Meta's standard window. He chose to keep the
+two view windows after hearing the trade-off below.
+
+**Status: NOT saved on Meta yet.** The owner set the dropdowns but chose not to
+publish the ad set now. In Ads Manager an edit to an ad set only takes effect on
+**Publish**, so Meta still holds the old window: read via the Meta Ads MCP at the
+time of writing, `attribution_setting = 1d_click` on `120248398504180192`.
+**When the owner publishes, check it took:** the next `meta-ads-sync` (08:50 IST,
+or a manual run) should store `meta_adset_config.attribution_setting =
+'1d_engaged_view_1d_view_7d_click'` (the code sorts the parts; an unfamiliar
+spelling there just means Meta named the engaged-view type differently — read
+`raw->'attribution_setting'` and the MCP value before assuming a problem). Publishing
+a paused ad set keeps it paused; it does not start spend.
+
+**UPDATE 2026-10-10 — it is locked, not "not saved yet".** The ad set was
+published that night (other settings; see `FOUNDERS-MEET-ADS-PLAN.md` §5,
+"Published 2026-10-10") and still reads `CLICK_THROUGH, 1 day`. Ads Manager
+shows a crossed-out pencil on the setting, with this text: "The attribution
+setting cannot be changed once an ad set has been published. Create a new ad set
+to select a different attribution setting." The ad set was created already
+published on 2026-08-21, so the dropdowns the owner set on 26 Sep could never
+have been saved on it. **The duplicate-the-ad-set route below is the only route**,
+and it is not done: it replaces the ad set, so it waits for the owner's word.
+Until then every expectation in this section of `1d_engaged_view_1d_view_7d_click`
+on `120248398504180192` is wrong; expect `1d_click`.
+
+**OWNER DECISION 2026-10-10, later the same night: keep 1-day click; no new ad
+set.** This reverses the 7-day decision at the top of this section. Reasoning and
+what he was told: `FOUNDERS-MEET-ADS-PLAN.md` §5, "Not in line", item 1. Read
+Meta's purchase count as a low count from now on, and take cost per booking from
+our own data (spend ÷ all bookings in the period). Do not re-propose 7-day click.
+
+**What Ads Manager's screen looks like now (the step-by-step written earlier
+assumed one dropdown):** an "Attribution settings" panel with THREE dropdowns —
+"Click-through (for ads and marketing messages)", "Engaged-view (for videos
+only)", "View-through". It sits on the ad set, in the conversion / optimisation
+area. If it is ever greyed out on a published ad set, duplicate the ad set, set it
+on the copy and publish that paused — this ad set has never delivered, so nothing
+is lost.
+
+**Learnings worth keeping (so the next session does not re-derive them):**
+1. **Why 7-day click matters here:** the goal is Purchase (29.4). About 28% of
+   open-event bookings pay more than a day after applying (28.7); on a 1-day
+   window those sales are never credited to the ad, so Meta learns from fewer
+   sales and leaves learning more slowly.
+2. **What the two view windows do:** View-through credits a purchase within 1 day
+   of merely SEEING the ad (no click); Engaged-view credits one within 1 day of
+   watching ~10 s of a video ad (no click). Both raise the conversions Meta counts
+   (which helps it leave learning) but also credit people who may have booked
+   anyway, and **our own attribution is click-only** — `applications.attribution`
+   only gets a `utm_content` when someone CLICKS through. So with view windows on,
+   Meta's "purchases" can exceed ours for reasons that are not a tracking bug:
+   read the gap as view-through credit first (§2: Meta's numbers read high by
+   construction; this adds to it). The owner chose to accept that.
+3. **Vocabulary trap:** the ad-set API field is `attribution_spec` (a list of
+   `{event_type, window_days}`); `attribution_setting` is the Insights/MCP
+   spelling of the same idea. Asking the ad set for `attribution_setting` returns
+   nothing, which is how the first A-7 deploy stored NULL (§28.14).
+
+
+## 30. Cloud-audit OPP-1, 2, 3 and 5 — BUILT and live 2026-09-26 (page NOT pushed)
+
+Owner asked for these four from `CLOUD-META-OPPORTUNITIES.md`. All database
+changes are applied and both edge functions are deployed; the Growth ▸ Ads page
+changes are local only (golden rule: nothing pushed without his OK). Nothing is
+committed.
+
+**OPP-4 dropped by the owner:** the Facebook Page exists only because Meta
+requires one to run ads; ads run on Instagram only. So a Page-engagement audience
+would be empty — never re-propose it. Related open item: the paused ad set
+`120248398504180192` still has **Facebook, Messenger and Threads** placements
+(§28.5: effective platforms facebook, instagram, threads). The owner said ads are
+Instagram-only, so those placements should be unticked in Ads Manager before it
+runs — owner-side, not done.
+
+### 30.1 What was built
+
+| OPP | Where | What it does |
+|---|---|---|
+| 1 — Meta's automatic creative changes | `20260926_meta_creative_enhancements_guard.sql`; `meta-ads-sync` v27 | The creative read that checks `{{ad.id}}` also asks for `degrees_of_freedom_spec` + `contextual_multi_ads`, as a NEW FIRST RUNG (`enhancements`) above `full`, so a refusal never costs the tag check its asset-feed view. Watch list is a table, `meta_creative_feature_watch` (25 rows, `watch=false` silences one). Pushes `ad_unwanted_enhancement` per creative, 7-day suppression, paused ads included. |
+| 2 — match quality + pairing history (also builds §13 item 2) | `20260926_meta_dataset_quality_history.sql`; `meta-signal-watchdog` v7 | Eighth daily check `dataset_quality`. Raw `GET /dataset_quality` (not the MCP — §28.10), CAPI token first, a 4-rung field ladder. Stores every event every run in `meta_dataset_quality`. |
+| 3 — retargeting widened by Meta | `20260926_meta_retarget_widening_warning.sql`; `meta-ads-sync` v27 | `meta_adset_audience_warnings()` gained a `detail` column and two issues. Push rule key `adset_retarget_widened`. |
+| 5 — "tapped the ad" above "landed" | `20260926_meta_ad_funnel_meta_clicks.sql` | `get_meta_ad_funnel` adds `meta_clicks` + per-ad Meta link clicks / outbound clicks / Meta landing-page views, and now LISTS an ad that was clicked but produced zero sessions (the old query was built from our sessions outward and could never show it). No sync change; works backwards. |
+
+Page (local, `src/AdminPanel.tsx`): new "Before an ad spends" card (tag + enhancements
+per creative, reads `get_meta_ad_tracking_tags`, which the page never read before);
+"Match quality & pairing" row + 30-day trend on "Is Meta hearing about your sales?";
+retargeting warnings in the Audiences card (keyed `adset_id-issue` now, since one
+ad set can carry two); "Tapped the ad" row + "Taps → landed" column in "Where the
+traffic stops", shown even when zero sessions arrived.
+
+### 30.2 The rules that keep these honest (read before changing them)
+
+- **OPP-1 "absent" means ON only where Meta's docs say default opt-in:**
+  `contextual_multi_ads`, `inline_comment`, `adapt_to_placement`,
+  `description_automation` (`default_on=true`). Every other watched feature
+  counts only on an explicit `OPT_IN`. Music is deliberately not on the list
+  (default undocumented). A read on any rung below `enhancements` records
+  `enhancements_read=false` and says nothing — "not asked" is never "none on".
+  The starting list was chosen by the building session, not the owner: everything
+  that changes how the ad looks or what it says, plus the multi-brand strip.
+- **OPP-2 pushes only after 7 days.** Coverage is Meta's 7-day average, so
+  consecutive daily reads share six days of data; at 6–12 sales a month one odd
+  sale can hold a window under 75% for a week and then roll out. The page goes
+  amber (`gap`) on day one; `broken` (push, cooldown 72 h) needs every run below
+  goal for 7+ days. EMQ falling ≥1.5 below its 30-day best on two runs in a row is
+  `gap` only. Only Purchase and Lead are graded; browser-only events read 0% by
+  design and are stored, never judged. No coverage figure for either → `too_few`.
+- **OPP-3 never pushes on "unknown".** §28.5 already measured that
+  `targeting_relaxation_types` is **not echoed** by Meta on the live ad set. So:
+  explicit `1` on `advantage_audience` or on expansion → `retarget_widened` (push,
+  paused ad sets included — fixing before it runs costs nothing);
+  `advantage_audience` 0 with expansion not echoed → `retarget_expansion_unconfirmed`
+  (amber, page only). **Expect that amber to stay** on a correctly set-up
+  retargeting ad set if Meta never echoes the field; confirm once in Ads Manager
+  rather than "fixing" the check. Only audiences in OUR registries
+  (`meta_website_audiences`, `meta_audiences`) count.
+- **Deploy order used, and why:** OPP-1 SQL → sync → OPP-3 SQL → OPP-2 SQL →
+  watchdog → OPP-5 SQL. The new sync handles both warning shapes; the old sync
+  would have pushed a retargeting row with the "does not exclude customers" text.
+
+### 30.3 Verified 2026-09-26 (numbers, so a later session can tell what went stale)
+
+- OPP-1 verdict: 4/4 fixtures pass (nothing set → the 4 default-on labels; all
+  opted out → none; explicit `text_optimizations` → only it; multi-advertiser
+  explicit in → only it). Writer round trip: read-with-fields flags 4 and warns,
+  read-without-fields stores NULL and does not warn. Grants: anon cannot run the
+  verdict, authenticated cannot run the warnings, the panel reader is founder-gated.
+  Test rows deleted (0 left).
+- OPP-3: 4/4 fixtures (wide → `retarget_widened`; both 0 → nothing;
+  expansion missing → `unconfirmed`; no custom audience → nothing). Live ad set
+  unchanged: `no_customer_exclusion` only (paused, no push). Test rows deleted.
+- OPP-2 simulated 8 days: Lead at 33.3% → `gap` days 0–6, `broken` day 7;
+  EMQ 9.3 → 7.5 flagged on the second low day only; no figures → `too_few`;
+  no `web` → `unreadable`; healthy → `ok`. 11/11. Test rows deleted.
+- **First real read (manual run, `?only=dataset_quality`, 22:09 IST):** answered
+  on the `full` rung with the **CAPI token**. **EMQ 9.3 for Purchase AND Lead**
+  (was 8 on 21 Sep, §27.1). No coverage figure for Purchase or Lead ("nothing to
+  pair this week"), so verdict `too_few`. `event_coverage` came back **0 / goal 75**
+  for AddToCart, PageView, ReachedPricing, ViewContent (browser-only, expected).
+  `dedupe_key_feedback` was accepted as a field but returned nothing for any event.
+  8 events returned. Note the MCP's `ads_get_dataset_quality` returned NO scores at
+  all the same afternoon — the MCP does not request the metric fields; trust the
+  raw call.
+- `meta-ads-sync` manual run: creative read answered on the new `enhancements`
+  rung (Meta accepted `degrees_of_freedom_spec` + `contextual_multi_ads`), 0 ads
+  exist, so real values are still unproven — first check them on the first ad.
+- `get_meta_ad_funnel` with a fake Meta row (10 clicks, 7 landing-page views, 0
+  sessions, inserted and deleted inside one block): totals right, the ad is listed
+  with `pct_click_to_landed` 0.
+- Page rendered via `agent-browser` as krutesh08@: both new cards and the trend
+  line show; `npx tsc --noEmit` passes.
+- `list_edge_functions` after deploy: `meta-ads-sync` v27, `meta-signal-watchdog`
+  v7, both `verify_jwt: false`.
+- `?only=a,b` on `meta-signal-watchdog` is new: runs just those checks (the cron
+  never passes it). Use it to verify one check without re-recording the others.
+
+## 31. Cloud-audit OPP-6, 7, 8 and 9 — BUILT and live 2026-09-26 (page NOT pushed)
+
+Owner asked for these four right after §30. Database changes applied, and
+`meta-ads-sync` (activity + recommendations steps) and `meta-audience-sync`
+(labels) deployed with `--no-verify-jwt`. Growth ▸ Ads page changes are local
+only; nothing committed or pushed.
+
+**Applied differently from §30, on purpose:** the two migrations that REPLACE a
+long live function (`…_meta_ads_performance_rankings.sql`,
+`…_meta_recommendation_promises.sql`) were built by patching the LIVE definition
+dumped with `supabase db query --linked` (never the migrations folder — it is
+behind the live DB), and all five files below were applied with
+`supabase db query --linked -f <file>`. So they are live but **not recorded in
+the Supabase migration history** (`list_migrations`); the files in
+`supabase/migrations/` are the record. §30's four went through `apply_migration`
+and are in the history.
+
+| OPP | Files | What it does |
+|---|---|---|
+| 6 — Meta's ad grades | `20260926_meta_ads_performance_rankings.sql` | `get_meta_ads_performance` per ad gains `quality_ranking`, `engagement_rate_ranking`, `conversion_rate_ranking`, `rankings_as_of` = the latest day in the window with a REAL grade (an `UNKNOWN` later day never blanks an earlier grade). Stored daily since 2026-09-07, never read until now. Page: "look · engagement · converts" under each ad name, "not graded yet" when NULL, plus a one-line legend. |
+| 7 — account change log | `20260926_meta_account_activity_log.sql`; `meta-ads-sync` step 7 | Daily `GET act_<id>/activities` into `meta_account_activity` (key = hash of time/type/object/actor/extra, so overlapping re-reads insert nothing). Window: 2 days before the newest stored entry, 90 days on the first run. **extra_data is scrubbed in SQL** — ip, server_ip, machine_cookie, ssl_fp, http_fp, session_id, svn_version, request ids are dropped; old/new values, amounts, operation kept. Page: "Account history" card, entries by Meta itself marked. **No push** (owner's delivery-history choice). |
+| 8 — Meta's promise per recommendation | `20260926_meta_recommendation_promises.sql`; `meta-ads-sync` step 8 | Daily `GET act_<id>/recommendations` with `recommendation_content` into `meta_recommendations`; the FIRST `lift_estimate` / body / `opportunity_score_lift` is never overwritten (latest kept separately). The scorecard now reads these rows too (source `daily_read`, deduped against webhook rows ±3 days by type + overlapping objects) and returns `meta_promised`, `score_points`, `meta_url`. Page: "Meta promised: …" beside "our cash: …" on each scored recommendation. Read-only — applying is a POST we never make (M11). |
+| 9 — audience labels | `20260926_meta_audience_labels.sql`; `meta-audience-sync` | `audience_label` column on `meta_audiences` + `meta_website_audiences` (CHECK = Meta's 10 values). Set: customers_all_paid → CUSTOMERS, customers_completed → HIGH_VALUE_CUSTOMERS, leads_unpaid → ENGAGED_USERS, web tiers price_seen/dates_opened/plan_viewed/top_engaged → ENGAGED_USERS, all_visitors → none. Sent as `audience_labels: [LABEL]` ONLY when the job CREATES a list; on a code-100 refusal it retries without the label. |
+
+### 31.1 Facts measured 2026-09-26 (so a later session can tell what went stale)
+
+- **The ad_recommendations webhook has never delivered one event** (0 rows in
+  `meta_ads_events`, the only field ever received is `in_process_ad_objects`).
+  So before OPP-8 the scorecard could never have shown anything. The daily read
+  is now its real source.
+- Opportunity score **100, zero recommendations** (Meta Ads MCP) — §9's "100 can
+  mean nothing to grade". First daily read: `seen 0`, answered on the full field
+  shape.
+- Activity log first read: **27 entries, 2026-08-12 → 2026-09-21**, one made by
+  Meta (₹500 balance top-up on 12 Aug — `amount` is in paise, 50000), the rest by
+  "Chapter A." (ads MCP server / Power Editor) and "chaptera-reporting"
+  (chaptera-ads, the daily audience uploads). The reporting token reads the
+  endpoint fine; answered on the full field shape. 0 stored rows carry an
+  IP / cookie.
+- The log also recorded, on 2026-09-18 19:53, the targeting edit that **removed
+  Audience Network and Messenger Stories** from the paused ad set — but
+  Facebook placements and Threads remain in the "new value", which matches §30's
+  open item (owner runs Instagram-only).
+- `audience_labels` is **create-only** per Meta's changelog (only
+  `POST /act/customaudiences` listed), so the three lists made 2026-09-07 stay
+  unlabelled. No throwaway audience was created to test the format; the
+  retry-without-label fallback makes a wrong guess harmless instead. **When the
+  next list is created, check its log line**: "create with audience_labels
+  refused … retrying without" means the array form is wrong for this account.
+- Fixture tests, all run inside one block with founder claims and deleted in the
+  same block (0 left): activity insert 2 / re-read 0 / fingerprints stripped /
+  Meta-made flagged; recommendation first promise kept while latest updates, and
+  it appears on the scorecard as `daily_read` with its promise; rankings: latest
+  real grade survives a later UNKNOWN day, never-graded reads NULL. 8/8.
+- Grants checked: anon cannot run the performance, activity or scorecard readers;
+  authenticated cannot run either recorder or select `meta_account_activity`.
+- Page rendered via `agent-browser` (krutesh08@): the Account history card lists
+  the entries with actor and tool, "Made by Meta itself" on the top-up. Grades and
+  promises cannot render until an ad spends / a recommendation exists.
+  `npx tsc --noEmit` passes.
+
+### 31.2 For the §19 website-audience recipe
+
+When a web audience from the registry is created by hand (Ads Manager or the
+Meta Ads MCP `ads_create_custom_audience`), pass its `audience_label` from
+`meta_website_audiences` (currently ENGAGED_USERS for the four retarget tiers).
+
+## 32. Owner decision — OPP-12 and OPP-15 NOT built (2026-09-28)
+
+After a plain-language walk-through, the owner decided both are too complicated
+and unnecessary at the current stage:
+
+- **OPP-12 (value-weighted lookalike)** — not built. The lookalike seed stays as
+  decided in §13 item 5: "people who came" (`customers_completed`, 85 uploaded on
+  2026-09-07), every person weighted equally. Why it can wait: repeat buying is
+  ~1 in 7, so value weights would be nearly identical across the list.
+- **OPP-15 (optimise for profit instead of ticket value)** — not built. Meta
+  keeps receiving ticket value only (§21.1). Blockers noted at the time: needs
+  ~100 conversions/week (we have 6–12/month), two plans still have
+  `cost_per_ticket` ₹0, and per-booking profit would be visible in the browser
+  Pixel.
+
+Do not re-propose either unprompted. If the owner raises them again, the
+walk-through and the options are in this conversation's summary above (§32) and
+in `CLOUD-META-OPPORTUNITIES.md`.
+
+## 33. Whole-system audit against the lessons' rules of thumb — 2026-09-30
+
+**Asked by the owner:** audit everything built so far, compare it with industry rules of thumb (the 70-lesson synthesis and the 2026-09-28 strategy report), and say what is wrong, what could be better, and what can be retired. **Read-only: nothing was changed, deployed or pushed.** Settled decisions (Purchase first, the attribution setting, Instagram only, `/lifestyle`, no customer exclusion, full value at the advance, daily crons) were NOT re-opened.
+
+**Live state read 2026-09-30 ~03:50 IST:** all five Meta crons ran on schedule; 0 failed syncs in 30 days; all 8 watchdog checks `ok`; `meta_ad_daily` 0 rows, 0 bookings carrying an ad id, 0 guardrail events (no ad has ever served). The paused ad set still holds the OLD settings: `1d_click`, age 18–65, Facebook + Messenger + Threads + Instagram, brand safety RELAXED. None of the plan's edits has been published yet. That is expected, and the plan's change table is still the to-do.
+
+### 33.1 Wrong: two alarm mechanics don't do what their labels say — BOTH FIXED 2026-09-30 (see 33.6)
+
+1. **The frequency alarm reads far too low, by construction.**
+   - `meta_ad_guardrail_breaches()` works out 7-day frequency as Σ daily impressions ÷ Σ daily reach, and `meta-ads-sync` only fetches `time_increment=1` rows.
+   - Summed daily reach counts the same person once *per day*. For an ad showing the same 2,000 Chennai people every day for a week, the true 7-day frequency is 7 and the alarm computes 1.0.
+   - The rule's note says "reads slightly low"; in fact it can be up to 7× low, in exactly the case the rule exists for: a single-city audience getting saturated.
+   - **Fix (small):** one extra insights call per sync at `level=ad` with the 7-day range and no `time_increment`, storing true 7-day `reach`/`frequency`, and the rule reads that.
+   - Rule of thumb for the threshold: cold ads > ~2 is a red flag (Blue Sense); Ventre scales only below 1.7–2. 3 is fine once the number is real.
+2. **No alarm judges the campaign, which is the level the plan says to judge at.**
+   - Every rule is per ad over 7 days, with a ₹500 per-ad spend floor. At ₹150/day across 3 ads, only an ad taking roughly half the budget ever reaches ₹500 in 7 days. So the campaign total (e.g. ₹1,050 for 5 tickets = ₹210/ticket) can run past the pause line with no push.
+   - The per-ad cost rule fires from **1** ticket (₹520 for 4 tickets pushes). That contradicts §15's own rule: never act on fewer than 10 tickets.
+   - The ₹100 alarm also lands inside the plan's "₹100–150 → hold" band, so the phone says "over ceiling" when the plan says "do nothing".
+   - **Fix:** add a `level` column to `meta_ad_guardrails` (`ad` | `campaign`). Move `cost_per_ticket` and `spend_without_ticket` to campaign level, rolled up by `meta_ad_daily.campaign_id`. Keep link-CTR, untagged spend and frequency per ad, because those judge a creative, not money. Optionally suppress the per-ad cost push below N tickets.
+
+### 33.2 Better: improvements the rules of thumb point to
+
+| # | What | Rule of thumb | Why it matters here |
+|---|---|---|---|
+| 1 | **Lifetime budget with the end date, instead of daily budget + spending limit** | **CORRECTED 2026-09-30, owner asked "is this what the experts say?"** Only partly. Checked against the lesson files themselves: Southworth (2026, concerts) explicitly prefers a lifetime budget ending on show day, although he normally uses daily; Willington (2024 ★) uses lifetime CBO budgets per phase, three phases with their own end dates; Be Giant (2024 ★, beginners) recommends lifetime as a safety net. **Two Story uses a ~$5/day DAILY budget** with an end date, so the synthesis line "use a lifetime budget (Two Story, …)" misattributes it, and Videll says nothing about budget type. No lesson argues daily is better for events. **"Meta will put more of it into the final days" was NOT from any lesson**: Willington gets end-loading by splitting the budget into phases by hand. So it is a 3-of-4 practice with a real convenience (one number, automatic stop), not a consensus. | One number instead of two removes the "make the two numbers agree" problem. Caveat: a lifetime budget can't later be switched to daily on the same ad set. Owner's call; not built into anything. |
+| 2 | **Build the two measurements the plan relies on but nobody has built:** (a) new vs returning buyers per ad booking; (b) daily bookings for this Founders Meet (ad + organic) vs the last one's organic-only curve | #14 (platform ROAS over-credits), Part 4.8 (sales slope = incremental tickets) | These are the plan's only defence against the one real risk in the settled setup. With no customer exclusion, view-through credit on, and the organic reels reaching the same Chennai people, Meta can learn to show ads to people who were about to book anyway, and report it as success. One RPC plus a card. |
+| 3 | **Silence the weekly "Purchase can't reach 50/week" push** (`adset_optimization_goal`) with a constant, as was done for the exclusion push | #11 (decide the threshold before the test): an alarm about a decision already taken gets muted, and muting is how the real one is missed (§5 Layer 7) | The owner chose Purchase knowing this. Keep the panel line and drop the phone push. |
+| 4 | **"Spend without a lead" really means "nobody verified an OTP"**, so it lumps a landing-page problem together with a traffic problem | #13 / Griffin: compare link clicks with landing-page views | Meta's own `landing_page_view` is already stored in `meta_ad_daily.actions`. Using it would make this rule say "they never arrived" rather than "they arrived and didn't book". |
+| 5 | ~~**Record attendance**~~ **WITHDRAWN 2026-09-30 after the owner's challenge: the venue balance already is the attendance record.** | Part 5, show-rate engineering (Gordon); #5 (judge on business outcome) | Pay-at-venue collects the balance online through PayU (Founders Meet: 10 venue balances at ₹203.82), and true ROAS (`get_meta_ads_performance`) counts every payment, advance AND balance, per ad. So an ad's no-shows already appear as missing balances, and "ad vs organic no-shows" is a query on balance-paid by attribution. The alarms can't see no-shows, but nothing could: they happen after the ads stop, so this is a post-event read, not an alarm. **Only gap:** a balance paid in cash or by direct UPI at the door is invisible and reads as a no-show. Do not re-propose a check-in list unless that happens. |
+| 6 | **Expectation, stated once:** at ₹150/day with 3 ads, Meta will likely put most of the money into one ad within days | Disagreement A: small budget + sparse signal means Meta's pick is a filter, not a test | So this campaign can answer "can ads sell Founders Meet at ≤ ₹100?" It cannot answer "which reel is best". Don't read the losing two as disproven. |
+
+### 33.3 Retire or silence
+
+| What | Verdict | Why |
+|---|---|---|
+| Weekly `adset_optimization_goal` push | **Silence** (33.2 #3) | Contradicts a settled decision. |
+| `ads_volume` step + `meta_ad_volume_snapshots` (Layer 8) | **Retire on the next `meta-ads-sync` edit** (no special deploy) | Both of its jobs are now done better elsewhere: "ad in review" by the delivery-state read (`effective_status`, §23), and "learning limited" by `learning_stage_info` (Layer 9). 0 rows ever. |
+| Recommendation scorecard + daily recommendations read (Layer 5, OPP-8) | **Leave, dormant** | 0 recommendations ever; it costs one call a day. It only earns its keep at a spend level far above this plan. Not worth the effort of removing. |
+| Webhook inbox (`meta-ads-webhook`) | **Keep** | 1 event in 3 weeks, but it is the only phone push for a DISAPPROVED ad, because delivery states are page-only by the owner's choice. |
+| Site experiments engine (§17) | **Leave, dormant** | 1 draft, 0 exposures; its client code isn't pushed. |
+| Competitor ad watching (§25) | **Keep — but it is failing silently** (checked 2026-09-30 after the owner asked) | It saves correctly when a read works: 7 ads, all creatives captured, and a bad read never marked an ad gone (the §25 safety rule held). But since 2026-09-18 only **6 of 12 days** gave a good read. **23 and 28 Sep:** the page did not render, reported as unreliable. **Three runs aborted** at the 10-minute budget; the last run, on 29 Sep, exited with code 1. **22, 24 and 27 Sep:** no run at all (the Mac was probably off or asleep at 18:00). The last good read was **26 Sep**, and nothing alerts on any of this. Logs: `~/Desktop/ads/_run.log`, `~/Library/Logs/chaptera-ad-library.log`. The panel card isn't pushed. Its use is the next creative brief (synthesis #3). **To do:** find why the page hangs, and push when N days pass without a good read. |
+| "Website visitors – 180d" snapshots | **Keep, with a caveat** | 20 people on all 20 days since 2026-09-11, and Meta's `time_updated` hasn't moved since it was created on 15 Aug. If it is still frozen after paid clicks arrive, the "does ad traffic grow the pool" test cannot be read from this number. |
+| Stray `user` webhook subscription (§24) | **Remove** (owner, App Dashboard) | Delivers nothing, and contradicts §12. |
+
+### 33.4 Not a Meta setting, but the biggest systems gap
+
+- **The live site was last pushed 2026-09-10.** There are 38 local commits plus ~2,800 uncommitted lines across 25 files, including the source of edge functions that are **already deployed**.
+  - The only copy of what production runs is this laptop's working tree.
+  - Committing locally (no push) closes that risk. It needs his OK (golden rule).
+- **Measurement that is still not live on the site:**
+  - funnel rows stamped with the ad id, which the `untagged_spend` alarm and the per-ad funnel need;
+  - the cross-visit `visitor_id`;
+  - placement per booking;
+  - the browser Pixel's test-phone guard;
+  - Pixel auto-setup off.
+
+  Data from ad visits made before these ship cannot be recovered later. Stated once; the timing is his.
+- **Housekeeping:** nine YouTube lesson `.md` files sit untracked in the repo root of a PUBLIC repo. They belong in `~/Downloads/meta yt lessons/`. Don't `git add` them.
+
+### 33.5 Checked and found in line with the rules of thumb (so nobody re-audits them)
+
+- **Stop-loss floors:** ₹500 = 5× the ₹100 target, the careful end of 3–5×.
+- **Link CTR floor:** 1%, the events benchmark (Willington).
+- **Decision timing:** a day-4 read and a campaign read at ~₹1,000 (≈10 tickets), matching Cordeddu, Ole Strand and Mark.
+- **Structure:** one campaign → one ad set, with 3 distinct concepts, not hook swaps (#2, #8).
+- **Hooks:** swaps come later, and only on the winner (#4).
+- **Creative guard:** enhancements off, with OPP-1 watching (#15).
+- **Reporting:** judged on our cash, not Meta's ROAS (#5, #14).
+- **Retirements:** retargeting tiers, lookalike, `leads_unpaid` and catalog all correctly retired (#1, disagreement G, the DPA over-credit).
+- **Tracking health:** EMQ 9.3, watchdog 8/8 ok.
+- **Crons:** daily, owner's choice. The campaign spending limit is the hard stop between daily reads.
+
+### 33.6 BUILT 2026-09-30: the two alarm fixes (owner: "fix these both")
+
+**Live on production, verified; not committed, not pushed.**
+
+- **Database:** `supabase/migrations/20260930_meta_guardrails_campaign_level_true_frequency.sql`, applied with `supabase db query --linked -f`, so it is NOT in `list_migrations`; the file is the record.
+- **`meta-ads-sync` v30:** new non-fatal step `syncWindowReach`.
+- **`meta-ads-alerts` v9:** campaign wording.
+- **Admin page** (local only): "Whole campaign ·" before a campaign breach, and the cost-alarm sentence now says "a whole campaign's".
+
+**1. Frequency now uses Meta's own 7-day count.**
+- The sync asks for each ad's whole 7-day window in one call (no `time_increment`) and stores it in `meta_ad_window_reach`.
+- `meta_ad_guardrail_breaches()` uses it only when `window_since`/`window_until` equal its own window. Otherwise it falls back to the old summed-daily figure, which can only under-alarm.
+- `context.frequency_source` records which was used: `meta_7d` or `daily_sum_lower_bound`.
+- **Trap:** `REACH_WINDOW_DAYS` (7) in the sync must equal the rules' `window_days`, or the true reading silently stops being used.
+- **Also:** a manual sync run between 00:00 and 05:30 IST writes an IST date one day ahead of the database's UTC `current_date`, so that row is ignored until the next cron. It is harmless, and self-heals at 08:50 IST.
+
+**2. The money rules judge a whole campaign.** `meta_ad_guardrails.level` is `'ad'` or `'campaign'`.
+
+| Rule | Level | Fires when |
+|---|---|---|
+| `cpa_over_ad_budget` | campaign | **Changed the same night, see below:** now cost per ticket > **100%** of what a ticket leaves for ads (**₹100 = break-even** for Founders Meet), with **no spend floor**. It was briefly 150% from ₹1,000. |
+| `spend_no_ticket_500` | campaign | ₹500 spent across all ads, leads but no tickets |
+| `spend_no_lead_500` | campaign | ₹500 spent across all ads, no leads |
+| `link_ctr_under_1pct` | ad | unchanged |
+| `frequency_over_3` | ad | unchanged, but now on the true count |
+| `untagged_spend_300` | ad | unchanged |
+
+- **Output shape:** a campaign breach carries the campaign id and name in `ad_id`/`ad_name`, plus `context.level = 'campaign'` and `context.ads`. Cooldowns work unchanged.
+- **One rupee figure changed:** the cost limit went from ₹100 to ₹150. Per ad it had fired inside the plan's ₹100–150 "hold" band. **To alarm at break-even instead, set `threshold` back to 100.** The rule keeps its key because `get_meta_plan_ad_budgets()` reads it by name.
+
+**Verified 2026-09-30**, with fixtures inside a transaction that raised an exception to roll itself back. This method is safe even with fake bookings: every trigger on `applications` only queues via pg_net, and the queue insert rolls back too. It also tested the ₹500 no-ticket rule, which 2026-09-30's earlier change could not.
+
+- **Campaign A**, 3 ads, ₹1,400 for 5 tickets → **fired** at ₹280 vs ₹150, once, with no per-ad cost rows. Under the old rules, ad a1 (₹900 for 4 tickets) would have pushed on its own.
+- **Campaign B**, ₹1,100 for 10 tickets (₹110) → **silent**, the hold band.
+- **Campaign C**, ₹650 with 2 leads and 0 tickets → **no-ticket fired**. Its dud ad at 0.33% link CTR → **per-ad CTR fired**.
+- **Campaign D**, ₹800 with no leads → **no-lead fired**.
+- **Campaign H**, ₹900 for 1 ticket → **silent**: under the ₹1,000 read point.
+- **Frequency:** an ad with a fresh 7-day row (same 2,000 people × 7 days) read **7.0 from `meta_7d`** and fired. The same shape with a stale row fell back to 1.0 and stayed silent.
+- **Afterwards:** 0 fixture rows, 0 guardrail events, 0 queued HTTP requests.
+- **Grants:** anon and authenticated cannot execute the evaluator; service_role can; the founder wrapper is unchanged. `meta_ad_window_reach` has RLS on, anon has no SELECT, and authenticated has no INSERT.
+- **Live runs** (the cron commands executed by hand): sync `ok:true`, `window_reach` `{ok:true, ads:0}` (Meta accepted the call shape); alerts HTTP 200, guardrails ran with 0 breaches.
+- **Deploys:** `list_edge_functions` shows sync v30 and alerts v9, both `verify_jwt:false`. The deployed source was re-downloaded afterwards and equals the repo byte for byte; it was also checked unchanged before the upload.
+- **Still unproven:** real 7-day values on a real delivering ad. Check `meta_ad_window_reach` on the first morning after spend starts.
+
+**SUPERSEDED the same night by "The alarms follow the rules-of-thumb table" below.** Kept as history.
+
+**Owner decision, same night (2026-09-30):** *"I want to be buzzed immediately when the ad is spending more than the breakeven."*
+
+- **The rule:** `cpa_over_ad_budget` is threshold **100** with `min_spend`, `min_impressions` and `min_clicks` all **0**. It fires the first time campaign spend ÷ paid tickets passes the ad money per ticket (₹100 on Founders Meet).
+- **What is unchanged:** still per campaign, still checked once a day at 09:07 IST (the daily-cron decision), still a 24 h cooldown.
+- **With no tickets yet:** there is no cost per ticket, so that stays with the ₹500 no-ticket and no-lead rules.
+- **Accepted consequence, stated once:** this buzzes on 1–2 tickets, below the 10-ticket judging floor. It is a *heads-up that you are past break-even*, not by itself a reason to pause; the plan's ₹150 pause line is unchanged.
+- ~~**Do not re-propose** the ₹150 or ₹1,000 floors unprompted.~~ Superseded below.
+- **Record:** file `supabase/migrations/20260930_meta_cost_alarm_break_even_immediate.sql`, applied with `db query --linked -f`.
+- **Verified with rolled-back fixtures:**
+
+  | Campaign | Result |
+  |---|---|
+  | ₹150 for 1 ticket | **fired** |
+  | ₹110 per ticket over 10 tickets | **fired** |
+  | ₹90 for 1 ticket | silent |
+  | exactly ₹100 per ticket | silent (it must pass break-even) |
+
+  Afterwards: 0 leftover rows, 0 events, 0 queued requests.
+- **Admin page** (local): the alarm sentence reads "from the first paid ticket" when there is no spend floor.
+
+
+### 33.7 Competitor watcher: making it survive a sleeping or offline Mac — options, 2026-09-30 (NOT built, owner to pick)
+
+**Owner's ask:** he can't guarantee the Mac is awake and online at 18:00. Could OpenClaw re-try until the day's read is done, or should it move to a free cloud tier such as Cloudflare?
+
+**Why runs fail, from the logs:**
+- **22, 24 and 27 Sep:** no run at all. launchd does re-run a missed calendar job on wake, so these were most likely days the Mac was off.
+- **23 and 28 Sep:** Meta's page did not render.
+- **Three runs killed at the 10-minute budget,** with no line after "watching 1 page(s)". The likely cause (NOT proven; the log has no timestamps) is a missed 18:00 job firing the instant the Mac wakes, before Wi-Fi is back, so Chrome waits on a network that isn't there.
+
+**OpenClaw is the wrong tool.** Its workers deliberately have no internet (`OPENCLAW-HANDOFF.md` §6 fences), and it runs on the same Mac, so it inherits the same sleep and offline problem. What is needed is a retry rule, not an AI agent.
+
+**Recommended, local, ₹0:**
+- **Hourly catch-up.**
+  - Change the launchd job from "18:00 once" to "every hour".
+  - Each wake-up first asks: is there already a good read today? If so, exit in milliseconds.
+  - Then: is the internet up (a quick fetch)? If not, exit and try next hour.
+  - Otherwise run, with a cap of ~3 real attempts a day, so a bad Meta day isn't hammered.
+  - This fixes a Mac that is asleep or offline, a page that did not render, and a hang.
+- **A server-side "missed read" push.**
+  - The ingest records each run (new small table).
+  - A daily Supabase check pushes when no good read has landed for 2 days.
+  - This is the only thing that catches a Mac off for days, which no local fix can.
+
+**Cloud options, checked:**
+- **Cloudflare Browser Rendering, free plan:** 10 browser-minutes a day and 3 concurrent browsers (pricing page, updated 2026-04-21). One read takes ~10–65 s, so it fits. **But** Cloudflare's rendering browsers identify themselves to websites as bots, with signed headers that can't be switched off, and Meta's Ad Library already refuses to render on some days even for the owner's home connection. So a block is likely; it is untested.
+  - Creatives would live in R2 (10 GB free) instead of `~/Desktop/ads`.
+  - It is a second codebase: a Worker instead of `capture.mjs`.
+- **Oracle Always-Free VPS** (being provisioned for OpenClaw, Hyderabad): runs the existing script unchanged, 24/7. The IP is still a datacenter's.
+- **GitHub Actions:** rejected. The repo is PUBLIC, so every run log would be public.
+
+**The alarms follow the rules-of-thumb table (owner, 2026-09-30, final for now).**
+
+He wrote: *"I want this implemented in the alarm, I overstated when I said warn me immediately."* "This" is the synthesis Part 3 table, as explained to him at Founders Meet's ₹100 ad money per ticket.
+
+- **Record:** `supabase/migrations/20260930_meta_alarms_follow_rules_of_thumb.sql`, applied with `db query --linked -f`.
+- **8 rules are enabled:**
+
+| Table row (expert rule) | Rule | Level | Fires when |
+|---|---|---|---|
+| 1. Judge cost only after ₹300–500 (3–5× target) | `cpa_over_ad_budget` | campaign | Cost per ticket > **₹100 (break-even)**, from **₹500** of campaign spend, 1,000 impressions and 10 clicks. At ₹150/day that is about day 4, the plan's first look. |
+| 2. Nothing sold after ~3× target → look at it | `ad_spend_no_lead_300` (NEW; was `_200`) | ad | An ad spent > **₹300**, no lead. Traffic problem. No impression or click floor. |
+| 2. (same) | `ad_spend_no_ticket_300` (NEW; was `_200`) | ad | An ad spent > **₹300**, leads but no paid ticket. Conversion problem. |
+| 3. Big decisions after ~10 sales | — | — | Not an alarm: the plan's ~₹1,000 campaign read (the ₹150 pause line lives there). |
+| 4. 3 days for a hint, 7 to decide | all rules | — | 7-day window, checked once a day (09:07 IST). |
+| (kept) Campaign whose ads each stay under ₹200 but add up | `spend_no_lead_500`, `spend_no_ticket_500` | campaign | ₹500 across all ads, no lead / no ticket |
+| (kept) | `link_ctr_under_1pct`, `frequency_over_3`, `untagged_spend_300` | ad | unchanged |
+
+- **Why ₹200 is an absolute figure:** it is 2× Founders Meet's ₹100. A zero-sale ad has no ticket to price a percentage from. **Revisit it for a plan with different ad money.**
+- **Accepted, stated once:** an ad that is on target still reaches ₹200 with zero sales about **1 time in 7** by luck (Poisson e⁻² = 13.5%). The push means *look*, not *switch off*.
+- **Two pushes on one morning is possible:** one for an ad, one for its campaign. They are different ids with separate cooldowns.
+- **Verified with rolled-back fixtures:**
+
+  | Case | Result |
+  |---|---|
+  | Campaign ₹520 for 4 tickets (₹130) | **fired** |
+  | Campaign ₹450 for 3 tickets (₹150) | **silent**: under ₹500 |
+  | Ad ₹210, no lead | **fired** ad no-lead |
+  | Ad ₹210, 1 lead, 0 paid | **fired** ad no-ticket |
+  | Ad ₹190, nothing | silent |
+  | 3 ads × ₹180 = ₹540, no leads | only the **campaign** no-lead fired |
+  | Ad ₹300 on 150 impressions, no lead | **fired**: the stop-loss has no impression floor, while the CTR alarm correctly stayed silent under 1,000 impressions |
+
+  Afterwards: 0 fixture rows, 0 events, 0 queued requests.
+- **No deploy was needed:** the existing metrics and push wording cover the new rules.
+- **Admin page** (local): "Six rules are armed" now reads "Every rule is armed".
+
+**Per-ad stop-loss moved ₹200 → ₹300 (owner, 2026-09-30: "let this be 300 so we give the reel a fair chance").**
+
+- **Why:** the owner asked "isn't it supposed to be 3–5×?", and the lesson files agree with him.
+  - The 2× stop-loss rests on two presenters. Cordeddu's multiple is unclear in the captions; Griffin labels his own a heuristic.
+  - The common rule (Blue Sense, Iles) is to spend ~3× target before judging, and it covers zero-sale ads: "zero or one conversions → cut it".
+  - ₹500 (5×) was not chosen, because Meta concentrates spend on one reel, so it would largely repeat the campaign-level ₹500 rules.
+- **Accepted, stated once:** an on-target ad now trips it by luck about **1 time in 20** (e⁻³), against 1 in 7 at ₹200.
+- **Rule keys** are now `ad_spend_no_lead_300` / `ad_spend_no_ticket_300`. No event rows existed, so no history was orphaned.
+- **Record:** `supabase/migrations/20260930_meta_ad_no_sale_stop_loss_300.sql`, applied with `db query --linked -f`.
+- **Verified with rolled-back fixtures:**
+
+  | Ad | Result |
+  |---|---|
+  | ₹250, no lead | silent (it would have fired at ₹200) |
+  | ₹290, 1 unpaid lead | silent |
+  | ₹310, no lead | **fired** no-lead |
+  | ₹310, 1 unpaid lead | **fired** no-ticket |
+
+  Afterwards: 0 leftover rows, 0 events, 0 queued requests; 8 rules enabled.
+- **Superseded:** the "₹200 is an absolute figure, 2× Founders Meet's ₹100" note above. The same reasoning applies at 3×: revisit it for a plan with different ad money.
+
+**Campaign alarm moved to the price step (owner, 2026-09-30).**
+
+He did not find the campaign "no lead" / "no ticket" alarms meaningful: *"the major drop off phase is when the customer has to press book now / contact us which is when the price is shown. It's better to have a campaign level alert saying that."* Asked "taps too expensive" vs "nobody tapped at all", he chose **taps too expensive**.
+
+- **Record:** `supabase/migrations/20260930_meta_campaign_checkout_tap_cost_alarm.sql`, applied with `db query --linked -f`. It rebuilds the evaluator from the live §33.6 version and adds `cost_per_checkout_tap` to the metric CHECK. `meta-ads-alerts` is v12; v10 and v11 were intermediate, and one deploy failed with a Supabase 500 and was retried.
+- **The new rule, `campaign_tap_cost_over_20` (campaign):**
+  - It fires when campaign spend ÷ Book now + Contact taps is **> ₹20**, from ₹500 of campaign spend (the original 1,000-impression / 10-click gates were removed by the re-audit fix below).
+  - With **zero taps** it fires on the spend, and the push says "nobody tapped Book now / Contact".
+- **Where the taps come from:** Meta's per-ad Pixel InitiateCheckout count, already in `meta_ad_daily.actions`.
+  - The first name present wins (`offsite_conversion.fb_pixel_initiate_checkout`, then `initiate_checkout`), never a sum, the same rule as `PURCHASE_ACTIONS`.
+  - Our own funnel rows cannot be used: 0 of 3,201 rows in 30 days carry a source until the website update ships.
+- **Why ₹20:** ~1 in 5 tappers pays (20.7 and 23.2 per 100 taps, §29.4), × ₹100 ad money per Founders Meet ticket.
+  - It is absolute, because a campaign with no sales has no plan price to take a percentage of. Revisit it per plan.
+  - That rate is from mostly-organic visitors.
+- **Accepted, stated once:** once 1-day view attribution is saved, Meta also credits taps from people who only *saw* the ad. So taps read slightly cheap and the alarm fires slightly late, never falsely.
+- **Disabled, not deleted:** `spend_no_lead_500` and `spend_no_ticket_500` at campaign level. **7 rules are now enabled.**
+- **Per-reel ₹300 push wording** changed for the same reason. A "lead" means the WhatsApp code was verified, so a reel with 40 Book now taps buzzed "not one lead". Both per-reel rules now read "Rs.X spent, nothing sold yet (N tapped Book now / Contact)", or "(nobody tapped …)".
+- **Rendered push sentences, checked by running `describe()`:**
+  - `Campaign "Founders Meet · Oct 18": Rs.24 per Book now / Contact tap across the whole campaign (25 taps for Rs.600), past the Rs.20 limit`
+  - `… Rs.600 spent across the whole campaign and nobody tapped Book now / Contact`
+  - `"Reel 2": Rs.310 spent, nothing sold yet (40 tapped Book now / Contact)`
+  - A trailing "— people are leaving at the price" was removed: expensive taps can also mean few people arrived, so the push states only the fact.
+- **Verified with rolled-back fixtures:**
+
+  | Campaign | Result |
+  |---|---|
+  | ₹600 for 25 taps (₹24) | **fired**. One ad listed its 10 taps under BOTH names and counted 10, not 20; double-counted it would have read ₹17 and stayed silent. |
+  | ₹600 for 40 taps (₹15) | silent |
+  | ₹600, 0 taps | **fired** on the spend |
+  | ₹450, 0 taps | silent |
+  | Disabled campaign rules | silent |
+
+  Afterwards: 0 fixture rows, 0 events. Evaluator grants unchanged (anon and authenticated cannot execute). A cron-style alerts run returned 200, guardrails ok.
+
+**Current alarm set (7), for anyone reading this cold:**
+
+| Unit | Rule | Fires when |
+|---|---|---|
+| campaign | `cpa_over_ad_budget` | cost per ticket > ₹100 (break-even), from ₹500 spent; **with ZERO tickets, fires once spend passes ₹500** ("not one ticket sold") |
+| campaign | `campaign_tap_cost_over_20` | Book now / Contact taps cost > ₹20 each, from ₹500 spent (0 taps counts) |
+| ad | `ad_spend_no_lead_300`, `ad_spend_no_ticket_300` | ₹300 spent and nothing sold; the push names the tap count |
+| ad | `link_ctr_under_1pct` | < 1% of viewers tap through to the site, from 1,000 impressions |
+| ad | `frequency_over_3` | Meta's true 7-day frequency > 3 |
+| ad | `untagged_spend_300` | spend with no tagged site traffic (silent until the website update) |
+
+**Gap closed, same night: cheap taps, zero tickets (owner, 2026-09-30).**
+
+He caught that *"there could be book now taps after 6x the spend & still 0 sales"*. After the campaign no-ticket rule was disabled, a campaign with **cheap taps and zero tickets fired nothing**:
+- the tap rule was satisfied;
+- `cost_per_ticket` had no tickets to divide by;
+- the per-reel ₹300 rules only catch it when one reel alone spent ₹300.
+
+My earlier line that the tap alarm "covers" zero tickets was wrong.
+
+- **Fix:** in `meta_ad_guardrail_breaches()`, for a **campaign** `cost_per_ticket` with 0 tickets, observed = spend and the line = the rule's `min_spend` (₹500). Ad-level semantics are unchanged.
+- **Push wording:** "Rs.X spent across the whole campaign and not one ticket sold". `meta-ads-alerts` is v13+; one deploy hit Supabase's 500 again and was retried.
+- **Record:** `supabase/migrations/20260930_meta_campaign_zero_ticket_alarm.sql`.
+- **Verified with rolled-back fixtures:**
+
+  | Campaign | Result |
+  |---|---|
+  | 3 reels × ₹200 = ₹600, 40 taps, 0 tickets | **fired** (600 vs 500); no per-reel rule fired, which is the gap proven closed |
+  | ₹450, 0 tickets | campaign silent; that reel's own ₹300 rule fired |
+  | ₹600, 7 tickets (₹86) | silent |
+  | ₹520, 4 tickets (₹130) | **fired** |
+
+  Afterwards: 0 leftovers; grants unchanged. Deployed code equals the repo, and the rendered push was checked.
+
+
+### 33.8 Campaign money alarms: traffic gates removed — FIXED 2026-09-30
+
+**Owner request:** fix the re-audit's ₹600/no-sales blind spot and document the fix. **Applied to production and verified.**
+
+**Problem:** the evaluator's generic filters required 1,000 impressions and 10 Meta clicks for both campaign financial rules. Three ads spending ₹200 each could lose ₹600 with 900 total impressions and zero clicks/sales without a campaign warning; each ad was also below its ₹300 stop-loss.
+
+**Fix:** set `min_impressions = 0` and `min_clicks = 0` for exactly these two campaign rules:
+
+| Rule | Current condition |
+|---|---|
+| `cpa_over_ad_budget` | From ₹500 spend, ticket CPA exceeds 100% of the configured ad money per ticket; with zero tickets, spend must be **greater than ₹500** |
+| `campaign_tap_cost_over_20` | From ₹500 spend, Book now / Contact taps cost more than ₹20 each; zero taps fires at **₹500** |
+
+Both rules remain enabled. The ₹500 spend floors, thresholds, rolling seven-day window, daily 09:07 IST run and 24-hour cooldown are unchanged. The per-ad diagnostic gates remain. No Edge Function deploy or website release is needed: the evaluator reads these database rule values on every run.
+
+**Implementation:** `supabase/migrations/20260930051610_meta_campaign_money_alarms_remove_traffic_gates.sql`. Created using the Supabase CLI; its timestamp was aligned to the workspace's IST date to follow the existing 20260930 rule versions. The exact SQL was executed through Supabase MCP `execute_sql`; it was **not registered in migration history**. A row-count assertion rolls back if the two expected campaign rules are not found. Not committed or pushed.
+
+**Regression:** `supabase/tests/meta_campaign_money_alarm_traffic_gates.sql`. Runs the actual production `meta_ad_guardrail_breaches()` inside a transaction, first reproduces the old blind spot, then applies the fixed gate values temporarily and asserts these results:
+
+| Scenario (all with zero ad clicks and zero tickets) | Campaign warnings |
+|---|---|
+| 3 ads × ₹200, 900 total impressions, zero checkout taps | **Both** ticket and tap warnings |
+| ₹600, zero impressions, zero checkout taps | **Both** warnings |
+| ₹450, zero checkout taps | Neither |
+| ₹600, 30 checkout taps (₹20 each) | Ticket warning only; tap rule correctly uses strictly greater than ₹20 |
+| Exactly ₹500, zero checkout taps | Tap warning only; zero-ticket rule keeps its existing strictly-greater-than-₹500 boundary |
+
+All five passed. The fixture table has no non-internal triggers; tests inserted only ad-performance rows, never applications/payments. The transaction rolled back. No alerts job or push RPC was called.
+
+**Post-apply verification:** both live rows read 0 impression / 0 click floors, ₹500 spend floor, seven-day window and 24-hour cooldown. Zero fixture rows, zero fixture notification events and zero current real breaches. The plan and re-audit report now record the fix.
+
+### 33.9 Alarm messages state their rolling window — FIXED 2026-09-30
+
+**Owner request:** label the seven-day alarms and document that the ₹1,000 review uses total spend since launch. **Live: `meta-ads-alerts` v14.**
+
+- Every guardrail push now starts with **“Over the last 7 days”**, from the leading breach's `window_days`. The prefix comes before the campaign/ad name, so a long name cannot truncate it away at the 240-character body limit. One-day grammar is supported; invalid or missing windows say “Window unavailable” rather than inventing a duration.
+- Example: `Over the last 7 days · Campaign "Founders Meet": Rs.600 spent across the whole campaign and not one ticket sold`.
+- Applies to campaign money alarms and per-ad guardrails. Webhook rejection messages describe a current issue and do not get a rolling measurement label.
+- **Operating distinction:** the rolling window diagnoses recent performance. The ₹1,000 review and final event result use total campaign spend and tagged paid tickets from first delivery through the review date. Select that complete campaign period in reporting; a quiet seven-day alarm does not establish campaign-to-date profitability.
+- No new since-launch alarm or automatic review was added. SQL calculations, thresholds, daily schedule, cooldowns and the campaign spending limit are unchanged. All current guardrail rules use seven days; the known evaluator limitation for mixed window lengths remains separate.
+
+**Source:** `supabase/functions/meta-ads-alerts/index.ts`, guardrail push-body construction. Before editing, the local source matched production v13 byte for byte; this deploy contains only the window-prefix change.
+
+**Verification:** eight local checks exercised the actual `runGuardrails()` with mocked database/push calls: zero-ticket and paid-ticket campaign messages, checkout-tap cost, ad frequency, one-day CTR, a 14-day message, missing-window wording, and a 300-character name. Every prefix and 240-character limit passed. No real notification was sent. Deployed source was re-fetched and matches local source exactly; `list_edge_functions` confirms v14 ACTIVE, advanced `updated_at`, and `verify_jwt: false` preserved (the existing caller-secret gate remains).
+
+The Founders Meet plan and audit §2.1 now record the distinction and fix. No website deployment, commit or git push was performed.
