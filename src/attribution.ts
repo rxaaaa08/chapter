@@ -123,6 +123,27 @@ export function captureAttribution(): void {
     if (ref && !ref.includes(window.location.host)) found.referrer = ref;
     found.landed_at = new Date().toISOString();
 
+    // A RELOAD of the same ad link is the same click, not a new one. It used to
+    // re-stamp landed_at (and, since a reload's referrer is our own page, wipe
+    // the real referrer). landed_at is what the server uses as the click time
+    // when it has to rebuild fbc from fbclid, and Meta wants the FIRST time the
+    // click was seen — so when the click id is unchanged, the first hit's time
+    // and referrer are kept. A genuinely different click (new fbclid, or a new
+    // ad's utm_content) still replaces everything, which is the documented
+    // last-touch design. Cloud audit hygiene note, 2026-09-26.
+    try {
+      const prev = JSON.parse(sessionStorage.getItem(KEY) || 'null') as Attribution | null;
+      const sameClick = !!prev && (
+        (found.fbclid && prev.fbclid === found.fbclid)
+        || (!found.fbclid && !prev.fbclid && found.utm_content && prev.utm_content === found.utm_content
+            && prev.utm_campaign === found.utm_campaign)
+      );
+      if (sameClick && prev) {
+        if (prev.landed_at) found.landed_at = prev.landed_at;
+        if (!found.referrer && prev.referrer) found.referrer = prev.referrer;
+      }
+    } catch { /* unreadable previous value: treat as a new click */ }
+
     sessionStorage.setItem(KEY, JSON.stringify(found));
   } catch {
     // storage/URL errors in restricted environments must never block the page
