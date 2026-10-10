@@ -50,8 +50,15 @@ const API_VERSION = 'v26.0';
 const REPEAT_SUPPRESSION_HOURS = 6;
 
 // Fields differ by node type and asking for the wrong one is a hard 400, not an
-// omission — `review_feedback` exists on an ad and not on a campaign. Anything
-// unrecognised falls back to `name`, which every node has.
+// omission. Anything unrecognised falls back to `name`, which every node has.
+//
+// The ad's rejection reason is `ad_review_feedback` (Ad reference :277,
+// AdgroupReviewFeedback). This used to ask for `review_feedback`, which the Ad
+// reference does not list — it is an AD SET field meaning something else
+// ("Reviews for dynamic creative ad"). Cloud audit A-5, 2026-09-26. Which name
+// Meta actually accepts on an ad was never settled live (no rejected ad has
+// existed), so pollContext() also tries the ad without the feedback field if the
+// first shape is refused: losing the reason must never cost the name and status.
 function pollFields(level: string | null): string {
   switch ((level ?? '').toLowerCase()) {
     // issues_info is where a POST-PROCESSING failure explains itself — level,
@@ -59,7 +66,7 @@ function pollFields(level: string | null): string {
     // only: it is documented on those two nodes, and asking a node for a field
     // it does not have is a hard 400 rather than an omission, which would cost
     // us the whole context poll.
-    case 'ad':        return 'name,effective_status,configured_status,review_feedback,issues_info';
+    case 'ad':        return 'name,effective_status,configured_status,ad_review_feedback,issues_info';
     case 'adset':
     case 'ad_set':    return 'name,effective_status,configured_status';
     case 'campaign':  return 'name,effective_status,configured_status';
@@ -81,6 +88,15 @@ type Ctx = {
   error?: string;
 };
 
+// Shapes to try for one poll, most informative first. Only the ad has a second
+// shape; everything else has one field list and nothing to drop.
+function pollShapes(level: string | null): string[] {
+  const first = pollFields(level);
+  return first.includes('ad_review_feedback')
+    ? [first, first.replace(',ad_review_feedback', '')]
+    : [first];
+}
+
 // Enrichment, never a dependency. The webhook payload already carries the
 // actionable part (error_summary / error_message); the poll only adds the ad's
 // name and the rejection reason. If it fails, the alert still goes out — a
@@ -93,23 +109,35 @@ async function pollContext(objectId: string, level: string | null, token: string
     // which would write the access token into a database column. Admin-only and
     // RLS-gated, so this is a hardening step rather than a live leak, but there
     // is no reason to put a credential somewhere it can be echoed at all.
-    const url = `https://graph.facebook.com/${API_VERSION}/${encodeURIComponent(objectId)}` +
-                `?fields=${encodeURIComponent(pollFields(level))}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      // Meta's raw code travels with the translation: a translation tells you
-      // what to do, the raw code tells you whether the translation was right.
-      const e = json?.error ?? {};
-      return { error: `${e.code ?? res.status}${e.error_subcode ? '/' + e.error_subcode : ''}: ${e.message ?? 'poll failed'}` };
+    const shapes = pollShapes(level);
+    let lastError = 'poll failed';
+    for (let i = 0; i < shapes.length; i++) {
+      const url = `https://graph.facebook.com/${API_VERSION}/${encodeURIComponent(objectId)}` +
+                  `?fields=${encodeURIComponent(shapes[i])}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Meta's raw code travels with the translation: a translation tells you
+        // what to do, the raw code tells you whether the translation was right.
+        const e = json?.error ?? {};
+        lastError = `${e.code ?? res.status}${e.error_subcode ? '/' + e.error_subcode : ''}: ${e.message ?? 'poll failed'}`;
+        // Only a bad-field refusal (100) is worth a smaller shape; a token or
+        // permission error would fail the same way again.
+        if (Number(e.code) === 100 && i < shapes.length - 1) {
+          console.warn('[meta-ads-alerts] poll shape refused, retrying without the feedback field', lastError);
+          continue;
+        }
+        return { error: lastError };
+      }
+      return {
+        name: typeof json?.name === 'string' ? json.name : undefined,
+        effective_status: typeof json?.effective_status === 'string' ? json.effective_status : undefined,
+        status: typeof json?.status === 'string' ? json.status : undefined,
+        review_feedback: json?.ad_review_feedback ?? json?.review_feedback,
+        issues_info: json?.issues_info,
+      };
     }
-    return {
-      name: typeof json?.name === 'string' ? json.name : undefined,
-      effective_status: typeof json?.effective_status === 'string' ? json.effective_status : undefined,
-      status: typeof json?.status === 'string' ? json.status : undefined,
-      review_feedback: json?.review_feedback,
-      issues_info: json?.issues_info,
-    };
+    return { error: lastError };
   } catch (err) {
     return { error: String(err) };
   }
@@ -131,14 +159,24 @@ function issueDetail(issuesInfo: unknown, knownCode: string | null): string | nu
   return `${msg.slice(0, 160)}${code}`;
 }
 
-function firstReason(review: unknown): string | null {
-  if (!review) return null;
-  if (typeof review === 'string') return review.slice(0, 160);
-  if (typeof review === 'object') {
-    const vals = Object.values(review as Record<string, unknown>);
-    for (const v of vals) {
-      if (typeof v === 'string' && v.trim()) return v.slice(0, 160);
-    }
+// ad_review_feedback is documented as `{ global: {<key>: <reason>},
+// placement_specific: {<placement>: {<key>: <reason>}} }` (adgroup-review-
+// feedback.md:17-18) — the reasons sit one or two levels down, so the old
+// top-level-strings-only read could never find one (A-5's confirmed half).
+// Walks up to three levels, global first, and still accepts a flat map or a
+// plain string in case Meta's live shape differs from its reference.
+function firstReason(review: unknown, depth = 0): string | null {
+  if (!review || depth > 3) return null;
+  if (typeof review === 'string') return review.trim() ? review.slice(0, 160) : null;
+  if (typeof review !== 'object') return null;
+  const obj = review as Record<string, unknown>;
+  const ordered = [
+    ...('global' in obj ? [obj.global] : []),
+    ...Object.entries(obj).filter(([k]) => k !== 'global').map(([, v]) => v),
+  ];
+  for (const v of ordered) {
+    const found = firstReason(v, depth + 1);
+    if (found) return found;
   }
   return null;
 }
@@ -173,6 +211,7 @@ type Breach = {
 const SEVERITY: Record<string, number> = {
   untagged_spend: 0,
   cost_per_ticket: 1,
+  cost_per_checkout_tap: 1,
   spend_without_lead: 2,
   spend_without_ticket: 3,
   frequency: 4,
@@ -186,16 +225,49 @@ const rupees = (n: number) => `Rs.${Number(n).toLocaleString('en-IN')}`;
 // and what a notification needs is the OBSERVATION ("Rs.500 per ticket vs a
 // Rs.180 ceiling"). Both sides of the comparison, because a bare number cannot
 // be acted on without knowing what it was measured against.
+// Since 2026-09-30 the money rules judge a whole CAMPAIGN (context.level), with
+// the campaign's id and name in ad_id / ad_name, so the wording says so: a
+// campaign-wide cost is a different instruction from "this ad is expensive".
+function isCampaign(b: Breach): boolean {
+  return b.context?.level === 'campaign';
+}
+
 function describe(b: Breach): string {
   const o = b.observed ?? 0;
   const t = b.threshold ?? 0;
+  const across = isCampaign(b) ? ' across the whole campaign' : '';
+  // Per-reel "spent Rs.300, sold nothing" (2026-09-30). A "lead" here only
+  // counts after the WhatsApp code is verified, deep in the flow, so "not one
+  // lead" read as "nobody came" even for a reel with 40 Book now taps. The owner
+  // thinks in the price step, so both per-reel rules say "nothing sold" plus how
+  // many tapped Book now / Contact (Meta's per-ad InitiateCheckout count).
+  if (!isCampaign(b) && (b.metric === 'spend_without_lead' || b.metric === 'spend_without_ticket')) {
+    const taps = Number(b.context?.checkout_taps ?? 0);
+    return `${rupees(o)} spent, nothing sold yet (${taps === 0 ? 'nobody' : taps} tapped Book now / Contact)`;
+  }
   switch (b.metric) {
     case 'cost_per_ticket':
-      return `${rupees(o)} per ticket vs a ${rupees(t)} ceiling`;
+      // Zero tickets on a campaign: observed is the spend itself (2026-09-30).
+      if (isCampaign(b) && Number(b.context?.tickets ?? 0) === 0) {
+        return `${rupees(o)} spent across the whole campaign and not one ticket sold`;
+      }
+      return isCampaign(b)
+        ? `${rupees(o)} per ticket across the whole campaign, past the ${rupees(t)} limit`
+        : `${rupees(o)} per ticket vs a ${rupees(t)} ceiling`;
     case 'spend_without_ticket':
-      return `${rupees(o)} spent, people started booking and nobody paid`;
+      return `${rupees(o)} spent${across}, people started booking and nobody paid`;
     case 'spend_without_lead':
-      return `${rupees(o)} spent, not one lead`;
+      return `${rupees(o)} spent${across}, not one lead`;
+    // Book now / Contact taps (2026-09-30). With no taps the observed value is
+    // the whole spend, so the sentence has to say "nobody tapped" rather than
+    // quote that spend as a price per tap.
+    case 'cost_per_checkout_tap': {
+      const taps = Number(b.context?.checkout_taps ?? 0);
+      const spent = Number(b.context?.spend ?? o);
+      return taps > 0
+        ? `${rupees(o)} per Book now / Contact tap${across} (${taps} taps for ${rupees(spent)}), past the ${rupees(t)} limit`
+        : `${rupees(spent)} spent${across} and nobody tapped Book now / Contact`;
+    }
     case 'frequency':
       return `the same people have seen it ${o} times`;
     case 'ctr':
@@ -234,9 +306,17 @@ async function runGuardrails(supabase: any) {
   for (const [adId, list] of byAd) {
     list.sort((x, y) => (SEVERITY[x.metric] ?? 99) - (SEVERITY[y.metric] ?? 99));
     const lead = list[0];
-    const name = lead.ad_name ? `"${lead.ad_name}"` : `ad ${adId}`;
+    const name = isCampaign(lead)
+      ? `Campaign ${lead.ad_name ? `"${lead.ad_name}"` : adId}`
+      : lead.ad_name ? `"${lead.ad_name}"` : `ad ${adId}`;
     const extra = list.length > 1 ? ` · +${list.length - 1} more` : '';
-    const body = `${name}: ${describe(lead)}${extra}`.slice(0, 240);
+    // Lead with the rule's rolling window so even a long ad name cannot cut
+    // it off at the push body's limit. This is not campaign-to-date spend.
+    const days = lead.window_days;
+    const window = days != null && Number.isInteger(days) && days > 0
+      ? `Over the last ${days} ${days === 1 ? 'day' : 'days'}`
+      : 'Window unavailable';
+    const body = `${window} · ${name}: ${describe(lead)}${extra}`.slice(0, 240);
 
     const { error: pushErr } = await supabase.rpc('notify_admin_push', {
       payload: {
