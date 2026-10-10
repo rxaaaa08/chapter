@@ -37,6 +37,11 @@
 // Pixel and asks whether Meta has told the browser to drop an event, delete a
 // parameter, or stop on our domain. Section 2b below; verdict in
 // meta_pixel_config_verdict().
+//
+// THE EIGHTH CHECK, dataset_quality (2026-09-26), records Meta's match-quality
+// score and browser/server pairing for every event, daily, into
+// meta_dataset_quality — a history that cannot be backfilled. Section 2c;
+// verdict in meta_dataset_quality_evaluate().
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Pinned with the other Meta functions — SIX places now. Re-derive before a bump:
@@ -383,6 +388,54 @@ async function readPixelConfig(pixelId: string): Promise<Record<string, unknown>
   }
 }
 
+// ── 2c. Match quality and browser/server pairing ─────────────────────────────
+// Handoff §13 item 2 + cloud audit OPP-2 (2026-09-26). Meta's Dataset Quality
+// API returns, per event: the match-quality score (EMQ), coverage per match
+// key, and "event coverage" — the share of Pixel events Meta could pair with a
+// server event through a shared dedup key. That last number once caught a real
+// bug here (open-flow Lead coverage stuck at 33%, no event_id) and nothing
+// watched it. This stores the whole reply daily; the verdict is SQL
+// (meta_dataset_quality_evaluate), which also keeps the history.
+//
+// A LADDER, like meta-ads-sync's creative read: an unknown field is a hard 400
+// that loses the whole call, and Meta's own page spells the dedup field two
+// ways (`dedupe_key_feedback` in its example requests, `dedup_key_feedback` in
+// its field table). The first rung that answers wins and is recorded, so a
+// degraded read is visible, never silent.
+const DQ_EMQ = 'event_match_quality{composite_score,match_key_feedback{identifier,coverage{percentage}},diagnostics}';
+const DQ_COV = 'event_coverage{percentage,goal_percentage}';
+const DQ_DEDUP = (name: string) =>
+  `${name}{dedupe_key,browser_events_with_dedupe_key{percentage},server_events_with_dedupe_key{percentage},` +
+  'overall_browser_coverage_from_dedupe_key{percentage}}';
+const DQ_FRESH = 'data_freshness{upload_frequency}';
+const DATASET_QUALITY_SHAPES: { name: string; fields: string }[] = [
+  { name: 'full',          fields: `web{event_name,${DQ_EMQ},${DQ_COV},${DQ_DEDUP('dedupe_key_feedback')},${DQ_FRESH}}` },
+  { name: 'full_alt_dedup', fields: `web{event_name,${DQ_EMQ},${DQ_COV},${DQ_DEDUP('dedup_key_feedback')},${DQ_FRESH}}` },
+  { name: 'no_dedup',      fields: `web{event_name,${DQ_EMQ},${DQ_COV},${DQ_FRESH}}` },
+  { name: 'coverage_emq',  fields: `web{event_name,event_match_quality{composite_score,match_key_feedback{identifier,coverage{percentage}}},${DQ_COV}}` },
+];
+
+async function fetchDatasetQuality(
+  pixelId: string, tokens: { name: string; token: string }[], secrets: string[],
+): Promise<{ ok: true; web: unknown; shape: string; token_used: string } | { ok: false; error: string }> {
+  const errors: string[] = [];
+  for (const { name, token } of tokens) {
+    if (!token) continue;
+    for (const shape of DATASET_QUALITY_SHAPES) {
+      const url = `${GRAPH}/dataset_quality?dataset_id=${encodeURIComponent(pixelId)}&fields=${encodeURIComponent(shape.fields)}`;
+      const r = await graphGet(url, token, secrets);
+      if (r.ok) return { ok: true, web: r.json?.web ?? null, shape: shape.name, token_used: name };
+      errors.push(`${name}/${shape.name}: ${codeOf(r.err)} ${r.err?.message ?? ''}`.trim());
+      // Outage or rate limit: every other shape and token would fail the same way.
+      if (r.transient) return { ok: false, error: errors.join(' | ') };
+      // Only "bad request / unknown field" (100) is worth a smaller field list.
+      // A permission or token refusal is about the token, so try the next one.
+      if (r.err?.code !== 100) break;
+    }
+  }
+  return { ok: false, error: errors.length ? errors.join(' | ').slice(0, 480) : 'no token available' };
+}
+
 // ── 3. What a push says ──────────────────────────────────────────────────────
 // Plain words, both sides of the comparison, and the fix — the founder reads
 // this on a lock screen, and a code with no sentence is not actionable.
@@ -403,6 +456,10 @@ function pushBody(key: string, verdict: string, r: any): string {
     text = `${d.summary ?? 'Meta is limiting what the website Pixel can send'}. Ads optimise on what is left. Open Events Manager → the Pixel → Diagnostics.`;
   } else if (key === 'pixel_config' && verdict === 'unreadable') {
     text = `The watchdog could not read Meta's settings for the website Pixel on two daily checks in a row.${d.reason ? ` (${d.reason})` : ''}`;
+  } else if (key === 'dataset_quality' && verdict === 'broken') {
+    text = `Meta has not been pairing the website's and the server's copies of each sale for a week — ${d.summary ?? 'coverage below its 75% goal'}. Likely a missing event_id on one side.`;
+  } else if (key === 'dataset_quality' && verdict === 'unreadable') {
+    text = `The watchdog could not read Meta's match-quality report on two daily checks in a row.${d.error ? ` (${d.error})` : ''}`;
   } else if (key === 'capi_test_mode') {
     text = 'Meta test mode (META_CAPI_TEST_CODE) was on at two daily checks in a row, so 90000000xx test bookings reach Meta as real sales. Remove that secret in Supabase when testing is done.';
   } else if (verdict === 'unreadable' && key === 'capi_token') {
@@ -452,7 +509,12 @@ Deno.serve(async (req) => {
     type Row = { check_key: string; verdict: string; expected: number | null; matched: number | null;
                  meta_total: number | null; window_start: string | null; window_end: string | null; detail: any };
     const results: Row[] = [];
-    const keys = new Set((watch ?? []).map((w: any) => w.check_key));
+    // `?only=a,b` runs just those checks — for verifying one check after a
+    // deploy without re-running (and re-recording) the other seven. The cron
+    // never passes it. It can only narrow the run, never widen it.
+    const only = new URL(req.url).searchParams.get('only');
+    const onlySet = only ? new Set(only.split(',').map((s) => s.trim()).filter(Boolean)) : null;
+    const keys = new Set((watch ?? []).map((w: any) => w.check_key).filter((k: string) => !onlySet || onlySet.has(k)));
 
     if (keys.has('capi_token')) {
       const p = await probeToken(capiToken, pixelId, secrets);
@@ -481,9 +543,34 @@ Deno.serve(async (req) => {
                      meta_total: null, window_start: null, window_end: null, detail });
     }
 
+    if (keys.has('dataset_quality')) {
+      // Isolated like pixel_config. CAPI token FIRST here, unlike /stats: its
+      // only named scope is read_ads_dataset_quality, which is exactly this
+      // endpoint. The reporting token is the fallback.
+      let verdict = 'unreadable';
+      let detail: any = null;
+      try {
+        const dq = await fetchDatasetQuality(pixelId,
+          [{ name: 'capi', token: capiToken }, { name: 'reporting', token: adsToken }], secrets);
+        if (!dq.ok) {
+          detail = { error: dq.error, summary: 'Could not read Meta\'s match-quality report' };
+        } else {
+          const { data: ev, error: evErr } = await supabase.rpc('meta_dataset_quality_evaluate', {
+            p_dataset_id: pixelId, p_web: dq.web, p_fields_shape: dq.shape,
+          });
+          if (evErr || !ev) detail = { error: `evaluate failed: ${evErr?.message ?? 'no result'}`, summary: 'Could not evaluate' };
+          else { verdict = ev.verdict; detail = { ...(ev.detail ?? {}), token_used: dq.token_used }; }
+        }
+      } catch (x) {
+        detail = { error: x instanceof Error ? x.message.slice(0, 200) : 'unexpected', summary: 'Could not evaluate' };
+      }
+      results.push({ check_key: 'dataset_quality', verdict, expected: null, matched: null,
+                     meta_total: null, window_start: null, window_end: null, detail });
+    }
+
     // One stats read per source covers every check on it: the widest window,
     // plus an hour either side for the matcher's tolerance.
-    const events = (watch ?? []).filter((w: any) => w.kind === 'money' || w.kind === 'browser');
+    const events = (watch ?? []).filter((w: any) => (w.kind === 'money' || w.kind === 'browser') && keys.has(w.check_key));
     const hourNow = Math.floor(Date.now() / 3_600_000) * 3600;
     const stats: Record<string, Awaited<ReturnType<typeof fetchStats>>> = {};
     for (const source of ['SERVER_ONLY', 'WEB_ONLY'] as const) {
