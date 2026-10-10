@@ -132,6 +132,123 @@ function cartAbandonEmailHtml(args: {
 </html>`;
 }
 
+// ── Meta Cloud API, direct ───────────────────────────────────────────────────
+// First choice from 2026-10: our own WhatsApp account, with no provider between
+// us and Meta. DORMANT until BOTH WHATSAPP_CLOUD_TOKEN and
+// WHATSAPP_CLOUD_PHONE_ID are set, so this deploys ahead of the number being
+// registered and changes nothing until then.
+//
+// Returns null when not configured (the caller moves on to the next provider),
+// otherwise what Meta answered. A refusal is returned rather than thrown, so the
+// caller decides whether a fallback is still worth trying.
+//
+// Templates carry the names they had on Wamafy, recreated in our own account
+// and ALL in language "en": Meta refuses a send whose language differs from the
+// approved template's, so one language everywhere removes a whole class of
+// silent failure.
+//
+// Meta also refuses a parameter that is empty or holds a newline, a tab or four
+// spaces in a row -- and a refused confirmation is worse than an odd-looking
+// one, so parameters are flattened here and an empty one becomes "-".
+//
+// Duplicated in every sender rather than shared: supabase/functions/_shared/*
+// is bundled at DEPLOY time, so an edit there silently leaves deployed callers
+// on an old copy. Keep the copies byte-identical.
+const WA_CLOUD_LANG = 'en';
+
+function cloudApiConfigured(): boolean {
+  return !!(Deno.env.get('WHATSAPP_CLOUD_TOKEN') && Deno.env.get('WHATSAPP_CLOUD_PHONE_ID'));
+}
+
+function cloudParam(value: unknown): string {
+  const flat = String(value ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim();
+  return flat || '-';
+}
+
+// ── Our own tap tracking ─────────────────────────────────────────────────────
+// Meta reports a button tap to nobody, so each message carries its own code:
+// minted here, added to the link tail of every button (…&wa=<code>.<button>),
+// and stored on the message's row once the send is logged. /invite reports the
+// code back when it opens, and log_whatsapp_click() stamps clicked_at. See the
+// 20261011_whatsapp_own_click_tracking migration.
+function newClickToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// One value per button, so a tap also says WHICH button it was.
+function clickTaggedTails(tail: string, token: string, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `${tail}${tail.includes('?') ? '&' : '?'}wa=${token}.${i}`);
+}
+
+// Never allowed to throw: a lost tag costs one "clicked" mark and nothing else.
+async function attachClickToken(supabase: any, messageId: string | null, token: string | null | undefined): Promise<void> {
+  if (!messageId || !token) return;
+  try {
+    const { error } = await supabase.from('whatsapp_sends').update({ click_token: token }).eq('message_id', messageId);
+    if (error) console.error('[click tag] could not attach:', error.message);
+  } catch (err) {
+    console.error('[click tag] attach threw:', err);
+  }
+}
+
+async function sendViaCloudApi(args: {
+  phone: string;             // last 10 digits
+  template?: string;         // omit to send free-form `text` instead
+  bodyParams?: string[];
+  buttonValues?: string[];   // one per DYNAMIC url button, in template order
+  text?: string;
+}): Promise<{ ok: boolean; messageId: string | null; status: number; raw: string; errorCode: number | null } | null> {
+  const token = Deno.env.get('WHATSAPP_CLOUD_TOKEN');
+  const phoneId = Deno.env.get('WHATSAPP_CLOUD_PHONE_ID');
+  if (!token || !phoneId) return null;
+  const base = (Deno.env.get('WHATSAPP_CLOUD_API_BASE') ?? 'https://graph.facebook.com/v24.0').replace(/\/+$/, '');
+
+  let payload: Record<string, unknown>;
+  if (args.template) {
+    const components: Record<string, unknown>[] = [];
+    if (args.bodyParams?.length) {
+      components.push({
+        type: 'body',
+        parameters: args.bodyParams.map((t) => ({ type: 'text', text: cloudParam(t) })),
+      });
+    }
+    // The same shape serves a url button's link tail and an authentication
+    // template's copy-code value: Meta names both sub_type "url".
+    (args.buttonValues ?? []).forEach((value, i) => {
+      components.push({
+        type: 'button', sub_type: 'url', index: String(i),
+        parameters: [{ type: 'text', text: String(value) }],
+      });
+    });
+    payload = {
+      messaging_product: 'whatsapp', to: `91${args.phone}`, type: 'template',
+      template: { name: args.template, language: { code: WA_CLOUD_LANG }, components },
+    };
+  } else {
+    payload = {
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: `91${args.phone}`,
+      type: 'text', text: { body: String(args.text ?? '') },
+    };
+  }
+
+  try {
+    const res = await fetch(`${base}/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const raw = await res.text();
+    let parsed: any = null;
+    try { parsed = raw ? JSON.parse(raw) : null; } catch { /* keep raw for logs */ }
+    const messageId = parsed?.messages?.[0]?.id ?? null;
+    // No message id means Meta did not take it, whatever the status code says.
+    return { ok: res.ok && !!messageId, messageId, status: res.status, raw, errorCode: parsed?.error?.code ?? null };
+  } catch (err) {
+    return { ok: false, messageId: null, status: 0, raw: String(err), errorCode: null };
+  }
+}
+
 // ── Cart-abandonment WhatsApp ────────────────────────────────────────────────
 // Wamafy primary since 2026-09-01, AiSensy kept as an automatic fallback while
 // both accounts are paid. Migrated second, after otp, because a failure here
@@ -146,7 +263,18 @@ function cartAbandonEmailHtml(args: {
 // URL would put our domain in the link twice. Same contract AiSensy uses.
 async function sendCartAbandonWhatsApp(args: {
   phone: string; name: string; eventTitle: string; eventDate: string; buttonParam: string;
-}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null } | null> {
+}): Promise<{ provider: 'meta' | 'wamafy' | 'aisensy'; messageId: string | null; clickToken?: string } | null> {
+  // Meta direct first: same three parameters, same single link tail, plus this
+  // message's tap code.
+  const clickToken = newClickToken();
+  const cloud = await sendViaCloudApi({
+    phone: args.phone, template: 'cart_abandon',
+    bodyParams: [args.name, args.eventTitle, args.eventDate],
+    buttonValues: clickTaggedTails(args.buttonParam, clickToken, 1),
+  });
+  if (cloud?.ok) return { provider: 'meta', messageId: cloud.messageId, clickToken };
+  if (cloud) console.error('[cart-abandonment] cloud api rejected:', cloud.status, cloud.raw.slice(0, 300));
+
   const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
   if (wamafyKey) {
     try {
@@ -207,6 +335,7 @@ async function sendCartAbandonWhatsApp(args: {
 // logging must not be able to fail or delay a nudge.
 async function logCartAbandonSend(supabase: any, args: {
   provider: string; messageId: string | null; phone: string; applicationId?: string | null;
+  clickToken?: string | null;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
@@ -219,6 +348,7 @@ async function logCartAbandonSend(supabase: any, args: {
       // otherwise show this nudge on every lead they have.
       p_application_id: args.applicationId ?? null,
     });
+    await attachClickToken(supabase, args.messageId, args.clickToken);
   } catch (err) {
     console.error('[cart-abandonment] send log failed:', err);
   }
@@ -367,7 +497,7 @@ Deno.serve(async (req) => {
   // Require SOME WhatsApp provider, not one specific one. This used to demand
   // AISENSY_API_KEY, which would have silently killed the whole cron the day
   // that key is finally removed -- even with Wamafy working perfectly.
-  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+  if (!cloudApiConfigured() && !Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
     console.warn('[cart-abandonment] no WhatsApp provider configured, skipping');
     return new Response(JSON.stringify({ error: 'no whatsapp provider configured' }), {
       status: 503, headers: { 'Content-Type': 'application/json' },
@@ -537,7 +667,7 @@ Deno.serve(async (req) => {
         if (sent_) {
           await supabase.from('bill_opens').update({ cart_abandonment_sent: true }).eq('id', row.id);
           sent++;
-          await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone, applicationId: app?.id ?? null });
+          await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, clickToken: sent_.clickToken, phone: row.phone, applicationId: app?.id ?? null });
         }
       }
       // Email channel (open events with an email on file). Runs AFTER WhatsApp
@@ -565,7 +695,7 @@ Deno.serve(async (req) => {
       if (sent_) {
         await supabase.from('bill_opens').update({ cart_abandonment_sent: true }).eq('id', row.id);
         sent++;
-        await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, phone: row.phone, applicationId: app?.id ?? null });
+        await logCartAbandonSend(supabase, { provider: sent_.provider, messageId: sent_.messageId, clickToken: sent_.clickToken, phone: row.phone, applicationId: app?.id ?? null });
       }
     }
 

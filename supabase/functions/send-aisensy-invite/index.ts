@@ -49,6 +49,123 @@ function json(status: number, payload: any, cors: Record<string, string>) {
   });
 }
 
+// ── Meta Cloud API, direct ───────────────────────────────────────────────────
+// First choice from 2026-10: our own WhatsApp account, with no provider between
+// us and Meta. DORMANT until BOTH WHATSAPP_CLOUD_TOKEN and
+// WHATSAPP_CLOUD_PHONE_ID are set, so this deploys ahead of the number being
+// registered and changes nothing until then.
+//
+// Returns null when not configured (the caller moves on to the next provider),
+// otherwise what Meta answered. A refusal is returned rather than thrown, so the
+// caller decides whether a fallback is still worth trying.
+//
+// Templates carry the names they had on Wamafy, recreated in our own account
+// and ALL in language "en": Meta refuses a send whose language differs from the
+// approved template's, so one language everywhere removes a whole class of
+// silent failure.
+//
+// Meta also refuses a parameter that is empty or holds a newline, a tab or four
+// spaces in a row -- and a refused confirmation is worse than an odd-looking
+// one, so parameters are flattened here and an empty one becomes "-".
+//
+// Duplicated in every sender rather than shared: supabase/functions/_shared/*
+// is bundled at DEPLOY time, so an edit there silently leaves deployed callers
+// on an old copy. Keep the copies byte-identical.
+const WA_CLOUD_LANG = 'en';
+
+function cloudApiConfigured(): boolean {
+  return !!(Deno.env.get('WHATSAPP_CLOUD_TOKEN') && Deno.env.get('WHATSAPP_CLOUD_PHONE_ID'));
+}
+
+function cloudParam(value: unknown): string {
+  const flat = String(value ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim();
+  return flat || '-';
+}
+
+// ── Our own tap tracking ─────────────────────────────────────────────────────
+// Meta reports a button tap to nobody, so each message carries its own code:
+// minted here, added to the link tail of every button (…&wa=<code>.<button>),
+// and stored on the message's row once the send is logged. /invite reports the
+// code back when it opens, and log_whatsapp_click() stamps clicked_at. See the
+// 20261011_whatsapp_own_click_tracking migration.
+function newClickToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// One value per button, so a tap also says WHICH button it was.
+function clickTaggedTails(tail: string, token: string, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `${tail}${tail.includes('?') ? '&' : '?'}wa=${token}.${i}`);
+}
+
+// Never allowed to throw: a lost tag costs one "clicked" mark and nothing else.
+async function attachClickToken(supabase: any, messageId: string | null, token: string | null | undefined): Promise<void> {
+  if (!messageId || !token) return;
+  try {
+    const { error } = await supabase.from('whatsapp_sends').update({ click_token: token }).eq('message_id', messageId);
+    if (error) console.error('[click tag] could not attach:', error.message);
+  } catch (err) {
+    console.error('[click tag] attach threw:', err);
+  }
+}
+
+async function sendViaCloudApi(args: {
+  phone: string;             // last 10 digits
+  template?: string;         // omit to send free-form `text` instead
+  bodyParams?: string[];
+  buttonValues?: string[];   // one per DYNAMIC url button, in template order
+  text?: string;
+}): Promise<{ ok: boolean; messageId: string | null; status: number; raw: string; errorCode: number | null } | null> {
+  const token = Deno.env.get('WHATSAPP_CLOUD_TOKEN');
+  const phoneId = Deno.env.get('WHATSAPP_CLOUD_PHONE_ID');
+  if (!token || !phoneId) return null;
+  const base = (Deno.env.get('WHATSAPP_CLOUD_API_BASE') ?? 'https://graph.facebook.com/v24.0').replace(/\/+$/, '');
+
+  let payload: Record<string, unknown>;
+  if (args.template) {
+    const components: Record<string, unknown>[] = [];
+    if (args.bodyParams?.length) {
+      components.push({
+        type: 'body',
+        parameters: args.bodyParams.map((t) => ({ type: 'text', text: cloudParam(t) })),
+      });
+    }
+    // The same shape serves a url button's link tail and an authentication
+    // template's copy-code value: Meta names both sub_type "url".
+    (args.buttonValues ?? []).forEach((value, i) => {
+      components.push({
+        type: 'button', sub_type: 'url', index: String(i),
+        parameters: [{ type: 'text', text: String(value) }],
+      });
+    });
+    payload = {
+      messaging_product: 'whatsapp', to: `91${args.phone}`, type: 'template',
+      template: { name: args.template, language: { code: WA_CLOUD_LANG }, components },
+    };
+  } else {
+    payload = {
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: `91${args.phone}`,
+      type: 'text', text: { body: String(args.text ?? '') },
+    };
+  }
+
+  try {
+    const res = await fetch(`${base}/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const raw = await res.text();
+    let parsed: any = null;
+    try { parsed = raw ? JSON.parse(raw) : null; } catch { /* keep raw for logs */ }
+    const messageId = parsed?.messages?.[0]?.id ?? null;
+    // No message id means Meta did not take it, whatever the status code says.
+    return { ok: res.ok && !!messageId, messageId, status: res.status, raw, errorCode: parsed?.error?.code ?? null };
+  } catch (err) {
+    return { ok: false, messageId: null, status: 0, raw: String(err), errorCode: null };
+  }
+}
+
 // ── WhatsApp provider ────────────────────────────────────────────────────────
 // Wamafy primary since 2026-09-01, AiSensy kept as an automatic fallback while
 // both accounts are paid. The last of the six senders to migrate: it is
@@ -66,8 +183,34 @@ async function sendInviteWhatsApp(args: {
   // When set, retried with this template and NO buttons if the first attempt is
   // rejected. Used for the tracked-invite rollout.
   wamafyFallbackTemplate?: string | null;
+  // The link tail (?phone=&name=) for the direct path, where BOTH templates
+  // carry dynamic buttons.
+  cloudButtonTail: string;
   aisensyBody: Record<string, unknown>;
-}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null; status: number; body: string; template: string } | null> {
+}): Promise<{ provider: 'meta' | 'wamafy' | 'aisensy'; messageId: string | null; status: number; body: string; template: string; clickToken?: string } | null> {
+  // Meta direct first. Wamafy's tap-tracked invite cannot go this way -- its
+  // buttons are approved as Wamafy's own redirect address -- so the plain
+  // invite is sent. In OUR account that template was created with dynamic
+  // buttons (https://chaptera.in/invite{{1}}), unlike the fixed-link copy on the
+  // two providers below, so it takes the same tail as the details message and
+  // carries this message's tap code. See scripts/whatsapp-templates.json.
+  {
+    const cloudTemplate = args.wamafyFallbackTemplate ?? args.wamafyTemplate;
+    const clickToken = newClickToken();
+    const cloud = await sendViaCloudApi({
+      phone: String(args.aisensyBody.destination ?? '').replace(/^91/, ''),
+      template: cloudTemplate,
+      bodyParams: Object.keys(args.wamafyVars)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => args.wamafyVars[k]),
+      buttonValues: clickTaggedTails(args.cloudButtonTail, clickToken, args.buttonCount),
+    });
+    if (cloud?.ok) {
+      return { provider: 'meta', messageId: cloud.messageId, status: cloud.status, body: cloud.raw, template: cloudTemplate, clickToken };
+    }
+    if (cloud) console.error('[send-invite] cloud api rejected:', cloud.status, cloud.raw.slice(0, 300));
+  }
+
   const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
   if (wamafyKey) {
     try {
@@ -149,7 +292,7 @@ async function sendInviteWhatsApp(args: {
 // Optional and never allowed to throw.
 async function logInviteSend(supabase: any, args: {
   provider: string; messageId: string | null; phone: string; template: string;
-  applicationId?: string | null;
+  applicationId?: string | null; clickToken?: string | null;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
@@ -162,6 +305,7 @@ async function logInviteSend(supabase: any, args: {
       // guest invited to two events had one lead's ticks appear on the other.
       p_application_id: args.applicationId ?? null,
     });
+    await attachClickToken(supabase, args.messageId, args.clickToken);
   } catch (err) {
     console.error('[send-invite] send log failed:', err);
   }
@@ -188,7 +332,7 @@ Deno.serve(async (req) => {
   try {
     // Require SOME provider: demanding AISENSY_API_KEY would stop every invite
     // the day that key is removed, with Wamafy working perfectly.
-    if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+    if (!cloudApiConfigured() && !Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
       return json(503, { error: 'no whatsapp provider configured' }, cors);
     }
 
@@ -382,12 +526,13 @@ Deno.serve(async (req) => {
       buttonParam: isDetailsDelivery ? detailsButtonTail : inviteTrackedUrl,
       buttonCount: 2,
       wamafyFallbackTemplate: isDetailsDelivery ? null : INVITE_TEMPLATE_FALLBACK,
+      cloudButtonTail: detailsButtonTail,
       aisensyBody,
     });
     if (sent) {
       await logInviteSend(supabase, {
         applicationId: loggedApplicationId,
-        provider: sent.provider, messageId: sent.messageId, phone,
+        provider: sent.provider, messageId: sent.messageId, clickToken: sent.clickToken, phone,
         // Whichever template actually carried it -- the tracked one or the
         // fallback -- so the admin panel's lane matches what really went out.
         template: sent.template || (isDetailsDelivery ? 'resend_details' : INVITE_TEMPLATE),

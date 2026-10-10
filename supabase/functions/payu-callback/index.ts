@@ -397,6 +397,123 @@ async function maybeSendPaymentFailureEmail(supabase: any, app: any, args: {
   }
 }
 
+// ── Meta Cloud API, direct ───────────────────────────────────────────────────
+// First choice from 2026-10: our own WhatsApp account, with no provider between
+// us and Meta. DORMANT until BOTH WHATSAPP_CLOUD_TOKEN and
+// WHATSAPP_CLOUD_PHONE_ID are set, so this deploys ahead of the number being
+// registered and changes nothing until then.
+//
+// Returns null when not configured (the caller moves on to the next provider),
+// otherwise what Meta answered. A refusal is returned rather than thrown, so the
+// caller decides whether a fallback is still worth trying.
+//
+// Templates carry the names they had on Wamafy, recreated in our own account
+// and ALL in language "en": Meta refuses a send whose language differs from the
+// approved template's, so one language everywhere removes a whole class of
+// silent failure.
+//
+// Meta also refuses a parameter that is empty or holds a newline, a tab or four
+// spaces in a row -- and a refused confirmation is worse than an odd-looking
+// one, so parameters are flattened here and an empty one becomes "-".
+//
+// Duplicated in every sender rather than shared: supabase/functions/_shared/*
+// is bundled at DEPLOY time, so an edit there silently leaves deployed callers
+// on an old copy. Keep the copies byte-identical.
+const WA_CLOUD_LANG = 'en';
+
+function cloudApiConfigured(): boolean {
+  return !!(Deno.env.get('WHATSAPP_CLOUD_TOKEN') && Deno.env.get('WHATSAPP_CLOUD_PHONE_ID'));
+}
+
+function cloudParam(value: unknown): string {
+  const flat = String(value ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim();
+  return flat || '-';
+}
+
+// ── Our own tap tracking ─────────────────────────────────────────────────────
+// Meta reports a button tap to nobody, so each message carries its own code:
+// minted here, added to the link tail of every button (…&wa=<code>.<button>),
+// and stored on the message's row once the send is logged. /invite reports the
+// code back when it opens, and log_whatsapp_click() stamps clicked_at. See the
+// 20261011_whatsapp_own_click_tracking migration.
+function newClickToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// One value per button, so a tap also says WHICH button it was.
+function clickTaggedTails(tail: string, token: string, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `${tail}${tail.includes('?') ? '&' : '?'}wa=${token}.${i}`);
+}
+
+// Never allowed to throw: a lost tag costs one "clicked" mark and nothing else.
+async function attachClickToken(supabase: any, messageId: string | null, token: string | null | undefined): Promise<void> {
+  if (!messageId || !token) return;
+  try {
+    const { error } = await supabase.from('whatsapp_sends').update({ click_token: token }).eq('message_id', messageId);
+    if (error) console.error('[click tag] could not attach:', error.message);
+  } catch (err) {
+    console.error('[click tag] attach threw:', err);
+  }
+}
+
+async function sendViaCloudApi(args: {
+  phone: string;             // last 10 digits
+  template?: string;         // omit to send free-form `text` instead
+  bodyParams?: string[];
+  buttonValues?: string[];   // one per DYNAMIC url button, in template order
+  text?: string;
+}): Promise<{ ok: boolean; messageId: string | null; status: number; raw: string; errorCode: number | null } | null> {
+  const token = Deno.env.get('WHATSAPP_CLOUD_TOKEN');
+  const phoneId = Deno.env.get('WHATSAPP_CLOUD_PHONE_ID');
+  if (!token || !phoneId) return null;
+  const base = (Deno.env.get('WHATSAPP_CLOUD_API_BASE') ?? 'https://graph.facebook.com/v24.0').replace(/\/+$/, '');
+
+  let payload: Record<string, unknown>;
+  if (args.template) {
+    const components: Record<string, unknown>[] = [];
+    if (args.bodyParams?.length) {
+      components.push({
+        type: 'body',
+        parameters: args.bodyParams.map((t) => ({ type: 'text', text: cloudParam(t) })),
+      });
+    }
+    // The same shape serves a url button's link tail and an authentication
+    // template's copy-code value: Meta names both sub_type "url".
+    (args.buttonValues ?? []).forEach((value, i) => {
+      components.push({
+        type: 'button', sub_type: 'url', index: String(i),
+        parameters: [{ type: 'text', text: String(value) }],
+      });
+    });
+    payload = {
+      messaging_product: 'whatsapp', to: `91${args.phone}`, type: 'template',
+      template: { name: args.template, language: { code: WA_CLOUD_LANG }, components },
+    };
+  } else {
+    payload = {
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: `91${args.phone}`,
+      type: 'text', text: { body: String(args.text ?? '') },
+    };
+  }
+
+  try {
+    const res = await fetch(`${base}/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const raw = await res.text();
+    let parsed: any = null;
+    try { parsed = raw ? JSON.parse(raw) : null; } catch { /* keep raw for logs */ }
+    const messageId = parsed?.messages?.[0]?.id ?? null;
+    // No message id means Meta did not take it, whatever the status code says.
+    return { ok: res.ok && !!messageId, messageId, status: res.status, raw, errorCode: parsed?.error?.code ?? null };
+  } catch (err) {
+    return { ok: false, messageId: null, status: 0, raw: String(err), errorCode: null };
+  }
+}
+
 // ── WhatsApp provider ────────────────────────────────────────────────────────
 // Wamafy primary since 2026-09-01, AiSensy kept as an automatic fallback while
 // both accounts are paid. Remove the AiSensy half only once Wamafy has proven
@@ -412,13 +529,25 @@ async function maybeSendPaymentFailureEmail(supabase: any, app: any, args: {
 // wamafyTemplate === null means no Wamafy equivalent exists yet, so the send
 // goes straight to AiSensy.
 async function sendPaidWhatsApp(args: {
+  cloudTemplate: string;
+  cloudParams: string[];
   wamafyTemplate: string | null;
   wamafyVars: Record<string, string>;
   aisensyCampaign: string;
   aisensyParams: string[];
   phone: string; userName: string; buttonParam: string; buttonCount: number;
   eventSlug: string; txnid: string; amount: string; source: string;
-}): Promise<{ provider: 'wamafy' | 'aisensy'; messageId: string | null } | null> {
+}): Promise<{ provider: 'meta' | 'wamafy' | 'aisensy'; messageId: string | null; clickToken?: string } | null> {
+  // Meta direct first. Every button on these templates is a dynamic link taking
+  // the same tail as on the two providers below, plus this message's tap code.
+  const clickToken = newClickToken();
+  const cloud = await sendViaCloudApi({
+    phone: args.phone, template: args.cloudTemplate, bodyParams: args.cloudParams,
+    buttonValues: clickTaggedTails(args.buttonParam, clickToken, args.buttonCount),
+  });
+  if (cloud?.ok) return { provider: 'meta', messageId: cloud.messageId, clickToken };
+  if (cloud) console.error(`[${args.source}] cloud api rejected ${args.cloudTemplate}:`, cloud.status, cloud.raw.slice(0, 300));
+
   const wamafyKey = Deno.env.get('WAMAFY_API_KEY');
   if (wamafyKey && args.wamafyTemplate) {
     try {
@@ -479,7 +608,7 @@ async function sendPaidWhatsApp(args: {
 // Never allowed to throw: logging must not be able to fail a payment confirmation.
 async function logPaidSend(supabase: any, args: {
   provider: string; messageId: string | null; phone: string; template: string;
-  applicationId?: string | null;
+  applicationId?: string | null; clickToken?: string | null;
 }): Promise<void> {
   const secret = Deno.env.get('WHATSAPP_LOG_SECRET');
   if (!secret) return;
@@ -492,6 +621,7 @@ async function logPaidSend(supabase: any, args: {
       // bookings gets one lead's delivery state shown on the other.
       p_application_id: args.applicationId ?? null,
     });
+    await attachClickToken(supabase, args.messageId, args.clickToken);
   } catch (err) {
     console.error('[paid send log] failed:', err);
   }
@@ -500,7 +630,7 @@ async function logPaidSend(supabase: any, args: {
 async function fireAdvancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+  if (!cloudApiConfigured() && !Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
     console.warn('[paid whatsapp] no provider configured, skipping');
     return;
   }
@@ -535,6 +665,8 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
     const payAtVenue = await isPayAtVenue(supabase, args.eventSlug);
 
         const sent = await sendPaidWhatsApp({
+      cloudTemplate: payAtVenue ? 'advancepaid' : 'advance_success_dpl',
+      cloudParams: payAtVenue ? [formattedAmount] : [formattedAmount, dueFinal],
       wamafyTemplate: payAtVenue ? 'advancepaid' : null,
       wamafyVars: { '1': formattedAmount },
       aisensyCampaign: payAtVenue ? AISENSY_CAMPAIGN_FULL : AISENSY_CAMPAIGN_ADVANCE,
@@ -545,7 +677,7 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
       eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
       source: 'payu-callback',
     });
-    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: payAtVenue ? 'advancepaid' : 'advance_success_dpl' });
+    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, clickToken: sent.clickToken, phone: args.phone, template: payAtVenue ? 'advancepaid' : 'advance_success_dpl' });
     // Shim: leaves every non-ok / claim-release block below byte-identical,
     // so the dedup semantics around these sends are provably unchanged.
     const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
@@ -563,7 +695,7 @@ async function fireAdvancePaidWhatsApp(supabase: any, args: {
 async function fireBalancePaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+  if (!cloudApiConfigured() && !Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
     console.warn('[paid whatsapp] no provider configured, skipping');
     return;
   }
@@ -597,6 +729,8 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
     const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
         const sent = await sendPaidWhatsApp({
+      cloudTemplate: 'balance_success',
+      cloudParams: [formattedAmount, detailsDate],
       wamafyTemplate: 'balance_success',
       wamafyVars: { '1': formattedAmount, '2': detailsDate },
       aisensyCampaign: AISENSY_CAMPAIGN_BALANCE,
@@ -605,7 +739,7 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
       eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
       source: 'payu-callback',
     });
-    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'balance_success' });
+    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, clickToken: sent.clickToken, phone: args.phone, template: 'balance_success' });
     // Shim: leaves every non-ok / claim-release block below byte-identical,
     // so the dedup semantics around these sends are provably unchanged.
     const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
@@ -623,7 +757,7 @@ async function fireBalancePaidWhatsApp(supabase: any, args: {
 async function fireFullPaidWhatsApp(supabase: any, args: {
   phone: string; eventSlug: string; amount: number | string; txnid: string;
 }) {
-  if (!Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
+  if (!cloudApiConfigured() && !Deno.env.get('WAMAFY_API_KEY') && !Deno.env.get('AISENSY_API_KEY')) {
     console.warn('[paid whatsapp] no provider configured, skipping');
     return;
   }
@@ -649,6 +783,8 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
     const formattedAmount = formatRupeesTwoDecimals(args.amount);
 
         const sent = await sendPaidWhatsApp({
+      cloudTemplate: 'single_payment_sucess_dpl',
+      cloudParams: [formattedAmount, detailsDate],
       wamafyTemplate: 'single_payment_sucess_dpl',
       wamafyVars: { '1': formattedAmount, '2': detailsDate },
       aisensyCampaign: AISENSY_CAMPAIGN_FULL,
@@ -657,7 +793,7 @@ async function fireFullPaidWhatsApp(supabase: any, args: {
       eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
       source: 'payu-callback',
     });
-    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'single_payment_sucess_dpl' });
+    if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, clickToken: sent.clickToken, phone: args.phone, template: 'single_payment_sucess_dpl' });
     // Shim: leaves every non-ok / claim-release block below byte-identical,
     // so the dedup semantics around these sends are provably unchanged.
     const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
@@ -698,6 +834,8 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
       claimedWhatsApp = true;
       const buttonParam = buildInviteButtonParam(args.phone, displayName);
             const sent = await sendPaidWhatsApp({
+        cloudTemplate: 'payment_failed',
+        cloudParams: [displayName, formattedAmount],
         wamafyTemplate: 'payment_failed',
         wamafyVars: { '1': displayName, '2': formattedAmount },
         aisensyCampaign: AISENSY_CAMPAIGN_FAILED,
@@ -706,7 +844,7 @@ async function firePaymentFailedWhatsApp(supabase: any, args: {
         eventSlug: args.eventSlug, txnid: args.txnid, amount: String(args.amount),
         source: 'payu-callback',
       });
-      if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, phone: args.phone, template: 'payment_failed' });
+      if (sent) await logPaidSend(supabase, { applicationId: app.id, provider: sent.provider, messageId: sent.messageId, clickToken: sent.clickToken, phone: args.phone, template: 'payment_failed' });
       // Shim: leaves every non-ok / claim-release block below byte-identical,
       // so the dedup semantics around these sends are provably unchanged.
       const aiRes = { ok: !!sent, status: sent ? 200 : 502, text: async () => (sent ? 'ok' : 'no provider accepted') };
