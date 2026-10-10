@@ -15,6 +15,16 @@ supabase/.temp/
 .agents/
 skills-lock.json
 .claude/skills/sync-map/SKILL.md
+# A symlink into .agents/ above; committed, it would arrive as a dangling link.
+.claude/skills/agent-browser
+
+# Git LFS boilerplate that `git lfs install` wrote into our hooks folder. This
+# repo tracks nothing with LFS, and `npm install` points core.hooksPath here,
+# so committing these would block `git push` on any machine without git-lfs.
+.githooks/post-checkout
+.githooks/post-commit
+.githooks/post-merge
+.githooks/pre-push
 
 # Local visual QA/reference evidence — keep on this machine only.
 .codex-qa/
