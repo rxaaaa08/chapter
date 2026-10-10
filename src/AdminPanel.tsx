@@ -538,6 +538,13 @@ export default function AdminPanel() {
   // Per-ad funnel drop-off. Separate from metaAds because it answers a different
   // question: not what an ad cost, but where its traffic stopped.
   const [metaFunnel, setMetaFunnel] = useState<any | null>(null);
+  // Pre-flight checks on every ad creative, before it spends: the {{ad.id}}
+  // tag, and Meta's automatic creative enhancements nobody chose
+  // (get_meta_ad_tracking_tags; enhancements = cloud audit OPP-1).
+  const [metaCreativeChecks, setMetaCreativeChecks] = useState<any | null>(null);
+  // The ad account's own change log — who changed what, including Meta itself
+  // (get_meta_account_activity; cloud audit OPP-7). Page only, never pushed.
+  const [metaActivity, setMetaActivity] = useState<any | null>(null);
   // Ad set setup and where each ad set stands in Meta's learning phase
   // (get_meta_adset_health). Learning restarts on edits the founder makes
   // himself, so the page says "don't edit yet" instead of pushing.
@@ -3273,6 +3280,10 @@ export default function AdminPanel() {
       p_until: iso(until),
     });
     setMetaFunnel(funRes.error ? null : funRes.data);
+    const tagRes = await supabase.rpc('get_meta_ad_tracking_tags');
+    setMetaCreativeChecks(tagRes.error ? null : tagRes.data);
+    const actRes = await supabase.rpc('get_meta_account_activity', { p_limit: 40 });
+    setMetaActivity(actRes.error ? null : actRes.data);
 
     // What is breaching right now, and what ever has. Fetched in the same pass
     // as the spend above so the page cannot show a breach next to numbers from
@@ -10161,10 +10172,18 @@ export default function AdminPanel() {
                 )}
               </div>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
-                Two versions of the site, shown to different visitors, judged on which converts better. This is where
-                testing is affordable: a Meta split test on <b>paid tickets</b> needs about <b>203 weeks</b> to say
-                anything on this account, while the same question asked on our own {siteExpFeas?.traffic?.weekly_sessions ?? '~400'} sessions
-                a week is answerable in weeks.
+                {/* Live from get_experiment_feasibility — this used to be a
+                    hardcoded "203 weeks" (the 2026-09-09 reading) beside a live
+                    traffic figure, so the two drifted apart (2026-09-28 audit, E01). */}
+                Two versions of the site, shown to different visitors, judged on which converts better.
+                {feasFor('purchased')?.weeks_to_answer != null && feasFor('opened_dates')?.weeks_to_answer != null ? (
+                  <> At our {siteExpFeas?.traffic?.weekly_sessions} sessions a week across the whole site, a test judged
+                  on <b>paid tickets</b> needs about <b>{Math.round(feasFor('purchased').weeks_to_answer)} weeks</b> to say
+                  anything — which is why a Meta split test on purchases cannot read here — while one judged on opening
+                  the calendar answers in about <b>{Math.max(1, Math.round(feasFor('opened_dates').weeks_to_answer))} weeks</b>.</>
+                ) : (
+                  <> Tests judged on early funnel steps answer in weeks; tests judged on paid tickets take far longer.</>
+                )}
               </div>
 
               {!stampingLive && siteExps.length > 0 && (
@@ -10243,8 +10262,13 @@ export default function AdminPanel() {
 
               {siteExps.length === 0 && !siteExpForm && (
                 <div style={{ fontSize: 13, color: '#666', background: '#fafaf7', borderRadius: 8, padding: '12px 14px', lineHeight: 1.6 }}>
-                  No experiments yet. The biggest gap in the funnel today is the price step — about 21.6% of visitors
-                  see a price and 8.5% act on it.
+                  {/* Rates are live; they were hardcoded 21.6% / 8.5% until the
+                      2026-09-28 audit (E09) found them stale. */}
+                  No experiments yet.
+                  {feasFor('saw_price')?.base_rate_pct != null && feasFor('acted_on_price')?.base_rate_pct != null && (
+                    <> Right now about {feasFor('saw_price').base_rate_pct}% of visitors see a price
+                    and {feasFor('acted_on_price').base_rate_pct}% act on it.</>
+                  )}
                 </div>
               )}
 
@@ -10389,9 +10413,17 @@ export default function AdminPanel() {
           const W = 860, H = 250, PL = 46, PR = 14, PT = 30, PB = 36;
           const plotW = W - PL - PR, plotH = H - PT - PB;
           const vals = points.map(p => p.val).filter((v): v is number => v != null);
+          const peak = vals.length === 0 ? 0 : Math.max(...vals);
+          // Ratios usually sit under 100%, but Payments ÷ invites is not a
+          // cohort and can legitimately exceed it (13 payments ÷ 2 invites =
+          // 650% in the week of 24 Aug). The old hard 100% ceiling drew that
+          // point at y≈−982, clipped off the chart (2026-09-28 audit, E10) —
+          // so above 100 the axis grows to the next hundred instead.
           const yMax = vals.length === 0 ? 100 : metricDef.kind === 'ratio'
-            ? Math.min(100, Math.max(20, Math.ceil((Math.max(...vals) + 8) / 10) * 10))
-            : Math.max(...vals) * 1.15 || 10;
+            ? (peak <= 100
+              ? Math.min(100, Math.max(20, Math.ceil((peak + 8) / 10) * 10))
+              : Math.ceil((peak * 1.05) / 100) * 100)
+            : peak * 1.15 || 10;
           const xAt = (i: number) => PL + (points.length <= 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
           const yAt = (v: number) => PT + plotH - (v / yMax) * plotH;
           const linePath = points.map((p, i) => (p.val == null ? null : `${xAt(i).toFixed(1)},${yAt(p.val).toFixed(1)}`)).filter(Boolean).join(' ');
@@ -10569,6 +10601,11 @@ export default function AdminPanel() {
                         <text key={p.b} x={xAt(i)} y={H - 12} textAnchor="middle" fontSize={11} fill="#999">{fmtDay(p.b)}</text>
                       ))}
                     </svg>
+                    {metricDef.kind === 'ratio' && peak > 100 && (
+                      <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                        Above 100% is real here, not an error: a payment in one period can come from an invite sent in an earlier one.
+                      </div>
+                    )}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 10, alignItems: 'center' }}>
                       {visibleReleases.map((r, i) => (
                         <div key={r.id} style={{ fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -10980,6 +11017,13 @@ export default function AdminPanel() {
                   // Not a count: the sentence is written by meta_pixel_config_verdict(),
                   // so its wording can change without a deploy.
                   if (c.check_key === 'pixel_config') return d.summary ?? 'Checked';
+                  // Sentence written by meta_dataset_quality_evaluate(). "Paired" is
+                  // Meta's event coverage: the share of the website's copies of an
+                  // event that Meta matched to the server's copy.
+                  if (c.check_key === 'dataset_quality') {
+                    if (c.verdict === 'unreadable') return `Could not read Meta${d.error ? ` — ${d.error}` : ''}`;
+                    return d.summary ?? 'Checked';
+                  }
                   const n = noun[c.check_key] ?? 'events';
                   const missing = Number(c.expected ?? 0) - Number(c.matched ?? 0);
                   if (c.verdict === 'too_few') return Number(c.expected) === 0 ? `No ${n} in the ${span(c)} to check` : `Too few ${n} to judge (${c.expected})`;
@@ -11007,6 +11051,45 @@ export default function AdminPanel() {
                             <span style={{ color: ['broken', 'expiring'].includes(c.verdict) ? '#b91c1c' : '#555' }}>{say(c)}</span>
                           </div>
                         ))}
+                        {/* 30 days of Meta's match score and pairing, per event.
+                            The history §27.1 says nobody could see: EMQ went
+                            8.0 → 9.3 → 8 and the drop sat unnoticed for two weeks. */}
+                        {(() => {
+                          const q: any = sig.quality ?? {};
+                          const rows = [['Purchase', 'Sales'], ['Lead', 'Applications']]
+                            .map(([ev, label]) => ({ label, hist: (Array.isArray(q[ev]) ? q[ev] : []) as any[] }))
+                            .filter((r) => r.hist.length > 0);
+                          if (!rows.length) return null;
+                          const fmt = (v: any, suffix = '') => v == null ? '–' : `${Number(v).toFixed(1).replace(/\.0$/, '')}${suffix}`;
+                          const range = (xs: any[]) => {
+                            const n = xs.filter((x) => x != null).map(Number);
+                            if (!n.length) return 'no reading yet';
+                            const lo = Math.min(...n), hi = Math.max(...n);
+                            return lo === hi ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`;
+                          };
+                          return (
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #eee' }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 4 }}>
+                                Match quality, last 30 days
+                              </div>
+                              {rows.map((r) => {
+                                const last = r.hist[r.hist.length - 1];
+                                return (
+                                  <div key={r.label} style={{ fontSize: 12, color: '#666', lineHeight: 1.7 }}>
+                                    <b style={{ color: '#444' }}>{r.label}</b> · match score {fmt(last.emq)}/10
+                                    {' '}(range {range(r.hist.map((h) => h.emq))})
+                                    {' '}· paired {fmt(last.coverage, '%')}
+                                    {last.goal != null && <> (goal {fmt(last.goal, '%')})</>}
+                                    {' '}· {r.hist.length} daily read{r.hist.length === 1 ? '' : 's'}
+                                  </div>
+                                );
+                              })}
+                              <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, lineHeight: 1.5 }}>
+                                Built from very few sales, so one day&rsquo;s dip is noise; a week-long fall is not.
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {alarms.length > 0 && (
                           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #eee' }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 4 }}>Alerts sent</div>
@@ -11028,6 +11111,75 @@ export default function AdminPanel() {
                 );
               })()}
 
+              {/* Before an ad spends — the two checks read off every ad's creative
+                  the moment it exists, paused or not: is it tagged with {{ad.id}}
+                  (irreversible if missed), and has Meta switched on automatic
+                  changes to it that nobody chose (cloud audit OPP-1). Both also
+                  push; this is where to see the state without a notification. */}
+              {(() => {
+                const t: any = metaCreativeChecks;
+                if (t == null) return null;
+                const list: any[] = Array.isArray(t.creatives) ? t.creatives : [];
+                const watched: any[] = Array.isArray(t.watched_features) ? t.watched_features : [];
+                const sum: any = t.summary ?? {};
+                const problems = Number(sum.missing || 0) + Number(sum.wrong || 0) + Number(sum.with_enhancements || 0);
+                const tagSay: Record<string, [string, string]> = {
+                  ok: ['Tagged', '#16a34a'],
+                  missing: ['No {{ad.id}} — clicks can never be traced', '#dc2626'],
+                  wrong: ['Looks tagged but is not — utm_content without {{ad.id}}', '#dc2626'],
+                };
+                return (
+                  <div style={{ ...s.card, borderLeft: `4px solid ${problems > 0 ? '#dc2626' : list.length ? '#16a34a' : '#ddd'}` }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Before an ad spends</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 10, lineHeight: 1.6 }}>
+                      Every ad is read once a day from the moment it exists, even paused: is it tagged so its bookings can
+                      be traced, and has Meta switched on automatic changes to it &mdash; touched-up photos, a stranger&rsquo;s
+                      comment underneath, your ad in a strip beside other brands. Fix these before switching an ad on.
+                    </div>
+                    {!t.last_read_at || list.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>
+                        No ads exist yet. Each new ad shows up here the morning after it is made.
+                      </div>
+                    ) : (
+                      list.map((c: any) => {
+                        const [tagText, tagColour] = tagSay[c.verdict] ?? ['Unknown', '#999'];
+                        const on: string[] = Array.isArray(c.enhancements_on) ? c.enhancements_on : [];
+                        return (
+                          <div key={c.creative_id} style={{ padding: '8px 0', borderTop: '1px solid #f0f0ea', fontSize: 13, lineHeight: 1.55 }}>
+                            <div style={{ fontWeight: 700 }}>
+                              {(c.ad_names?.[0] as string | undefined) ?? c.creative_name ?? `Creative ${c.creative_id}`}
+                              <span style={{ fontWeight: 400, color: '#999', fontSize: 11.5 }}> · {(c.effective_status ?? '').toLowerCase().replace(/_/g, ' ')}</span>
+                            </div>
+                            <div style={{ color: tagColour }}>{tagText}</div>
+                            <div style={{ color: !c.enhancements_read ? '#999' : on.length ? '#dc2626' : '#16a34a' }}>
+                              {!c.enhancements_read
+                                ? 'Automatic changes: could not be read this time'
+                                : on.length
+                                  ? `Automatic changes ON: ${on.join(', ')}`
+                                  : 'No automatic changes switched on'}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    {watched.length > 0 && (
+                      <details style={{ marginTop: 8 }}>
+                        <summary style={{ fontSize: 11.5, color: '#999', cursor: 'pointer' }}>
+                          Which automatic changes are watched ({watched.length})
+                        </summary>
+                        <div style={{ fontSize: 11.5, color: '#777', lineHeight: 1.6, marginTop: 6 }}>
+                          {watched.map((w: any) => (
+                            <div key={w.label}>
+                              <b>{w.label}</b> &mdash; {w.why}{w.default_on ? ' (on unless switched off)' : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Setup state. Shown until the sync has ever run — an empty table
                   would otherwise read as "your ads produced nothing". */}
               {neverSynced && (
@@ -11039,7 +11191,7 @@ export default function AdminPanel() {
                       <li style={{ marginBottom: 8 }}>
                         In Ads Manager, set every ad's <b>URL parameters</b> field to:
                         <code style={{ display: 'block', marginTop: 6, padding: '9px 11px', background: '#f5f5f0', borderRadius: 8, fontSize: 11.5, wordBreak: 'break-all', lineHeight: 1.55 }}>
-                          utm_source=meta&amp;utm_medium=paid&amp;utm_campaign=&#123;&#123;campaign.name&#125;&#125;&amp;utm_term=&#123;&#123;adset.id&#125;&#125;&amp;utm_content=&#123;&#123;ad.id&#125;&#125;
+                          utm_source=meta&amp;utm_medium=paid&amp;utm_campaign=&#123;&#123;campaign.name&#125;&#125;&amp;utm_term=&#123;&#123;adset.id&#125;&#125;&amp;utm_content=&#123;&#123;ad.id&#125;&#125;&amp;placement=&#123;&#123;placement&#125;&#125;&amp;site_source_name=&#123;&#123;site_source_name&#125;&#125;
                         </code>
                         <span style={{ display: 'block', marginTop: 6, color: '#92400e' }}>
                           Traffic that arrives before this is set can never be matched to an ad, no matter what we build later.
@@ -11404,6 +11556,13 @@ export default function AdminPanel() {
                     between them on these numbers yet.
                   </div>
                 )}
+                {perAd.some((a: any) => a.quality_ranking || a.engagement_rate_ranking || a.conversion_rate_ranking) && (
+                  <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, margin: '-4px 0 10px' }}>
+                    <b>Meta&rsquo;s grades</b> under each ad compare it with ads chasing the same people. Low
+                    {' '}<b>look</b> = the creative itself; low <b>engagement</b> = people scroll past; low <b>converts</b> with
+                    good engagement = they are interested but the page or price stops them.
+                  </div>
+                )}
                 {perAd.length === 0 ? (
                   <div style={{ color: '#999', fontSize: 13.5, padding: '10px 0' }}>
                     {metaAdsLoading ? 'Loading…' : 'No ads with spend or bookings in this window.'}
@@ -11430,6 +11589,34 @@ export default function AdminPanel() {
                             <td style={{ padding: '9px 10px 9px 0', maxWidth: 250 }}>
                               <div style={{ fontWeight: 700 }}>{a.ad_name ?? `Ad ${a.ad_id}`}</div>
                               <div style={{ fontSize: 11, color: '#999' }}>{a.campaign_name ?? '—'}</div>
+                              {/* Meta's three grades (cloud audit OPP-6): the one
+                                  signal that tells a weak creative apart from a
+                                  price or targeting problem. Stored daily since
+                                  2026-09-07, shown here for the first time. */}
+                              {Number(a.spend) > 0 && (() => {
+                                const grade = (g: any): [string, string] => {
+                                  if (!g || g === 'UNKNOWN') return ['–', '#bbb'];
+                                  if (g === 'ABOVE_AVERAGE') return ['above avg', '#16a34a'];
+                                  if (g === 'AVERAGE') return ['average', '#666'];
+                                  const m = String(g).match(/BELOW_AVERAGE_(\d+)/);
+                                  return [m ? `bottom ${m[1]}%` : 'below avg', '#dc2626'];
+                                };
+                                if (!a.quality_ranking && !a.engagement_rate_ranking && !a.conversion_rate_ranking) {
+                                  return <div style={{ fontSize: 10.5, color: '#bbb', marginTop: 2 }}>Meta&rsquo;s grades: not graded yet</div>;
+                                }
+                                const parts: [string, any][] = [
+                                  ['look', a.quality_ranking], ['engagement', a.engagement_rate_ranking], ['converts', a.conversion_rate_ranking],
+                                ];
+                                return (
+                                  <div style={{ fontSize: 10.5, marginTop: 2, lineHeight: 1.5 }}
+                                       title="Meta compares this ad with ads competing for the same people. Look = quality, engagement = people stop and interact, converts = people act after engaging.">
+                                    {parts.map(([k, v], i) => {
+                                      const [txt, col] = grade(v);
+                                      return <span key={k}>{i > 0 ? ' · ' : ''}<span style={{ color: '#999' }}>{k} </span><span style={{ color: col, fontWeight: 600 }}>{txt}</span></span>;
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td style={{ padding: '9px 10px', textAlign: 'right' }}>{money(a.spend)}</td>
                             <td style={{ padding: '9px 10px', textAlign: 'right', color: '#666' }}>{a.link_clicks ?? 0}</td>
@@ -11501,6 +11688,35 @@ export default function AdminPanel() {
                 const capturing = !!fdiag.capture_live_since;
                 const entry = Number(fun?.entry_sessions ?? 0);
                 const orphanTagged = Number(fdiag.tagged_sessions_without_ad_id) || 0;
+                // Meta's side of the first step (cloud audit OPP-5). NULL means
+                // no Meta rows in the window at all — never shown as "0 clicks".
+                const mc: any = fun?.meta_clicks ?? {};
+                const clicks = mc.link_clicks == null ? null : Number(mc.link_clicks);
+                const landedSessions = Number(mc.landed_sessions ?? 0);
+                const lostAfterClick = clicks != null ? clicks - landedSessions : 0;
+                const clickRow = clicks != null && clicks > 0 ? (
+                  <div style={{ marginBottom: 14, paddingBottom: 12, borderBottom: '1px dashed #e5e5dc' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 12.5, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700 }}>Tapped the ad <span style={{ fontWeight: 400, color: '#999' }}>(Meta&rsquo;s count)</span></span>
+                      <span style={{ color: '#666' }}>{clicks.toLocaleString('en-IN')} taps</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#888', lineHeight: 1.55 }}>
+                      {lostAfterClick > 0 ? (
+                        <span style={{ color: '#dc2626' }}>
+                          {landedSessions === 0
+                            ? 'Not one of them reached the page with the ad’s tag. '
+                            : `About ${lostAfterClick.toLocaleString('en-IN')} never reached the page. `}
+                        </span>
+                      ) : null}
+                      {mc.landing_page_views != null && Number(mc.landing_page_views) > 0 && (
+                        <>Meta says {Number(mc.landing_page_views).toLocaleString('en-IN')} waited for the page to load. </>
+                      )}
+                      Taps and sessions are different counts &mdash; one person can tap twice &mdash; so read the gap as a
+                      size, not an exact number. A big gap means the page is slow to open inside Instagram, or the ad is
+                      missing its {'{{ad.id}}'} tag.
+                    </div>
+                  </div>
+                ) : null;
 
                 return (
                   <div style={s.card}>
@@ -11518,7 +11734,7 @@ export default function AdminPanel() {
                         <b>Not capturing yet.</b> No funnel step has ever recorded where its visitor came from, so this
                         fills only once the change that stamps the source onto each step is live on the site.
                       </div>
-                    ) : entry === 0 ? (
+                    ) : entry === 0 && !clickRow ? (
                       <div style={{ fontSize: 13.5, color: '#555', lineHeight: 1.6 }}>
                         Capturing since{' '}
                         {new Date(fdiag.capture_live_since).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.
@@ -11530,6 +11746,7 @@ export default function AdminPanel() {
                       </div>
                     ) : (
                       <>
+                        {clickRow}
                         <div style={{ marginBottom: 16 }}>
                           {fsteps.map((st: any) => (
                             <div key={st.step} style={{ marginBottom: 11 }}>
@@ -11552,10 +11769,11 @@ export default function AdminPanel() {
 
                         {fads.length > 0 && (
                           <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
                               <thead>
                                 <tr style={{ textAlign: 'left', color: '#888', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                                   <th style={{ padding: '6px 10px 8px 0' }}>Ad</th>
+                                  <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Taps &rarr; landed</th>
                                   <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Sessions</th>
                                   <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Reached price</th>
                                   <th style={{ padding: '6px 10px 8px', textAlign: 'right' }}>Price &rarr; lead</th>
@@ -11567,6 +11785,12 @@ export default function AdminPanel() {
                                   <tr key={a.ad_id} style={{ borderTop: '1px solid #f0f0ea' }}>
                                     <td style={{ padding: '9px 10px 9px 0', maxWidth: 230 }}>
                                       <div style={{ fontWeight: 700 }}>{a.ad_name ?? `Ad ${a.ad_id}`}</div>
+                                    </td>
+                                    <td style={{ padding: '9px 10px', textAlign: 'right', whiteSpace: 'nowrap',
+                                      color: Number(a.meta_link_clicks) > 0 && Number(a.landed) === 0 ? '#dc2626' : undefined }}>
+                                      {a.meta_link_clicks == null || Number(a.meta_link_clicks) === 0
+                                        ? '—'
+                                        : `${a.landed} of ${a.meta_link_clicks}`}
                                     </td>
                                     <td style={{ padding: '9px 10px', textAlign: 'right' }}>{a.sessions}</td>
                                     <td style={{ padding: '9px 10px', textAlign: 'right' }}>
@@ -11583,7 +11807,8 @@ export default function AdminPanel() {
                               </tbody>
                             </table>
                             <div style={{ fontSize: 11.5, color: '#999', marginTop: 8, lineHeight: 1.55 }}>
-                              <b>Reached price</b> is the share of an ad&rsquo;s sessions that got as far as seeing a price
+                              <b>Taps &rarr; landed</b> is our landed sessions against Meta&rsquo;s tap count &mdash; red when
+                              Meta counted taps and not one arrived. <b>Reached price</b> is the share of an ad&rsquo;s sessions that got as far as seeing a price
                               &mdash; low means the creative promised something the page did not. <b>Price &rarr; lead</b> is
                               the share of those who then acted &mdash; low means they saw the price and walked away.
                             </div>
@@ -11633,7 +11858,7 @@ export default function AdminPanel() {
                     {nothingToWatch ? (
                       <div style={{ fontSize: 13, color: '#666', background: '#fafaf7', borderRadius: 8, padding: '12px 14px' }}>
                         <b>Nothing to watch yet.</b> No ad has spent anything, so every rule is silent because there is
-                        no data &mdash; not because everything passed. Six rules are armed and will start judging the
+                        no data &mdash; not because everything passed. Every rule is armed and will start judging the
                         first day money goes out.
                       </div>
                     ) : firing.length === 0 ? (
@@ -11646,7 +11871,7 @@ export default function AdminPanel() {
                         {[...byAd.entries()].map(([adId, breaches]) => (
                           <div key={adId} style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '11px 13px' }}>
                             <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 6 }}>
-                              {breaches[0].ad_name || adId}
+                              {breaches[0].context?.level === 'campaign' ? 'Whole campaign · ' : ''}{breaches[0].ad_name || adId}
                               {breaches.length > 1 && (
                                 <span style={{ fontWeight: 600, color: '#b91c1c', fontSize: 12 }}> · {breaches.length} rules</span>
                               )}
@@ -11682,7 +11907,7 @@ export default function AdminPanel() {
                                   <td style={{ padding: '9px 10px 9px 0', color: '#666', whiteSpace: 'nowrap' }}>
                                     {new Date(e.fired_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                   </td>
-                                  <td style={{ padding: '9px 10px', fontWeight: 700 }}>{e.ad_name || e.ad_id || '—'}</td>
+                                  <td style={{ padding: '9px 10px', fontWeight: 700 }}>{e.context?.level === 'campaign' ? 'Whole campaign · ' : ''}{e.ad_name || e.ad_id || '—'}</td>
                                   <td style={{ padding: '9px 10px', color: '#666' }}>{e.label}</td>
                                   <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700 }}>
                                     {/* A yes/no finding, like a missing customer exclusion, has no
@@ -11804,9 +12029,9 @@ export default function AdminPanel() {
                       ceiling is lower. Treat it as the number a click must stay under, and replace it with what real ads
                       produce.
                       {pb?.alarm?.enabled ? (
-                        <> The cost alarm notifies you when an ad&rsquo;s cost per paid ticket passes{' '}
+                        <> The cost alarm notifies you when a whole campaign&rsquo;s cost per paid ticket passes{' '}
                         {Number(pb.alarm.pct_of_ad_budget) === 100 ? 'this plan’s ad money' : `${Number(pb.alarm.pct_of_ad_budget)}% of this plan’s ad money`}
-                        , over {Number(pb.alarm.window_days || 7)} days and after {rupee(pb.alarm.min_spend)} of spend.</>
+                        , over {Number(pb.alarm.window_days || 7)} days{Number(pb.alarm.min_spend) > 0 ? <> and after {rupee(pb.alarm.min_spend)} of spend</> : ', from the first paid ticket'}.</>
                       ) : (
                         <> The cost alarm that uses these figures is currently switched off.</>
                       )}
@@ -12027,15 +12252,42 @@ export default function AdminPanel() {
                       <div style={{ fontSize: 13, color: '#666' }}>Could not load audiences.</div>
                     ) : (
                       <>
-                        {warns.map((w: any) => (
-                          <div key={w.adset_id} style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '11px 13px', marginBottom: 10, fontSize: 12.5, color: '#7f1d1d', lineHeight: 1.6 }}>
-                            <b>&ldquo;{w.adset_name || w.adset_id}&rdquo; does not exclude {w.customers != null ? `your ${w.customers} paying customers` : 'your paying customers'}.</b>{' '}
-                            {w.effective_status === 'ACTIVE'
-                              ? 'It is running, so it is paying to show ads to people who already bought.'
-                              : 'It is paused, so nothing is spent yet, but the moment it runs it will pay to reach people who already bought.'}
-                            {' '}Fix: open the ad set in Ads Manager &rarr; Audience &rarr; exclude &ldquo;chapter அ · customers (any payment)&rdquo;.
-                          </div>
-                        ))}
+                        {warns.map((w: any) => {
+                          const name = w.adset_name || w.adset_id;
+                          const d = w.detail ?? {};
+                          const auds: string[] = Array.isArray(d.audiences) ? d.audiences : [];
+                          // Retargeting that Meta may widen into prospecting
+                          // (meta_adset_audience_warnings, cloud audit OPP-3).
+                          if (w.issue === 'retarget_widened' || w.issue === 'retarget_expansion_unconfirmed') {
+                            const sure = w.issue === 'retarget_widened';
+                            const setting = (v: any) => v === '1' ? 'ON' : v === '0' ? 'off' : 'not shown by Meta';
+                            return (
+                              <div key={`${w.adset_id}-${w.issue}`} style={sure
+                                ? { border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '11px 13px', marginBottom: 10, fontSize: 12.5, color: '#7f1d1d', lineHeight: 1.6 }
+                                : { border: '1px solid #f5e6a8', background: '#fffbea', borderRadius: 8, padding: '11px 13px', marginBottom: 10, fontSize: 12.5, color: '#713f12', lineHeight: 1.6 }}>
+                                <b>&ldquo;{name}&rdquo; {sure ? 'can be widened by Meta' : 'may be widened by Meta'}.</b>{' '}
+                                It is aimed at {auds.length ? auds.map((a) => `“${a}”`).join(', ') : 'one of your own audiences'}, but{' '}
+                                {sure
+                                  ? 'Meta is allowed to show it to anyone it likes, so this retargeting quietly becomes prospecting and its cost per ticket stops meaning anything.'
+                                  : 'Meta did not report whether audience expansion is off, so this page cannot confirm it.'}
+                                <div style={{ fontSize: 11.5, marginTop: 4, opacity: 0.85 }}>
+                                  Advantage+ audience: {setting(d.advantage_audience)} · Audience expansion: {setting(d.expansion_custom_audience)}
+                                </div>
+                                {' '}Fix: open the ad set in Ads Manager &rarr; Audience &rarr; switch off <b>Advantage+ audience</b> and
+                                {' '}<b>audience expansion</b> (&ldquo;reach people beyond your custom audience&rdquo;).
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={`${w.adset_id}-${w.issue}`} style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '11px 13px', marginBottom: 10, fontSize: 12.5, color: '#7f1d1d', lineHeight: 1.6 }}>
+                              <b>&ldquo;{name}&rdquo; does not exclude {w.customers != null ? `your ${w.customers} paying customers` : 'your paying customers'}.</b>{' '}
+                              {w.effective_status === 'ACTIVE'
+                                ? 'It is running, so it is paying to show ads to people who already bought.'
+                                : 'It is paused, so nothing is spent yet, but the moment it runs it will pay to reach people who already bought.'}
+                              {' '}Fix: open the ad set in Ads Manager &rarr; Audience &rarr; exclude &ldquo;chapter அ · customers (any payment)&rdquo;.
+                            </div>
+                          );
+                        })}
 
                         {neverRead && (
                           <div style={{ fontSize: 12.5, color: '#555', background: '#fffbea', border: '1px solid #f5e6a8', borderRadius: 8, padding: '10px 12px', marginBottom: 10, lineHeight: 1.6 }}>
@@ -12114,6 +12366,60 @@ export default function AdminPanel() {
                 );
               })()}
 
+              {/* Account history — Meta's own change log for the ad account
+                  (cloud audit OPP-7). Answers "who changed this, and when"
+                  exactly, which our daily snapshots can only guess at, and
+                  flags changes Meta made by itself. Shown only; never pushed. */}
+              {(() => {
+                const act: any = metaActivity;
+                if (act == null) return null;
+                const entries: any[] = Array.isArray(act.entries) ? act.entries : [];
+                const when = (t: any) => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+                // A few extra_data shapes Meta uses, said in words; anything
+                // else shows the event name alone rather than raw JSON.
+                const detail = (x: any): string | null => {
+                  if (!x || typeof x !== 'object') return null;
+                  if (x.amount != null && x.currency) return `${x.currency} ${(Number(x.amount) / 100).toLocaleString('en-IN')}`;
+                  if (x.received_users != null) return `${x.operation === 'remove' ? 'removed' : 'added'} ${x.received_users}`;
+                  const s = (v: any) => typeof v === 'string' || typeof v === 'number' ? String(v) : null;
+                  if (s(x.old_value) != null || s(x.new_value) != null) return `${s(x.old_value) ?? '—'} → ${s(x.new_value) ?? '—'}`;
+                  return null;
+                };
+                return (
+                  <div style={s.card}>
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Account history</div>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 10, lineHeight: 1.6 }}>
+                      Every change on the ad account, from Meta&rsquo;s own log: who made it, when, and with what tool.
+                      Changes <b>Meta made by itself</b> are marked &mdash; nothing here should change without one of you
+                      doing it. Read once a day; no alerts.
+                    </div>
+                    {entries.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#666' }}>Not read yet &mdash; the next daily sync fills this in.</div>
+                    ) : (
+                      <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                        {entries.map((e: any, i: number) => {
+                          const d = detail(e.extra);
+                          return (
+                            <div key={i} style={{ display: 'flex', gap: 10, padding: '6px 0', borderTop: i ? '1px solid #f0f0ea' : undefined, fontSize: 12.5, lineHeight: 1.5 }}>
+                              <span style={{ color: '#999', minWidth: 118, flexShrink: 0 }}>{when(e.event_time)}</span>
+                              <span style={{ flex: 1, minWidth: 0 }}>
+                                <b>{e.translated_event_type ?? e.event_type}</b>
+                                {e.object_name && <span style={{ color: '#555' }}> · {e.object_name}</span>}
+                                {d && <span style={{ color: '#777' }}> · {d}</span>}
+                                <div style={{ fontSize: 11, color: e.by_meta ? '#b45309' : '#999' }}>
+                                  {e.by_meta ? 'Made by Meta itself' : `by ${e.actor_name ?? 'unknown'}`}
+                                  {e.application_name ? ` · via ${e.application_name}` : ''}
+                                </div>
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Meta's recommendations, scored against OUR cost per booking.
                   Hidden entirely until one arrives — an empty scorecard teaches
                   nothing and just adds furniture to the page. */}
@@ -12182,6 +12488,20 @@ export default function AdminPanel() {
                             )}
                           </div>
                           {r.message && <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>{r.message}</div>}
+                          {/* Meta's own promise as first seen (cloud audit OPP-8):
+                              recommendations expire, so this is the only record
+                              of what it claimed, beside what our cash showed. */}
+                          {r.meta_promised && (
+                            <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>
+                              <b>Meta promised:</b> {r.meta_promised}
+                              {r.score_points != null && <span style={{ color: '#999' }}> · +{r.score_points} score points</span>}
+                              {r.measurable && (
+                                <span style={{ color: Number(r.cost_per_booking_change_pct) < 0 ? '#16a34a' : '#dc2626' }}>
+                                  {' '}· our cash: {Number(r.cost_per_booking_change_pct) > 0 ? '+' : ''}{r.cost_per_booking_change_pct}% cost per booking
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
