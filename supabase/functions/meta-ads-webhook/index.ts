@@ -51,11 +51,18 @@ const OBJECT_ID_KEYS: ReadonlyArray<readonly [string, string | null]> = [
 function readObject(value: Record<string, unknown>): { id: string | null; type: string | null } {
   // The type can be spelled two ways. `level` arrives upper case ("AD",
   // "CREATIVE") where object_type arrives lower ("ad"), so normalise.
-  const explicit = typeof value.object_type === 'string'
+  //
+  // And "ad set" arrives as both `adset` and `ad_set` depending on the payload
+  // (Effective status :57 vs With-issues ad objects :60). Stored as ONE spelling
+  // so a future consumer cannot miss half the rows by matching only one of them
+  // (cloud audit A-18). meta-ads-alerts already accepts both, so this changes
+  // nothing it does; rows written before 2026-09-26 may still carry `ad_set`.
+  const rawType = typeof value.object_type === 'string'
     ? value.object_type.toLowerCase()
     : typeof value.level === 'string'
       ? value.level.toLowerCase()
       : null;
+  const explicit = rawType === 'ad_set' ? 'adset' : rawType;
 
   for (const [key, impliedType] of OBJECT_ID_KEYS) {
     const raw = value[key];
@@ -72,7 +79,9 @@ function readObject(value: Record<string, unknown>): { id: string | null; type: 
   }
 
   // ad_recommendations carries a plural array instead of one id. Empty in the
-  // dashboard test; take the first where a real one arrives.
+  // dashboard test; take the first where a real one arrives. The FULL array is
+  // kept in the stored `value` jsonb — a consumer that needs every object a
+  // recommendation covers must read value->'ad_object_ids', not object_id (A-18).
   if (Array.isArray(value.ad_object_ids) && value.ad_object_ids.length) {
     const first = value.ad_object_ids[0];
     if (typeof first === 'string' || typeof first === 'number') {
