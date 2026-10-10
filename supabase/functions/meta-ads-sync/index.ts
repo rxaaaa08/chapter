@@ -137,11 +137,31 @@ type MetaError = {
 // Negative codes are internal Meta errors where the real cause is in
 // error_subcode, so the subcode is always carried through. code 1 subcode 99
 // is specifically a wrong `level` value — a config bug of ours, never transient.
+// Insights errors that share a code with something else and are told apart only
+// by subcode (guides/08 Insights API/11 Error Codes.md, read 2026-09-26, cloud
+// audit A-16). Without these, every code 2 was retried — including two that can
+// never succeed on a retry — and every code 100 was permanent, including a
+// timeout Meta says is worth trying again.
+const INSIGHTS_PERMANENT_CODE2_SUBCODES = new Set([1504041 /* invalid breakdowns */, 1504042 /* invalid custom metrics */]);
+const INSIGHTS_TIMEOUT = { code: 100, subcode: 1504018 };
+
+// Code-100 subcodes that are NOT "Meta refused the status filter". The status
+// filter step-down (STATUS_FILTERS) used to fire on ANY code 100 on the first
+// page, so a timeout or a permission error silently dropped deleted/archived
+// ads — the exact spend §6 says must be kept. Now these fail as themselves.
+const CODE100_NOT_A_FILTER_REFUSAL = new Set([1504018 /* timeout */, 3191001 /* insights permission */]);
+function isStatusFilterRefusal(summary: { meta_code: unknown; meta_subcode: unknown }): boolean {
+  return Number(summary.meta_code) === 100
+    && !CODE100_NOT_A_FILTER_REFUSAL.has(Number(summary.meta_subcode));
+}
+
 function classify(err: MetaError | null | undefined, httpStatus: number): 'retry' | 'permanent' {
   if (!err) return httpStatus >= 500 ? 'retry' : 'permanent';
   const code = Number(err.code);
   const sub = Number(err.error_subcode);
   if (code === 1 && sub === 99) return 'permanent';
+  if (code === 2 && INSIGHTS_PERMANENT_CODE2_SUBCODES.has(sub)) return 'permanent';
+  if (code === INSIGHTS_TIMEOUT.code && sub === INSIGHTS_TIMEOUT.subcode) return 'retry';
   // Before is_transient and before RETRYABLE_CODES, both of which would
   // otherwise swallow it. See ABUSE_RATE_LIMIT_CODE above.
   if (isAbuseRateLimit(err)) return 'permanent';
@@ -447,6 +467,70 @@ async function reconcileAccountSpend(
   return { ok: true, ...(data as Omit<Extract<SpendCheckResult, { ok: true }>, 'ok'>) };
 }
 
+// ── True 7-day reach per ad (2026-09-30) ───────────────────────────────────
+// The frequency guardrail needs how many DIFFERENT people saw an ad over its
+// 7-day window. meta_ad_daily cannot give that: its reach is per day, and
+// summing it counts one person once per day, so an ad shown to the same 2,000
+// people daily for a week read frequency 1 instead of 7. Only Meta can
+// de-duplicate people across days, so this asks for the whole window in one
+// call (no time_increment) and stores one row per ad in meta_ad_window_reach.
+//
+// The window must match the evaluator's exactly (meta_ad_guardrail_breaches:
+// current_date - 6 .. current_date, the rules' window_days). It checks the
+// stored since/until and ignores a row that does not match, falling back to the
+// old figure, which can only under-alarm. So if window_days ever changes, change
+// this constant too or the true reading silently stops being used.
+const REACH_WINDOW_DAYS = 7;
+
+type WindowReachResult = { ok: true; since: string; until: string; ads: number } | { ok: false; error: string };
+
+async function syncWindowReach(supabase: any, token: string, accountId: string): Promise<WindowReachResult> {
+  const today = istToday();
+  const until = isoDate(today);
+  const since = isoDate(new Date(today.getTime() - (REACH_WINDOW_DAYS - 1) * 86400000));
+  let next: string | null =
+    `https://graph.facebook.com/${API_VERSION}/act_${accountId}/insights` +
+    `?level=ad&limit=${PAGE_LIMIT}&fields=ad_id,campaign_id,reach,impressions,frequency` +
+    `&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}` +
+    `&access_token=${encodeURIComponent(token)}`;
+
+  const rows: Record<string, unknown>[] = [];
+  let pages = 0;
+  while (next) {
+    // One row per ad for the whole window. A partial read would leave some ads
+    // on last run's row, which the evaluator already refuses (window mismatch),
+    // so stopping at the cap is safe rather than wrong.
+    if (++pages > 10) return { ok: false, error: 'window reach page cap reached' };
+    const page = await fetchPage(next);
+    if (!page.ok) {
+      return {
+        ok: false,
+        error: `window reach failed: ${page.summary.meta_code ?? page.status} ${page.summary.meta_message ?? ''}`.trim(),
+      };
+    }
+    for (const r of page.body.data ?? []) {
+      if (!r?.ad_id) continue;
+      rows.push({
+        ad_id: String(r.ad_id),
+        campaign_id: r.campaign_id ?? null,
+        window_since: since,
+        window_until: until,
+        reach: num(r.reach),
+        impressions: num(r.impressions),
+        frequency: num(r.frequency),
+        synced_at: new Date().toISOString(),
+      });
+    }
+    next = page.body.paging?.next ?? null;
+  }
+
+  if (rows.length) {
+    const { error } = await supabase.from('meta_ad_window_reach').upsert(rows, { onConflict: 'ad_id' });
+    if (error) return { ok: false, error: `window reach upsert failed: ${error.message}` };
+  }
+  return { ok: true, since, until, ads: rows.length };
+}
+
 // The sentence that lands in the sync log, the panel's banner and the push.
 // Written for the founder: what differs, one concrete day, and the likely cause.
 function describeSpendGap(c: Extract<SpendCheckResult, { ok: true }>): string {
@@ -685,7 +769,19 @@ const ADSET_FIELDS = [
 // /generatepreviews has no Audience Network ad_format at all (§23). Reading
 // these fields is the only way to know. Versioned by record_adset_placements()
 // because placements are mutable in place, exactly like targeting.
-const ADSET_PLACEMENT_FIELDS = [
+//
+// THEY LIVE INSIDE `targeting`, NOT BESIDE IT. Found 2026-09-26 (cloud audit A-6,
+// META-ADS-HANDOFF.md §28.5). These names used to be requested as top-level
+// ad-set fields. Meta accepted them and returned NOTHING — for months — and that
+// empty reading was explained as "an ad set that never delivered has no
+// placements". Wrong: the same paused, never-delivered ad set, read with
+// `targeting{effective_publisher_platforms,…}`, returns the full set. Meta only
+// computes them as sub-fields of targeting (docs: targeting.md:49-50; Placement
+// Targeting guide :350). So the whole Audience Network watch was blind by
+// construction. They are now fetched by fetchAdsetExtras() below as
+// `targeting{…}` sub-fields, in a call of their own so the targeting history
+// above keeps reading plain `targeting` exactly as before.
+const ADSET_PLACEMENT_FIELDS_CORE = [
   'effective_publisher_platforms',
   'effective_facebook_positions',
   'effective_instagram_positions',
@@ -693,9 +789,81 @@ const ADSET_PLACEMENT_FIELDS = [
   'effective_messenger_positions',
   'effective_device_platforms',
   'effective_brand_safety_content_filter_levels',
-].join(',');
+];
+// Added 2026-09-26 (cloud audit A-14). Both documented on Targeting
+// (targeting.md:49-50). WhatsApp matters because Meta adds WhatsApp marketing
+// messages automatically under Advantage+ placements for eligible accounts
+// (Marketing Messages guide :102). Kept separate from the core list so that if
+// Meta refuses either name, the fallback drops only these two.
+const ADSET_PLACEMENT_FIELDS_NEW = [
+  'effective_threads_positions',
+  'effective_whatsapp_positions',
+];
 
-const ADSET_FIELDS_WITH_PLACEMENTS = `${ADSET_FIELDS},${ADSET_PLACEMENT_FIELDS}`;
+const ATTRIBUTION_EVENT_NAMES: Record<string, string> = {
+  CLICK_THROUGH: 'click', VIEW_THROUGH: 'view', ENGAGED_VIDEO_VIEW: 'engaged_view',
+};
+function attributionSpecToSetting(spec: unknown[]): string | undefined {
+  const parts = spec
+    .map((e: any) => {
+      const name = ATTRIBUTION_EVENT_NAMES[String(e?.event_type ?? '')] ?? String(e?.event_type ?? '').toLowerCase();
+      const days = Number(e?.window_days);
+      return name && Number.isFinite(days) ? `${days}d_${name}` : null;
+    })
+    .filter((p): p is string => !!p)
+    .sort((a, b) => a.localeCompare(b));
+  return parts.length ? parts.join('_') : undefined;
+}
+
+/**
+ * The ad-set facts that cannot come back on the main ad-set read: Meta's
+ * computed placements (nested in `targeting`, see above) and the attribution
+ * window (cloud audit A-7 — the live ad set was on `1d_click`, not the
+ * 7d_click/1d_view default everything else assumed, §28.7).
+ *
+ * A separate call on purpose. Folding these into ADSET_FIELDS would put
+ * unproven names in front of every rung of that ladder, and an unknown field is
+ * a hard 400 (§9) — one wrong guess here would cost the targeting and learning
+ * capture too. Here a refusal costs only what this call carries, and each rung
+ * drops the least proven part first. Non-fatal: an empty result just means no
+ * reading this run, and the caller records it as such.
+ */
+async function fetchAdsetExtras(base: string): Promise<{
+  byId: Map<string, Record<string, unknown>>;
+  placements: boolean;
+  attribution: boolean;
+}> {
+  const all = [...ADSET_PLACEMENT_FIELDS_CORE, ...ADSET_PLACEMENT_FIELDS_NEW].join(',');
+  const core = ADSET_PLACEMENT_FIELDS_CORE.join(',');
+  const rungs = [
+    { fields: `id,attribution_spec,targeting{${all}}`, placements: true, attribution: true },
+    { fields: `id,targeting{${all}}`, placements: true, attribution: false },
+    { fields: `id,targeting{${core}}`, placements: true, attribution: false },
+    { fields: 'id,attribution_spec', placements: false, attribution: true },
+  ];
+  for (const rung of rungs) {
+    const byId = new Map<string, Record<string, unknown>>();
+    let url: string | null = `${base}&fields=${encodeURIComponent(rung.fields)}`;
+    let pages = 0;
+    let failed = false;
+    while (url && pages < 20) {
+      pages++;
+      const page = await fetchPage(url);
+      if (!page.ok) {
+        console.warn('[meta-ads-sync] adset extras refused, trying the next shape', rung.fields, JSON.stringify(page.summary));
+        failed = true;
+        break;
+      }
+      for (const e of Array.isArray(page.body?.data) ? page.body.data : []) {
+        if (e?.id) byId.set(String(e.id), e);
+      }
+      url = page.body?.paging?.next ?? null;
+    }
+    if (!failed) return { byId, placements: rung.placements, attribution: rung.attribution };
+  }
+  console.error('[meta-ads-sync] adset extras unavailable — no placement or attribution reading this run');
+  return { byId: new Map(), placements: false, attribution: false };
+}
 
 // How long the same ad set stays quiet after being reported. Much longer than
 // the 6h used for ad ISSUES because this is not an outage — it is a setup
@@ -727,6 +895,10 @@ type AdsetEntry = {
   effective_messenger_positions?: unknown;
   effective_device_platforms?: unknown;
   effective_brand_safety_content_filter_levels?: unknown;
+  effective_threads_positions?: unknown;
+  effective_whatsapp_positions?: unknown;
+  // From fetchAdsetExtras(). e.g. '1d_click', '7d_click', '1d_view_7d_click'.
+  attribution_setting?: string;
 };
 
 type AdsetResult =
@@ -758,7 +930,7 @@ type AdsetResult =
 // Budgets arrive as strings in MINOR UNITS — paise on this INR account. Stored
 // as rupees so the column reads the same as every other money column in this
 // database, and so a panel does not have to remember which one is different.
-// See §9 "Everything monetary in the API is in MINOR UNITS".
+// See §9 "Budgets and bids in the API are in MINOR UNITS — insights spend is NOT".
 function paiseToRupees(v: string | undefined): number | null {
   if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
@@ -783,12 +955,13 @@ async function syncAdsets(supabase: any, token: string, accountId: string): Prom
   // guess about a placement field name costs the placements and nothing else —
   // it can never take the learning capture down with it.
   const noLearning = ADSET_FIELDS.replace(',learning_stage_info', '');
+  // Placements are no longer on this ladder — they come from fetchAdsetExtras()
+  // (see ADSET_PLACEMENT_FIELDS_CORE for why).
   const attempts = [
-    { fields: ADSET_FIELDS_WITH_PLACEMENTS, degraded: false, learning: true, placements: true },
-    { fields: ADSET_FIELDS, degraded: false, learning: true, placements: false },
-    { fields: noLearning, degraded: false, learning: false, placements: false },
-    { fields: ADSET_FIELDS.replace('campaign{name},', ''), degraded: true, learning: true, placements: false },
-    { fields: noLearning.replace('campaign{name},', ''), degraded: true, learning: false, placements: false },
+    { fields: ADSET_FIELDS, degraded: false, learning: true },
+    { fields: noLearning, degraded: false, learning: false },
+    { fields: ADSET_FIELDS.replace('campaign{name},', ''), degraded: true, learning: true },
+    { fields: noLearning.replace('campaign{name},', ''), degraded: true, learning: false },
   ];
   let next: string | null = null;
   let page: Awaited<ReturnType<typeof fetchPage>> | null = null;
@@ -801,7 +974,6 @@ async function syncAdsets(supabase: any, token: string, accountId: string): Prom
     if (page.ok) {
       degraded = attempt.degraded;
       learningCaptured = attempt.learning;
-      placementsCaptured = attempt.placements;
       break;
     }
     console.warn('[meta-ads-sync] adsets field shape refused, trying the next', JSON.stringify(page.summary));
@@ -828,6 +1000,30 @@ async function syncAdsets(supabase: any, token: string, accountId: string): Prom
       break;
     }
     body = nextPage.body;
+  }
+
+  // Placements + attribution window, merged onto each entry under the same
+  // top-level effective_* names the recording code below has always read.
+  const extras = await fetchAdsetExtras(base);
+  placementsCaptured = extras.placements;
+  const attributionCaptured = extras.attribution;
+  for (const a of entries) {
+    const x = a.id ? extras.byId.get(String(a.id)) : undefined;
+    if (!x) continue;
+    const t = (x as any).targeting;
+    if (t && typeof t === 'object') {
+      for (const [k, v] of Object.entries(t as Record<string, unknown>)) {
+        if (k.startsWith('effective_')) (a as any)[k] = v;
+      }
+    }
+    // The ad-set field is `attribution_spec`, a list of {event_type, window_days}.
+    // (`attribution_setting` is the INSIGHTS name for the same idea and returns
+    // nothing on the ad set object — the first deploy asked for it and got
+    // empty, 2026-09-26.) Stored in the insights spelling so the panel and SQL
+    // read one vocabulary: [{CLICK_THROUGH,1}] -> '1d_click',
+    // [{CLICK_THROUGH,7},{VIEW_THROUGH,1}] -> '1d_view_7d_click'.
+    const spec = (x as any).attribution_spec;
+    if (Array.isArray(spec)) a.attribution_setting = attributionSpecToSetting(spec);
   }
 
   if (!entries.length) {
@@ -861,12 +1057,15 @@ async function syncAdsets(supabase: any, token: string, accountId: string): Prom
       // Convenience copy of the CURRENT spec. The durable record is the history
       // table below — this column is overwritten like every other config field.
       targeting: a.targeting ?? null,
+      // Only written when this run actually read it, so a refused field never
+      // overwrites a known window with NULL.
+      ...(attributionCaptured ? { attribution_setting: a.attribution_setting ?? null } : {}),
       raw: a as unknown as Record<string, unknown>,
     };
 
     const { data: prevRows } = await supabase
       .from('meta_adset_config')
-      .select('optimization_goal, custom_event_type, billing_event, daily_budget, lifetime_budget, effective_status, campaign_name')
+      .select('optimization_goal, custom_event_type, billing_event, daily_budget, lifetime_budget, effective_status, campaign_name, attribution_setting')
       .eq('adset_id', a.id)
       .limit(1);
     const prev = prevRows?.[0] ?? null;
@@ -882,7 +1081,10 @@ async function syncAdsets(supabase: any, token: string, accountId: string): Prom
       && Number(prev.daily_budget) === Number(row.daily_budget)
       && Number(prev.lifetime_budget) === Number(row.lifetime_budget)
       && prev.effective_status === row.effective_status
-      && (degraded || prev.campaign_name === row.campaign_name);
+      && (degraded || prev.campaign_name === row.campaign_name)
+      // The attribution window decides what Meta credits and so what it
+      // optimises toward (§28.7) — a change to it is a setup change.
+      && (!attributionCaptured || (prev.attribution_setting ?? null) === (a.attribution_setting ?? null));
 
     const { error } = await supabase.from('meta_adset_config').upsert({
       ...row,
@@ -981,11 +1183,13 @@ async function syncAdsets(supabase: any, token: string, accountId: string): Prom
   // The founder asked for this push on 2026-09-18, which is why it exists at
   // all: §15's standing rule is that setup state stays page-only unless he asks.
   //
-  // WHAT IT CAN AND CANNOT CATCH, because the difference matters. Meta returns
-  // no effective_* placement fields for an ad set that has never delivered
-  // (§23 "Reels Ads"), so this CANNOT warn before the first rupee moves. It is
-  // a first-day-of-spend alarm, not a pre-spend one. The pre-spend check stays
-  // the founder-side item in §24: choose placements by hand in Ads Manager.
+  // WHAT IT CAN CATCH. Corrected 2026-09-26 (§28.5): this used to say Meta
+  // returns no placements for a never-delivered ad set, so the alarm could only
+  // fire after spend. That was our request shape, not Meta — read as
+  // `targeting{effective_*}` the values exist before any delivery. So this now
+  // fires on the first daily sync after an ad set goes ACTIVE, which can be
+  // before much money moves. Choosing placements by hand (§24) is still the
+  // real prevention; this catches the case where that was forgotten.
   //
   // Only `leak` findings push — i.e. Audience Network that NOBODY CHOSE. If he
   // picks it deliberately the finding reads `info` and stays silent, because a
@@ -1201,7 +1405,7 @@ async function syncDelivery(supabase: any, token: string, accountId: string): Pr
       const page = await fetchPage(next);
       // Meta refused the status filter itself: same rule as the insights call —
       // only on the first page, only for error 100, step down and start again.
-      if (!page.ok && pages === 1 && Number(page.summary.meta_code) === 100 && filterIdx < STATUS_FILTERS.length - 1) {
+      if (!page.ok && pages === 1 && isStatusFilterRefusal(page.summary) && filterIdx < STATUS_FILTERS.length - 1) {
         console.warn(`[meta-ads-sync] delivery ${spec.level}: status filter '${STATUS_FILTERS[filterIdx].name}' refused, trying the next form`,
           JSON.stringify(page.summary));
         filterIdx++;
@@ -1294,6 +1498,13 @@ const AUDIENCE_FIELDS = [
 // Same reasoning as ADSET_WARN_SUPPRESSION_DAYS: a setup decision only the
 // founder can change, so one reminder a week rather than one per sync.
 const EXCLUSION_WARN_SUPPRESSION_DAYS = 7;
+
+// Owner decision 2026-09-30: ads run broad with NO past-customer exclusion,
+// because a past guest of one plan may well want another and that cannot be
+// modelled yet. A weekly push about a deliberate choice is noise, so the
+// no_customer_exclusion finding is page-only (Audiences card) until he decides
+// otherwise. Flip to true to bring the push back; nothing else needs changing.
+const PUSH_MISSING_CUSTOMER_EXCLUSION = false;
 
 type AudienceEntry = {
   id?: string;
@@ -1398,40 +1609,68 @@ async function syncAudiences(supabase: any, token: string, accountId: string): P
   }
 
   for (const w of (warnings ?? [])) {
-    // A paused ad set spends nothing. It stays visible in get_meta_audience_health
-    // instead of waking anyone, same rule as the learning-phase warning.
-    if ((w.effective_status ?? '') !== 'ACTIVE') continue;
+    // Two kinds of finding come back (see meta_adset_audience_warnings):
+    //   no_customer_exclusion — pays to reach people who already bought.
+    //   retarget_widened      — (cloud audit OPP-3, 2026-09-26) includes one of
+    //                           OUR audiences while Meta is explicitly allowed to
+    //                           widen it, so retargeting quietly becomes prospecting.
+    // A third, retarget_expansion_unconfirmed, is page-only by design: Meta did
+    // not echo the setting back, and pushing on "unknown" would nag forever at
+    // an ad set that may be set up correctly.
+    const retarget = w.issue === 'retarget_widened';
+    if (!retarget && w.issue !== 'no_customer_exclusion') continue;
+    if (!retarget && !PUSH_MISSING_CUSTOMER_EXCLUSION) continue;
 
+    // A paused ad set spends nothing, so a missing exclusion stays visible in
+    // get_meta_audience_health instead of waking anyone, same rule as the
+    // learning-phase warning. Widening is different: fixing it on a paused ad
+    // set costs nothing, while fixing it on a running one is a targeting edit
+    // that can restart learning — so the moment worth speaking up is BEFORE it
+    // runs, the same reasoning as the {{ad.id}} check.
+    if (!retarget && (w.effective_status ?? '') !== 'ACTIVE') continue;
+
+    const ruleKey = retarget ? 'adset_retarget_widened' : 'adset_no_customer_exclusion';
     const cutoff = new Date(Date.now() - EXCLUSION_WARN_SUPPRESSION_DAYS * 86400_000).toISOString();
     const { data: recent } = await supabase
       .from('meta_ad_guardrail_events')
       .select('id')
-      .eq('rule_key', 'adset_no_customer_exclusion')
+      .eq('rule_key', ruleKey)
       .eq('ad_id', w.adset_id)
       .gte('fired_at', cutoff)
       .limit(1);
     if (recent?.length) continue;
 
-    const who = w.customers != null ? `your ${w.customers} paying customers` : 'your paying customers';
-    const body = `"${w.adset_name ?? w.adset_id}" does not exclude ${who}, so it is paying to show ads to people who already bought`;
+    const name = w.adset_name ?? w.adset_id;
+    let body: string;
+    if (retarget) {
+      const d = w.detail ?? {};
+      const which = [
+        d.advantage_audience === '1' ? 'Advantage+ audience' : null,
+        d.expansion_custom_audience === '1' ? 'audience expansion' : null,
+      ].filter(Boolean).join(' and ');
+      body = `"${name}" retargets your own audience but has ${which || 'widening'} on, so Meta can show it to anyone. Turn it off in the ad set's Audience settings.`;
+    } else {
+      const who = w.customers != null ? `your ${w.customers} paying customers` : 'your paying customers';
+      body = `"${name}" does not exclude ${who}, so it is paying to show ads to people who already bought`;
+    }
 
     const { error: pushErr } = await supabase.rpc('notify_admin_push', {
       payload: {
         type: 'meta_ad_issue',
-        record: { body: body.slice(0, 240), object_id: `adset-exclusion-${w.adset_id}` },
+        record: { body: body.slice(0, 240), object_id: `${retarget ? 'adset-widened' : 'adset-exclusion'}-${w.adset_id}` },
       },
     });
-    if (pushErr) console.error('[meta-ads-sync] exclusion warning push failed', pushErr.message);
+    if (pushErr) console.error(`[meta-ads-sync] ${ruleKey} push failed`, pushErr.message);
 
     // Same ledger as the learning-phase warning, so there is one history. `ad_id`
     // holds an ADSET id here too; `metric` disambiguates. observed/threshold are
     // left NULL because this is a yes/no finding with no quantity to compare.
     await supabase.from('meta_ad_guardrail_events').insert({
-      rule_key: 'adset_no_customer_exclusion',
-      label: 'Ad set does not exclude existing customers',
+      rule_key: ruleKey,
+      label: retarget ? 'Retargeting ad set can be widened by Meta' : 'Ad set does not exclude existing customers',
       ad_id: w.adset_id,
       ad_name: w.adset_name,
-      metric: 'adset_customer_exclusion',
+      metric: retarget ? 'adset_retarget_widening' : 'adset_customer_exclusion',
       observed: null,
       threshold: null,
       window_days: null,
@@ -1479,24 +1718,48 @@ const CREATIVE_TAG_WARN_SUPPRESSION_DAYS = 7;
 // on a healthy ad, which is the failure mode every real bug found by testing
 // here has taken (§11). Hence `canWarn`: on the bare shape we still RECORD, and
 // we say nothing.
-const CREATIVE_FIELD_SHAPES: { name: string; fields: string; canWarn: boolean }[] = [
+//
+// THE FIRST RUNG (2026-09-26, cloud audit OPP-1) adds Meta's automatic "creative
+// enhancements": `degrees_of_freedom_spec` (image touch-ups, relevant comments,
+// auto-written descriptions …) and `contextual_multi_ads` (your ad in a strip
+// beside other brands). It sits ABOVE 'full' rather than inside it on purpose:
+// if Meta ever refuses one of those fields, the ladder drops to 'full' and the
+// {{ad.id}} check keeps asset_feed_spec. Folding them into 'full' would have
+// made a refusal cost the tag check its asset-feed view — trading the one
+// irreversible check for a brand nicety. `readsEnhancements` tells SQL whether
+// "absent" means "default" or "we did not ask" (see
+// 20260926_meta_creative_enhancements_guard.sql).
+const CREATIVE_FIELD_SHAPES: { name: string; fields: string; canWarn: boolean; readsEnhancements: boolean }[] = [
+  {
+    name: 'enhancements',
+    canWarn: true,
+    readsEnhancements: true,
+    fields: 'id,name,adset_id,campaign_id,effective_status,'
+      + 'creative{id,name,url_tags,object_story_spec,asset_feed_spec,template_data,effective_object_story_id,'
+      + 'degrees_of_freedom_spec,contextual_multi_ads}',
+  },
   {
     name: 'full',
     canWarn: true,
+    readsEnhancements: false,
     fields: 'id,name,adset_id,campaign_id,effective_status,'
       + 'creative{id,name,url_tags,object_story_spec,asset_feed_spec,template_data,effective_object_story_id}',
   },
   {
     name: 'no_asset_feed',
     canWarn: true,
+    readsEnhancements: false,
     fields: 'id,name,adset_id,campaign_id,effective_status,creative{id,name,url_tags,object_story_spec}',
   },
   {
     name: 'bare',
     canWarn: false,
+    readsEnhancements: false,
     fields: 'id,name,adset_id,campaign_id,effective_status,creative{id,url_tags}',
   },
 ];
+
+const CREATIVE_ENHANCEMENT_WARN_SUPPRESSION_DAYS = 7;
 
 type AdCreativeEntry = {
   id?: string;
@@ -1510,7 +1773,7 @@ type AdCreativeEntry = {
 type CreativeTagResult =
   | {
       ok: true; ads: number; creatives: number; recorded: number; changed: number;
-      warned: number; shape: string; status_filter: string; partial?: string;
+      warned: number; enhancement_warned: number; shape: string; status_filter: string; partial?: string;
     }
   | { ok: false; error: string };
 
@@ -1538,7 +1801,7 @@ async function syncCreativeTags(supabase: any, token: string, accountId: string)
     // "unknown field / bad request" code, exactly like the delivery step. The
     // field shape is tried first because losing a field is cheaper than losing
     // the ability to see archived ads.
-    if (!page.ok && pages === 1 && Number(page.summary.meta_code) === 100) {
+    if (!page.ok && pages === 1 && isStatusFilterRefusal(page.summary)) {
       if (shapeIdx < CREATIVE_FIELD_SHAPES.length - 1) {
         console.warn(`[meta-ads-sync] creative fields '${CREATIVE_FIELD_SHAPES[shapeIdx].name}' refused, trying the next shape`,
           JSON.stringify(page.summary));
@@ -1606,7 +1869,10 @@ async function syncCreativeTags(supabase: any, token: string, accountId: string)
     });
   }
 
-  const rows = [...byCreative.values()];
+  // Every row came back under the same (final) field shape — a step-down only
+  // happens on page 1 and restarts the read — so one flag covers them all.
+  const readsEnhancements = CREATIVE_FIELD_SHAPES[shapeIdx].readsEnhancements;
+  const rows = [...byCreative.values()].map((r) => ({ ...r, enhancements_read: readsEnhancements }));
   let recorded = 0;
   let changed = 0;
   for (let i = 0; i < rows.length; i += DELIVERY_CHUNK) {
@@ -1624,25 +1890,36 @@ async function syncCreativeTags(supabase: any, token: string, accountId: string)
   const shape = CREATIVE_FIELD_SHAPES[shapeIdx];
   const partial = readError ?? (next ? 'page_cap_reached' : null);
 
+  const done = (warned: number, enhancementWarned: number): CreativeTagResult => ({
+    ok: true, ads: ads.length, creatives: rows.length, recorded, changed, warned,
+    enhancement_warned: enhancementWarned,
+    shape: shape.name, status_filter: STATUS_FILTERS[filterIdx].name,
+    ...(partial ? { partial } : {}),
+  });
+
   // Nothing is said on a degraded read. See CREATIVE_FIELD_SHAPES.
-  let warned = 0;
   if (!shape.canWarn) {
     console.warn('[meta-ads-sync] creative tags read without object_story_spec — recording but not warning');
-    return {
-      ok: true, ads: ads.length, creatives: rows.length, recorded, changed, warned,
-      shape: shape.name, status_filter: STATUS_FILTERS[filterIdx].name,
-      ...(partial ? { partial } : {}),
-    };
+    return done(0, 0);
   }
 
+  // The two warnings are independent: a failure in one must not silence the other.
+  const warned = await warnMissingTags(supabase);
+  // SQL already ignores rows read without the enhancement fields; skipping the
+  // call on a degraded shape just saves a round trip and says why in the log.
+  let enhancementWarned = 0;
+  if (readsEnhancements) enhancementWarned = await warnUnwantedEnhancements(supabase);
+  else console.warn(`[meta-ads-sync] creative enhancements not read (shape '${shape.name}') — no enhancement check this run`);
+
+  return done(warned, enhancementWarned);
+}
+
+async function warnMissingTags(supabase: any): Promise<number> {
+  let warned = 0;
   const { data: warnings, error: warnErr } = await supabase.rpc('meta_ad_tracking_tag_warnings');
   if (warnErr) {
     console.error('[meta-ads-sync] creative tag warnings rpc failed', warnErr.message);
-    return {
-      ok: true, ads: ads.length, creatives: rows.length, recorded, changed, warned,
-      shape: shape.name, status_filter: STATUS_FILTERS[filterIdx].name,
-      ...(partial ? { partial } : {}),
-    };
+    return 0;
   }
 
   for (const w of (warnings ?? [])) {
@@ -1695,12 +1972,177 @@ async function syncCreativeTags(supabase: any, token: string, accountId: string)
     });
     warned++;
   }
+  return warned;
+}
 
+// Meta's automatic creative changes nobody chose (cloud audit OPP-1). Graded in
+// SQL against the founder's watch list (meta_creative_feature_watch), so the
+// list changes without a deploy. Like the {{ad.id}} warning, NOT gated on
+// ACTIVE: the moment to switch these off is before the ad runs.
+async function warnUnwantedEnhancements(supabase: any): Promise<number> {
+  let warned = 0;
+  const { data: warnings, error: warnErr } = await supabase.rpc('meta_ad_enhancement_warnings');
+  if (warnErr) {
+    console.error('[meta-ads-sync] creative enhancement warnings rpc failed', warnErr.message);
+    return 0;
+  }
+
+  for (const w of (warnings ?? [])) {
+    const cutoff = new Date(Date.now() - CREATIVE_ENHANCEMENT_WARN_SUPPRESSION_DAYS * 86400_000).toISOString();
+    const { data: recent } = await supabase
+      .from('meta_ad_guardrail_events')
+      .select('id')
+      .eq('rule_key', 'ad_unwanted_enhancement')
+      .eq('ad_id', w.creative_id)
+      .gte('fired_at', cutoff)
+      .limit(1);
+    if (recent?.length) continue;
+
+    const who = (w.ad_names?.[0] as string | undefined) ?? (w.ad_ids?.[0] as string | undefined) ?? w.creative_id;
+    const on: string[] = Array.isArray(w.enhancements_on) ? w.enhancements_on : [];
+    const list = on.length > 3 ? `${on.slice(0, 3).join(', ')} +${on.length - 3} more` : on.join(', ');
+    const body = `"${who}" has Meta's automatic changes on: ${list}. Switch them off in Ads Manager (the ad's Advantage+ creative settings) before it runs.`;
+
+    const { error: pushErr } = await supabase.rpc('notify_admin_push', {
+      payload: {
+        type: 'meta_ad_issue',
+        record: { body: body.slice(0, 240), object_id: `creative-enhancement-${w.creative_id}` },
+      },
+    });
+    if (pushErr) console.error('[meta-ads-sync] creative enhancement push failed', pushErr.message);
+
+    // Same ledger as the {{ad.id}} warning: `ad_id` holds a CREATIVE id.
+    await supabase.from('meta_ad_guardrail_events').insert({
+      rule_key: 'ad_unwanted_enhancement',
+      label: 'Ad has Meta creative enhancements switched on',
+      ad_id: w.creative_id,
+      ad_name: (w.ad_names?.[0] as string | undefined) ?? w.creative_name ?? null,
+      metric: 'ad_creative_enhancements',
+      observed: on.length,
+      threshold: null,
+      window_days: null,
+      context: w,
+      notified_at: pushErr ? null : new Date().toISOString(),
+      notify_error: pushErr ? pushErr.message.slice(0, 500) : null,
+    });
+    warned++;
+  }
+  return warned;
+}
+
+// ── The ad account's own change log (cloud audit OPP-7, 2026-09-26) ─────────
+// GET act_<id>/activities: who changed what and when — including changes Meta
+// made by itself, which our own change-only tables can only notice a day late
+// and cannot attribute. Stored scrubbed (no IPs / cookies / fingerprints) by
+// record_meta_account_activity(); shown on the page; never pushed (the owner's
+// "show it, no alerts" choice for delivery history).
+//
+// Window: from 2 days before the newest stored entry (overlap is free — the
+// SQL key makes a re-read insert nothing), or 90 days back on the first run.
+// The endpoint's default window is one week, so `since` is always passed.
+const ACTIVITY_FIRST_RUN_DAYS = 90;
+const ACTIVITY_MAX_PAGES = 10;
+const ACTIVITY_FIELD_SHAPES = [
+  'event_time,event_type,translated_event_type,actor_id,actor_name,application_name,'
+    + 'object_id,object_name,object_type,extra_data',
+  'event_time,event_type,actor_id,actor_name,object_id,object_name,extra_data',
+];
+
+type ActivityResult =
+  | { ok: true; received: number; inserted: number; pages: number; shape: number; partial?: string }
+  | { ok: false; error: string };
+
+async function syncAccountActivity(supabase: any, token: string, accountId: string): Promise<ActivityResult> {
+  const { data: newest } = await supabase
+    .from('meta_account_activity').select('event_time').order('event_time', { ascending: false }).limit(1);
+  const sinceMs = newest?.[0]?.event_time
+    ? Date.parse(newest[0].event_time) - 2 * 86400_000
+    : Date.now() - ACTIVITY_FIRST_RUN_DAYS * 86400_000;
+  const since = Math.floor(sinceMs / 1000);
+  const until = Math.floor(Date.now() / 1000);
+  const url = (fields: string) =>
+    `https://graph.facebook.com/${API_VERSION}/act_${accountId}/activities` +
+    `?fields=${encodeURIComponent(fields)}&since=${since}&until=${until}&limit=100` +
+    `&access_token=${encodeURIComponent(token)}`;
+
+  let shape = 0;
+  let next: string | null = url(ACTIVITY_FIELD_SHAPES[shape]);
+  let pages = 0;
+  const rows: unknown[] = [];
+  let partial: string | undefined;
+  while (next && pages < ACTIVITY_MAX_PAGES) {
+    pages++;
+    const page = await fetchPage(next);
+    if (!page.ok && pages === 1 && Number(page.summary.meta_code) === 100 && shape < ACTIVITY_FIELD_SHAPES.length - 1) {
+      console.warn('[meta-ads-sync] activity fields refused, trying the smaller set', JSON.stringify(page.summary));
+      shape++;
+      next = url(ACTIVITY_FIELD_SHAPES[shape]);
+      pages = 0;
+      continue;
+    }
+    if (!page.ok) {
+      if (rows.length === 0) return { ok: false, error: String(page.summary.meta_code ?? 'unknown') };
+      partial = `read_failed_page_${pages}`;
+      break;
+    }
+    if (Array.isArray(page.body?.data)) rows.push(...page.body.data);
+    next = page.body?.paging?.next ?? null;
+  }
+  if (next && !partial) partial = 'page_cap_reached';
+
+  const { data, error } = await supabase.rpc('record_meta_account_activity', { p_rows: rows });
+  if (error) return { ok: false, error: `write_failed: ${error.message.slice(0, 120)}` };
   return {
-    ok: true, ads: ads.length, creatives: rows.length, recorded, changed, warned,
-    shape: shape.name, status_filter: STATUS_FILTERS[filterIdx].name,
-    ...(partial ? { partial } : {}),
+    ok: true, received: Number(data?.received) || 0, inserted: Number(data?.inserted) || 0,
+    pages, shape, ...(partial ? { partial } : {}),
   };
+}
+
+// ── Meta's recommendations, with its promise (cloud audit OPP-8, 2026-09-26) ─
+// GET act_<id>/recommendations with `recommendation_content`, which carries
+// lift_estimate / body / opportunity_score_lift and is omitted unless asked
+// for. Recommendations expire, so Meta's promise has to be kept the day it is
+// seen; record_meta_recommendations() keeps the FIRST wording. Measured
+// 2026-09-26: the ad_recommendations webhook has never delivered a single
+// event, so this daily read is the scorecard's only real source. READ ONLY:
+// applying a recommendation is a POST to the same edge, which we never make (M11).
+type RecommendationResult =
+  | { ok: true; seen: number; new: number; shape: number }
+  | { ok: false; error: string };
+
+const RECOMMENDATION_FIELD_SHAPES = [
+  'recommendations{recommendation_signature,recommendation_stage,recommendation_time,type,object_ids,recommendation_content,url}',
+  // Some documentation shows the top-level list itself as the data array; the
+  // bare call returns whatever Meta's default is, which is still worth storing.
+  '',
+];
+
+async function syncRecommendations(supabase: any, token: string, accountId: string): Promise<RecommendationResult> {
+  const url = (fields: string) =>
+    `https://graph.facebook.com/${API_VERSION}/act_${accountId}/recommendations` +
+    (fields ? `?fields=${encodeURIComponent(fields)}&` : '?') +
+    `access_token=${encodeURIComponent(token)}`;
+
+  let shape = 0;
+  let page = await fetchPage(url(RECOMMENDATION_FIELD_SHAPES[shape]));
+  if (!page.ok && Number(page.summary.meta_code) === 100) {
+    console.warn('[meta-ads-sync] recommendation fields refused, trying the bare read', JSON.stringify(page.summary));
+    shape = 1;
+    page = await fetchPage(url(RECOMMENDATION_FIELD_SHAPES[shape]));
+  }
+  if (!page.ok) return { ok: false, error: String(page.summary.meta_code ?? 'unknown') };
+
+  // Two documented reply shapes: data[] of groups each holding recommendations[],
+  // or data[] of recommendations directly. Flatten either.
+  const flat: unknown[] = [];
+  for (const d of Array.isArray(page.body?.data) ? page.body.data : []) {
+    if (Array.isArray(d?.recommendations)) flat.push(...d.recommendations);
+    else if (d && (d.type || d.recommendation_signature || d.recommendation_name)) flat.push(d);
+  }
+
+  const { data, error } = await supabase.rpc('record_meta_recommendations', { p_rows: flat });
+  if (error) return { ok: false, error: `write_failed: ${error.message.slice(0, 120)}` };
+  return { ok: true, seen: Number(data?.seen) || 0, new: Number(data?.new) || 0, shape };
 }
 
 Deno.serve(async (req) => {
@@ -1861,7 +2303,7 @@ Deno.serve(async (req) => {
       // nothing to do with the filter and takes the normal failure path below.
       // If the plain query fails with 100 too, that is a real error and is
       // reported as one.
-      if (!page.ok && pages === 1 && Number(page.summary.meta_code) === 100 && filterIdx < STATUS_FILTERS.length - 1) {
+      if (!page.ok && pages === 1 && isStatusFilterRefusal(page.summary) && filterIdx < STATUS_FILTERS.length - 1) {
         console.warn(`[meta-ads-sync] Meta rejected status filter '${STATUS_FILTERS[filterIdx].name}' — trying the next form`,
           JSON.stringify(page.summary));
         filterIdx++;
@@ -2048,6 +2490,19 @@ Deno.serve(async (req) => {
       console.warn('[meta-ads-sync] spend reconciliation could not run:', spendCheck.error);
     }
 
+    // Meta's de-duplicated 7-day reach per ad, for the frequency guardrail.
+    // Non-fatal: without it that one rule falls back to a lower bound.
+    let windowReach: WindowReachResult | null = null;
+    try {
+      windowReach = await syncWindowReach(supabase, token, accountId);
+    } catch (e) {
+      console.error('[meta-ads-sync] window reach step threw', e instanceof Error ? e.message : String(e));
+      windowReach = { ok: false, error: 'threw' };
+    }
+    if (windowReach && !windowReach.ok) {
+      console.warn('[meta-ads-sync] window reach could not run:', windowReach.error);
+    }
+
     // Runs only after spend has been written, and cannot fail this request. The
     // await is deliberate rather than fire-and-forget: an edge function's
     // runtime can be torn down the moment the response is returned, so a
@@ -2108,6 +2563,24 @@ Deno.serve(async (req) => {
       creativeTags = { ok: false, error: 'threw' };
     }
 
+    // Seventh and eighth independent steps (2026-09-26): the account's change
+    // log (OPP-7) and Meta's recommendations with their promised lift (OPP-8).
+    // Both read-only, both non-fatal, both page-only — spend stays the critical path.
+    let activity: ActivityResult | null = null;
+    try {
+      activity = await syncAccountActivity(supabase, token, accountId);
+    } catch (e) {
+      console.error('[meta-ads-sync] activity step threw', e instanceof Error ? e.message : String(e));
+      activity = { ok: false, error: 'threw' };
+    }
+    let recommendations: RecommendationResult | null = null;
+    try {
+      recommendations = await syncRecommendations(supabase, token, accountId);
+    } catch (e) {
+      console.error('[meta-ads-sync] recommendations step threw', e instanceof Error ? e.message : String(e));
+      recommendations = { ok: false, error: 'threw' };
+    }
+
     // Spend Meta billed that our per-ad rows do not hold (or the reverse). The
     // rows written above are real, but a cost per booking computed from them
     // would be wrong without saying so, so the run is NOT ok. That is the same
@@ -2129,12 +2602,15 @@ Deno.serve(async (req) => {
       upserted,
       status_filter: statusFilter,
       spend_check: spendCheck,
+      window_reach: windowReach,
       ms: Date.now() - started,
       ...(volume ? { volume } : {}),
       ...(adsets ? { adsets } : {}),
       ...(audiences ? { audiences } : {}),
       ...(delivery ? { delivery } : {}),
       ...(creativeTags ? { creative_tags: creativeTags } : {}),
+      ...(activity ? { activity } : {}),
+      ...(recommendations ? { recommendations } : {}),
       ...(versionWarning ? { version_warning: versionWarning } : {}),
       ...(accessTier ? { access_tier: accessTier } : {}),
     };
