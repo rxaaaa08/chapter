@@ -3,11 +3,16 @@ import { createRoot } from 'react-dom/client';
 import * as Sentry from '@sentry/react';
 import App from './App.tsx';
 import { initMetaPixel } from './metaPixel';
+import { reportWhatsAppClick } from './whatsappClick';
 import './index.css';
 
 // Ad attribution. No-ops entirely until META_PIXEL_ID is set, and never loads
 // on /admin, /creator or /team — those are staff tools, not customer funnel.
 initMetaPixel();
+
+// A guest arriving from a button in one of our WhatsApp messages. No-ops unless
+// the link carries a tap code.
+reportWhatsAppClick();
 
 Sentry.init({
   dsn: 'https://50fb89acdd1a7824703dbe8379c0b16f@o4511243249844224.ingest.us.sentry.io/4511243253710848',
