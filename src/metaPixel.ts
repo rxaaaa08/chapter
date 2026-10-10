@@ -187,8 +187,34 @@ function normalisePart(raw: string | null | undefined): string {
     .replace(/[^a-z]/g, '');
 }
 
+// TEST BOOKINGS NEVER REACH META FROM THE BROWSER EITHER (cloud audit A-20).
+//
+// The server has always withheld 90000000xx test phones (skipAsTestBooking in
+// _shared/metaCapi.ts), but this file had no such guard. So a test booking still
+// sent a browser Lead and a browser Purchase — and since the server copy was
+// withheld, nothing could deduplicate them: each counted as a real conversion.
+// Seen live on 19 Sep 2026 (META-ADS-HANDOFF.md §28.8): one fake Purchase and one
+// fake Lead in the live dataset from a single test on weekly-creators-meet.
+//
+// setPixelUserData() runs before every Lead and Purchase this site fires (the
+// open flow at OTP request, the invite flow at submit, the receipt before its
+// Purchase), so it is where the phone is known. It remembers whether that phone
+// is a test phone; trackPixel() then drops the two conversion events for it.
+// Mid-funnel events (ViewContent, AddToCart…) still fire — they carry no phone
+// and a tester browsing the site is indistinguishable from anyone else.
+// Same prefix as the server: bare last-10-digits starting 90000000.
+let identifiedAsTestPhone = false;
+const TEST_PHONE_PREFIX = '90000000';
+const CONVERSION_EVENTS = new Set(['Lead', 'Purchase']);
+
 export function setPixelUserData(u: PixelUserData): void {
   try {
+    // Decided before any early return below, so the flag is right even on a
+    // host or route where the Pixel itself is not initialised.
+    const tenForTest = (u.phone ?? '').replace(/\D/g, '').slice(-10);
+    if (tenForTest.length === 10) identifiedAsTestPhone = tenForTest.startsWith(TEST_PHONE_PREFIX);
+    // A test identity is never handed to Meta either.
+    if (identifiedAsTestPhone) return;
     if (!isPixelConfigured() || typeof window === 'undefined' || !window.fbq) return;
     if (!isCustomerRoute() || !isProductionHost()) return;
 
@@ -264,6 +290,7 @@ export function trackPixel(
   try {
     if (!isPixelConfigured() || typeof window === 'undefined' || !window.fbq) return;
     if (!isCustomerRoute()) return;
+    if (identifiedAsTestPhone && CONVERSION_EVENTS.has(eventName)) return;
     const clean: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null && v !== '') clean[k] = v;
