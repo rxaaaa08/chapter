@@ -27,13 +27,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const COLUMNS = [
   'id', 'title', 'description', 'availability', 'condition', 'price', 'link',
   'image_link', 'brand', 'google_product_category',
-  // Custom labels let product sets be cut (open vs invite, by city, by next
-  // date) without ever changing this feed again.
-  'custom_label_0', 'custom_label_1', 'custom_label_2', 'custom_label_3', 'custom_label_4',
+  // Custom labels let product sets be cut (by category, city, open vs invite,
+  // payment mode) without ever changing this feed again.
+  //
+  // ONLY VALUES THAT RARELY CHANGE. custom_label_4 used to carry the next open
+  // date, which moves every time a date passes or sells out. Meta: changing a
+  // custom label "sends items through policy review each time, which can impact
+  // ad delivery" (Items Batch reference :105, cloud audit A-8) — so that label
+  // would have put a plan back into review every few days. Meta's answer is
+  // `internal_label`, but that it works in a commerce CSV feed is unproven
+  // (every in-repo CSV example is a travel catalog), so the date is simply not
+  // published as a label. Settle internal_label when the catalog is created
+  // (§20); next_date stays in meta_catalog_items for the panel.
+  'custom_label_0', 'custom_label_1', 'custom_label_2', 'custom_label_3',
 ];
 
 // RFC 4180: quote every field and double embedded quotes. Line breaks are
 // flattened, because a newline inside a description would start a new product.
+//
+// WHEN THE FEED IS CREATED IN META (cloud audit A-10): set the delimiter to
+// COMMA and "quoted fields" ON explicitly. One Meta page says quoted fields
+// apply only to TSV; if the feed is saved with them OFF, every value arrives
+// wrapped in literal " characters and Meta silently stores them that way.
 function cell(v: unknown): string {
   const s = String(v ?? '').replace(/[\r\n]+/g, ' ').trim();
   return `"${s.replace(/"/g, '""')}"`;
@@ -77,7 +92,6 @@ Deno.serve(async (req) => {
       r.city ?? '',
       r.booking ?? '',
       r.payment_mode ?? '',
-      r.next_date ?? '',
     ].map(cell).join(','));
   }
 
