@@ -494,6 +494,16 @@ async function sendViaCloudApi(args: {
     };
   }
 
+  // Since Meta split accounts in two (2026) a number can sit on several
+  // messaging accounts, and each holds its own templates and payment method.
+  // Unless a send names one, Meta chooses. On 2026-10-11 it chose a new, empty
+  // account that Ads Manager had attached to our number, and every send was
+  // refused: first "cannot access the provided Paid Message Account", then,
+  // once access was granted, "template name does not exist". Naming ours makes
+  // the choice ours. Unset, Meta decides as before.
+  const messagingAccount = Deno.env.get('WHATSAPP_CLOUD_MESSAGING_ACCOUNT_ID');
+  if (messagingAccount) payload.paid_messaging_account_id = messagingAccount;
+
   try {
     const res = await fetch(`${base}/${phoneId}/messages`, {
       method: 'POST',
