@@ -7,6 +7,7 @@ import { setPixelUserData, getFbp, getFbc } from './metaPixel';
 import { isInAppBrowser, openExternalUrl, ensureDistinctUrl } from './inAppBrowser';
 import { formatEventTimeRange } from './eventTime';
 import { doubtWhatsAppUrl, businessWhatsAppUrl, BUSINESS_WHATSAPP_E164, BUSINESS_WHATSAPP_DISPLAY } from './whatsappLinks';
+import { whatsAppArrivalCode } from './whatsappClick';
 import { TermsContent } from './TermsContent';
 import {
   timelineModel, defaultBookingSteps, resolveBookingStepsForDate,
@@ -1030,6 +1031,41 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       setForceNewBooking(false);
     }
   }, [showDetailsForm, googleUser, selectedEvent?.id]);
+
+  // Arrived by tapping the button in a reply we sent inside their own WhatsApp
+  // chat (whatsappClick.ts remembers that link's code). Ask the server whose
+  // message it was and fill the two blanks it can answer. Only ever fills an
+  // EMPTY blank, and both stay ordinary editable fields.
+  //
+  // `chatArrival` is what later lets the form skip the six-digit code: while
+  // the number in the blank is still the one that message went to, the link is
+  // the proof (see requestOpenEventOtp). Change the number and it is a code
+  // again, like any other visitor.
+  const [chatArrival, setChatArrival] = useState<{ code: string; phone: string } | null>(null);
+  useEffect(() => {
+    const code = whatsAppArrivalCode();
+    if (!code) return;
+    let cancelled = false;
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/open-event-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ action: 'chat_prefill', wa: code }),
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        const phone = String(data?.phone ?? '');
+        if (cancelled || !data?.found || !/^[6-9]\d{9}$/.test(phone)) return;
+        setChatArrival({ code, phone });
+        setDetailsForm(f => ({ ...f, name: f.name || String(data.name ?? ''), phone: f.phone || phone }));
+      })
+      .catch(() => { /* no prefill: the form works as it always has */ });
+    return () => { cancelled = true; };
+  }, []);
+  const chatArrivalActive = !!chatArrival && chatArrival.phone === detailsForm.phone;
   const [showTcModal, setShowTcModal] = useState(false);
   // Which of the bill's nested sheets is open. Held here rather than inside
   // NativePaymentOverlay because only this component owns history, and without
@@ -2000,6 +2036,43 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setSendingOpenOtp(true);
     setOpenBookingCheckError('');
     try {
+      // Arrived from our own WhatsApp reply, and the number in the blank is
+      // still the one that reply went to: the link is the proof, so no code is
+      // sent. The server writes the same verified session a correct code would
+      // have, and everything from here on is the ordinary post-code path. Any
+      // refusal (an old link, a changed number, the function unreachable) falls
+      // through to the code below, exactly as if there had been no link.
+      if (delivery === 'whatsapp' && chatArrival && chatArrivalActive) {
+        const chatRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/open-event-otp`, {
+          method: 'POST',
+          headers: openEventFunctionHeaders,
+          body: JSON.stringify({
+            action: 'chat_verify',
+            wa: chatArrival.code,
+            name: detailsForm.name.trim(),
+            phone: detailsForm.phone,
+            email: detailsForm.email.trim(),
+            event_slug: selectedEvent.id,
+          }),
+        }).catch(() => null);
+        const chatData = chatRes ? await chatRes.json().catch(() => ({})) : {};
+        if (chatRes?.ok && chatData?.verified && chatData?.verification_token) {
+          // The same three steps the code path takes when its code goes out:
+          // identify the browser, reuse a returning applicant's Lead id, and
+          // count the form as submitted.
+          setPixelUserData({
+            email: detailsForm.email,
+            phone: detailsForm.phone,
+            name: detailsForm.name,
+            city: selectedCity,
+          });
+          adoptServerLeadId(chatData.lead_id);
+          pingOpenFunnel('details_form_submitted');
+          await handleProceedToPhonePe(chatData.verification_token);
+          return;
+        }
+      }
+
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/open-event-otp`, {
         method: 'POST',
         headers: openEventFunctionHeaders,
@@ -3530,7 +3603,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
                             </span>
                           ) : (
                             <>
-                              <span>{isPayUFlow ? (openOtpSession ? 'Continue to Payment' : 'Get OTP') : 'Continue to Payment'}</span>
+                              <span>{isPayUFlow ? (openOtpSession || chatArrivalActive ? 'Continue to Payment' : 'Get OTP') : 'Continue to Payment'}</span>
                               <ArrowRight size={18} strokeWidth={2.5} />
                             </>
                           )}

@@ -425,6 +425,60 @@ function otpEmailHtml(args: { name: string; otp: string }): string {
 </html>`;
 }
 
+// ── Arriving from our own WhatsApp message ───────────────────────────────────
+// A guest who taps the button in a message we sent them lands on the site
+// inside WhatsApp's own browser. That is the one place a code hurts: it arrives
+// in the chat the browser is covering, so they must close the site to read it
+// (found by the owner on his own phone, 2026-10-11).
+//
+// They do not need one. The link they tapped carries that message's private tap
+// code (96 random bits, whatsapp_sends.click_token), which exists only inside
+// the message delivered to that one WhatsApp number. Presenting it proves what
+// a six-digit code proves: "I can read what was sent to this WhatsApp".
+//
+// Three limits keep that honest:
+//   * Only a message sent INSIDE a chat the guest opened (no template name).
+//     Template buttons reach people who may never have written to us, and they
+//     are deliberately not part of this.
+//   * Only for CHAT_LINK_TTL_MS. A typed code dies in 8 minutes; a link sits in
+//     the chat on purpose, so its power to skip the code has to lapse.
+//   * Only for the number the message went to. Any other number gets a code.
+//
+// Nothing here loosens create-payu-order, which still demands a verified
+// session. This is a second way to EARN one, recorded on the row as
+// verified_via = 'chat_link' (20261011_open_event_chat_link_arrival.sql).
+//
+// Every doubt resolves toward asking for a code: an unknown link, an old one,
+// a failed lookup and a failed write all end in the ordinary OTP.
+const CHAT_LINK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+// Same shape src/whatsappClick.ts accepts, without the ".<button>" tail.
+const CHAT_CODE = /^[A-Za-z0-9_-]{12,40}$/;
+
+function chatCodeFrom(value: unknown): string | null {
+  const code = String(value ?? '').split('.')[0];
+  return CHAT_CODE.test(code) ? code : null;
+}
+
+async function resolveChatLink(supabase: any, code: string): Promise<{ sendId: number; phone: string } | null> {
+  const { data, error } = await supabase
+    .from('whatsapp_sends')
+    .select('id, to_phone, sent_at, created_at')
+    .eq('click_token', code)
+    .eq('provider', 'meta')
+    .is('template_name', null)
+    .not('message_id', 'is', null)
+    .maybeSingle();
+  if (error) {
+    console.error('[open-event-otp] chat link lookup failed', error);
+    return null;
+  }
+  if (!data) return null;
+  const sentAt = new Date(data.sent_at ?? data.created_at).getTime();
+  if (!Number.isFinite(sentAt) || Date.now() - sentAt > CHAT_LINK_TTL_MS) return null;
+  const phone = normalizePhone(data.to_phone);
+  return phone ? { sendId: Number(data.id), phone } : null;
+}
+
 Deno.serve(async (req) => {
   const cors = corsFor(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -432,12 +486,99 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? '');
-  if (action !== 'request' && action !== 'verify') return reply(400, { error: 'invalid action' }, cors);
+  if (action !== 'request' && action !== 'verify' && action !== 'chat_prefill' && action !== 'chat_verify') {
+    return reply(400, { error: 'invalid action' }, cors);
+  }
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+
+  // Whose message was that link from? Lets the site fill the name and number
+  // blanks for someone arriving from our WhatsApp reply. Answers "not found"
+  // for anything it does not recognise, so the form simply stays empty.
+  if (action === 'chat_prefill') {
+    const code = chatCodeFrom(body.wa);
+    if (!code) return reply(200, { found: false }, cors);
+    if (!(await checkRateLimit(supabase, 'open-event-otp:chat:ip', clientIp(req), 60, 20))) {
+      return reply(200, { found: false }, cors);
+    }
+    const link = await resolveChatLink(supabase, code);
+    if (!link) return reply(200, { found: false }, cors);
+    // Their WhatsApp profile name, as it arrived with their own message. Often a
+    // nickname, which is why the site leaves the blank editable.
+    let name = '';
+    try {
+      const { data: lastMessage } = await supabase
+        .from('whatsapp_inbound')
+        .select('from_name')
+        .eq('from_phone', link.phone)
+        .not('from_name', 'is', null)
+        .order('received_at', { ascending: false })
+        .limit(1);
+      name = String(lastMessage?.[0]?.from_name ?? '').replace(/[|<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    } catch { /* a missing name is just an empty blank */ }
+    return reply(200, { found: true, phone: link.phone, name }, cors);
+  }
+
+  // The same guest pressing the form's button: the link stands in for the code.
+  if (action === 'chat_verify') {
+    const name = String(body.name ?? '').trim().replace(/[|<>]/g, '').slice(0, 80);
+    const phone = normalizePhone(body.phone);
+    const email = normalizeEmail(body.email);
+    const requestedSlug = normalizeSlug(body.event_slug);
+    if (!name || !phone || !email || !requestedSlug) return reply(400, { error: 'invalid booking details' }, cors);
+
+    const event = await resolveOpenEvent(supabase, requestedSlug);
+    if (!event) return reply(403, { error: 'OTP verification is only available for an active open event.' }, cors);
+
+    // One answer for every refusal, and the site reacts to it one way: it asks
+    // for a code, exactly as if there had been no link.
+    const useCode = () => reply(403, { error: 'verification code required', use_code: true }, cors);
+    const code = chatCodeFrom(body.wa);
+    if (!code) return useCode();
+    if (!(await checkRateLimit(supabase, 'open-event-otp:chat:ip', clientIp(req), 60, 20))) return useCode();
+    if (!(await checkRateLimit(supabase, 'open-event-otp:chat:code', code, 600, 10))) return useCode();
+
+    const link = await resolveChatLink(supabase, code);
+    if (!link || link.phone !== phone) return useCode();
+
+    const chatToken = randomToken();
+    const chatExpiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
+    const { error: chatInsertError } = await supabase.from('open_event_otp_sessions').insert({
+      verification_token: chatToken,
+      event_slug: event.slug,
+      phone,
+      email,
+      // No code exists for this session. The column is NOT NULL, so it holds a
+      // hash nothing can match, and the row is born verified instead.
+      code_hash: await sha256(`${chatToken}:${randomToken()}`),
+      expires_at: chatExpiresAt,
+      verified_at: new Date().toISOString(),
+      verified_via: 'chat_link',
+      via_send_id: link.sendId,
+    });
+    if (chatInsertError) {
+      console.error('[open-event-otp] could not create chat-link session', chatInsertError);
+      return useCode();
+    }
+    console.log('[open-event-otp] verified by chat link', { send: link.sendId });
+
+    // The Meta Lead dedup id, by the same rule as the code path below: the
+    // row's own lead_id for a returning applicant, a fresh uuid otherwise.
+    let chatLeadId: string = crypto.randomUUID();
+    try {
+      const { data: existing } = await supabase
+        .from('applications').select('lead_id')
+        .eq('event_slug', event.slug).eq('phone', phone)
+        .maybeSingle();
+      const rowLead = String(existing?.lead_id ?? '');
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rowLead)) chatLeadId = rowLead;
+    } catch { /* keep the fresh id */ }
+
+    return reply(200, { verified: true, verification_token: chatToken, expires_at: chatExpiresAt, lead_id: chatLeadId }, cors);
+  }
 
   if (action === 'request') {
     const name = String(body.name ?? '').trim().replace(/[|<>]/g, '').slice(0, 80);
