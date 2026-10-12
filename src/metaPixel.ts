@@ -18,6 +18,9 @@
 // script that never loaded must NEVER be able to break a booking. This file is
 // allowed to lose data; it is not allowed to throw.
 
+import * as Sentry from '@sentry/react';
+import { cleanTrackerUrl, isAddressClean, isCleanTrackerUrl } from './trackerUrl';
+
 // Events Manager → Datasets → "chaptera.in website" (created 2026-08-12).
 // Deliberately a SEPARATE dataset from "WhatsApp Marketing Messages"
 // (892500220416246), which belongs to the AiSensy integration that carries the
@@ -66,6 +69,113 @@ function isProductionHost(): boolean {
 
 export function isPixelConfigured(): boolean {
   return META_PIXEL_ID.trim().length > 0;
+}
+
+// ─── The page address Meta is told ───────────────────────────────────────────
+//
+// Every pixel event carries the page address (`dl`) and the page we came from
+// (`rl`), read by fbevents straight from the browser at the moment it sends.
+// Our WhatsApp and email links put the guest's phone, name and private link
+// code in that address, so Meta was receiving them: proved 2026-10-11 with
+// made-up values (docs/TRACKER-ADDRESS-LEAK-2026-10-11.md).
+//
+// Meta offers no setting for this — fbq has no "report this address instead".
+// What fbevents does have is the hook its OWN privacy plug-in uses to blank
+// address parameters Meta has decided are sensitive: an internal
+// `validateUrlParameters` event whose listeners are handed {dl, rl} and may
+// rewrite them before the request is built. We listen on the same hook and
+// swap in the cleaned address (rules: the first script in index.html).
+//
+// That hook is undocumented, so nothing here trusts it:
+//   * `init` and every event wait in `waiting` until fbevents has loaded AND
+//     the listener is in place. Nothing can be sent before the guard exists.
+//   * If the hook cannot be found, or a sent event is seen (through fbevents'
+//     own `fired` notice) still carrying an uncleaned address, the guard is
+//     marked 'off'. From then on an event is sent only while the address in
+//     the bar is already clean, and is dropped otherwise. Losing a pixel event
+//     is allowed (see SAFETY at the top); sending a phone number is not.
+//   * Going 'off' is reported once to Sentry, so it cannot fail in silence,
+//     and is remembered for the tab: the second kind of failure is only seen
+//     AFTER one event has left, and that must not repeat on every page load.
+//
+// The address bar and the history are never touched.
+type AddressGuard = 'waiting' | 'on' | 'off';
+let addressGuard: AddressGuard = 'waiting';
+const waiting: unknown[][] = [];
+const MAX_WAITING = 60;
+const GUARD_OFF_KEY = 'ca_pixel_guard_off';
+
+function guardWasOffEarlier(): boolean {
+  try {
+    return sessionStorage.getItem(GUARD_OFF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function guardFailed(reason: string): void {
+  if (addressGuard === 'off') return;
+  addressGuard = 'off';
+  try { sessionStorage.setItem(GUARD_OFF_KEY, '1'); } catch { /* storage blocked */ }
+  try {
+    Sentry.captureMessage(`Meta pixel address guard is off: ${reason}`, 'warning');
+  } catch { /* reporting is a courtesy; the guard state is what matters */ }
+}
+
+function armAddressGuard(): void {
+  try {
+    const events = (window.fbq as any)?.getFbeventsModules?.('SignalsFBEventsEvents');
+    const hook = events?.validateUrlParameters;
+    if (!hook || typeof hook.listen !== 'function') {
+      guardFailed('hook not found');
+    } else {
+      hook.listen((_pixel: unknown, urls: Record<string, unknown> | null) => {
+        try {
+          if (!urls || typeof urls !== 'object') return;
+          if (typeof urls.dl === 'string' && urls.dl) urls.dl = cleanTrackerUrl(urls.dl);
+          if (typeof urls.rl === 'string' && urls.rl) urls.rl = cleanTrackerUrl(urls.rl);
+        } catch { /* never break an event */ }
+      });
+      // Check what actually left, not what we hoped left.
+      if (events.fired && typeof events.fired.listen === 'function') {
+        events.fired.listen((_method: unknown, payload: any) => {
+          try {
+            const dl = payload?.get?.('dl');
+            const rl = payload?.get?.('rl');
+            if ((typeof dl === 'string' && dl && !isCleanTrackerUrl(dl))
+              || (typeof rl === 'string' && rl && !isCleanTrackerUrl(rl))) {
+              guardFailed('an event left with an uncleaned address');
+            }
+          } catch { /* a broken check must not break the pixel */ }
+        });
+      }
+      if (addressGuard === 'waiting') addressGuard = guardWasOffEarlier() ? 'off' : 'on';
+    }
+  } catch {
+    guardFailed('could not attach');
+  }
+  const held = waiting.splice(0, waiting.length);
+  for (const args of held) deliver(args);
+}
+
+function deliver(args: unknown[]): void {
+  try {
+    if (!window.fbq) return;
+    const isEvent = args[0] === 'track' || args[0] === 'trackCustom';
+    if (isEvent && addressGuard === 'off' && !isAddressClean()) return;
+    window.fbq(...args);
+  } catch {
+    // never block the page
+  }
+}
+
+// The only way anything in this file talks to fbq once the stub exists.
+function sendToPixel(...args: unknown[]): void {
+  if (addressGuard === 'waiting') {
+    if (waiting.length < MAX_WAITING) waiting.push(args);
+    return;
+  }
+  deliver(args);
 }
 
 // Injects Meta's base snippet and fires the initial PageView. Safe to call more
@@ -147,9 +257,13 @@ export function initMetaPixel(): void {
     const script = document.createElement('script');
     script.async = true;
     script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+    // `init` is held back until this fires — see "The page address Meta is
+    // told" above. fbevents sends nothing for a pixel that has not been
+    // initialised, so no event can leave before the address guard is in place.
+    script.onload = armAddressGuard;
     document.head.appendChild(script);
 
-    window.fbq('init', META_PIXEL_ID);
+    sendToPixel('init', META_PIXEL_ID);
   } catch {
     // never block the page
   }
@@ -252,7 +366,7 @@ export function setPixelUserData(u: PixelUserData): void {
     if (!Object.keys(data).length) return;
     data.country = 'in';
 
-    window.fbq('init', META_PIXEL_ID, data);
+    sendToPixel('init', META_PIXEL_ID, data);
   } catch {
     // never block a booking
   }
@@ -296,9 +410,9 @@ export function trackPixel(
       if (v !== undefined && v !== null && v !== '') clean[k] = v;
     }
     if (opts.eventID) {
-      window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean, { eventID: opts.eventID });
+      sendToPixel(opts.custom ? 'trackCustom' : 'track', eventName, clean, { eventID: opts.eventID });
     } else {
-      window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean);
+      sendToPixel(opts.custom ? 'trackCustom' : 'track', eventName, clean);
     }
   } catch {
     // never block the page

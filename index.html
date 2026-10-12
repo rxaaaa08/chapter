@@ -53,14 +53,138 @@
         window.__deferredInstallPrompt = e;
       });
     </script>
-    <!-- Contentsquare: configure privacy before tracker loads. Hash IPs and
-         disable advertising signals so session replays + analytics events
-         carry less identifying data. Forms also use data-cs-mask="true" on
-         phone/name fields (added in component files) so input values are
-         scrubbed from replays. -->
+    <!-- WHAT OUTSIDE TOOLS ARE TOLD THE PAGE ADDRESS IS.
+
+         Our WhatsApp and email links carry the guest's phone number, their name
+         and a private link code in the address:
+           /invite?phone=…&name=…&wa=…
+         Contentsquare and Google Analytics load right here, before the app, and
+         each one reads the address by itself and sends it home. The Meta Pixel
+         and Sentry (started later, by the app) do the same. Proved 2026-10-11
+         with made-up values: all four received the phone, the name and the
+         code. Write-up: docs/TRACKER-ADDRESS-LEAK-2026-10-11.md.
+
+         So this script runs FIRST and gives every tool a cleaned copy of the
+         address instead. It never changes the address bar or the history: the
+         back button inside Instagram's browser is fragile (see inviteStepUrl in
+         src/App.tsx), and the app itself still has to read phone, name and wa
+         from the real address after this.
+
+         THE RULE IS A LIST OF WHAT MAY BE SEEN, not a list of what to hide.
+         A parameter that is not on the list below is removed. A new link
+         parameter is therefore private until someone decides otherwise; add it
+         to KEEP only if it says nothing about a person and unlocks nothing.
+         This is the ONE copy of the rule. src/trackerUrl.ts reads it for the
+         Meta Pixel and Sentry; do not write a second list anywhere. -->
     <script>
-      window._uxa = window._uxa || [];
-      window._uxa.push(['setPrivacyAttributes', { ipHashing: true, denyAdvertising: true }]);
+      (function () {
+        var KEEP = [
+          // where the visit came from (anything starting utm_ is also kept)
+          'fbclid', 'placement', 'site_source_name', 'gclid', 'gbraid', 'wbraid', 'dclid', 'gad_source',
+          // a creator's public handle, and which plan a link points at
+          'ref', 'preview_event', 'event',
+          // which sheet or step is open (how the back button works)
+          'sheet', 'step', '_n',
+          // the return from PayU. txnid is the payment reference: not personal,
+          // opens no receipt without the phone, and Meta is given it on purpose
+          // as the order id.
+          'payment_status', 'payment_type', 'txnid',
+          // staff and debugging switches
+          'staff', 'gauth', 'dbg', 'tourdev', 'revisit', 'mapdev'
+        ];
+
+        // Sorts the parameters into the ones a tool may see, and a count of the
+        // ones it may not. The original text of each kept parameter is passed
+        // through untouched, so a utm tag reaches Google exactly as written.
+        function sortQuery(search) {
+          var kept = [], dropped = 0;
+          var parts = String(search || '').replace(/^\?/, '').split('&');
+          for (var i = 0; i < parts.length; i++) {
+            if (!parts[i]) continue;
+            var key;
+            try { key = decodeURIComponent(parts[i].split('=')[0].replace(/\+/g, ' ')).toLowerCase(); } catch (e) { dropped++; continue; }
+            if (key.indexOf('utm_') === 0 || KEEP.indexOf(key) !== -1) kept.push(parts[i]); else dropped++;
+          }
+          return { query: kept.length ? '?' + kept.join('&') : '', dropped: dropped };
+        }
+
+        function cleanQuery(search) {
+          return sortQuery(search).query;
+        }
+
+        // One of our own addresses keeps its path and the allowed parameters.
+        // Anyone else's (the page a visitor came from) keeps site and path only.
+        // The part after # is always dropped: a staff login returns its key there.
+        function cleanUrl(raw) {
+          if (!raw) return '';
+          try {
+            var u = new URL(String(raw), location.href);
+            if (u.origin !== location.origin) return u.protocol + '//' + u.host + u.pathname;
+            return u.origin + u.pathname + cleanQuery(u.search);
+          } catch (e) { return ''; }
+        }
+
+        function pageUrl() {
+          return cleanUrl(location.href) || (location.origin + location.pathname);
+        }
+
+        window.__caTrackerUrl = { clean: cleanUrl, page: pageUrl };
+
+        // Contentsquare. `setQuery` replaces the parameters it reports for the
+        // page, and stays in force until it is set again; the second command
+        // drops the parameters of the page the visitor came from. Both are
+        // Contentsquare's own commands and both are queued before its tag loads.
+        // (This block used to push 'setPrivacyAttributes' with ipHashing and
+        // denyAdvertising. No such command exists in Contentsquare's tag, so
+        // that line did nothing and has been removed.) Phone, name and email
+        // fields are still hidden from recordings by data-cs-mask, set in
+        // src/main.tsx.
+        //
+        // RECORDINGS ARE A SEPARATE CHANNEL. A session recording writes down the
+        // real address by itself when it starts (Contentsquare's HASH_CHANGE
+        // entry reads location.href), `setQuery` does not reach it, and there
+        // is no command that does. Measured 2026-10-12: with everything above
+        // in place, a recording still carried phone, name and code. So while
+        // the real address holds anything a tool may not see, recording is
+        // switched off for that page view with Contentsquare's own
+        // `excludeURLforReplay` ('.*' = every address, '.^' = none, its
+        // default). It is re-decided at every page view, so recording resumes
+        // by itself once the address is clean, e.g. after the invite page has
+        // tidied it. Page views are still counted either way; only the
+        // recording of that stretch is given up.
+        window._uxa = window._uxa || [];
+        window._uxa.push(['referrer:removeQueryString']);
+        var lastQuery = null;
+        var lastHidden = null;
+        function tellContentsquare() {
+          try {
+            var sorted = sortQuery(location.search);
+            if (sorted.query !== lastQuery) { lastQuery = sorted.query; window._uxa.push(['setQuery', sorted.query]); }
+            var hidden = sorted.dropped > 0 || (location.hash || '').length > 1;
+            if (hidden !== lastHidden) { lastHidden = hidden; window._uxa.push(['excludeURLforReplay', hidden ? '.*' : '.^']); }
+          } catch (e) {}
+        }
+        tellContentsquare();
+
+        // Contentsquare reports a new page view each time the app opens a sheet
+        // or a step, so the cleaned parameters have to be refreshed at that
+        // moment, before it looks. These wrappers only LISTEN: the real call
+        // runs first with the same arguments and its result is returned
+        // unchanged. No address is altered and no entry is added or removed.
+        try {
+          ['pushState', 'replaceState'].forEach(function (name) {
+            var real = history[name];
+            if (typeof real !== 'function') return;
+            history[name] = function () {
+              var result = real.apply(this, arguments);
+              tellContentsquare();
+              return result;
+            };
+          });
+          window.addEventListener('popstate', tellContentsquare, true);
+          window.addEventListener('hashchange', tellContentsquare, true);
+        } catch (e) {}
+      })();
     </script>
     <script src="https://t.contentsquare.net/uxa/02bde574cbdd5.js" async></script>
     <!-- Google Analytics: anonymize_ip strips the last IP octet; ad_*_signals
@@ -68,6 +192,32 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
+      // Google reads the address twice, and both have to be covered.
+      //   1. When it starts: page_location / page_referrer in the config below.
+      //   2. Every time the app opens a sheet or a step, Google's script notes
+      //      the old and the new address and sends a page view built from them,
+      //      ignoring (1). It passes that note through this queue as an entry
+      //      named gtm.historyChange…, so the two addresses are cleaned here on
+      //      their way in. Measured 2026-10-11: without this, the first such
+      //      page view carried the guest's whole original link as "came from".
+      // Part 2 leans on how Google's script works inside. If Google changes
+      // it, the sealed test in the write-up is what will show it — re-run that
+      // after touching anything in this file.
+      (function () {
+        var push = window.dataLayer.push;
+        window.dataLayer.push = function () {
+          try {
+            for (var i = 0; i < arguments.length; i++) {
+              var entry = arguments[i];
+              if (entry && typeof entry.event === 'string' && entry.event.indexOf('gtm.historyChange') === 0) {
+                if (entry['gtm.oldUrl']) entry['gtm.oldUrl'] = window.__caTrackerUrl.clean(entry['gtm.oldUrl']);
+                if (entry['gtm.newUrl']) entry['gtm.newUrl'] = window.__caTrackerUrl.clean(entry['gtm.newUrl']);
+              }
+            }
+          } catch (e) {}
+          return push.apply(this, arguments);
+        };
+      })();
       function gtag(){dataLayer.push(arguments);}
       // Instagram/Facebook in-app browsers used to be skipped here: the
       // full-screen "open in external browser" wall made their landing a
@@ -76,11 +226,16 @@
       // and pay in place, and since practically all our traffic arrives from
       // Instagram, dropping them left GA blind to the real funnel.
       gtag('js', new Date());
-      gtag('config', 'G-3MLZ9S6M2S', {
-        anonymize_ip: true,
-        allow_google_signals: false,
-        allow_ad_personalization_signals: false,
-      });
+      (function () {
+        var config = {
+          anonymize_ip: true,
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false,
+          page_location: window.__caTrackerUrl.page(),
+        };
+        if (document.referrer) config.page_referrer = window.__caTrackerUrl.clean(document.referrer);
+        gtag('config', 'G-3MLZ9S6M2S', config);
+      })();
     </script>
     <style>
       @keyframes ca-glow {

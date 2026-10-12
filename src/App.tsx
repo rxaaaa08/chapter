@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download } from 'lucide-react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
+import { cleanTrackerUrl } from './trackerUrl';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
 import AdminPanel from './AdminPanel';
@@ -5451,6 +5452,12 @@ function InAppBrowserNudge() {
 }
 
 // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
+// Stable reference (module scope) so the Speed Insights component registers it once.
+function cleanSpeedInsightsReading(reading: { type: 'vital'; url: string; route?: string }) {
+  const url = cleanTrackerUrl(reading.url);
+  return url ? { ...reading, url } : null;
+}
+
 export default function App() {
   const [routePath, setRoutePath] = useState(() => {
     if (typeof window === 'undefined') return '/';
@@ -5769,8 +5776,11 @@ export default function App() {
       <LandscapeBlocker />
       <AppFlow />
       {/* Vercel Speed Insights — ships real-user Core Web Vitals (LCP / INP / CLS)
-          to the Vercel dashboard. Tiny script (~2KB), no PII collected. */}
-      <SpeedInsights />
+          to the Vercel dashboard. Tiny script (~2KB). Each reading carries the
+          page address, so it goes through the same cleaner as every other
+          outside tool (src/trackerUrl.ts) — measured 2026-10-11: without this a
+          plans page opened with ?phone=…&wa=… sent both to Vercel. */}
+      <SpeedInsights beforeSend={cleanSpeedInsightsReading} />
     </>
   );
 }

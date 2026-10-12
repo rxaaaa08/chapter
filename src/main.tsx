@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import App from './App.tsx';
 import { initMetaPixel } from './metaPixel';
 import { reportWhatsAppClick } from './whatsappClick';
+import { cleanTrackerUrl, cleanUrlsInText } from './trackerUrl';
 import './index.css';
 
 // Ad attribution. No-ops entirely until META_PIXEL_ID is set, and never loads
@@ -14,6 +15,52 @@ initMetaPixel();
 // the link carries a tap code.
 reportWhatsAppClick();
 
+// Sentry keeps a trail of addresses with every error report: the page the error
+// happened on, the page before it, each in-page move ("from … to …") and every
+// request the page made. Our message links put a guest's phone, name and
+// private link code in the address, so an error report carried them — proved
+// 2026-10-11 with made-up values (docs/TRACKER-ADDRESS-LEAK-2026-10-11.md).
+// Every address is passed through the same cleaner the other tools get (rules:
+// the first script in index.html) before a report leaves the browser.
+function cleanAddressField(holder: Record<string, unknown> | undefined, key: string): void {
+  if (holder && typeof holder[key] === 'string' && holder[key]) {
+    holder[key] = cleanTrackerUrl(holder[key] as string);
+  }
+}
+
+function cleanSentryBreadcrumb(crumb: Sentry.Breadcrumb): Sentry.Breadcrumb {
+  try {
+    const data = crumb.data as Record<string, unknown> | undefined;
+    cleanAddressField(data, 'url');
+    cleanAddressField(data, 'from');
+    cleanAddressField(data, 'to');
+    if (typeof crumb.message === 'string') crumb.message = cleanUrlsInText(crumb.message);
+  } catch { /* a report with an uncleaned crumb is dropped below, not sent */ }
+  return crumb;
+}
+
+function cleanSentryEvent<T extends Sentry.Event>(event: T): T | null {
+  try {
+    const request = event.request as Record<string, unknown> | undefined;
+    cleanAddressField(request, 'url');
+    if (request) delete request.query_string;
+    const headers = request?.headers as Record<string, unknown> | undefined;
+    cleanAddressField(headers, 'Referer');
+    cleanAddressField(headers, 'referer');
+    for (const crumb of event.breadcrumbs ?? []) cleanSentryBreadcrumb(crumb);
+    for (const problem of event.exception?.values ?? []) {
+      if (typeof problem.value === 'string') problem.value = cleanUrlsInText(problem.value);
+    }
+    if (typeof event.message === 'string') event.message = cleanUrlsInText(event.message);
+    if (typeof event.transaction === 'string') event.transaction = cleanUrlsInText(event.transaction);
+    return event;
+  } catch {
+    // Could not be cleaned, so it is not sent. One lost error report is the
+    // cheaper mistake.
+    return null;
+  }
+}
+
 Sentry.init({
   dsn: 'https://50fb89acdd1a7824703dbe8379c0b16f@o4511243249844224.ingest.us.sentry.io/4511243253710848',
   environment: import.meta.env.MODE,
@@ -23,6 +70,9 @@ Sentry.init({
   // default. If you need user attribution on a specific error, call
   // Sentry.setUser({ id: ... }) explicitly with the minimal field.
   sendDefaultPii: false,
+  beforeBreadcrumb: cleanSentryBreadcrumb,
+  beforeSend: cleanSentryEvent,
+  beforeSendTransaction: cleanSentryEvent,
 });
 
 if ('serviceWorker' in navigator) {
