@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download } from 'lucide-react';
+import * as Sentry from '@sentry/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { cleanTrackerUrl } from './trackerUrl';
 import chatProfile from './assets/chat-profile.jpg';
 import AppFlow from './AppFlow';
-import AdminPanel from './AdminPanel';
-import CreatorDashboard from './CreatorDashboard';
-import TeamOnboarding from './TeamOnboarding';
 import { NativePaymentOverlay, type PaymentSubsheet } from './PaymentOverlay';
 import {
   timelineModel, resolveBookingStepsForDate, isFixedTimeline as isFixedTimelineModel,
@@ -31,6 +29,75 @@ const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v
 function MobileShell({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
   return (
     <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
+// ─── SCREENS A GUEST NEVER OPENS ───────────────────────────────────────────────
+// The admin panel, the creator dashboard and the team training are each their
+// own download, fetched only when their page is opened. They used to ride in
+// the one script every guest waits for before anything appears, and were most
+// of it (measured 2026-10-12, docs/WEBSITE-OPTIMISATION-PHASES-2026-10-12.md).
+// Keep them out: importing any of the three normally, here or in a file a
+// guest's page uses, puts them straight back into every guest's download.
+const SCREEN_RELOAD_KEY = 'ca_screen_reload';
+
+function ScreenLoading() {
+  // Same mark, same place as the pre-loader in index.html, so the hand-over
+  // from one to the other is not visible.
+  return (
+    <div className="fixed inset-0 bg-white z-50 flex items-center justify-center">
+      <div className="relative w-16 h-16 rounded-2xl bg-black shadow-xl overflow-hidden p-1.5">
+        <img src={chatProfile} alt="" aria-hidden="true" className="w-full h-full object-contain scale-[1.02] translate-y-[2px]" />
+      </div>
+    </div>
+  );
+}
+
+function ScreenLoadFailed() {
+  return (
+    <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-4 px-8 text-center">
+      <p className="text-[15px] text-gray-700">This page did not load. Check your connection and try again.</p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="px-5 py-2.5 rounded-full bg-black text-white text-sm font-medium"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function lazyScreen(load: () => Promise<{ default: React.ComponentType }>) {
+  return React.lazy(() =>
+    load().then(
+      (screen) => {
+        try { sessionStorage.removeItem(SCREEN_RELOAD_KEY); } catch { /* storage blocked: nothing to clear */ }
+        return screen;
+      },
+      (error) => {
+        // The usual cause is a tab left open across a release: it asks for a
+        // file name the new build no longer has. One reload fetches the fresh
+        // page, which knows the new names. Only one, remembered per tab, so a
+        // real outage shows the message below instead of reloading forever
+        // (and with storage blocked we cannot remember, so we do not reload).
+        let alreadyReloaded = true;
+        try {
+          alreadyReloaded = sessionStorage.getItem(SCREEN_RELOAD_KEY) === '1';
+          if (!alreadyReloaded) sessionStorage.setItem(SCREEN_RELOAD_KEY, '1');
+        } catch { /* keep alreadyReloaded = true */ }
+        if (!alreadyReloaded) {
+          window.location.reload();
+          return new Promise<{ default: React.ComponentType }>(() => {});
+        }
+        Sentry.captureException(error);
+        return { default: ScreenLoadFailed };
+      },
+    ),
+  );
+}
+
+const AdminPanel = lazyScreen(() => import('./AdminPanel'));
+const CreatorDashboard = lazyScreen(() => import('./CreatorDashboard'));
+const TeamOnboarding = lazyScreen(() => import('./TeamOnboarding'));
+
       <div data-mobile-shell className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         <div
           data-mobile-shell-scroll
@@ -5686,14 +5753,16 @@ export default function App() {
   if (isTermsPage) return <TermsScreen />;
   if (isDataDeletionPage) return <DataDeletionScreen />;
 
-  if (isAdmin) return <AdminPanel />;
+  if (isAdmin) return <React.Suspense fallback={<ScreenLoading />}><AdminPanel /></React.Suspense>;
   if (isCreatorPage) {
     return (
       <>
         <InAppBrowserNudge />
         <LandscapeBlocker />
         <MobileShell scroll>
-          <CreatorDashboard />
+          <React.Suspense fallback={<ScreenLoading />}>
+            <CreatorDashboard />
+          </React.Suspense>
         </MobileShell>
       </>
     );
@@ -5706,7 +5775,9 @@ export default function App() {
     return (
       <>
         <InAppBrowserNudge />
-        <TeamOnboarding />
+        <React.Suspense fallback={<ScreenLoading />}>
+          <TeamOnboarding />
+        </React.Suspense>
       </>
     );
   }
