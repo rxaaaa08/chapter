@@ -1,0 +1,23 @@
+AFTER — the fix as it now sits in the project files, built and served as chaptera.in inside the sealed test, 2026-10-12
+clean·N = N requests, none carrying a made-up personal value. LEAK(x) = the made-up x was in what the tool tried to send. — = the tool sent nothing.
+'recording' is Contentsquare's session recording, which travels separately: none = no recording ran in that test.
+L is Contentsquare repeating an error MESSAGE that contained a link (not the page address). G2 is a deliberate failure drill.
+
+A booking-message link /invite?phone&name&wa, slow app                         | GA clean·4          CS clean·12               Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+B chat-reply link /lifestyle?utm&wa                                            | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+C /invite?phone&wa with no name (never auto-cleaned by the app)                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+D payment return, failed                                                       | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+E full reload to /plans from a link that carried the code (came-from address)  | GA clean·6          CS clean·6                Meta clean·2        Sentry clean·1              Vercel clean·2          recording none      other —
+F1 Instagram iPhone browser, booking-message link, slow app                    | GA clean·4          CS clean·23               Meta clean·2        Sentry clean·1              Vercel —                recording clean·11  other —
+F2 Instagram iPhone browser, chat-reply link                                   | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+F3 WhatsApp Android browser, booking-message link                              | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+H1 payment return, success, open event shape                                   | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+H2 payment return, success, invite shape                                       | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+I ordinary reel visitor /lifestyle?utm_source=sp_auto_dm&fbclid                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+J creator link /lifestyle?ref=zzhandle                                         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+K address with a # part                                                        | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+L an error whose message itself contains a personal link                       | GA clean·3          CS LEAK(phone,name)       Meta clean·1        Sentry clean·1              Vercel —                recording LEAK·3    other —
+M healthy pixel, direct plan link with the code: two app events on one load    | GA clean·2          CS clean·4                Meta clean·2        Sentry —                    Vercel clean·1          recording none      other —
+N plans page reached with the personal parameters still in the address         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel clean·2          recording none      other —
+G1 failure drill: Meta renames the module our guard looks up (pixel itself sti | GA clean·5          CS clean·9                Meta clean·2        Sentry clean·2              Vercel clean·2          recording none      other —
+G2 failure drill: Meta keeps the hook but stops honouring it                   | GA clean·10         CS clean·11               Meta LEAK(wa)       Sentry clean·1              Vercel clean·5          recording none      other —

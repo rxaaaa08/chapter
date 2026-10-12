@@ -1,0 +1,567 @@
+diff --git a/index.html b/index.html
+index 5371add..73c9edf 100644
+--- a/index.html
++++ b/index.html
+@@ -53,14 +53,138 @@
+         window.__deferredInstallPrompt = e;
+       });
+     </script>
+-    <!-- Contentsquare: configure privacy before tracker loads. Hash IPs and
+-         disable advertising signals so session replays + analytics events
+-         carry less identifying data. Forms also use data-cs-mask="true" on
+-         phone/name fields (added in component files) so input values are
+-         scrubbed from replays. -->
++    <!-- WHAT OUTSIDE TOOLS ARE TOLD THE PAGE ADDRESS IS.
++
++         Our WhatsApp and email links carry the guest's phone number, their name
++         and a private link code in the address:
++           /invite?phone=…&name=…&wa=…
++         Contentsquare and Google Analytics load right here, before the app, and
++         each one reads the address by itself and sends it home. The Meta Pixel
++         and Sentry (started later, by the app) do the same. Proved 2026-10-11
++         with made-up values: all four received the phone, the name and the
++         code. Write-up: docs/TRACKER-ADDRESS-LEAK-2026-10-11.md.
++
++         So this script runs FIRST and gives every tool a cleaned copy of the
++         address instead. It never changes the address bar or the history: the
++         back button inside Instagram's browser is fragile (see inviteStepUrl in
++         src/App.tsx), and the app itself still has to read phone, name and wa
++         from the real address after this.
++
++         THE RULE IS A LIST OF WHAT MAY BE SEEN, not a list of what to hide.
++         A parameter that is not on the list below is removed. A new link
++         parameter is therefore private until someone decides otherwise; add it
++         to KEEP only if it says nothing about a person and unlocks nothing.
++         This is the ONE copy of the rule. src/trackerUrl.ts reads it for the
++         Meta Pixel and Sentry; do not write a second list anywhere. -->
+     <script>
+-      window._uxa = window._uxa || [];
+-      window._uxa.push(['setPrivacyAttributes', { ipHashing: true, denyAdvertising: true }]);
++      (function () {
++        var KEEP = [
++          // where the visit came from (anything starting utm_ is also kept)
++          'fbclid', 'placement', 'site_source_name', 'gclid', 'gbraid', 'wbraid', 'dclid', 'gad_source',
++          // a creator's public handle, and which plan a link points at
++          'ref', 'preview_event', 'event',
++          // which sheet or step is open (how the back button works)
++          'sheet', 'step', '_n',
++          // the return from PayU. txnid is the payment reference: not personal,
++          // opens no receipt without the phone, and Meta is given it on purpose
++          // as the order id.
++          'payment_status', 'payment_type', 'txnid',
++          // staff and debugging switches
++          'staff', 'gauth', 'dbg', 'tourdev', 'revisit', 'mapdev'
++        ];
++
++        // Sorts the parameters into the ones a tool may see, and a count of the
++        // ones it may not. The original text of each kept parameter is passed
++        // through untouched, so a utm tag reaches Google exactly as written.
++        function sortQuery(search) {
++          var kept = [], dropped = 0;
++          var parts = String(search || '').replace(/^\?/, '').split('&');
++          for (var i = 0; i < parts.length; i++) {
++            if (!parts[i]) continue;
++            var key;
++            try { key = decodeURIComponent(parts[i].split('=')[0].replace(/\+/g, ' ')).toLowerCase(); } catch (e) { dropped++; continue; }
++            if (key.indexOf('utm_') === 0 || KEEP.indexOf(key) !== -1) kept.push(parts[i]); else dropped++;
++          }
++          return { query: kept.length ? '?' + kept.join('&') : '', dropped: dropped };
++        }
++
++        function cleanQuery(search) {
++          return sortQuery(search).query;
++        }
++
++        // One of our own addresses keeps its path and the allowed parameters.
++        // Anyone else's (the page a visitor came from) keeps site and path only.
++        // The part after # is always dropped: a staff login returns its key there.
++        function cleanUrl(raw) {
++          if (!raw) return '';
++          try {
++            var u = new URL(String(raw), location.href);
++            if (u.origin !== location.origin) return u.protocol + '//' + u.host + u.pathname;
++            return u.origin + u.pathname + cleanQuery(u.search);
++          } catch (e) { return ''; }
++        }
++
++        function pageUrl() {
++          return cleanUrl(location.href) || (location.origin + location.pathname);
++        }
++
++        window.__caTrackerUrl = { clean: cleanUrl, page: pageUrl };
++
++        // Contentsquare. `setQuery` replaces the parameters it reports for the
++        // page, and stays in force until it is set again; the second command
++        // drops the parameters of the page the visitor came from. Both are
++        // Contentsquare's own commands and both are queued before its tag loads.
++        // (This block used to push 'setPrivacyAttributes' with ipHashing and
++        // denyAdvertising. No such command exists in Contentsquare's tag, so
++        // that line did nothing and has been removed.) Phone, name and email
++        // fields are still hidden from recordings by data-cs-mask, set in
++        // src/main.tsx.
++        //
++        // RECORDINGS ARE A SEPARATE CHANNEL. A session recording writes down the
++        // real address by itself when it starts (Contentsquare's HASH_CHANGE
++        // entry reads location.href), `setQuery` does not reach it, and there
++        // is no command that does. Measured 2026-10-12: with everything above
++        // in place, a recording still carried phone, name and code. So while
++        // the real address holds anything a tool may not see, recording is
++        // switched off for that page view with Contentsquare's own
++        // `excludeURLforReplay` ('.*' = every address, '.^' = none, its
++        // default). It is re-decided at every page view, so recording resumes
++        // by itself once the address is clean, e.g. after the invite page has
++        // tidied it. Page views are still counted either way; only the
++        // recording of that stretch is given up.
++        window._uxa = window._uxa || [];
++        window._uxa.push(['referrer:removeQueryString']);
++        var lastQuery = null;
++        var lastHidden = null;
++        function tellContentsquare() {
++          try {
++            var sorted = sortQuery(location.search);
++            if (sorted.query !== lastQuery) { lastQuery = sorted.query; window._uxa.push(['setQuery', sorted.query]); }
++            var hidden = sorted.dropped > 0 || (location.hash || '').length > 1;
++            if (hidden !== lastHidden) { lastHidden = hidden; window._uxa.push(['excludeURLforReplay', hidden ? '.*' : '.^']); }
++          } catch (e) {}
++        }
++        tellContentsquare();
++
++        // Contentsquare reports a new page view each time the app opens a sheet
++        // or a step, so the cleaned parameters have to be refreshed at that
++        // moment, before it looks. These wrappers only LISTEN: the real call
++        // runs first with the same arguments and its result is returned
++        // unchanged. No address is altered and no entry is added or removed.
++        try {
++          ['pushState', 'replaceState'].forEach(function (name) {
++            var real = history[name];
++            if (typeof real !== 'function') return;
++            history[name] = function () {
++              var result = real.apply(this, arguments);
++              tellContentsquare();
++              return result;
++            };
++          });
++          window.addEventListener('popstate', tellContentsquare, true);
++          window.addEventListener('hashchange', tellContentsquare, true);
++        } catch (e) {}
++      })();
+     </script>
+     <script src="https://t.contentsquare.net/uxa/02bde574cbdd5.js" async></script>
+     <!-- Google Analytics: anonymize_ip strips the last IP octet; ad_*_signals
+@@ -68,6 +192,32 @@
+     <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S"></script>
+     <script>
+       window.dataLayer = window.dataLayer || [];
++      // Google reads the address twice, and both have to be covered.
++      //   1. When it starts: page_location / page_referrer in the config below.
++      //   2. Every time the app opens a sheet or a step, Google's script notes
++      //      the old and the new address and sends a page view built from them,
++      //      ignoring (1). It passes that note through this queue as an entry
++      //      named gtm.historyChange…, so the two addresses are cleaned here on
++      //      their way in. Measured 2026-10-11: without this, the first such
++      //      page view carried the guest's whole original link as "came from".
++      // Part 2 leans on how Google's script works inside. If Google changes
++      // it, the sealed test in the write-up is what will show it — re-run that
++      // after touching anything in this file.
++      (function () {
++        var push = window.dataLayer.push;
++        window.dataLayer.push = function () {
++          try {
++            for (var i = 0; i < arguments.length; i++) {
++              var entry = arguments[i];
++              if (entry && typeof entry.event === 'string' && entry.event.indexOf('gtm.historyChange') === 0) {
++                if (entry['gtm.oldUrl']) entry['gtm.oldUrl'] = window.__caTrackerUrl.clean(entry['gtm.oldUrl']);
++                if (entry['gtm.newUrl']) entry['gtm.newUrl'] = window.__caTrackerUrl.clean(entry['gtm.newUrl']);
++              }
++            }
++          } catch (e) {}
++          return push.apply(this, arguments);
++        };
++      })();
+       function gtag(){dataLayer.push(arguments);}
+       // Instagram/Facebook in-app browsers used to be skipped here: the
+       // full-screen "open in external browser" wall made their landing a
+@@ -76,11 +226,16 @@
+       // and pay in place, and since practically all our traffic arrives from
+       // Instagram, dropping them left GA blind to the real funnel.
+       gtag('js', new Date());
+-      gtag('config', 'G-3MLZ9S6M2S', {
+-        anonymize_ip: true,
+-        allow_google_signals: false,
+-        allow_ad_personalization_signals: false,
+-      });
++      (function () {
++        var config = {
++          anonymize_ip: true,
++          allow_google_signals: false,
++          allow_ad_personalization_signals: false,
++          page_location: window.__caTrackerUrl.page(),
++        };
++        if (document.referrer) config.page_referrer = window.__caTrackerUrl.clean(document.referrer);
++        gtag('config', 'G-3MLZ9S6M2S', config);
++      })();
+     </script>
+     <style>
+       @keyframes ca-glow {
+diff --git a/src/App.tsx b/src/App.tsx
+index 6414e9d..3e11372 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
+ import { motion, AnimatePresence, useAnimation } from 'motion/react';
+ import { ArrowRight, Send, RotateCcw, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, MapPin, Bus, Heart, Users, X, MessageCircle, ShieldCheck, Download } from 'lucide-react';
+ import { SpeedInsights } from '@vercel/speed-insights/react';
++import { cleanTrackerUrl } from './trackerUrl';
+ import chatProfile from './assets/chat-profile.jpg';
+ import AppFlow from './AppFlow';
+ import AdminPanel from './AdminPanel';
+@@ -5451,6 +5452,12 @@ function InAppBrowserNudge() {
+ }
+ 
+ // ─── APP WRAPPER ───────────────────────────────────────────────────────────────
++// Stable reference (module scope) so the Speed Insights component registers it once.
++function cleanSpeedInsightsReading(reading: { type: 'vital'; url: string; route?: string }) {
++  const url = cleanTrackerUrl(reading.url);
++  return url ? { ...reading, url } : null;
++}
++
+ export default function App() {
+   const [routePath, setRoutePath] = useState(() => {
+     if (typeof window === 'undefined') return '/';
+@@ -5769,8 +5776,11 @@ export default function App() {
+       <LandscapeBlocker />
+       <AppFlow />
+       {/* Vercel Speed Insights — ships real-user Core Web Vitals (LCP / INP / CLS)
+-          to the Vercel dashboard. Tiny script (~2KB), no PII collected. */}
+-      <SpeedInsights />
++          to the Vercel dashboard. Tiny script (~2KB). Each reading carries the
++          page address, so it goes through the same cleaner as every other
++          outside tool (src/trackerUrl.ts) — measured 2026-10-11: without this a
++          plans page opened with ?phone=…&wa=… sent both to Vercel. */}
++      <SpeedInsights beforeSend={cleanSpeedInsightsReading} />
+     </>
+   );
+ }
+diff --git a/src/main.tsx b/src/main.tsx
+index 54608c4..a8ca608 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
+ import App from './App.tsx';
+ import { initMetaPixel } from './metaPixel';
+ import { reportWhatsAppClick } from './whatsappClick';
++import { cleanTrackerUrl, cleanUrlsInText } from './trackerUrl';
+ import './index.css';
+ 
+ // Ad attribution. No-ops entirely until META_PIXEL_ID is set, and never loads
+@@ -14,6 +15,52 @@ initMetaPixel();
+ // the link carries a tap code.
+ reportWhatsAppClick();
+ 
++// Sentry keeps a trail of addresses with every error report: the page the error
++// happened on, the page before it, each in-page move ("from … to …") and every
++// request the page made. Our message links put a guest's phone, name and
++// private link code in the address, so an error report carried them — proved
++// 2026-10-11 with made-up values (docs/TRACKER-ADDRESS-LEAK-2026-10-11.md).
++// Every address is passed through the same cleaner the other tools get (rules:
++// the first script in index.html) before a report leaves the browser.
++function cleanAddressField(holder: Record<string, unknown> | undefined, key: string): void {
++  if (holder && typeof holder[key] === 'string' && holder[key]) {
++    holder[key] = cleanTrackerUrl(holder[key] as string);
++  }
++}
++
++function cleanSentryBreadcrumb(crumb: Sentry.Breadcrumb): Sentry.Breadcrumb {
++  try {
++    const data = crumb.data as Record<string, unknown> | undefined;
++    cleanAddressField(data, 'url');
++    cleanAddressField(data, 'from');
++    cleanAddressField(data, 'to');
++    if (typeof crumb.message === 'string') crumb.message = cleanUrlsInText(crumb.message);
++  } catch { /* a report with an uncleaned crumb is dropped below, not sent */ }
++  return crumb;
++}
++
++function cleanSentryEvent<T extends Sentry.Event>(event: T): T | null {
++  try {
++    const request = event.request as Record<string, unknown> | undefined;
++    cleanAddressField(request, 'url');
++    if (request) delete request.query_string;
++    const headers = request?.headers as Record<string, unknown> | undefined;
++    cleanAddressField(headers, 'Referer');
++    cleanAddressField(headers, 'referer');
++    for (const crumb of event.breadcrumbs ?? []) cleanSentryBreadcrumb(crumb);
++    for (const problem of event.exception?.values ?? []) {
++      if (typeof problem.value === 'string') problem.value = cleanUrlsInText(problem.value);
++    }
++    if (typeof event.message === 'string') event.message = cleanUrlsInText(event.message);
++    if (typeof event.transaction === 'string') event.transaction = cleanUrlsInText(event.transaction);
++    return event;
++  } catch {
++    // Could not be cleaned, so it is not sent. One lost error report is the
++    // cheaper mistake.
++    return null;
++  }
++}
++
+ Sentry.init({
+   dsn: 'https://50fb89acdd1a7824703dbe8379c0b16f@o4511243249844224.ingest.us.sentry.io/4511243253710848',
+   environment: import.meta.env.MODE,
+@@ -23,6 +70,9 @@ Sentry.init({
+   // default. If you need user attribution on a specific error, call
+   // Sentry.setUser({ id: ... }) explicitly with the minimal field.
+   sendDefaultPii: false,
++  beforeBreadcrumb: cleanSentryBreadcrumb,
++  beforeSend: cleanSentryEvent,
++  beforeSendTransaction: cleanSentryEvent,
+ });
+ 
+ if ('serviceWorker' in navigator) {
+diff --git a/src/metaPixel.ts b/src/metaPixel.ts
+index 744ec86..9404608 100644
+--- a/src/metaPixel.ts
++++ b/src/metaPixel.ts
+@@ -18,6 +18,9 @@
+ // script that never loaded must NEVER be able to break a booking. This file is
+ // allowed to lose data; it is not allowed to throw.
+ 
++import * as Sentry from '@sentry/react';
++import { cleanTrackerUrl, isAddressClean, isCleanTrackerUrl } from './trackerUrl';
++
+ // Events Manager → Datasets → "chaptera.in website" (created 2026-08-12).
+ // Deliberately a SEPARATE dataset from "WhatsApp Marketing Messages"
+ // (892500220416246), which belongs to the AiSensy integration that carries the
+@@ -68,6 +71,113 @@ export function isPixelConfigured(): boolean {
+   return META_PIXEL_ID.trim().length > 0;
+ }
+ 
++// ─── The page address Meta is told ───────────────────────────────────────────
++//
++// Every pixel event carries the page address (`dl`) and the page we came from
++// (`rl`), read by fbevents straight from the browser at the moment it sends.
++// Our WhatsApp and email links put the guest's phone, name and private link
++// code in that address, so Meta was receiving them: proved 2026-10-11 with
++// made-up values (docs/TRACKER-ADDRESS-LEAK-2026-10-11.md).
++//
++// Meta offers no setting for this — fbq has no "report this address instead".
++// What fbevents does have is the hook its OWN privacy plug-in uses to blank
++// address parameters Meta has decided are sensitive: an internal
++// `validateUrlParameters` event whose listeners are handed {dl, rl} and may
++// rewrite them before the request is built. We listen on the same hook and
++// swap in the cleaned address (rules: the first script in index.html).
++//
++// That hook is undocumented, so nothing here trusts it:
++//   * `init` and every event wait in `waiting` until fbevents has loaded AND
++//     the listener is in place. Nothing can be sent before the guard exists.
++//   * If the hook cannot be found, or a sent event is seen (through fbevents'
++//     own `fired` notice) still carrying an uncleaned address, the guard is
++//     marked 'off'. From then on an event is sent only while the address in
++//     the bar is already clean, and is dropped otherwise. Losing a pixel event
++//     is allowed (see SAFETY at the top); sending a phone number is not.
++//   * Going 'off' is reported once to Sentry, so it cannot fail in silence,
++//     and is remembered for the tab: the second kind of failure is only seen
++//     AFTER one event has left, and that must not repeat on every page load.
++//
++// The address bar and the history are never touched.
++type AddressGuard = 'waiting' | 'on' | 'off';
++let addressGuard: AddressGuard = 'waiting';
++const waiting: unknown[][] = [];
++const MAX_WAITING = 60;
++const GUARD_OFF_KEY = 'ca_pixel_guard_off';
++
++function guardWasOffEarlier(): boolean {
++  try {
++    return sessionStorage.getItem(GUARD_OFF_KEY) === '1';
++  } catch {
++    return false;
++  }
++}
++
++function guardFailed(reason: string): void {
++  if (addressGuard === 'off') return;
++  addressGuard = 'off';
++  try { sessionStorage.setItem(GUARD_OFF_KEY, '1'); } catch { /* storage blocked */ }
++  try {
++    Sentry.captureMessage(`Meta pixel address guard is off: ${reason}`, 'warning');
++  } catch { /* reporting is a courtesy; the guard state is what matters */ }
++}
++
++function armAddressGuard(): void {
++  try {
++    const events = (window.fbq as any)?.getFbeventsModules?.('SignalsFBEventsEvents');
++    const hook = events?.validateUrlParameters;
++    if (!hook || typeof hook.listen !== 'function') {
++      guardFailed('hook not found');
++    } else {
++      hook.listen((_pixel: unknown, urls: Record<string, unknown> | null) => {
++        try {
++          if (!urls || typeof urls !== 'object') return;
++          if (typeof urls.dl === 'string' && urls.dl) urls.dl = cleanTrackerUrl(urls.dl);
++          if (typeof urls.rl === 'string' && urls.rl) urls.rl = cleanTrackerUrl(urls.rl);
++        } catch { /* never break an event */ }
++      });
++      // Check what actually left, not what we hoped left.
++      if (events.fired && typeof events.fired.listen === 'function') {
++        events.fired.listen((_method: unknown, payload: any) => {
++          try {
++            const dl = payload?.get?.('dl');
++            const rl = payload?.get?.('rl');
++            if ((typeof dl === 'string' && dl && !isCleanTrackerUrl(dl))
++              || (typeof rl === 'string' && rl && !isCleanTrackerUrl(rl))) {
++              guardFailed('an event left with an uncleaned address');
++            }
++          } catch { /* a broken check must not break the pixel */ }
++        });
++      }
++      if (addressGuard === 'waiting') addressGuard = guardWasOffEarlier() ? 'off' : 'on';
++    }
++  } catch {
++    guardFailed('could not attach');
++  }
++  const held = waiting.splice(0, waiting.length);
++  for (const args of held) deliver(args);
++}
++
++function deliver(args: unknown[]): void {
++  try {
++    if (!window.fbq) return;
++    const isEvent = args[0] === 'track' || args[0] === 'trackCustom';
++    if (isEvent && addressGuard === 'off' && !isAddressClean()) return;
++    window.fbq(...args);
++  } catch {
++    // never block the page
++  }
++}
++
++// The only way anything in this file talks to fbq once the stub exists.
++function sendToPixel(...args: unknown[]): void {
++  if (addressGuard === 'waiting') {
++    if (waiting.length < MAX_WAITING) waiting.push(args);
++    return;
++  }
++  deliver(args);
++}
++
+ // Injects Meta's base snippet and fires the initial PageView. Safe to call more
+ // than once — the id check and the window.fbq guard both short-circuit.
+ export function initMetaPixel(): void {
+@@ -147,9 +257,13 @@ export function initMetaPixel(): void {
+     const script = document.createElement('script');
+     script.async = true;
+     script.src = 'https://connect.facebook.net/en_US/fbevents.js';
++    // `init` is held back until this fires — see "The page address Meta is
++    // told" above. fbevents sends nothing for a pixel that has not been
++    // initialised, so no event can leave before the address guard is in place.
++    script.onload = armAddressGuard;
+     document.head.appendChild(script);
+ 
+-    window.fbq('init', META_PIXEL_ID);
++    sendToPixel('init', META_PIXEL_ID);
+   } catch {
+     // never block the page
+   }
+@@ -252,7 +366,7 @@ export function setPixelUserData(u: PixelUserData): void {
+     if (!Object.keys(data).length) return;
+     data.country = 'in';
+ 
+-    window.fbq('init', META_PIXEL_ID, data);
++    sendToPixel('init', META_PIXEL_ID, data);
+   } catch {
+     // never block a booking
+   }
+@@ -296,9 +410,9 @@ export function trackPixel(
+       if (v !== undefined && v !== null && v !== '') clean[k] = v;
+     }
+     if (opts.eventID) {
+-      window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean, { eventID: opts.eventID });
++      sendToPixel(opts.custom ? 'trackCustom' : 'track', eventName, clean, { eventID: opts.eventID });
+     } else {
+-      window.fbq(opts.custom ? 'trackCustom' : 'track', eventName, clean);
++      sendToPixel(opts.custom ? 'trackCustom' : 'track', eventName, clean);
+     }
+   } catch {
+     // never block the page
+diff --git a/src/trackerUrl.ts b/src/trackerUrl.ts
+new file mode 100644
+index 0000000..d7aaf49
+--- /dev/null
++++ b/src/trackerUrl.ts
+@@ -0,0 +1,78 @@
++// The page address as outside tools are allowed to see it — the app's half.
++//
++// Our WhatsApp and email links carry the guest's phone number, their name and a
++// private link code in the address (…/invite?phone=…&name=…&wa=…). Google
++// Analytics, Contentsquare, the Meta Pixel and Sentry all read the address by
++// themselves and send it home, and three of them start before this app does.
++// Proved 2026-10-11 with made-up values: all four received it.
++//
++// The rules for what a tool may see live in ONE place: the first script in
++// index.html, which has to run before any tool loads and so cannot be part of
++// this bundle. That script publishes window.__caTrackerUrl; everything here is a
++// typed doorway to it. Do not copy the list of allowed parameters into this
++// file — two lists drift, and a drifted list is a leak nobody is looking for.
++//
++// Nothing here touches the address bar or the history. The app still reads
++// phone, name, wa and the utm tags from the real address (whatsappClick.ts,
++// the invite deep link, attribution.ts); only what is REPORTED to outside tools
++// is cleaned. See docs/TRACKER-ADDRESS-LEAK-2026-10-11.md.
++
++declare global {
++  interface Window {
++    __caTrackerUrl?: {
++      /** A cleaned copy of any address: ours loses every parameter not on the allowed list, anyone else's loses its whole query. */
++      clean: (url: string) => string;
++      /** The cleaned address of the page as it is right now. */
++      page: () => string;
++    };
++  }
++}
++
++// If the index.html script is somehow missing, say LESS, never more: keep the
++// site and the path, drop every parameter.
++function bareAddress(url: string): string {
++  try {
++    const u = new URL(url, window.location.href);
++    return `${u.protocol}//${u.host}${u.pathname}`;
++  } catch {
++    return '';
++  }
++}
++
++export function cleanTrackerUrl(url: string | null | undefined): string {
++  if (!url || typeof window === 'undefined') return '';
++  try {
++    const rules = window.__caTrackerUrl;
++    if (rules && typeof rules.clean === 'function') return rules.clean(url);
++  } catch { /* fall through to the bare address */ }
++  return bareAddress(url);
++}
++
++// True when cleaning this address would take nothing out of it. The part after
++// # and a trailing "/" or "?" are ignored: they are spelling, not content, and
++// a tool that re-spells an address must not be mistaken for one that leaked.
++export function isCleanTrackerUrl(url: string): boolean {
++  const spelling = (a: string) => a.split('#')[0].replace(/[/?]+$/, '');
++  return spelling(cleanTrackerUrl(url)) === spelling(url);
++}
++
++// True when the address in the bar (and the page we came from, if it was one of
++// ours) holds nothing a tool should not see.
++export function isAddressClean(): boolean {
++  if (typeof window === 'undefined') return true;
++  try {
++    if (!isCleanTrackerUrl(window.location.href)) return false;
++    const from = document.referrer;
++    if (from && from.startsWith(window.location.origin) && !isCleanTrackerUrl(from)) return false;
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++// Cleans every full web address found inside a piece of text (an error message
++// such as "Failed to fetch https://…?phone=…").
++export function cleanUrlsInText(text: string): string {
++  if (!text || text.indexOf('http') === -1) return text;
++  return text.replace(/https?:\/\/[^\s"'<>)\]]+/g, (found) => cleanTrackerUrl(found) || '[address removed]');
++}

@@ -1,0 +1,16 @@
+BEFORE — the live site as it was on 2026-10-11/12 (sealed: nothing reached the tools)
+clean·N = N requests, none carrying a made-up personal value. LEAK(x) = the made-up x was in what the tool tried to send. — = the tool sent nothing.
+
+A booking-message link /invite?phone&name&wa, slow app                         | GA LEAK(phone,name,wa) CS LEAK(phone,name,wa)    Meta clean·2        Sentry LEAK(phone,name,wa)  Vercel —                other —
+B chat-reply link /lifestyle?utm&wa                                            | GA LEAK(wa)         CS LEAK(wa)               Meta LEAK(wa)       Sentry LEAK(wa)             Vercel —                other —
+C /invite?phone&wa with no name (never auto-cleaned by the app)                | GA LEAK(phone,wa)   CS LEAK(phone,wa)         Meta LEAK(phone,wa) Sentry LEAK(phone,wa)       Vercel —                other —
+D payment return, failed                                                       | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                other —
+E full reload to /plans from a link that carried the code (came-from address)  | GA LEAK(wa)         CS LEAK(wa)               Meta LEAK(wa)       Sentry LEAK(wa)             Vercel clean·2          other —
+F1 Instagram iPhone browser, booking-message link, slow app                    | GA LEAK(phone,name,wa) CS LEAK(phone,name,wa)    Meta clean·2        Sentry LEAK(phone,name,wa)  Vercel —                other —
+F2 Instagram iPhone browser, chat-reply link                                   | GA LEAK(wa)         CS LEAK(wa)               Meta LEAK(wa)       Sentry LEAK(wa)             Vercel —                other —
+I ordinary reel visitor /lifestyle?utm_source=sp_auto_dm&fbclid                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                other —
+J creator link /lifestyle?ref=zzhandle                                         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                other —
+K address with a # part                                                        | GA clean·4          CS LEAK(fragment)         Meta LEAK(name,email,fragment) Sentry LEAK(name,email,fragment) Vercel —                other —
+L an error whose message itself contains a personal link                       | GA clean·3          CS LEAK(phone,name)       Meta clean·1        Sentry LEAK(phone,name,wa)  Vercel —                other —
+M healthy pixel, direct plan link with the code: two app events on one load    | GA LEAK(wa)         CS LEAK(wa)               Meta LEAK(wa)       Sentry —                    Vercel LEAK(wa)         other —
+N plans page reached with the personal parameters still in the address         | GA LEAK(phone,name,wa) CS LEAK(phone,name,wa)    Meta LEAK(phone,name,wa) Sentry LEAK(phone,name,wa)  Vercel LEAK(phone,name,wa) other —

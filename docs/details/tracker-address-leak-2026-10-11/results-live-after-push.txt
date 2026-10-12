@@ -1,0 +1,24 @@
+LIVE SITE AFTER THE PUSH — chaptera.in serving commit 08b2a98, sealed test, 2026-10-12
+clean·N = N requests, none carrying a made-up personal value. — = the tool sent nothing. 'recording' = Contentsquare session recording (none = none ran).
+
+A booking-message link /invite?phone&name&wa, slow app                         | GA clean·4          CS clean·12               Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+B chat-reply link /lifestyle?utm&wa                                            | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+C /invite?phone&wa with no name (never auto-cleaned by the app)                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+E full reload to /plans from a link that carried the code (came-from address)  | GA clean·6          CS clean·6                Meta clean·2        Sentry clean·1              Vercel clean·2          recording none      other —
+F1 Instagram iPhone browser, booking-message link, slow app                    | GA clean·4          CS clean·12               Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+F2 Instagram iPhone browser, chat-reply link                                   | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+I ordinary reel visitor /lifestyle?utm_source=sp_auto_dm&fbclid                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+J creator link /lifestyle?ref=zzhandle                                         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+K address with a # part                                                        | GA clean·12         CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+M healthy pixel, direct plan link with the code: two app events on one load    | GA clean·2          CS clean·4                Meta clean·2        Sentry —                    Vercel clean·1          recording none      other —
+N plans page reached with the personal parameters still in the address         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel clean·2          recording none      other —
+
+GOOGLE'S OWN REDACTION, TESTED ALONE — an early prototype build WITHOUT our page-change cleaner, against Google's live script after 'Redact data' was switched on. What Google's script sent:
+GA   [landing] events=page_view  dl=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001  dr=
+GA   [landing] events=scroll  dl=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001  dr=
+GA   [sentry-error] events=page_view,page_view  dl=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001&wa=(redacted)&sheet=zzprobe  dr=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001&wa=(redacted)  (body overrides: page_view dl=- dr=- | page_view dl=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001&wa=(redacted) dr=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001&wa=(redacted)&sheet=zzprobe)
+GA   [leave] events=user_engagement  dl=https://chaptera.in/lifestyle?utm_source=meta&utm_medium=paid&utm_campaign=whatsapp_chat&utm_content=120000000000000001  dr=
+GA   [landing] events=page_view  dl=https://chaptera.in/invite  dr=
+GA   [landing] events=scroll  dl=https://chaptera.in/invite  dr=
+GA   [sentry-error] events=page_view,page_view  dl=https://chaptera.in/invite?phone=(redacted)&wa=(redacted)&sheet=zzprobe  dr=https://chaptera.in/invite?phone=(redacted)&wa=(redacted)  (body overrides: page_view dl=- dr=- | page_view dl=https://chaptera.in/invite?phone=(redacted)&wa=(redacted) dr=https://chaptera.in/invite?phone=(redacted)&wa=(redacted)&sheet=zzprobe)
+GA   [leave] events=user_engagement  dl=https://chaptera.in/invite  dr=
