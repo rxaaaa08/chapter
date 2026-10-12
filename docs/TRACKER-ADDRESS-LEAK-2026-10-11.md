@@ -395,6 +395,13 @@ Traps hit while building it:
   page is hidden.
 - Use the scenario letters as written; `A` deliberately slows the app so the
   tools in the page head run first, which is the normal case on a real phone.
+- **Rows P1 to P5 are read the other way round** (added 2026-10-12, see §12).
+  In them silence is the right answer. P1 needs the local dev server running
+  on port 5175.
+- **When Google, Contentsquare and Meta all show a dash in one row, re-run that
+  row before believing it.** Their scripts are downloaded from the real
+  servers; if that download fails in a run, all three go silent together while
+  the page itself works. Seen once on row F1 on 2026-10-12.
 
 ## 11. Technical notes
 
@@ -437,3 +444,38 @@ Traps hit while building it:
 - Cross-site requests carry only `https://chaptera.in/` as Referer, because of
   the site's `strict-origin-when-cross-origin` policy. Same-site requests carry
   the full address, which is the host seeing its own traffic.
+
+## 12. Who gets counted (added later on 2026-10-12)
+
+A second rule now lives in the same tool block, in its last script (commit
+`7571a50`). It is about
+who is counted, not about what is sent, but it changes how two of the tools
+start, so it belongs to this write-up and to this test.
+
+- **Contentsquare and Google Analytics no longer have a `<script src>` of their
+  own.** One small script starts them. Both only on `chaptera.in` /
+  `www.chaptera.in`. Google's additionally never for the team: `/admin`,
+  `/team`, the installed admin app, a `staff=1` plan preview, and any tab that
+  has once been one of those (`sessionStorage` key `ca_team_tab`).
+- **Why:** 7.3% of all page views Google had ever recorded came from
+  `localhost` and preview sites, and `/admin` alone was 1,894 page views from
+  51 team browsers. Numbers: `docs/GOOGLE-ANALYTICS-BASELINE-2026-10-12.md`.
+- **It sits after both queues on purpose.** The address cleaner for Google's
+  page-change entries (§11) has to be installed before Google's script can
+  run. Starting the script from below the cleaner guarantees the order, which
+  the old side-by-side `<script async>` tags only made very likely.
+- **Nothing about the cleaning changed.** The cleaner and both queues are
+  byte-for-byte what §4 describes.
+- **Test rows:** `P1` local dev server, `P2` a made-up preview address, `P3`
+  `/admin`, `P4` `/team`, `P5` a staff plan preview. `seal.mjs` accepts
+  `extraSiteHosts` so a build can be served under a host that is not the real
+  site. Results of the first full run with the rule:
+  `docs/details/tracker-address-leak-2026-10-11/results-who-gets-counted-2026-10-12.txt`.
+- **The test earned its keep the same evening.** The first version passed four
+  of the five new rows and failed `P5`: the preview page was silent, but closing
+  a preview reloads the page at `/lifestyle`, and Google counted that. Reading
+  the code had not shown it. The tab memory is the fix.
+- **Left alone on purpose:** Contentsquare still runs on the team's screens,
+  and the Meta Pixel still reports on a staff plan preview. Both are the
+  owner's call.
+

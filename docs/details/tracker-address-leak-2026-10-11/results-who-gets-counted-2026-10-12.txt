@@ -1,0 +1,45 @@
+WHO GETS COUNTED — sealed test of the build that adds the rule (index.html, last script of the tool block), 2026-10-12, about 10pm IST
+Build of the working tree on top of commit 938d1d1 (committed afterwards, unchanged, as 7571a50), served to a sealed browser as chaptera.in. All values made up.
+clean·N = N requests, none carrying a made-up personal value. — = the tool sent nothing. 'recording' = Contentsquare session recording (none = none ran).
+
+HOW TO READ IT
+ Rows A to N are guests on the real site: Google (GA) and Contentsquare (CS) must both SEND, and be clean. A dash there would mean the rule is switching the tools off for real guests.
+ Rows P1 to P5 are us: GA must show a dash in all five, CS a dash in P1 and P2 (CS is deliberately left running on the team's screens, P3 to P5).
+ L is Contentsquare repeating an error MESSAGE that contained a link (known, not the page address, unchanged). G2 is a deliberate failure drill (unchanged).
+
+A booking-message link /invite?phone&name&wa, slow app                         | GA clean·4          CS clean·23               Meta clean·2        Sentry clean·1              Vercel —                recording clean·11  other —
+B chat-reply link /lifestyle?utm&wa                                            | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+C /invite?phone&wa with no name (never auto-cleaned by the app)                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+D payment return, failed                                                       | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+E full reload to /plans from a link that carried the code (came-from address)  | GA clean·6          CS clean·6                Meta clean·2        Sentry clean·1              Vercel clean·2          recording none      other —
+F1 Instagram iPhone browser, booking-message link, slow app                    | GA clean·4          CS clean·12               Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+F2 Instagram iPhone browser, chat-reply link                                   | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+F3 WhatsApp Android browser, booking-message link                              | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+H1 payment return, success, open event shape                                   | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+H2 payment return, success, invite shape                                       | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+I ordinary reel visitor /lifestyle?utm_source=sp_auto_dm&fbclid                | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+J creator link /lifestyle?ref=zzhandle                                         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+K address with a # part                                                        | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel —                recording none      other —
+L an error whose message itself contains a personal link                       | GA clean·3          CS LEAK(phone,name)       Meta clean·1        Sentry clean·1              Vercel —                recording none      other —
+M healthy pixel, direct plan link with the code: two app events on one load    | GA clean·2          CS clean·4                Meta clean·2        Sentry —                    Vercel clean·1          recording none      other —
+N plans page reached with the personal parameters still in the address         | GA clean·4          CS clean·9                Meta clean·2        Sentry clean·1              Vercel clean·2          recording none      other —
+G1 failure drill: Meta renames the module our guard looks up (pixel itself sti | GA clean·5          CS clean·9                Meta clean·2        Sentry clean·2              Vercel clean·2          recording none      other —
+G2 failure drill: Meta keeps the hook but stops honouring it                   | GA clean·8          CS clean·14               Meta LEAK(wa)       Sentry clean·1              Vercel clean·5          recording none      other —
+P1 must be silent: the local dev server (needs `npm run dev` on :5175) - GA an | GA —                CS —                      Meta —              Sentry —                    Vercel —                recording none      other clean·75
+P2 must be silent: a preview address - GA and CS both a dash                   | GA —                CS —                      Meta —              Sentry clean·1              Vercel —                recording none      other —
+P3 must be silent for Google: the team's screen /admin - GA a dash             | GA —                CS clean·9                Meta —              Sentry clean·1              Vercel —                recording none      other —
+P4 must be silent for Google: /team - GA a dash                                | GA —                CS clean·9                Meta —              Sentry clean·1              Vercel —                recording none      other —
+P5 must be silent for Google: a plan preview opened from the admin panel (staf | GA —                CS clean·14               Meta clean·3        Sentry clean·1              Vercel clean·1          recording none      other —
+
+TWO THINGS THE FIRST RUN SHOWED (same evening, the build before this one)
+ 1. P5 FAILED, and it was a real gap, not a test artefact. The staff preview page itself was silent, but closing the preview reloads the
+    page at /lifestyle, where nothing in the address says who is looking, and Google counted that load:
+      GA [sentry-error] page_view  dl=https://chaptera.in/lifestyle  dr=https://chaptera.in/?preview_event=founders-meet&staff=1&sheet=event-details
+    Fix: a tab that has once been ours is remembered in sessionStorage (ca_team_tab) and stays uncounted until it is closed. P5 above is the re-run.
+ 2. F1 showed a dash for GA, CS and Meta all at once, with the page itself loaded and working. That is none of the three scripts
+    downloading in that run (a network blip), not a pass and not the rule. Re-run alone it gave GA clean·4, CS clean·12, Meta clean·2, and
+    again in the full run above. When every tool goes silent together, re-run the row before believing it.
+
+NOTICED, NOT CHANGED
+ P5 shows Meta clean·3: the Meta Pixel still reports when a team member previews a plan (it excludes by host and by /admin, /creator, /team, not by staff=1).
+ Flagged to the owner on 2026-10-12 as a separate question.
