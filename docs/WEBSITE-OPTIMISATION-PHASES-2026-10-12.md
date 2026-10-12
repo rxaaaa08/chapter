@@ -86,43 +86,130 @@ How to read the tags:
 
 ## Phase 2: make the site load faster
 
-No change to what a guest sees. On Google's slow-phone test the main content
-takes 9.0 to 9.5 seconds to appear; Google's "good" is under 2.5.
+**Status, 2026-10-13: five of seven built, tested on this Mac and pushed the
+same day with the owner's OK (he checked the poster's look himself on
+`localhost:5175` first). One (the trackers) deliberately not started. One (real
+visitors' speed) closed by the owner's decision, below.**
 
-1. **Stop sending the admin panel to every guest.** *Code. The biggest single
-   win.* The site ships as one script (1.6 MB before compression, 446 KB over
-   the wire). It contains the admin panel (14,000 lines), the creator dashboard
-   and the team training, because `src/App.tsx` loads them all up front. Nothing
-   appears until that script has downloaded and run, which is about 8 of the 9
-   seconds. Loading those three only when someone opens them shrinks what a
-   guest downloads. Google's test estimates about 3 seconds saved on a slow
-   phone from unused script alone.
-2. **Shrink the poster pictures.** *Code.* `/lifestyle` downloads 2.3 MB of
-   pictures. `frame.png` is 1.2 MB by itself and `invite-frame.png` 1.1 MB; the
-   galcode set is bigger still (3.8 MB folder). They are large PNG files sized
-   for a desktop. A modern format at phone size saves about 2.1 MB by Google's
-   estimate, with no visible difference.
-3. **Let phones keep the poster pictures.** *Code, one line of settings.* The
-   live site tells phones to re-check every picture on every visit
-   (`max-age=0`). The pictures already carry a version tag in their address, so
-   it is safe to let phones keep them for a year.
-4. **Start fetching the poster early.** *Code.* The poster pictures are only
-   requested after the script has run. Asking for the main one in the page
-   itself starts it sooner. At the same time stop pre-fetching the UPI logo on
-   every page; it is only needed at payment.
-5. **Load the three trackers after the page is usable.** *Code, with care.*
-   Meta's pixel (194 KB), Google's tag (176 KB) and Contentsquare (159 KB) add
-   about 530 KB and compete with the page for the phone's attention. They can
-   start a moment later. Care: Meta's page-view event must still fire for every
-   visit, so this needs checking against the existing Meta signal checks.
-6. **Serve the fonts from the site itself.** *Code.* Three font families come
-   from Google through a slow chain (a stylesheet that fetches another
-   stylesheet that fetches the font). Hosting only the weights actually used
-   removes that chain.
-7. **Read real visitors' speed.** *Look first.* The lab test is a worst case.
-   Vercel Speed Insights is already installed and holds what real phones
-   experienced; it needs reading once before and once after this phase so the
-   improvement is measured, not assumed.
+No change to what a guest sees. Measured on a copy of the site built on this
+Mac, on Google's slow-phone test with the slowdown really applied (median of
+three runs each):
+
+| Page | Main content appears | Weight of the page |
+|---|---|---|
+| `/lifestyle`, before | 10.6 s | 2,762 KB |
+| `/lifestyle`, after | **4.4 s** | **553 KB** |
+| `/invite`, before | 12.2 s | 5,106 KB |
+| `/invite`, after | **5.4 s** | **746 KB** |
+
+These numbers leave out the three outside tools (they do not run on a local
+copy, by design), so the live site will read a little slower than the "after"
+row. The "before" row matches what Google's test said about the live site
+(9.0 to 9.5 s).
+
+**What the wait actually was.** The poster page shows nothing until all nine
+poster pictures have arrived, and gives up waiting after 6 seconds. On a slow
+phone 2.3 MB of pictures never arrives in 6 seconds, so every such guest sat
+through the whole timer, after the script had already taken its 3 to 4 seconds.
+That, not the script alone, was most of the 9 seconds.
+
+1. **Stop sending the admin panel to every guest.** **Built and tested.** The
+   admin panel, the creator dashboard and the team training are now three
+   separate downloads, fetched only when their page is opened
+   (`lazyScreen` in `src/App.tsx`). The script every guest waits for went from
+   1,641 KB to 1,019 KB (455 KB to 294 KB as sent). If a team member's tab is
+   open across a release and asks for a file the new build no longer has, the
+   page reloads itself once; if that does not help it says so with a "Try
+   again" button and reports the failure to Sentry. Checked in a browser:
+   `/admin`, `/creator` and `/team` each open and fetch only their own part.
+   *Not done, and worth doing next:* the plans screen (`AppFlow`, 160 KB of the
+   remaining 1,019) also rides along on the poster page, where it is not needed
+   until the guest taps through. Splitting it touches the main guest path, so
+   it was left for its own sitting.
+2. **Shrink the poster pictures.** **Built and tested.** 23 pictures, 6,942 KB
+   to 620 KB (the nine `/lifestyle` layers: 2,281 KB to 230 KB). The first
+   version of this list said they were "sized for a desktop"; they are not.
+   They are 874×1330, which is right for a phone, and were left that size. The
+   whole saving is the file format (PNG to WebP, quality 90, see-through parts
+   kept exact). Compared with the originals at twice the size, on the letter's
+   small text and on the see-through edges: no difference found. The owner
+   compared it with the live site himself and approved it ("the posters are
+   looking good").
+   The site now serves copies in `src/assets/poster/`; the original PNG files
+   stay in `public/` as the source. **After changing any poster PNG, run
+   `scripts/poster-to-webp.cjs`** (instructions at the top of that file) or the
+   site keeps showing the old picture.
+3. **Let phones keep the pictures.** **Built, with a deliberate limit.**
+   `vercel.json` now tells phones to keep pictures and fonts under `/assets/`
+   for a year. That is safe because the build names each of those files after
+   its contents, so a changed picture gets a new address by itself; no version
+   tag to remember (the old `?v=20260424-2` tags are gone). *Scripts and
+   styles were left out on purpose.* The live site applies our custom headers
+   to "not found" answers too (checked: a made-up `/assets/` address came back
+   404 carrying our `X-Frame-Options`). If a phone were ever told to keep a
+   "not found" for a year, a missing picture costs one decoration, but a
+   missing script costs the page. **One check after the push settles it:**
+   `curl -I https://chaptera.in/assets/nope.webp`. If the 404 does *not* carry
+   the year-long `cache-control`, the rule can safely be widened to scripts and
+   styles (one line).
+4. **Start fetching the poster early.** **Built and tested.** `index.html` now
+   asks for the poster pictures while the page is still being read, so they
+   download alongside the script instead of after it. Only on `/lifestyle`,
+   `/galcode` and `/invite`, and each gets only its own pictures (9, 9 and 13).
+   The early request for the UPI logo on every page is gone; the logo (3 KB)
+   now travels inside the script, so the bill page shows it with no request.
+5. **Load the three trackers after the page is usable.** **Not started, on
+   purpose.** It changes the tool block in `index.html`, so it needs the sealed
+   privacy test re-run, and it changes when Meta's page view fires, which
+   needs checking against the Meta signal checks. It also cannot be measured
+   on a local copy at all, because the tools only run on the real site. The
+   sensible order: push items 1 to 4 and 6, run Google's test on the live site,
+   and see how much of the remaining wait is the tools before touching them.
+6. **Serve the fonts from the site itself.** **Built and tested.** Inter now
+   comes from the site (two files, the same ones Google was serving, with
+   Google's own rules copied exactly). The first version of this list said
+   three font families; guests only ever loaded one. DM Sans and Instrument
+   Serif are requested only by the old homepage, which nothing but a mistyped
+   address reaches now, so that request was left alone. Do not "tidy" it by
+   declaring those two site-wide: several screens name DM Sans without ever
+   having been given it, and would change their look. The second Inter file
+   holds the rupee sign; do not drop it.
+7. **Read real visitors' speed.** **Closed by the owner's decision,
+   2026-10-13:** do not switch speed measuring on for more pages, and do not
+   add any tracking that could slow the site; what matters is that the site is
+   fast, judged by Google's test on the live site. Nothing below needs doing.
+   It is kept because it says what exists and how to read it if that changes.
+   Two findings. First, Vercel Speed Insights is only switched on for the plans
+   pages (it sits in the last branch of `App()` in `src/App.tsx`). The poster
+   page and the invite page, the two pages this phase speeds up, have never
+   been measured on real phones, so there is no real-visitor "before" for them
+   to lose. Switching it on there is a small code change, but `/invite`
+   addresses carry personal values, so it must go through the sealed test
+   first. Second, the reading itself: Vercel's command-line tool can now pull
+   these numbers (`vercel metrics`, added June 2026) and is on this Mac, but
+   its sign-in has expired. After the owner runs `npx vercel login` once:
+   `npx vercel metrics vercel.speed_insights.lcp_ms --aggregation p75 --group-by route --since 7d --prod`
+   (and the same with `--aggregation count` to see how many readings sit behind
+   each number). Vercel's connector for Claude exists too, but its listed tools
+   cover deployments, logs and visitor counts, not these speed numbers, and it
+   is given the whole account.
+
+**Traps hit while measuring, so the next reading is not fooled:**
+
+- **The service worker makes a throttled speed test lie.** `public/sw.js`
+  passes every request through itself, and the test's slowdown does not apply
+  to requests a service worker makes. The old build "loaded" 2.3 MB of pictures
+  in under a second and looked *faster* than the new one. Test a copy with
+  `sw.js` deleted (registration then fails harmlessly).
+- **The quick ("simulated") mode of Google's test ignores the wait-for-all-nine
+  rule**, so it reported the old page at 4.7 s when the real figure was 10.6.
+  Use `--throttling-method=devtools`.
+- **Opening the site on a local copy writes a `page_view` row to the live
+  database** each time. Block `*supabase.co*` in the speed test; for browser
+  checks, note the tab's `ca_session_id` and delete those rows afterwards
+  (done for this session: 11 rows).
+- A local preview of the *built* site is now one click: the `built-site` entry
+  in `.claude/launch.json` (run `npx vite build` first; port 4174).
 
 ## Phase 3: see the whole journey
 
