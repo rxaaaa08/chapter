@@ -41,10 +41,73 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="plans we dream — by chapter அ" />
     <meta name="twitter:image" content="https://chaptera.in/og-image.jpg" />
-    <!-- Preload the UPI logo so the bill-page payment-method icons paint
-         instantly. Without this, the <img> fetch is kicked off only when
-         React mounts the bill row, costing one network round-trip. -->
-    <link rel="preload" as="image" href="/upi-logo.png" />
+    <!-- THE POSTER, ASKED FOR EARLY.
+
+         /lifestyle, /galcode and /invite show nothing until every poster
+         picture has arrived (JoinLetterPage and SharedInviteFlow in
+         src/App.tsx wait for them). Left to the app, the first of them is only
+         asked for once the app's script has downloaded and run, so the two
+         downloads happen one after the other. Asking here, while the page
+         itself is still being read, runs them side by side.
+
+         The lines below are not ordinary links: "poster-layer" means nothing
+         to a browser, so nothing is fetched because of them. They are a list
+         for the script underneath, which turns the right ones into real early
+         requests, and only on a page that opens with that poster (data-poster
+         names the pages a picture belongs to; the invite poster is the
+         lifestyle one plus four pictures of its own). They are written as
+         links so the build puts each picture's final address in for us (it
+         names files after their contents). They must name the same files as
+         the lists in src/posterLayers.ts: add or remove a picture there and
+         the same line changes here. A line that is wrong costs a wasted
+         download, never a broken page.
+
+         The UPI logo used to be asked for here on every page. It now travels
+         inside the app's script (src/PaymentOverlay.tsx) and needs no request.
+         Measured 2026-10-12: docs/WEBSITE-OPTIMISATION-PHASES-2026-10-12.md. -->
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/frame.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/border-top.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/border-left.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/border-right.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/flower-left.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/flower-right.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/palm.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/lighthouse.webp" />
+    <link rel="poster-layer" data-poster="lifestyle invite" href="/src/assets/poster/lifestyle/beach.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/frame.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/border-top.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/border-left.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/border-right.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/flower-left.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/flower-right.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/palm.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/lighthouse.webp" />
+    <link rel="poster-layer" data-poster="galcode" href="/src/assets/poster/galcode/beach.webp" />
+    <link rel="poster-layer" data-poster="invite" href="/src/assets/poster/invite/frame.webp" />
+    <link rel="poster-layer" data-poster="invite" href="/src/assets/poster/invite/verification-frame.webp" />
+    <link rel="poster-layer" data-poster="invite" href="/src/assets/poster/invite/tc-agree-text.webp?no-inline" />
+    <link rel="poster-layer" data-poster="invite" href="/src/assets/poster/invite/tc-link-text.webp?no-inline" />
+    <script>
+      (function () {
+        var path = location.pathname;
+        var poster = (path === '/lifestyle' || path === '/join') ? 'lifestyle'
+          : path === '/galcode' ? 'galcode'
+          : path === '/invite' ? 'invite'
+          : '';
+        if (!poster) return;
+        // These two open on something other than the poster: a plan preview,
+        // and the receipt a guest returns to after paying.
+        if (/[?&](preview_event|payment_status)=/.test(location.search)) return;
+        var layers = document.querySelectorAll('link[rel="poster-layer"][data-poster~="' + poster + '"]');
+        for (var i = 0; i < layers.length; i++) {
+          var ask = document.createElement('link');
+          ask.rel = 'preload';
+          ask.as = 'image';
+          ask.href = layers[i].getAttribute('href');
+          document.head.appendChild(ask);
+        }
+      })();
+    </script>
     <script>
       // Capture beforeinstallprompt before React mounts so it's never missed.
       // React reads it from window.__deferredInstallPrompt.

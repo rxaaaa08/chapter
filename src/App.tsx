@@ -19,16 +19,16 @@ import { captureMetaIds, setPixelUserData, trackPurchaseOnce } from './metaPixel
 import { captureAttribution } from './attribution';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
+import {
+  POSTER_LAYER_SRC, GALCODE_POSTER_LAYER_SRC, INVITE_LAYER_SRC, type PosterLayerSrc,
+  INVITE_VERIFICATION_FRAME_SRC, TC_AGREE_TEXT_SRC, TC_LINK_TEXT_SRC,
+} from './posterLayers';
 
 // Driven by VITE_SUPABASE_URL so preview/staging deploys never accidentally
 // call prod edge functions. supabase.ts already throws if the env var is
 // missing, so by the time we reach here it is guaranteed to be set.
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-
-function MobileShell({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
-  return (
-    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
 // ─── SCREENS A GUEST NEVER OPENS ───────────────────────────────────────────────
 // The admin panel, the creator dashboard and the team training are each their
 // own download, fetched only when their page is opened. They used to ride in
@@ -98,6 +98,10 @@ const AdminPanel = lazyScreen(() => import('./AdminPanel'));
 const CreatorDashboard = lazyScreen(() => import('./CreatorDashboard'));
 const TeamOnboarding = lazyScreen(() => import('./TeamOnboarding'));
 
+
+function MobileShell({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
+  return (
+    <div className="h-[100dvh] overflow-hidden bg-white sm:min-h-screen sm:h-auto sm:bg-gray-100 flex items-stretch sm:items-center justify-center font-sans p-0 sm:p-4">
       <div data-mobile-shell className="w-full bg-white overflow-hidden flex flex-col h-[100dvh] sm:max-w-md sm:h-[85vh] relative sm:rounded-[2rem] sm:shadow-2xl sm:border-4 sm:border-white">
         <div
           data-mobile-shell-scroll
@@ -529,37 +533,7 @@ function HomePage({ onEnterApp, onViewExperiences }: { onEnterApp: () => void; o
   );
 }
 
-// Layered poster assets — each PNG is 874×1330 with the element pre-positioned
-// on a transparent canvas, so stacking them at inset:0 reproduces the original
-// poster exactly while letting each layer animate independently.
-const POSTER_LAYER_VERSION = 'v=20260424-2';
-const POSTER_LAYER_SRC = {
-  // frame.png now bakes in the letter text — no separate text layer needed.
-  frame: `/poster-layers/frame.png?${POSTER_LAYER_VERSION}`,
-  borderTop: `/poster-layers/border-top.png?${POSTER_LAYER_VERSION}`,
-  borderLeft: `/poster-layers/border-left.png?${POSTER_LAYER_VERSION}`,
-  borderRight: `/poster-layers/border-right.png?${POSTER_LAYER_VERSION}`,
-  flowerLeft: `/poster-layers/flower-left.png?${POSTER_LAYER_VERSION}`,
-  flowerRight: `/poster-layers/flower-right.png?${POSTER_LAYER_VERSION}`,
-  palm: `/poster-layers/palm.png?${POSTER_LAYER_VERSION}`,
-  lighthouse: `/poster-layers/lighthouse.png?${POSTER_LAYER_VERSION}`,
-  beach: `/poster-layers/beach.png?${POSTER_LAYER_VERSION}`,
-} as const;
-
-const GALCODE_POSTER_LAYER_VERSION = 'v=20260504-1';
-const GALCODE_POSTER_LAYER_SRC = {
-  frame: `/galcode-poster-layers/frame.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  borderTop: `/galcode-poster-layers/border-top.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  borderLeft: `/galcode-poster-layers/border-left.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  borderRight: `/galcode-poster-layers/border-right.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  flowerLeft: `/galcode-poster-layers/flower-left.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  flowerRight: `/galcode-poster-layers/flower-right.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  palm: `/galcode-poster-layers/palm.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  lighthouse: `/galcode-poster-layers/lighthouse.png?${GALCODE_POSTER_LAYER_VERSION}`,
-  beach: `/galcode-poster-layers/beach.png?${GALCODE_POSTER_LAYER_VERSION}`,
-} as const;
-
-type PosterLayerSrc = { frame: string; borderTop: string; borderLeft: string; borderRight: string; flowerLeft: string; flowerRight: string; palm: string; lighthouse: string; beach: string };
+// The poster pictures themselves live in ./posterLayers.
 type PosterTheme = {
   loaderGlow: string;
   ctaBackground: string;
@@ -1035,18 +1009,8 @@ function JoinLetterPage({
 
 // ─── INVITE FLOW ──────────────────────────────────────────────────────────────
 
-// Reuse the same layer sources and constants from JoinLetterPage
-const INVITE_LAYER_SRC = {
-  frame: `/poster-layers/invite-frame.png?v=1`,
-  borderTop: POSTER_LAYER_SRC.borderTop,
-  borderLeft: POSTER_LAYER_SRC.borderLeft,
-  borderRight: POSTER_LAYER_SRC.borderRight,
-  flowerLeft: POSTER_LAYER_SRC.flowerLeft,
-  flowerRight: POSTER_LAYER_SRC.flowerRight,
-  palm: POSTER_LAYER_SRC.palm,
-  lighthouse: POSTER_LAYER_SRC.lighthouse,
-  beach: POSTER_LAYER_SRC.beach,
-};
+// Reuses the layer sources and constants from JoinLetterPage (INVITE_LAYER_SRC
+// is in ./posterLayers with the rest).
 
 type InviteStep = 'card' | 'timeline' | 'bill';
 
@@ -1311,7 +1275,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
 
   useEffect(() => {
     let cancelled = false;
-    const srcs = [...Object.values(POSTER_LAYER_SRC), '/invite-verification-frame.png', '/tc-agree-text.png', '/tc-link-text.png'];
+    const srcs = [...Object.values(POSTER_LAYER_SRC), INVITE_VERIFICATION_FRAME_SRC, TC_AGREE_TEXT_SRC, TC_LINK_TEXT_SRC];
     const loaders = srcs.map(src => new Promise<void>(resolve => {
       const img = new Image();
       img.onload = () => resolve();
@@ -2305,7 +2269,7 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
             <img src={wipingToLifestyle ? POSTER_LAYER_SRC.frame : INVITE_LAYER_SRC.frame} aria-hidden="true" style={POSTER_LAYER_STYLE} />
             {/* Verification frame — wipes away forward, fades back on return */}
             <motion.img
-              src="/invite-verification-frame.png"
+              src={INVITE_VERIFICATION_FRAME_SRC}
               aria-hidden="true"
               style={POSTER_LAYER_STYLE}
               initial={{ clipPath: 'inset(0% 0 0% 0)', opacity: 1 }}
@@ -2402,8 +2366,8 @@ function SharedInviteFlow({ onNavigateToLifestyle }: { onNavigateToLifestyle: ()
               transition={{ duration: 0.16, ease: 'easeOut' }}
               style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 11 }}
             >
-              <img src="/tc-agree-text.png" aria-hidden="true" style={POSTER_LAYER_STYLE} />
-              <img src="/tc-link-text.png" aria-hidden="true" style={POSTER_LAYER_STYLE} />
+              <img src={TC_AGREE_TEXT_SRC} aria-hidden="true" style={POSTER_LAYER_STYLE} />
+              <img src={TC_LINK_TEXT_SRC} aria-hidden="true" style={POSTER_LAYER_STYLE} />
             </motion.div>
             {/* Checkbox aligned to TC text (66% from top, left of "I agree to the" at 18.8%) */}
             <motion.div

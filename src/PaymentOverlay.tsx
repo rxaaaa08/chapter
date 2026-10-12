@@ -7,6 +7,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from './supabase';
 import { getFbc, getFbp } from './metaPixel';
+// "?inline" carries this 3 KB logo inside the script itself, so the bill page
+// shows it with no request of its own. It replaced an early request for
+// /upi-logo.png that every page made, whether or not it led to a bill.
+// Made by scripts/poster-to-webp.cjs.
+import upiLogo from './assets/upi-logo.webp?inline';
 
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -53,7 +58,7 @@ function PayMethodIcon({ id }: { id: string }) {
       return (
         <div className={`${base} bg-white border border-gray-100 shadow-sm`}>
           <img
-            src="/upi-logo.png"
+            src={upiLogo}
             alt="UPI"
             width={32}
             height={16}
