@@ -186,10 +186,10 @@
         } catch (e) {}
       })();
     </script>
-    <script src="https://t.contentsquare.net/uxa/02bde574cbdd5.js" async></script>
     <!-- Google Analytics: anonymize_ip strips the last IP octet; ad_*_signals
-         off prevents GA from sharing data with Google Ads. -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S"></script>
+         off prevents GA from sharing data with Google Ads. Everything in this
+         script only fills a queue. Google's own script, started further down,
+         is what reads the queue and sends. -->
     <script>
       window.dataLayer = window.dataLayer || [];
       // Google reads the address twice, and both have to be covered.
@@ -235,6 +235,76 @@
         };
         if (document.referrer) config.page_referrer = window.__caTrackerUrl.clean(document.referrer);
         gtag('config', 'G-3MLZ9S6M2S', config);
+      })();
+    </script>
+    <!-- WHO GETS COUNTED: guests on the real site, and nobody else.
+
+         `npm run dev`, every preview deployment and a local build all serve
+         this same page, and each used to load both tools and report into the
+         same accounts as the real site. Measured 2026-10-12 in Google
+         Analytics: 7% of all page views ever recorded came from localhost and
+         preview addresses, and /admin alone was 1,894 page views from 51 team
+         browsers. Google had flagged the tag for "additional domains".
+
+         So neither tool has a <script src> of its own any more. This script
+         starts them, and only when the rule says so. With no script loaded
+         nothing can be sent, whatever is waiting in a queue above.
+
+           Contentsquare      the real site only.
+           Google Analytics   the real site only, and never for us:
+                                - the team's screens, /admin and /team;
+                                - the installed admin app, which App.tsx moves
+                                  to /admin just after it opens, wherever it
+                                  was installed from;
+                                - a plan preview opened from the admin panel
+                                  (AdminPanel adds staff=1 to that link).
+
+         Decided once, when the page loads. Every way into /admin and /team is
+         a full page load, so a guest's visit never becomes a team one midway.
+         The other direction does happen: closing a staff preview reloads the
+         page at /lifestyle, where nothing in the address says who is looking
+         (caught by the sealed test, which saw Google count exactly that). So a
+         tab that has once been ours stays ours until it is closed, remembered
+         in sessionStorage as ca_team_tab.
+         /creator is still counted: creators are outsiders signing up, not us.
+         The two host names are the same two as PRODUCTION_HOSTS in
+         src/metaPixel.ts, which keeps the Meta Pixel to the real site.
+
+         It sits AFTER the two queues on purpose: Google's script must not be
+         able to start before the address cleaner above is in place.
+         Numbers: docs/GOOGLE-ANALYTICS-BASELINE-2026-10-12.md. Changing this
+         is changing the tool block, so re-run the sealed test afterwards. -->
+    <script>
+      (function () {
+        function start(src) {
+          var tag = document.createElement('script');
+          tag.async = true;
+          tag.src = src;
+          document.head.appendChild(tag);
+        }
+
+        var host = location.hostname;
+        if (host !== 'chaptera.in' && host !== 'www.chaptera.in') return;
+        start('https://t.contentsquare.net/uxa/02bde574cbdd5.js');
+
+        // If any of these checks cannot run, the visit is counted: a guest
+        // missed is worse than one of us counted.
+        var installedApp = false;
+        try {
+          installedApp = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+        } catch (e) {}
+        var teamTab = false;
+        try { teamTab = sessionStorage.getItem('ca_team_tab') === '1'; } catch (e) {}
+        var path = location.pathname;
+        var us = teamTab
+          || /^\/(admin|team)(\/|$)/.test(path)
+          || (installedApp && path.indexOf('/creator') !== 0)
+          || /[?&]staff=1(&|$)/.test(location.search);
+        if (us) {
+          try { sessionStorage.setItem('ca_team_tab', '1'); } catch (e) {}
+          return;
+        }
+        start('https://www.googletagmanager.com/gtag/js?id=G-3MLZ9S6M2S');
       })();
     </script>
     <style>

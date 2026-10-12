@@ -42,8 +42,16 @@ sc={
  'M':dict(name="M healthy pixel, direct plan link with the code: two app events on one load",steps=[{"phase":"landing","goto":"https://chaptera.in/?preview_event=founders-meet&wa=ZZZZsyntheticZZZZ.0","wait":12000}]),
  'N':dict(name="N plans page reached with the personal parameters still in the address",steps=steps("https://chaptera.in/plans?phone=9000000001&name=Zztest&wa=ZZZZsyntheticZZZZ.0")),
  'K':dict(name="K address with a # part",steps=steps("https://chaptera.in/lifestyle?email=zztest%40example.com#zzfrag=ZZFRAG1")),
+ # WHO GETS COUNTED (added 2026-10-12, the last script of index.html's tool block).
+ # In these rows the right answer is silence: GA must show a dash in every one,
+ # and Contentsquare too in P1 and P2. A "clean" there means the rule has broken.
+ 'P1':dict(name="P1 must be silent: the local dev server (needs `npm run dev` on :5175) - GA and CS both a dash",nodist=True,steps=steps("http://localhost:5175/lifestyle?utm_source=zzsealed")),
+ 'P2':dict(name="P2 must be silent: a preview address - GA and CS both a dash",extraSiteHosts=["zz-preview-sealed.vercel.app"],steps=steps("https://zz-preview-sealed.vercel.app/lifestyle?utm_source=zzsealed")),
+ 'P3':dict(name="P3 must be silent for Google: the team's screen /admin - GA a dash",steps=steps("https://chaptera.in/admin")),
+ 'P4':dict(name="P4 must be silent for Google: /team - GA a dash",steps=steps("https://chaptera.in/team")),
+ 'P5':dict(name="P5 must be silent for Google: a plan preview opened from the admin panel (staff=1) - GA a dash",steps=steps("https://chaptera.in/?preview_event=founders-meet&staff=1")),
 }
 for k,v in sc.items():
-    if dist!='LIVE': v['dist']=dist
+    if dist!='LIVE' and not v.pop('nodist',False): v['dist']=dist
     v['name']=('AFTER (prototype build) — ' if dist!='LIVE' else 'BEFORE (live site) — ')+v['name']
     json.dump(v,open(f"{sys.argv[2]}-{k}.json",'w'),indent=1)

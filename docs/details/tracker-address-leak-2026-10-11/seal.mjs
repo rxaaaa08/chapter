@@ -17,7 +17,11 @@ const scenario = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const outFile = process.argv[3];
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9300 + Math.floor(Math.random() * 400);
-const SITE_HOSTS = ['chaptera.in', 'www.chaptera.in'];
+const REAL_HOSTS = ['chaptera.in', 'www.chaptera.in'];
+// A scenario may name extra hosts to be served from the build as well (for
+// example a made-up preview address), to prove the tools stay silent anywhere
+// that is not the real site.
+const SITE_HOSTS = [...REAL_HOSTS, ...(scenario.extraSiteHosts || [])];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Where each tool SENDS data (as opposed to where its script is downloaded).
@@ -150,7 +154,7 @@ handlers.push(async (msg) => {
     }
     // Vercel serves its speed-measurement script from our own domain; it is not
     // part of the build, so it has to come from the live site.
-    if (SITE_HOSTS.includes(host) && new URL(url).pathname.startsWith('/_vercel/')) { await S('Fetch.continueRequest', { requestId }); return; }
+    if (REAL_HOSTS.includes(host) && new URL(url).pathname.startsWith('/_vercel/')) { await S('Fetch.continueRequest', { requestId }); return; }
     if (scenario.dist && SITE_HOSTS.includes(host)) {
       const path = decodeURIComponent(new URL(url).pathname);
       let file = join(scenario.dist, path);
