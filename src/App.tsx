@@ -12,11 +12,12 @@ import {
   stepRole, stepBadge, BADGE_LABEL,
 } from './bookingTimeline';
 import { InvitePlanDetailsSheet, type InvitePlanDetails } from './InvitePlanDetailsSheet';
-import { trackEvent, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
+import { trackEvent, noteStep, supabase, fetchEventCounts, fetchEventDateCounts, fetchEventByIdOrSlug } from './supabase';
 import { isInAppBrowser, ensureDistinctUrl } from './inAppBrowser';
 import { doubtWhatsAppUrl, BUSINESS_WHATSAPP_E164, BUSINESS_WHATSAPP_DISPLAY } from './whatsappLinks';
 import { captureMetaIds, setPixelUserData, trackPurchaseOnce } from './metaPixel';
 import { captureAttribution } from './attribution';
+import { pageNameForPath, setCurrentPage } from './visitContext';
 import { captureAffiliateRef, normalizeHandle } from './affiliate';
 import { TermsContent } from './TermsContent';
 import {
@@ -5550,6 +5551,27 @@ export default function App() {
   // /plans and /myplans both suppress the homepage (myplans redirects to /invite, plans renders AppFlow)
   const isAppFlowPath = routePath === '/plans' || isMyPlansPage;
   const [showHomepage, setShowHomepage] = useState(!isStandaloneApp && !isAdmin && !isCreatorPage && !isTeamPage && !hasPreviewParam && !isAppFlowPath && !isLifestylePage && !isGalcodePage && !isSharedInvitePage && !isInvitePage && !isPayUReturn && !isPrivacyPage && !isTermsPage && !isDataDeletionPage);
+
+  // Which page is showing, by NAME (src/visitContext.ts): every website step is
+  // stamped with it, and a move from one page to another inside the site is a
+  // step of its own. That move is what tells apart a guest who read /lifestyle
+  // and left from one who went on to /plans and left there; before this both
+  // looked the same, because going on reloads nothing and so recorded nothing.
+  //
+  // Declared ABOVE the effect that records the landing, so the name is in place
+  // before that first step is written. The landing itself is that step
+  // (page_view); only later moves are recorded here, and through noteStep, not
+  // trackEvent: page_view is also counted by Meta as its PageView.
+  const pageName = isPayUReturn ? 'payment_return' : pageNameForPath(routePath);
+  const lastPageRef = useRef<string | null>(null);
+  useEffect(() => {
+    const from = lastPageRef.current;
+    lastPageRef.current = pageName;
+    setCurrentPage(pageName);
+    if (from && from !== pageName && !isAdmin && !isCreatorPage && !isTeamPage) {
+      noteStep('page_seen', {}, { from_page: from, to_page: pageName });
+    }
+  }, [pageName]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

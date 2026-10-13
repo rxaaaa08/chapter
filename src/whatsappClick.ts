@@ -15,7 +15,7 @@
 //     the same link is a no-op there.
 //   * It never throws and is never awaited. A lost report costs one mark in the
 //     admin panel; it must not be able to delay or break a guest's page.
-import { supabase } from './supabase';
+import { supabase, getSessionId, getVisitorId } from './supabase';
 
 // What the senders mint: 12 random bytes as base64url, then a dot and the
 // button's position. Checked here only to avoid a pointless request for a
@@ -68,4 +68,34 @@ export function reportWhatsAppClick(): void {
     .then(({ error }) => {
       if (error) console.warn('[whatsapp click] not recorded:', error.message);
     }, () => { /* offline or blocked: nothing to do */ });
+  reportLinkArrival(code);
+}
+
+// The same arrival, told to the database a second way: WHICH VISIT it happened
+// in. log_whatsapp_click above stamps a message's first tap and nothing more,
+// so it cannot say what that guest then did on the site. This writes one line,
+// "a visit holding the link we sent to this number exists", against this
+// visit's id, and that line is what lets a number's website steps be read back
+// (docs/UNIFIED-ANALYTICS-BUILD-LOG.md, phase 7).
+//
+// It is evidence, not proof: a forwarded message carries the same link, so the
+// database labels such a visit "came through the link sent to this number" and
+// never gives that number the whole browser on the strength of it. Recorded on
+// every arrival, not only the first, so a guest who comes back through the same
+// saved link tomorrow is seen coming back.
+//
+// A separate call on purpose. The tap mark above is what People ▸ Call draws
+// from and must not be able to break because of this one.
+function reportLinkArrival(code: string): void {
+  try {
+    void supabase
+      .rpc('log_link_arrival', {
+        p_token: code,
+        p_session_id: getSessionId(),
+        p_visitor_id: getVisitorId(),
+      })
+      .then(({ error }) => {
+        if (error) console.warn('[whatsapp click] visit not recorded:', error.message);
+      }, () => { /* offline or blocked: nothing to do */ });
+  } catch { /* no visit id to give: nothing to record */ }
 }

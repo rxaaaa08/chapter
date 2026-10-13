@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
 import { trackPixel, getFbp, getFbc } from './metaPixel';
+import { getCurrentPage, landingContext, type VisitorStorage } from './visitContext';
 // Imported for its VALUE at call time only — never read while this module is
 // evaluating. attribution -> affiliate -> supabase makes this a cycle, and it is
 // safe solely because of that: by the time trackEvent runs, every module in the
@@ -55,12 +56,12 @@ export function getSessionId(): string {
   try {
     let id = sessionStorage.getItem(key);
     if (!id) {
-      id = crypto.randomUUID();
+      id = newUuid();
       sessionStorage.setItem(key, id);
     }
     return id;
   } catch {
-    if (!memorySessionId) memorySessionId = crypto.randomUUID();
+    if (!memorySessionId) memorySessionId = newUuid();
     return memorySessionId;
   }
 }
@@ -85,6 +86,11 @@ export function getSessionId(): string {
 // (survives visits) → sessionStorage (stable within a visit) → memory (this
 // page load). See the KNOWN LIMIT note in src/experiments.ts.
 let memoryVisitorId: string | null = null;
+// Which rung of that chain the id came from. Recorded with each landing
+// (context.storage) because it decides whether the id can link two visits at
+// all: only 'local' survives the tab. Without it nobody can tell which browser
+// ids are worth trusting when visits are matched to each other.
+let visitorStorage: VisitorStorage | null = null;
 
 export function getVisitorId(): string | null {
   if (typeof window === 'undefined') return null;
@@ -92,23 +98,48 @@ export function getVisitorId(): string | null {
   try {
     let id = localStorage.getItem(key);
     if (!id) {
-      id = crypto.randomUUID();
+      id = newUuid();
       localStorage.setItem(key, id);
     }
+    visitorStorage = 'local';
     return id;
   } catch {
     try {
       let id = sessionStorage.getItem(key);
       if (!id) {
-        id = crypto.randomUUID();
+        id = newUuid();
         sessionStorage.setItem(key, id);
       }
+      visitorStorage = 'session';
       return id;
     } catch {
-      if (!memoryVisitorId) memoryVisitorId = crypto.randomUUID();
+      if (!memoryVisitorId) memoryVisitorId = newUuid();
+      visitorStorage = 'memory';
       return memoryVisitorId;
     }
   }
+}
+
+export function getVisitorStorage(): VisitorStorage | null {
+  if (!visitorStorage) {
+    try { getVisitorId(); } catch { /* no id at all: nothing to report */ }
+  }
+  return visitorStorage;
+}
+
+/**
+ * This visit's two ids, for stamping on a booking attempt (a code asked for, an
+ * application sent) so "this booking was made in this visit" is a stored fact
+ * and not something worked out afterwards. They are analytics only and grant
+ * nothing. Never throws: this is called on the booking path, and an id that
+ * cannot be had is simply left empty.
+ */
+export function visitIds(): { session_id: string | null; visitor_id: string | null } {
+  let session_id: string | null = null;
+  let visitor_id: string | null = null;
+  try { session_id = getSessionId(); } catch { /* left empty */ }
+  try { visitor_id = getVisitorId(); } catch { /* left empty */ }
+  return { session_id, visitor_id };
 }
 
 // Which of our funnel steps also gets reported to Meta, and under what name.
@@ -177,8 +208,54 @@ export async function trackEvent(
   // meant their landing was a duplicate of the external-browser one that
   // followed. They're now first-class visitors who browse and pay in place, so
   // their funnel has to be counted like everyone else's.
+  await saveStep(event_type, meta);
+}
+
+/**
+ * Small details of a step. Fixed names whose values are short codes, never
+ * anything a person typed: the database drops whatever is not on its list
+ * (analytics.flow_row_guard), so a new name here needs adding there first.
+ */
+export type StepProps = Partial<{
+  field: string; error: string; reason: string; step: string;
+  from_page: string; to_page: string; button: string; n: number; ok: boolean;
+}>;
+
+type StepMeta = { city?: string; category?: string; event_id?: string; event_title?: string };
+
+// Steps that could not be saved, counted so the loss is visible instead of
+// silent (it used to be: the result of the insert was never read). Kept for the
+// tab, and reported with the next step that does get through.
+const LOST_STEPS_KEY = 'ca_steps_not_saved';
+let lostStepsInMemory = 0;
+
+function readLostSteps(): number {
   try {
-    await supabase.from('flow_analytics').insert({
+    const n = Number(sessionStorage.getItem(LOST_STEPS_KEY) ?? '0');
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 99999) : 0;
+  } catch {
+    return lostStepsInMemory;
+  }
+}
+
+function writeLostSteps(n: number): void {
+  lostStepsInMemory = n;
+  try {
+    if (n > 0) sessionStorage.setItem(LOST_STEPS_KEY, String(n));
+    else sessionStorage.removeItem(LOST_STEPS_KEY);
+  } catch { /* storage blocked: the in-memory count is all there is */ }
+}
+
+// The one place a website step is written to our own database.
+//
+// Besides the step itself, every row now says which page it happened on, carries
+// its own id and the phone's clock, and the first step of each landing carries
+// where the visit started (src/visitContext.ts). Those extras must never cost
+// the step: if the database refuses the row WITH them, it is saved again the old
+// way, without them.
+async function saveStep(event_type: string, meta: StepMeta = {}, props?: StepProps): Promise<void> {
+  try {
+    const base = {
       event_type,
       session_id: getSessionId(),
       // The join key between a funnel step and an experiment variant. Stamped
@@ -197,10 +274,91 @@ export async function trackEvent(
       // 20260907_flow_analytics_attribution.sql. NULL = direct/organic, which
       // is a real answer rather than a missing one.
       attribution: getFunnelAttribution(),
+    };
+    const { error } = await supabase.from('flow_analytics').insert({
+      ...base,
+      event_uid: newUuid(),
+      schema_v: STEP_SCHEMA_V,
+      client_ts: new Date().toISOString(),
+      // A page NAME, never the address (which can carry a phone or a link code).
+      page: getCurrentPage(),
+      // Once per landing: page_view is the first step of every full page load.
+      context: event_type === 'page_view' ? landingContext(getVisitorStorage()) : null,
+      props: props ?? null,
     });
+    if (!error) {
+      reportLostSteps();
+      return;
+    }
+    console.warn('[steps] not saved:', event_type, error.code, error.message);
+    // A code means the database answered and said no, so nothing was stored and
+    // saving again cannot make a second copy. No code means the request itself
+    // failed (offline, blocked): it may or may not have arrived, so it is
+    // counted as lost and NOT sent again.
+    if (error.code) {
+      const { error: again } = await supabase.from('flow_analytics').insert(base);
+      if (!again) return;
+      console.warn('[steps] not saved the old way either:', event_type, again.code, again.message);
+    }
+    writeLostSteps(readLostSteps() + 1);
   } catch (_) {
     // fire-and-forget — never block the user flow
   }
+}
+
+// Bumped when the shape of what the site sends with a step changes, so a report
+// can tell which rows were written by which shape.
+const STEP_SCHEMA_V = 1;
+
+// Tells the database how many steps this tab failed to save, once a step has
+// got through again. One row, then the count starts over.
+function reportLostSteps(): void {
+  const n = readLostSteps();
+  if (n <= 0) return;
+  writeLostSteps(0);
+  void supabase.from('flow_analytics').insert({
+    event_type: 'steps_not_saved',
+    session_id: getSessionId(),
+    visitor_id: getVisitorId(),
+    event_uid: newUuid(),
+    schema_v: STEP_SCHEMA_V,
+    client_ts: new Date().toISOString(),
+    page: getCurrentPage(),
+    props: { n },
+  }).then(({ error }) => {
+    // Still not getting through: keep the count for the next attempt.
+    if (error) writeLostSteps(readLostSteps() + n);
+  }, () => { writeLostSteps(readLostSteps() + n); });
+}
+
+/**
+ * A step recorded in OUR database only. Unlike trackEvent it is never mirrored
+ * to Meta or to Google, which is the whole reason it is a separate door: a new
+ * step added through trackEvent would start reaching both tools, and the page
+ * view in particular is counted by Meta as its own PageView.
+ *
+ *   page_seen        the visitor moved to another page inside the site (the
+ *                    landing itself is the existing page_view step)
+ *   booking_stopped  the site told a guest they could not go on, with the
+ *                    reason as a short code in props.reason. It separates
+ *                    "could not book" from "chose not to": a wrong code, a date
+ *                    that filled up, a number that had already booked.
+ */
+export function noteStep(step: 'page_seen' | 'booking_stopped', meta: StepMeta = {}, props?: StepProps): void {
+  void saveStep(step, meta, props);
+}
+
+/** A unique id that also works where crypto.randomUUID does not exist. */
+export function newUuid(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch (_) { /* fall through */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : ((r & 0x3) | 0x8)).toString(16);
+  });
 }
 
 // ─── Lead: the one funnel step we also report from the server ────────────────
@@ -225,15 +383,7 @@ export async function trackEvent(
  * shape check; it is a correlation key, never a secret.
  */
 export function newLeadId(): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-  } catch (_) { /* fall through */ }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : ((r & 0x3) | 0x8)).toString(16);
-  });
+  return newUuid();
 }
 
 /**

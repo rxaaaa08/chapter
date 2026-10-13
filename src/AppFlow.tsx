@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut, newLeadId, reportLead } from './supabase';
+import { supabase, fetchEvents, fetchEventByIdOrSlug, fetchChatMessages, fillMsg, trackEvent, fetchEventCounts, fetchEventDateCounts, buildEventAnnouncement, isElapsedDate, isDateSoldOut, newLeadId, reportLead, visitIds, noteStep } from './supabase';
 import { getAffiliateRef } from './affiliate';
 import { getAttribution } from './attribution';
 import { useVariant } from './experiments';
@@ -546,6 +546,7 @@ function ApplicationForm({
       // sweep all report the SAME id — a backstop that generated a fresh one
       // would collide with nothing and count the application twice.
       const leadId = newLeadId();
+      const visit = visitIds();
 
       const { error: sbError } = await supabase.from('applications').insert({
         event_slug: String(event.id ?? '').toLowerCase(),
@@ -579,10 +580,16 @@ function ApplicationForm({
         // Traffic source (utm/fbclid) captured on the landing URL. This is what
         // makes cost-per-ticket knowable from our own data instead of Meta's.
         attribution: getAttribution(),
+        // The website visit this application was sent in. Analytics only: it is
+        // what ties this number to the steps taken before the form.
+        first_session_id: visit.session_id,
+        first_visitor_id: visit.visitor_id,
       });
 
       if (sbError) {
         waWindow?.close();
+        noteStep('booking_stopped', { event_id: event.id, event_title: event.title },
+          { step: 'application', reason: sbError.code === '23505' ? 'already_applied' : 'application_not_saved' });
         if (sbError.code === '23505') { setAlreadyApplied(true); }
         else { setError(`${sbError.code}: ${sbError.message}`); }
         return;
@@ -1976,6 +1983,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     setOpenOtpAttemptsExhausted(false);
   };
 
+  // Why the site stopped a guest part-way through an open-event booking, as a
+  // short code, for our own records only (never Meta or Google). The message
+  // the guest sees is not recorded, only which of these fixed reasons it was.
+  const noteOpenStop = (step: 'check' | 'code', reason: string) => {
+    noteStep('booking_stopped', { event_id: selectedEvent?.id, event_title: selectedEvent?.title }, { step, reason });
+  };
+
   const checkOpenBookingEligibility = async (): Promise<boolean> => {
     if (!selectedEvent || !isPayUFlow) return true;
     const normalizedPhone = detailsForm.phone.replace(/\D/g, '').slice(-10);
@@ -2001,6 +2015,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 409 && data?.error === 'already paid for this open event') {
+        noteOpenStop('check', 'already_paid');
         setAlreadyPaidTickets(Math.max(1, Number(data?.ticket_count ?? 1) || 1));
         setOpenAlreadyPaid(true);
         return false;
@@ -2012,16 +2027,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         // Record what the server says is left and let the inline message under
         // the stepper do the talking — the customer keeps the number they chose
         // and decides whether to lower it or change the date.
+        noteOpenStop('check', 'not_enough_spots');
         setServerSpotsLeft(Math.max(0, Number(data?.spots_left ?? 0) || 0));
         return false;
       }
       if (!res.ok) {
+        noteOpenStop('check', 'check_refused');
         setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
         return false;
       }
       return true;
     } catch (err) {
       console.error('open booking eligibility check failed:', err);
+      noteOpenStop('check', 'check_failed');
       setOpenBookingCheckError('We could not verify this booking right now. Please try again.');
       return false;
     } finally {
@@ -2053,6 +2071,8 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
             phone: detailsForm.phone,
             email: detailsForm.email.trim(),
             event_slug: selectedEvent.id,
+            // Which visit this was asked in. Analytics only; grants nothing.
+            ...visitIds(),
           }),
         }).catch(() => null);
         const chatData = chatRes ? await chatRes.json().catch(() => ({})) : {};
@@ -2084,10 +2104,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           event_slug: selectedEvent.id,
           delivery,
           ...(delivery === 'email' ? { previous_verification_token: openOtpSession } : {}),
+          // Which visit this code was asked in. Analytics only; grants nothing.
+          ...visitIds(),
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.verification_token) {
+        noteOpenStop('code', res.status === 429 ? 'code_asked_too_often' : 'code_not_sent');
         setOpenBookingCheckError(data?.error || `We could not send your ${delivery === 'email' ? 'verification email' : 'WhatsApp code'}. Please try again.`);
         return;
       }
@@ -2120,6 +2143,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       window.setTimeout(() => openOtpInputsRef.current[0]?.focus(), 0);
     } catch (err) {
       console.error('open event OTP request failed:', err);
+      noteOpenStop('code', 'code_request_failed');
       setOpenBookingCheckError(`We could not send your ${delivery === 'email' ? 'verification email' : 'WhatsApp code'}. Please try again.`);
     } finally {
       setSendingOpenOtp(false);
@@ -2152,16 +2176,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.verified) {
         if (data?.attempts_exhausted === true) {
+          noteOpenStop('code', 'code_tries_used_up');
           setOpenOtpAttemptsExhausted(true);
           setOpenBookingCheckError('');
           return;
         }
+        noteOpenStop('code', 'code_refused');
         setOpenBookingCheckError(data?.error || 'We could not verify that code. Please try again.');
         return;
       }
       await handleProceedToPhonePe(data.verification_token || openOtpSession);
     } catch (err) {
       console.error('open event OTP verification failed:', err);
+      noteOpenStop('code', 'code_check_failed');
       setOpenBookingCheckError('We could not verify that code. Please try again.');
     } finally {
       setVerifyingOpenOtp(false);
@@ -2273,6 +2300,7 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
         city: selectedCity,
       });
 
+      const visit = visitIds();
       const { error: appErr } = await supabase
         .from('applications')
         .insert({
@@ -2313,6 +2341,11 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           // unique key and keeps whatever source first brought them in, which is
           // the honest answer for who earned the booking.
           attribution: getAttribution(),
+          // The website visit this booking row was first created in, set the
+          // same way and for the same reason: first insert only. Analytics
+          // only; it is what ties this number to the steps taken before paying.
+          first_session_id: visit.session_id,
+          first_visitor_id: visit.visitor_id,
         });
       // 23505 = returning lead already has a row (expected, fine). Never block the
       // payment on tracking — log anything else and continue to checkout.
