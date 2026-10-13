@@ -16,6 +16,7 @@
 //   * It never throws and is never awaited. A lost report costs one mark in the
 //     admin panel; it must not be able to delay or break a guest's page.
 import { supabase, getSessionId, getVisitorId } from './supabase';
+import { isAutomatedVisit } from './visitContext';
 
 // What the senders mint: 12 random bytes as base64url, then a dot and the
 // button's position. Checked here only to avoid a pointless request for a
@@ -62,6 +63,11 @@ export function reportWhatsAppClick(): void {
     return;
   }
   if (!code || !CLICK_CODE.test(code)) return;
+  // Meta's link checkers open every link we send and run this page like a
+  // browser. Without this they marked messages as tapped that no guest had
+  // opened, and would now also put a visit on that guest's record. A program
+  // gets no tap mark, no visit and no remembered code (src/visitContext.ts).
+  if (isAutomatedVisit()) return;
   rememberArrival(code.split('.')[0]);
   void supabase
     .rpc('log_whatsapp_click', { p_token: code })

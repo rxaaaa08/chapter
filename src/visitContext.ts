@@ -59,6 +59,45 @@ export function getCurrentPage(): string {
   return currentPage;
 }
 
+// ── Software, not a person ───────────────────────────────────────────────────
+//
+// Every link we put in a WhatsApp message or an ad is also opened by programs:
+// Meta's link checkers above all, and they run the page's scripts like a
+// browser does. Measured 6–12 Oct 2026 through Contentsquare: 15 of the 21
+// visits to /invite were these, not guests. Left alone, each one marks a
+// message as "tapped" and, since visits began to be tied to numbers, would
+// also put a visit that person never made on their timeline.
+//
+// Only what announces itself can be caught here: a program's own name in the
+// browser's description of itself, or the flag automated browsers set. A
+// checker that describes itself as an ordinary Chrome passes this test. The
+// database catches those: it sees where a request came from, and nothing from
+// Meta's own network is treated as a guest (analytics.caller_is_robot, in
+// 20261013_unified_analytics_12_robots.sql). It also repeats this list of
+// names, for phones still running an older copy of the site; keep the two the
+// same.
+//
+// Names only, never a shape test like "does not start with Mozilla": a real
+// phone with an unusual browser must not be mistaken for a program. A guest
+// missed costs a true record; a robot counted costs a false one, and the
+// second is at least visible afterwards.
+const ROBOT_NAMES = /externalhit|externalagent|externalads|facebookcatalog|facebot|googlebot|google-inspectiontool|bingbot|bingpreview|twitterbot|slackbot|linkedinbot|applebot|telegrambot|discordbot|yandexbot|duckduckbot|baiduspider|petalbot|semrushbot|ahrefsbot|mj12bot|crawler|spider|headlesschrome|lighthouse|pagespeed|gtmetrix|pingdom|uptimerobot/i;
+
+export function looksAutomated(ua: string, webdriver: boolean): boolean {
+  if (webdriver) return true;
+  return !!ua && ROBOT_NAMES.test(ua);
+}
+
+/** Is this page being read by a program (a link checker, a crawler) and not a person? */
+export function isAutomatedVisit(): boolean {
+  try {
+    if (typeof navigator === 'undefined') return false;
+    return looksAutomated(navigator.userAgent || '', navigator.webdriver === true);
+  } catch {
+    return false;
+  }
+}
+
 // ── Starting context, sent once per landing ──────────────────────────────────
 
 // Which app or browser the page is open in. In-app browsers come first: they
@@ -66,10 +105,14 @@ export function getCurrentPage(): string {
 // matter here (most guests arrive inside Instagram, and a link tapped in
 // WhatsApp can open in WhatsApp's own browser).
 function browserKind(ua: string): string {
+  // First, because a link checker also carries "Chrome" or "Safari" in its name.
+  if (isAutomatedVisit()) return 'robot';
   if (!ua) return 'unknown';
   if (/Instagram/i.test(ua)) return 'instagram';
   if (/FBAN|FBAV|FB_IAB/i.test(ua)) return 'facebook';
-  if (/WhatsApp/i.test(ua)) return 'whatsapp';
+  // WhatsApp's own browser: "WhatsApp" on some builds, WAiOS / WA4A on others
+  // (the two names Contentsquare showed for real arrivals from our messages).
+  if (/WhatsApp|WAiOS|WA4A/i.test(ua)) return 'whatsapp';
   if (/Snapchat/i.test(ua)) return 'snapchat';
   if (/LinkedInApp/i.test(ua)) return 'linkedin';
   if (/Telegram/i.test(ua)) return 'telegram';
