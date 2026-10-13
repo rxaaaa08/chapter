@@ -5152,6 +5152,26 @@ function PrivacyScreen() {
         <p className="mt-2">You can clear or block cookies in your browser settings at any time. Blocking essential cookies will prevent bookings from completing.</p>
       </LegalCard>
 
+      <LegalCard title="Our Own Record of Your Visit">
+        <p className="mb-2">
+          Separately from the tools above, we keep our own record of what happens on this website: which
+          pages and booking steps were opened, when, the kind of browser and device, and the site or ad a
+          visit came from. By itself this record holds no name and no phone number.
+        </p>
+        <p className="mb-2">
+          A visit is connected to a phone number when that number is entered on the booking form, when a
+          code we sent to it is confirmed, or when the site is opened through a link in a message we sent
+          to it. We do this to see where the booking flow loses people, to fix those steps, and to help
+          when someone gets stuck part-way.
+        </p>
+        <p>
+          This record stays in our own database. It is not sold, and it is not given to advertisers or to
+          any of the outside tools named on this page. Step-by-step records are deleted after 90 days and
+          the summary of a visit after 12 months. If you ask us to delete your data, the connection between
+          your number and your visits is removed with it.
+        </p>
+      </LegalCard>
+
       <LegalCard title="Advertising and Measurement">
         <p className="mb-2">
           We advertise on Meta platforms (Facebook and Instagram) and use Meta&rsquo;s business tools — the
@@ -5243,7 +5263,7 @@ function PrivacyScreen() {
         WhatsApp us at <a href={`https://wa.me/${BUSINESS_WHATSAPP_E164}`} className="text-blue-600 underline">{BUSINESS_WHATSAPP_DISPLAY}</a>.
       </LegalCard>
 
-      <LegalFooter updated="September 2026" />
+      <LegalFooter updated="October 2026" />
     </LegalShell>
   );
 }
