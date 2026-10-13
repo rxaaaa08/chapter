@@ -489,6 +489,38 @@ async function resolveChatLink(supabase: any, code: string): Promise<{ sendId: n
   return phone ? { sendId: Number(data.id), phone } : null;
 }
 
+// ── Which visit this attempt was made in (analytics only) ────────────────────
+// The site may send its visit id and browser id with a request. They are stored
+// on the session row so "this code was asked for in this visit" is a recorded
+// fact (docs/UNIFIED-ANALYTICS-BUILD-LOG.md, phase 6). They grant nothing and
+// this function never reads them back.
+//
+// Two rules keep them from ever costing a booking: anything that is not a
+// well-formed id is dropped, and an insert that fails with them is retried
+// without them (insertSession below).
+const VISIT_ID = /^[0-9a-fA-F-]{16,64}$/;
+
+function visitIdsFrom(body: any): { session_id?: string; visitor_id?: string } {
+  const out: { session_id?: string; visitor_id?: string } = {};
+  if (typeof body?.session_id === 'string' && VISIT_ID.test(body.session_id)) out.session_id = body.session_id;
+  if (typeof body?.visitor_id === 'string' && VISIT_ID.test(body.visitor_id)) out.visitor_id = body.visitor_id;
+  return out;
+}
+
+async function insertSession(
+  supabase: any,
+  row: Record<string, unknown>,
+  visitIds: { session_id?: string; visitor_id?: string },
+): Promise<{ error: unknown }> {
+  if (!visitIds.session_id && !visitIds.visitor_id) {
+    return await supabase.from('open_event_otp_sessions').insert(row);
+  }
+  const first = await supabase.from('open_event_otp_sessions').insert({ ...row, ...visitIds });
+  if (!first.error) return first;
+  console.error('[open-event-otp] insert with visit ids failed, retrying without them', first.error);
+  return await supabase.from('open_event_otp_sessions').insert(row);
+}
+
 Deno.serve(async (req) => {
   const cors = corsFor(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -556,7 +588,7 @@ Deno.serve(async (req) => {
 
     const chatToken = randomToken();
     const chatExpiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
-    const { error: chatInsertError } = await supabase.from('open_event_otp_sessions').insert({
+    const { error: chatInsertError } = await insertSession(supabase, {
       verification_token: chatToken,
       event_slug: event.slug,
       phone,
@@ -568,7 +600,7 @@ Deno.serve(async (req) => {
       verified_at: new Date().toISOString(),
       verified_via: 'chat_link',
       via_send_id: link.sendId,
-    });
+    }, visitIdsFrom(body));
     if (chatInsertError) {
       console.error('[open-event-otp] could not create chat-link session', chatInsertError);
       return useCode();
@@ -646,14 +678,14 @@ Deno.serve(async (req) => {
     const verificationToken = randomToken();
     const otp = randomOtp();
     const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
-    const { error: insertError } = await supabase.from('open_event_otp_sessions').insert({
+    const { error: insertError } = await insertSession(supabase, {
       verification_token: verificationToken,
       event_slug: event.slug,
       phone,
       email,
       code_hash: await sha256(`${verificationToken}:${otp}`),
       expires_at: expiresAt,
-    });
+    }, visitIdsFrom(body));
     if (insertError) {
       console.error('[open-event-otp] could not create OTP session', insertError);
       return reply(500, { error: 'Could not start verification. Please try again.' }, cors);
